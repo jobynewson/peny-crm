@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Peny CRM</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+
+  <!-- Auth screen — shown when not signed in -->
+  <div id="auth">
+    <div id="auth-inner">
+      <img src="/peny-logo.png" alt="Peny" id="auth-logo" />
+      <div id="sign-in"></div>
+    </div>
+  </div>
+
+  <!-- Main app — shown when signed in -->
+  <div id="app" style="display:none"></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

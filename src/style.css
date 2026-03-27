@@ -1,0 +1,61 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f7f6f3;
+  --bg-tertiary: #f0efe9;
+  --text-primary: #1a1a18;
+  --text-secondary: #6b6b66;
+  --text-tertiary: #a8a8a0;
+  --border-light: rgba(0,0,0,0.08);
+  --border-med: rgba(0,0,0,0.14);
+  --border-strong: rgba(0,0,0,0.22);
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 14px;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Auth screen ── */
+#auth {
+  display: none;
+  height: 100vh;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+}
+#auth-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+}
+#auth-logo {
+  height: 52px;
+  width: auto;
+}
+
+/* ── App shell ── */
+#app {
+  height: 100vh;
+  display: flex;
+}
+
+/* ── Loading state ── */
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
