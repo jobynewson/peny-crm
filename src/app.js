@@ -23,7 +23,7 @@ export class App {
   mount(container) {
     this.container = container
     // Restore saved theme before first render
-    const saved = localStorage.getItem('peny-theme') || 'light'
+    const saved = localStorage.getItem('peny-theme') || 'dark'
     document.documentElement.setAttribute('data-theme', saved)
     this.injectGlobalStyles()
     this.render()
