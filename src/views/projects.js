@@ -417,10 +417,12 @@ export class ProjectsView {
         brief: p.brief, location: p.location,
         shoot_start: p.shoot_start || null, shoot_end: p.shoot_end || null,
         deliverables: p.deliverables, crew: p.crew, shots: p.shots,
-        approvals: p.approvals, budget_ids: p.budget_ids, notes: p.notes,
+        approvals: p.approvals, notes: p.notes,
+        // budget_ids is NOT a DB column — managed via project_budgets join table
       })
       const idx = this.app.projects.findIndex(x => x.id === p.id)
-      if (idx >= 0) this.app.projects[idx] = updated
+      // Preserve in-memory budget_ids since DB response won't include them
+      if (idx >= 0) this.app.projects[idx] = { ...updated, budget_ids: p.budget_ids ?? [] }
     } catch (e) { console.error('Project save failed:', e) }
   }
 

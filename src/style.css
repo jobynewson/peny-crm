@@ -1,5 +1,6 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* ── Light mode (default) ── */
 :root {
   --bg-primary: #ffffff;
   --bg-secondary: #f7f6f3;
@@ -16,6 +17,19 @@
   --font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
+/* ── Dark mode ── */
+[data-theme="dark"] {
+  --bg-primary: #1c1c1a;
+  --bg-secondary: #242422;
+  --bg-tertiary: #161614;
+  --text-primary: #f0efe9;
+  --text-secondary: #9a9990;
+  --text-tertiary: #5a5a54;
+  --border-light: rgba(255,255,255,0.07);
+  --border-med: rgba(255,255,255,0.12);
+  --border-strong: rgba(255,255,255,0.2);
+}
+
 body {
   font-family: var(--font);
   background: var(--bg-tertiary);
@@ -23,7 +37,95 @@ body {
   font-size: 14px;
   height: 100vh;
   overflow: hidden;
+  transition: background 0.2s, color 0.2s;
 }
+
+/* ── Buttons ── */
+.btn-primary {
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  border: none;
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: var(--font);
+  line-height: 1.4;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: opacity 0.15s;
+}
+.btn-primary:hover { opacity: 0.82; }
+
+.btn-secondary {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 0.5px solid var(--border-med);
+  padding: 7px 15px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 400;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: var(--font);
+  line-height: 1.4;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.12s, color 0.12s;
+}
+.btn-secondary:hover { background: var(--bg-secondary); color: var(--text-primary); }
+
+.btn-cancel {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 0.5px solid var(--border-light);
+  padding: 8px 14px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  cursor: pointer;
+  font-family: var(--font);
+  line-height: 1.4;
+  display: inline-flex;
+  align-items: center;
+  transition: background 0.12s;
+}
+.btn-cancel:hover { background: var(--bg-tertiary); }
+
+.row-btn {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 0.5px solid var(--border-light);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: var(--font);
+  line-height: 1.4;
+  transition: background 0.1s, color 0.1s;
+}
+.row-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+
+/* ── Dark mode toggle button ── */
+.theme-toggle {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  border: 0.5px solid var(--border-light);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.12s, color 0.12s;
+}
+.theme-toggle:hover { background: var(--bg-secondary); color: var(--text-primary); }
+.theme-toggle svg { display: block; }
 
 /* ── Auth screen ── */
 #auth {
@@ -39,18 +141,12 @@ body {
   align-items: center;
   gap: 32px;
 }
-#auth-logo {
-  height: 52px;
-  width: auto;
-}
+#auth-logo { height: 52px; width: auto; }
 
 /* ── App shell ── */
-#app {
-  height: 100vh;
-  display: flex;
-}
+#app { height: 100vh; display: flex; }
 
-/* ── Loading state ── */
+/* ── Loading ── */
 .loading {
   display: flex;
   align-items: center;

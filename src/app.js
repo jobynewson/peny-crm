@@ -22,6 +22,9 @@ export class App {
 
   mount(container) {
     this.container = container
+    // Restore saved theme before first render
+    const saved = localStorage.getItem('peny-theme') || 'light'
+    document.documentElement.setAttribute('data-theme', saved)
     this.injectGlobalStyles()
     this.render()
   }
@@ -37,6 +40,11 @@ export class App {
         <div class="nav-bottom">
           <div class="nav-item" data-view="settings">${this.iconSettings()} Settings</div>
           <div class="nav-item" id="sign-out-btn">${this.iconSignOut()} Sign out</div>
+          <div style="padding:8px 12px">
+            <button class="theme-toggle" id="theme-toggle-btn" title="Toggle dark mode">
+              ${this.iconTheme()}
+            </button>
+          </div>
         </div>
       </div>
       <div class="main">
@@ -69,6 +77,19 @@ export class App {
       el.addEventListener('click', () => this.navigate(el.dataset.view))
     })
     this.container.querySelector('#sign-out-btn')?.addEventListener('click', () => this.onSignOut())
+
+    // Dark mode toggle
+    const toggleBtn = this.container.querySelector('#theme-toggle-btn')
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+        const next = isDark ? 'light' : 'dark'
+        document.documentElement.setAttribute('data-theme', next)
+        localStorage.setItem('peny-theme', next)
+        toggleBtn.innerHTML = this.iconTheme()
+      })
+    }
+
     this.bindTopbarBtn()
     const search = this.container.querySelector('#contact-search')
     if (search) {
@@ -126,12 +147,53 @@ export class App {
 
   renderPipeline(mc) {
     const stages = ['Enquiry','Pre-production','In Production','Post','Delivered']
-    mc.innerHTML = `<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px">${stages.map(st=>{
-      const col = this.projects.filter(p=>p.status===st)
-      return `<div><div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:12px">${st} <span style="font-weight:500;color:var(--text-secondary)">${col.length}</span></div>
-        ${col.map(p=>{const cl=this.contacts.find(c=>c.id===p.client_id);return`<div class="kanban-card" style="cursor:pointer" data-pid="${p.id}"><div class="kanban-card-title">${p.name}</div><div class="kanban-card-client">${cl?cl.first_name+' '+cl.last_name:'No client'}</div></div>`}).join('')}</div>`
+    mc.innerHTML = `<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px">${stages.map(st => {
+      const col = this.projects.filter(p => p.status === st)
+      return `<div>
+        <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:12px">${st} <span style="font-weight:500;color:var(--text-secondary)">${col.length}</span></div>
+        ${col.map(p => {
+          const cl = this.contacts.find(c => c.id === p.client_id)
+          const pipelineBudgets = (p.budget_ids || [])
+            .map(id => this.budgets.find(b => b.id === id))
+            .filter(b => b && b.include_in_pipeline)
+          const combinedTotal = pipelineBudgets.reduce((sum, b) => {
+            const n = b.sections ? b.sections.filter(s=>s.enabled).reduce((t,s)=>{
+              return t + (s.lines||[]).reduce((lt,l)=>{
+                const d=parseFloat(l.days)||0,q=parseFloat(l.qty)||1,r=parseFloat(l.rate)||0,td=parseFloat(l.travelDays)||0
+                return lt+d*q*r+td*0.5*r
+              },0)
+            },0) : 0
+            const afterFee = n + n*((parseFloat(b.markup)||0)/100)
+            const afterCustom = afterFee + afterFee*((parseFloat(b.custom_pct)||0)/100)
+            return sum + afterCustom + (b.vat ? afterCustom*0.2 : 0)
+          }, 0)
+          return `<div class="kanban-card" style="cursor:pointer" data-pid="${p.id}">
+            <div class="kanban-card-title">${p.name}</div>
+            <div class="kanban-card-client">${cl ? cl.first_name+' '+cl.last_name : 'No client'}</div>
+            ${pipelineBudgets.length ? `
+              <div style="margin-top:8px;padding-top:8px;border-top:0.5px solid var(--border-light);display:flex;flex-direction:column;gap:3px">
+                ${pipelineBudgets.map(b => {
+                  const n = b.sections ? b.sections.filter(s=>s.enabled).reduce((t,s)=>{
+                    return t+(s.lines||[]).reduce((lt,l)=>{const d=parseFloat(l.days)||0,q=parseFloat(l.qty)||1,r=parseFloat(l.rate)||0,td=parseFloat(l.travelDays)||0;return lt+d*q*r+td*0.5*r},0)
+                  },0) : 0
+                  const afterFee=n+n*((parseFloat(b.markup)||0)/100), afterCustom=afterFee+afterFee*((parseFloat(b.custom_pct)||0)/100)
+                  const t = afterCustom+(b.vat?afterCustom*0.2:0)
+                  return `<div style="display:flex;justify-content:space-between;font-size:11px">
+                    <span style="color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">${b.name}</span>
+                    <span style="color:var(--text-primary);font-weight:500;font-variant-numeric:tabular-nums">£${Math.round(t).toLocaleString('en-GB')}</span>
+                  </div>`
+                }).join('')}
+                ${pipelineBudgets.length > 1 ? `
+                  <div style="display:flex;justify-content:space-between;font-size:11px;margin-top:3px;padding-top:5px;border-top:0.5px solid var(--border-light)">
+                    <span style="color:var(--text-tertiary)">Combined</span>
+                    <span style="font-weight:600;font-variant-numeric:tabular-nums">£${Math.round(combinedTotal).toLocaleString('en-GB')}</span>
+                  </div>` : ''}
+              </div>` : ''}
+          </div>`
+        }).join('')}
+      </div>`
     }).join('')}</div>`
-    mc.querySelectorAll('[data-pid]').forEach(el => el.addEventListener('click',()=>this.openProject(el.dataset.pid)))
+    mc.querySelectorAll('[data-pid]').forEach(el => el.addEventListener('click', () => this.openProject(el.dataset.pid)))
   }
 
   renderSettings(mc) {
@@ -365,4 +427,10 @@ export class App {
   iconPipeline() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1" y="4" width="4" height="9" rx="1"/><rect x="6" y="6" width="4" height="7" rx="1"/><rect x="11" y="8" width="4" height="5" rx="1"/></svg>` }
   iconSettings() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M11.4 4.6l-1.4 1.4M4.6 11.4l-1.4 1.4"/></svg>` }
   iconSignOut()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M10 11l4-4-4-4M14 8H6"/></svg>` }
+  iconTheme() {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+    return isDark
+      ? `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M11.4 4.6l-1.4 1.4M4.6 11.4l-1.4 1.4"/></svg>`
+      : `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M13.5 10A5.5 5.5 0 0 1 6 2.5a5.5 5.5 0 1 0 7.5 7.5z"/></svg>`
+  }
 }

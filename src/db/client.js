@@ -9,7 +9,7 @@ export const db = drizzle(sql, { schema })
 // Every query goes through these — they enforce user_id scoping automatically.
 // Call them with the Clerk userId from useAuth().
 
-import { eq, and, desc } from 'drizzle-orm'
+import { eq, and, desc, inArray } from 'drizzle-orm'
 import { contacts, projects, budgets, settings, project_budgets } from './schema.js'
 
 // Settings
@@ -46,9 +46,23 @@ export async function deleteContact(userId, id) {
 
 // Projects
 export async function getProjects(userId) {
-  return db.select().from(projects)
+  const rows = await db.select().from(projects)
     .where(eq(projects.user_id, userId))
     .orderBy(desc(projects.created_at))
+
+  if (!rows.length) return []
+
+  const projectIds = rows.map(r => r.id)
+  const allLinks = await db.select().from(project_budgets)
+    .where(inArray(project_budgets.project_id, projectIds))
+
+  const linkMap = {}
+  allLinks.forEach(l => {
+    if (!linkMap[l.project_id]) linkMap[l.project_id] = []
+    linkMap[l.project_id].push(l.budget_id)
+  })
+
+  return rows.map(r => ({ ...r, budget_ids: linkMap[r.id] ?? [] }))
 }
 export async function createProject(userId, data) {
   return db.insert(projects).values({ user_id: userId, ...data }).returning()

@@ -69,6 +69,7 @@ export const budgets = pgTable('budgets', {
   markup:      numeric('markup', { precision: 5, scale: 2 }).notNull().default('10'),
   custom_pct:  numeric('custom_pct', { precision: 5, scale: 2 }).notNull().default('0'),
   vat:         boolean('vat').notNull().default(false),
+  include_in_pipeline: boolean('include_in_pipeline').notNull().default(false),
   sections:    jsonb('sections').notNull().default([]),
   ...timestamps,
 })
