@@ -18,12 +18,13 @@ const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').re
 const gbpA = n => '£' + Math.round(n).toLocaleString('en-GB')
 const moy = () => { const d = new Date(); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] + ' ' + d.getFullYear() }
 
-function lineTotal(l, isCrew) {
+function lineTotal(l) {
+  const useDays = !!(l.useDays ?? (l.travelDays !== undefined)) // backwards compat with existing crew lines
   const d = parseFloat(l.days)||0, q = parseFloat(l.qty)||1, r = parseFloat(l.rate)||0, td = parseFloat(l.travelDays)||0
-  if (isCrew) return d*q*r + td*0.5*r
+  if (useDays) return d*q*r + td*0.5*r
   return q*r
 }
-function secNet(s)  { return (s.lines||[]).reduce((t,l) => t + lineTotal(l, s.crew||s.hasDays), 0) }
+function secNet(s)  { return (s.lines||[]).reduce((t,l) => t + lineTotal(l), 0) }
 function budNet(b)  { return (b.sections||[]).filter(s=>s.enabled).reduce((t,s) => t + secNet(s), 0) }
 function budTotal(b) {
   const n = budNet(b)
@@ -31,9 +32,10 @@ function budTotal(b) {
   const afterCustom = afterFee + afterFee * ((parseFloat(b.custom_pct)||0)/100)
   return afterCustom + (b.vat ? afterCustom*0.2 : 0)
 }
-const hasValue = (l, isCrew) => isCrew
-  ? ((parseFloat(l.days)||0) > 0 || (parseFloat(l.travelDays)||0) > 0)
-  : (parseFloat(l.qty)||0) > 0 && (parseFloat(l.rate)||0) > 0
+const hasValue = l => {
+  const useDays = !!(l.useDays ?? (l.travelDays !== undefined))
+  return useDays ? ((parseFloat(l.days)||0) > 0 || (parseFloat(l.travelDays)||0) > 0) : ((parseFloat(l.qty)||0) > 0 && (parseFloat(l.rate)||0) > 0)
+}
 
 export { budTotal, budNet }
 
@@ -311,36 +313,42 @@ export class BudgetsView {
 
   sectionHTML(b, s, si) {
     const sn = secNet(s)
-    const isCrew = !!(s.crew || s.hasDays)
-    const isCustom = s.code === 'X'
-    // Crew sections: Item | Notes | Days | Qty | Travel days | Rate | Total | ×
-    // Non-crew:      Item | Notes | Qty  | Rate | Total | ×
+    // All sections now use the same column layout:
+    // ☐ | Item | Notes | Days | Qty | Travel | Rate | Total | ×
+    // The Days and Travel cells are shown/hidden per line via the checkbox
     return `<div class="bsec-wrap" id="bsw-${si}">
       <div class="bsec-head ${s.enabled?'enabled':''}" data-toggle-open="${si}">
         <span class="bsec-code">${s.code}</span>
         <span class="bsec-name">${s.label}</span>
-        ${isCustom ? `<label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-tertiary);cursor:pointer;margin-right:4px" onclick="event.stopPropagation()"><input type="checkbox" ${isCrew?'checked':''} data-toggle-days="${si}" style="cursor:pointer" /> days</label>` : ''}
         <span class="bsec-amt" id="bamt-${si}">${s.enabled&&sn>0?gbpA(sn):''}</span>
         <button class="bsec-tog ${s.enabled?'on':''}" data-toggle-sec="${si}">${s.enabled?'On':'Off'}</button>
         <span class="bsec-chev ${s.open?'open':''}">▶</span>
       </div>
       <div class="bsec-body ${s.open?'open':''}">
         <table class="bl-table" style="table-layout:fixed"><colgroup>
-          ${isCrew
-            ? `<col style="width:28%" /><col style="width:12%" /><col style="width:58px" /><col style="width:50px" /><col style="width:66px" /><col style="width:66px" /><col style="width:76px" /><col style="width:14%" />`
-            : `<col style="width:38%" /><col style="width:16%" /><col style="width:60px" /><col style="width:80px" /><col style="width:80px" /><col style="width:18%" />`
-          }
+          <col style="width:22px" />
+          <col style="width:30%" />
+          <col style="width:13%" />
+          <col style="width:58px" />
+          <col style="width:46px" />
+          <col style="width:58px" />
+          <col style="width:70px" />
+          <col style="width:70px" />
+          <col />
         </colgroup><thead><tr>
+          <th title="Use days">D</th>
           <th>Item</th>
           <th>Notes</th>
-          ${isCrew ? `<th class="r">Days</th><th class="r">Qty</th><th class="r">Travel days</th>` : `<th class="r">Qty</th>`}
+          <th class="r">Days</th>
+          <th class="r">Qty</th>
+          <th class="r">Travel</th>
           <th class="r">Rate £</th>
           <th class="r">Total</th>
           <th></th>
         </tr></thead><tbody>
-          ${(s.lines||[]).map((l,li) => this.lineHTML(si, li, l, isCrew)).join('')}
+          ${(s.lines||[]).map((l,li) => this.lineHTML(si, li, l)).join('')}
           <tr class="sub">
-            <td colspan="${isCrew?7:5}" style="text-align:right;color:var(--text-secondary);font-size:11px;padding-right:8px">Section total</td>
+            <td colspan="7" style="text-align:right;color:var(--text-secondary);font-size:11px;padding-right:8px">Section total</td>
             <td style="text-align:right" id="bst-${si}">${gbpA(sn)}</td><td></td>
           </tr>
         </tbody></table>
@@ -349,17 +357,26 @@ export class BudgetsView {
     </div>`
   }
 
-  lineHTML(si, li, l, isCrew) {
-    const t = lineTotal(l, isCrew)
+  lineHTML(si, li, l) {
+    // useDays defaults true for existing crew lines (those with a travelDays field defined)
+    const useDays = !!(l.useDays ?? (l.travelDays !== undefined))
+    const t = lineTotal(l)
+    const dim = 'color:var(--text-tertiary);font-size:11px;text-align:center'
     return `<tr id="bl-${si}-${li}">
+      <td style="text-align:center;padding:4px 4px">
+        <input type="checkbox" title="Days-based line" ${useDays?'checked':''} data-toggle-line-days="${si},${li}" style="cursor:pointer;width:13px;height:13px" />
+      </td>
       <td><input class="bl-in w" value="${esc(l.item)}" placeholder="Item" data-field="${si},${li},item" /></td>
       <td><input class="bl-in w" value="${esc(l.notes||'')}" placeholder="Notes" data-field="${si},${li},notes" /></td>
-      ${isCrew
-        ? `<td><input class="bl-in w" type="number" value="${l.days||''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},days" style="text-align:right" /></td>
-           <td><input class="bl-in w" type="number" value="${l.qty??1}" placeholder="1" min="0" data-num="${si},${li},qty" style="text-align:right" /></td>
-           <td><input class="bl-in w" type="number" value="${l.travelDays||0}" placeholder="0" min="0" step="0.5" data-num="${si},${li},travelDays" style="text-align:right" /></td>`
-        : `<td><input class="bl-in w" type="number" value="${l.qty??1}" placeholder="1" min="0" data-num="${si},${li},qty" style="text-align:right" /></td>`
-      }
+      <td>${useDays
+        ? `<input class="bl-in w" type="number" value="${l.days||''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},days" style="text-align:right" />`
+        : `<span style="${dim}">—</span>`}
+      </td>
+      <td><input class="bl-in w" type="number" value="${l.qty??1}" placeholder="1" min="1" data-num="${si},${li},qty" style="text-align:right" /></td>
+      <td>${useDays
+        ? `<input class="bl-in w" type="number" value="${l.travelDays??0}" placeholder="0" min="0" step="0.5" data-num="${si},${li},travelDays" style="text-align:right" title="Travel days @ 50% rate" />`
+        : `<span style="${dim}">—</span>`}
+      </td>
       <td><input class="bl-in w" type="number" value="${l.rate||''}" placeholder="0" min="0" data-num="${si},${li},rate" style="text-align:right" /></td>
       <td class="bl-tot ${t>0?'nz':''}" id="blt-${si}-${li}">${t>0?gbpA(t):'—'}</td>
       <td style="text-align:right"><button class="row-btn" style="color:#c03020" data-rem-line="${si},${li}">×</button></td>
@@ -422,11 +439,13 @@ export class BudgetsView {
       })
     })
 
-    // hasDays toggle for custom sections
-    mc.querySelectorAll('[data-toggle-days]').forEach(el => {
+    // Per-line days toggle
+    mc.querySelectorAll('[data-toggle-line-days]').forEach(el => {
       el.addEventListener('change', () => {
-        const si = +el.dataset.toggleDays
-        sections[si].hasDays = el.checked
+        const [si, li] = el.dataset.toggleLineDays.split(',').map(Number)
+        const l = sections[si].lines[li]
+        l.useDays = el.checked
+        if (el.checked && l.travelDays === undefined) l.travelDays = 0
         save(); this.renderEditor(mc)
       })
     })
@@ -457,16 +476,20 @@ export class BudgetsView {
         const [si,li,field] = el.dataset.num.split(',')
         const s = sections[+si]; const l = s.lines[+li]
         l[field] = parseFloat(el.value) || 0
-        const isCrew = !!(s.crew || s.hasDays)
-        // Auto-enable when a value is entered
-        const triggers = isCrew ? field === 'days' && l.days > 0 : (field === 'qty' || field === 'rate') && l.qty > 0 && l.rate > 0
-        if (triggers && !s.enabled) {
-          s.enabled = true; s.open = true
-          mc.querySelector(`#bsw-${si} .bsec-head`)?.classList.add('enabled')
-          const tog = mc.querySelector(`#bsw-${si} .bsec-tog`)
-          if (tog) { tog.classList.add('on'); tog.textContent = 'On' }
+        const useDays = !!(l.useDays ?? (l.travelDays !== undefined))
+        // Auto-enable section when a meaningful value is entered
+        if (!s.enabled) {
+          const triggers = useDays
+            ? field === 'days' && l.days > 0
+            : (field === 'qty' || field === 'rate') && (parseFloat(l.qty)||0) > 0 && (parseFloat(l.rate)||0) > 0
+          if (triggers) {
+            s.enabled = true; s.open = true
+            mc.querySelector(`#bsw-${si} .bsec-head`)?.classList.add('enabled')
+            const tog = mc.querySelector(`#bsw-${si} .bsec-tog`)
+            if (tog) { tog.classList.add('on'); tog.textContent = 'On' }
+          }
         }
-        const t = lineTotal(l, isCrew)
+        const t = lineTotal(l)
         const ltEl = mc.querySelector(`#blt-${si}-${li}`)
         if (ltEl) { ltEl.textContent = t>0?gbpA(t):'—'; ltEl.className = 'bl-tot'+(t>0?' nz':'') }
         const stEl = mc.querySelector(`#bst-${si}`)
@@ -478,12 +501,12 @@ export class BudgetsView {
       })
     })
 
-    // Add line
+    // Add line — crew sections default to days-based
     mc.querySelectorAll('[data-add-line]').forEach(btn => {
       btn.addEventListener('click', () => {
         const si = +btn.dataset.addLine
-        const isCrew = !!(sections[si].crew || sections[si].hasDays)
-        sections[si].lines.push({ item:'', notes:'', qty:1, rate:null, ...(isCrew ? {days:0, travelDays:0} : {}) })
+        const defaultDays = !!sections[si].crew
+        sections[si].lines.push({ item:'', notes:'', useDays: defaultDays, qty:1, rate:null, ...(defaultDays ? {days:0, travelDays:0} : {}) })
         save(); this.renderEditor(mc)
       })
     })
@@ -527,7 +550,10 @@ export class BudgetsView {
     ;(b.sections||[]).filter(s=>s.enabled).forEach(s => {
       const al = (s.lines||[]).filter(l => hasValue(l))
       if (!al.length) return
-      al.forEach(l => rows.push([s.code+' — '+s.label, l.item, l.notes||'', l.days||0, l.qty||1, l.travelDays!=null?l.travelDays||0:'N/A', l.rate||0, Math.round(lineTotal(l))]))
+      al.forEach(l => {
+        const useDays = !!(l.useDays ?? (l.travelDays !== undefined))
+        rows.push([s.code+' — '+s.label, l.item, l.notes||'', useDays?l.days||0:'N/A', l.qty||1, useDays&&l.travelDays!=null?l.travelDays||0:'N/A', l.rate||0, Math.round(lineTotal(l))])
+      })
       rows.push([s.code+' SUBTOTAL','','','','','','',Math.round(secNet(s))]); rows.push([])
     })
     rows.push(['NET TOTAL','','','','','','',Math.round(net)])
@@ -598,7 +624,6 @@ export class BudgetsView {
     activeSecs.forEach(sec => {
       const al = (sec.lines||[]).filter(l => hasValue(l))
       if (!al.length) return
-      const isCrew = !!sec.crew
       detailSecHTML += `
         <div class="pdf-section">
           <div class="pdf-section-header">
@@ -609,16 +634,17 @@ export class BudgetsView {
           <div class="pdf-col-heads">
             <div class="pdf-col-head" style="text-align:left">Item</div>
             <div class="pdf-col-head">Days</div><div class="pdf-col-head">Qty</div>
-            <div class="pdf-col-head">${isCrew?'Travel':'Rate'}</div>
+            <div class="pdf-col-head">Travel / Rate</div>
             <div class="pdf-col-head">Total</div>
           </div>
           ${al.map(l => {
+            const useDays = !!(l.useDays ?? (l.travelDays !== undefined))
             const t=lineTotal(l),d=parseFloat(l.days)||0,q=parseFloat(l.qty)||1,r=parseFloat(l.rate)||0,td=parseFloat(l.travelDays)||0
             return `<div class="pdf-line">
-              <div class="pdf-line-item">${esc(l.item)}${l.notes?`<div class="pdf-line-sub">${esc(l.notes)}</div>`:''}${isCrew&&td>0?`<div class="pdf-line-sub">+${td} travel day${td!==1?'s':''} @ 50%</div>`:''}</div>
-              <div class="pdf-line-num">${d>0?d:''}</div>
-              <div class="pdf-line-num">${d>0&&q!==1?q:''}</div>
-              <div class="pdf-line-num">${isCrew?(td>0?gbpA(r*td*0.5):''):(r>0?gbpA(r):'')}</div>
+              <div class="pdf-line-item">${esc(l.item)}${l.notes?`<div class="pdf-line-sub">${esc(l.notes)}</div>`:''}${useDays&&td>0?`<div class="pdf-line-sub">+${td} travel day${td!==1?'s':''} @ 50%</div>`:''}</div>
+              <div class="pdf-line-num">${useDays&&d>0?d:''}</div>
+              <div class="pdf-line-num">${useDays?(d>0&&q!==1?q:''):q}</div>
+              <div class="pdf-line-num">${useDays?(td>0?gbpA(r*td*0.5):''):(r>0?gbpA(r):'')}</div>
               <div class="pdf-line-total">${gbpA(t)}</div>
             </div>`
           }).join('')}
