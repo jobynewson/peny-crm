@@ -70,6 +70,8 @@ export const budgets = pgTable('budgets', {
   custom_pct:  numeric('custom_pct', { precision: 5, scale: 2 }).notNull().default('0'),
   vat:         boolean('vat').notNull().default(false),
   include_in_pipeline: boolean('include_in_pipeline').notNull().default(false),
+  travel_rate: numeric('travel_rate', { precision: 5, scale: 2 }).notNull().default('50'),
+  discount:    numeric('discount', { precision: 5, scale: 2 }).notNull().default('0'),
   sections:    jsonb('sections').notNull().default([]),
   ...timestamps,
 })
@@ -79,4 +81,39 @@ export const project_budgets = pgTable('project_budgets', {
   project_id: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
   budget_id:  uuid('budget_id').notNull().references(() => budgets.id,  { onDelete: 'cascade' }),
   created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// ── App users & permissions ───────────────────────────────────────────────────
+export const app_users = pgTable('app_users', {
+  id:          uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  clerk_id:    text('clerk_id').notNull().unique(),
+  email:       text('email').notNull(),
+  name:        text('name'),
+  role:        text('role').notNull().default('member'),
+  permissions: jsonb('permissions').notNull().default({}),
+  invited_by:  text('invited_by'),
+  created_at:  timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updated_at:  timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// ── Budget versions ───────────────────────────────────────────────────────────
+export const budget_versions = pgTable('budget_versions', {
+  id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  budget_id:  uuid('budget_id').notNull().references(() => budgets.id, { onDelete: 'cascade' }),
+  user_id:    text('user_id').notNull(),
+  name:       text('name').notNull().default('Auto-save'),
+  is_auto:    boolean('is_auto').notNull().default(true),
+  snapshot:   jsonb('snapshot').notNull(),
+  created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// ── Activity log (projects + contacts) ───────────────────────────────────────
+export const activity_log = pgTable('activity_log', {
+  id:          uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id:     text('user_id').notNull(),
+  entity_type: text('entity_type').notNull(),
+  entity_id:   uuid('entity_id').notNull(),
+  entity_name: text('entity_name').notNull(),
+  summary:     text('summary').notNull(),
+  created_at:  timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })

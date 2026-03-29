@@ -1,4 +1,4 @@
-import { createBudget, updateBudget, deleteBudget } from '../db/client.js'
+import { createBudget, updateBudget, deleteBudget, saveBudgetVersion, getBudgetVersions, deleteBudgetVersion } from '../db/client.js'
 
 const SECTIONS = [
   {code:'A1',label:'Pre-production — Scouting',lines:[{item:'Location Scout (Director)',days:0,qty:1,rate:501},{item:'Assistant Location Scout',days:0,qty:1,rate:369},{item:'Location Scout car / mileage',days:0,qty:1,rate:null},{item:'Congestion Charge',days:0,qty:1,rate:13},{item:'Unit Driver / Bus Hire',days:0,qty:1,rate:450},{item:'Subsistence',days:0,qty:1,rate:null},{item:'Flights',days:0,qty:1,rate:null},{item:'Accommodation',days:0,qty:1,rate:null}]},
@@ -18,14 +18,25 @@ const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').re
 const gbpA = n => '£' + Math.round(n).toLocaleString('en-GB')
 const moy = () => { const d = new Date(); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] + ' ' + d.getFullYear() }
 
-function lineTotal(l) {
-  const useDays = !!(l.useDays ?? (l.travelDays !== undefined)) // backwards compat with existing crew lines
-  const d = parseFloat(l.days)||0, q = parseFloat(l.qty)||1, r = parseFloat(l.rate)||0, td = parseFloat(l.travelDays)||0
-  if (useDays) return d*q*r + td*0.5*r
-  return q*r
+function lineTotal(l, travelRate) {
+  const useDays = !!(l.useDays ?? (l.travelDays !== undefined))
+  const d = parseFloat(l.days)||0
+  const q = parseFloat(l.qty)   // allow 0
+  const qty = isNaN(q) ? 1 : q
+  const r = parseFloat(l.rate)||0
+  const td = parseFloat(l.travelDays)||0
+  const tr = parseFloat(travelRate)||50  // travel rate as percentage e.g. 50
+  const disc = Math.min(Math.max(parseFloat(l.discount)||0, 0), 100) // 0-100%
+  let gross
+  if (useDays) gross = d*qty*r + td*(tr/100)*r
+  else         gross = qty*r
+  return gross * (1 - disc/100)
 }
-function secNet(s)  { return (s.lines||[]).reduce((t,l) => t + lineTotal(l), 0) }
-function budNet(b)  { return (b.sections||[]).filter(s=>s.enabled).reduce((t,s) => t + secNet(s), 0) }
+function secNet(s, travelRate)  { return (s.lines||[]).reduce((t,l) => t + lineTotal(l, travelRate), 0) }
+function budNet(b)  {
+  const tr = parseFloat(b.travel_rate)||50
+  return (b.sections||[]).filter(s=>s.enabled).reduce((t,s) => t + secNet(s, tr), 0)
+}
 function budTotal(b) {
   const n = budNet(b)
   const afterFee = n + n * ((parseFloat(b.markup)||0)/100)
@@ -34,7 +45,10 @@ function budTotal(b) {
 }
 const hasValue = l => {
   const useDays = !!(l.useDays ?? (l.travelDays !== undefined))
-  return useDays ? ((parseFloat(l.days)||0) > 0 || (parseFloat(l.travelDays)||0) > 0) : ((parseFloat(l.qty)||0) > 0 && (parseFloat(l.rate)||0) > 0)
+  const qty = parseFloat(l.qty); const qtyOk = !isNaN(qty)  // 0 is valid
+  return useDays
+    ? ((parseFloat(l.days)||0) > 0 || (parseFloat(l.travelDays)||0) > 0)
+    : (qtyOk && (parseFloat(l.rate)||0) > 0)
 }
 
 export { budTotal, budNet }
@@ -43,11 +57,16 @@ export class BudgetsView {
   constructor(app) {
     this.app = app
     this.currentId = null
+    this.editingId = null
   }
 
   render(mc) {
-    if (this.currentId) this.renderEditor(mc)
-    else this.renderList(mc)
+    if (this.currentId) {
+      if (this.editingId === this.currentId) this.renderEditor(mc)
+      else this.renderViewer(mc)
+    } else {
+      this.renderList(mc)
+    }
   }
 
   // ── List ────────────────────────────────────────────────────────────────────
@@ -233,6 +252,7 @@ export class BudgetsView {
 
       mc.querySelector('#budget-new-modal')?.classList.remove('open')
       this.currentId = created.id
+      this.editingId = created.id  // open straight into edit mode
       this.render(mc)
       this.app.updateTitle()
       this.app.toast('Budget created')
@@ -249,6 +269,122 @@ export class BudgetsView {
     } catch (e) { console.error(e); this.app.toast('Error deleting budget') }
   }
 
+  // ── Viewer (read-only) ───────────────────────────────────────────────────────
+
+  renderViewer(mc) {
+    const b = this.app.budgets.find(x => x.id === this.currentId)
+    if (!b) { this.currentId = null; this.renderList(mc); return }
+    const { contacts, projects } = this.app
+    const cl = contacts.find(c => c.id === b.client_id)
+    const proj = projects.find(p => Array.isArray(p.budget_ids) && p.budget_ids.includes(b.id))
+    const edTr = parseFloat(b.travel_rate)||50
+    const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100), afterFee = net+mu
+    const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
+    const vatVal = b.vat ? afterCustom*0.2 : 0, tot = afterCustom+vatVal
+    const activeSecs = (b.sections||[]).filter(s => s.enabled && secNet(s, edTr) > 0)
+    const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+
+    mc.innerHTML = `
+      <div class="bh-row">
+        <button class="btn-secondary" id="bv-back">← All budgets</button>
+        <h2 style="flex:1;font-size:15px;font-weight:500">${esc(b.name)}</h2>
+        <button class="btn-secondary" id="bv-history" style="font-size:12px">History</button>
+        <button class="btn-secondary" id="bv-csv">Export CSV</button>
+        <button class="btn-secondary" id="bv-pdf">Export PDF</button>
+        ${this.app.permissions?.budgets_edit ? `<button class="btn-primary" id="bv-edit">Edit budget</button>` : ''}
+      </div>
+      <div id="bv-history-panel" style="display:none;background:var(--bg-secondary);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:16px"></div>
+      ${b.notes ? `<div style="background:var(--bg-secondary);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:16px;font-size:13px;color:var(--text-secondary);line-height:1.6">${esc(b.notes)}</div>` : ''}
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+        ${cl ? `<span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary)">${esc(cl.first_name)} ${esc(cl.last_name)} — ${esc(cl.company)}</span>` : ''}
+        ${proj ? `<span class="tag" style="background:#daeeff;color:#0d4a8a">${esc(proj.name)}</span>` : ''}
+        ${b.vat ? `<span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary)">VAT included</span>` : ''}
+      </div>
+      <div class="budget-layout">
+        <div class="budget-main">
+          ${activeSecs.length ? activeSecs.map(s => {
+            const activeLines = (s.lines||[]).filter(l => hasValue(l))
+            const isCrew = !!s.crew
+            return `<div class="bsec-wrap" style="margin-bottom:8px">
+              <div class="bsec-head enabled" style="cursor:default">
+                <span class="bsec-code">${s.code}</span>
+                <span class="bsec-name">${s.label}</span>
+                <span class="bsec-amt">${gbpA(secNet(s,edTr))}</span>
+              </div>
+              <div class="bsec-body open">
+                <table class="bl-table" style="table-layout:fixed"><colgroup>
+                  <col style="width:35%"/><col style="width:15%"/><col style="width:10%"/><col style="width:10%"/><col style="width:10%"/><col style="width:10%"/><col/>
+                </colgroup><thead><tr>
+                  <th>Item</th><th>Notes</th><th class="r">Days/Qty</th><th class="r">Rate</th><th class="r">Disc%</th><th class="r">Total</th><th></th>
+                </tr></thead><tbody>
+                  ${activeLines.map(l => {
+                    const useDays = !!(l.useDays??(l.travelDays!==undefined))
+                    const t = lineTotal(l, edTr)
+                    const d = parseFloat(l.days)||0, q = isNaN(parseFloat(l.qty))?1:parseFloat(l.qty), r = parseFloat(l.rate)||0
+                    const dqStr = useDays ? `${d}d × ${q}` : `×${q}`
+                    return `<tr>
+                      <td style="font-size:12px;padding:6px 8px">${esc(l.item)}${l.notes?`<div style="font-size:10px;color:var(--text-tertiary)">${esc(l.notes)}</div>`:''}</td>
+                      <td style="font-size:12px;padding:6px 8px;color:var(--text-tertiary)"></td>
+                      <td style="font-size:12px;padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums">${dqStr}</td>
+                      <td style="font-size:12px;padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums">${r>0?gbpA(r):''}</td>
+                      <td style="font-size:12px;padding:6px 8px;text-align:right;color:var(--text-tertiary)">${(parseFloat(l.discount)||0)>0?l.discount+'%':''}</td>
+                      <td class="bl-tot nz" style="padding:6px 8px">${gbpA(t)}</td>
+                      <td></td>
+                    </tr>`
+                  }).join('')}
+                </tbody></table>
+              </div>
+            </div>`
+          }).join('') : '<div class="empty-state">No line items yet — click Edit budget to add sections.</div>'}
+        </div>
+        <div class="budget-sidebar-panel">
+          <div class="bsum-card">
+            <div class="bsum-head">Summary</div>
+            ${activeSecs.map(s=>`<div class="bsum-row"><span class="sk">${s.code} ${s.label.split('—')[0].split(' ').slice(0,3).join(' ').trim()}</span><span class="sv">${gbpA(secNet(s,edTr))}</span></div>`).join('')}
+            <div class="bsum-row" style="border-top:0.5px solid var(--border-light)"><span class="sk">Net total</span><span class="sv">${gbpA(net)}</span></div>
+            ${(parseFloat(b.markup)||0)>0?`<div class="bsum-row"><span class="sk">Production fee (${b.markup}%)</span><span class="sv">${gbpA(mu)}</span></div>`:''}
+            ${(parseFloat(b.custom_pct)||0)>0?`<div class="bsum-row"><span class="sk">Add-on (${b.custom_pct}%)</span><span class="sv">${gbpA(customVal)}</span></div>`:''}
+            ${b.vat?`<div class="bsum-row"><span class="sk">VAT (20%)</span><span class="sv">${gbpA(vatVal)}</span></div>`:''}
+            <div class="bsum-row grand"><span class="sk">Grand total</span><span class="sv">${gbpA(tot)}</span></div>
+          </div>
+          ${(b.prepared_by||this.app.settings?.prepared_by) ? `<div style="font-size:11px;color:var(--text-tertiary);padding:4px 2px">Prepared by ${esc(b.prepared_by||this.app.settings?.prepared_by)}</div>` : ''}
+        </div>
+      </div>`
+
+    mc.querySelector('#bv-back')?.addEventListener('click', () => {
+      this.currentId = null; this.editingId = null; this.renderList(mc); this.app.updateTitle()
+    })
+    mc.querySelector('#bv-edit')?.addEventListener('click', () => {
+      this.editingId = this.currentId; this.render(mc)
+    })
+    mc.querySelector('#bv-csv')?.addEventListener('click', () => this.exportCSV(b))
+    mc.querySelector('#bv-pdf')?.addEventListener('click', () => this.exportPDF(b))
+    mc.querySelector('#bv-history')?.addEventListener('click', async () => {
+      const panel = mc.querySelector('#bv-history-panel')
+      if (!panel) return
+      if (panel.style.display !== 'none') { panel.style.display = 'none'; return }
+      panel.style.display = 'block'
+      panel.innerHTML = '<div style="font-size:11px;color:var(--text-tertiary)">Loading versions…</div>'
+      try {
+        const versions = await getBudgetVersions(b.id)
+        if (!versions.length) { panel.innerHTML = '<div style="font-size:12px;color:var(--text-tertiary)">No versions saved yet. Open the editor and save a version.</div>'; return }
+        const fmt = ts => new Date(ts).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) + ' ' + new Date(ts).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})
+        panel.innerHTML = `<div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Version history</div>` +
+          versions.map(v => `
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:0.5px solid var(--border-light)">
+              <div style="flex:1">
+                <div style="font-size:12px;font-weight:${v.is_auto?'400':'500'};color:${v.is_auto?'var(--text-tertiary)':'var(--text-primary)'}">${v.name}</div>
+                <div style="font-size:10px;color:var(--text-tertiary)">${fmt(v.created_at)}</div>
+              </div>
+              <button class="row-btn" data-bv-restore="${v.id}" style="font-size:11px">Restore</button>
+            </div>`).join('')
+        panel.querySelectorAll('[data-bv-restore]').forEach(btn => {
+          btn.addEventListener('click', () => this._restoreVersion(btn.dataset.bvRestore, versions, b, mc))
+        })
+      } catch(e) { panel.innerHTML = '<div style="font-size:12px;color:var(--text-tertiary)">Could not load versions</div>' }
+    })
+  }
+
   // ── Editor ──────────────────────────────────────────────────────────────────
 
   renderEditor(mc) {
@@ -258,14 +394,16 @@ export class BudgetsView {
     const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100), afterFee = net+mu
     const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
     const vatVal = b.vat ? afterCustom*0.2 : 0, tot = afterCustom+vatVal
-    const activeSecs = sections.filter(s => s.enabled && secNet(s) > 0)
+    const edTr = parseFloat(b.travel_rate)||50
+    const activeSecs = sections.filter(s => s.enabled && secNet(s, edTr) > 0)
 
     mc.innerHTML = `
       <div class="bh-row">
         <button class="btn-secondary" id="back-to-list">← All budgets</button>
         <input type="text" id="be-name" value="${esc(b.name)}" style="flex:1;font-size:15px;font-weight:500;background:transparent;border:none;outline:none;border-bottom:1.5px solid transparent;padding:2px 4px;border-radius:0;color:var(--text-primary);font-family:var(--font);transition:border-color 0.15s" onfocus="this.style.borderBottomColor='var(--border-strong)'" onblur="this.style.borderBottomColor='transparent'" placeholder="Budget title" />
         <button class="btn-secondary" id="be-csv">Export CSV</button>
-        <button class="btn-primary"   id="be-pdf">Export PDF</button>
+        <button class="btn-secondary" id="be-pdf">Export PDF</button>
+        <button class="btn-primary"   id="be-save-close">Save &amp; close</button>
       </div>
       ${b.notes ? `<div style="background:var(--bg-secondary);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:16px;font-size:13px;color:var(--text-secondary);line-height:1.6">${esc(b.notes)}</div>` : ''}
       <div class="budget-layout">
@@ -273,8 +411,10 @@ export class BudgetsView {
           <div class="mu-row">
             <div class="mu-field">Production fee <input type="number" id="be-markup" value="${b.markup}" min="0" max="100"> %</div>
             <div class="mu-field">Custom add-on <input type="number" id="be-custom" value="${b.custom_pct||0}" min="0"> %</div>
+            <div class="mu-field">Travel rate <input type="number" id="be-travelrate" value="${b.travel_rate??50}" min="0" max="100"> %</div>
+            <div class="mu-field">Discount <input type="number" id="be-discount" value="${b.discount||0}" min="0" max="100" placeholder="0"> %</div>
             <div class="mu-field"><label style="display:flex;align-items:center;gap:7px;cursor:pointer"><input type="checkbox" id="be-vat" ${b.vat?'checked':''} style="cursor:pointer" /> VAT (20%)</label></div>
-            <span style="font-size:11px;color:var(--text-tertiary);margin-left:auto">Enter days to auto-enable a section</span>
+            <span style="font-size:11px;color:var(--text-tertiary);margin-left:auto">Tick Daily Rate per line to enable days-based pricing</span>
           </div>
           <div id="be-sections">
             ${sections.map((s,si) => this.sectionHTML(b, s, si)).join('')}
@@ -284,7 +424,7 @@ export class BudgetsView {
         <div class="budget-sidebar-panel">
           <div class="bsum-card">
             <div class="bsum-head">Summary</div>
-            ${activeSecs.length ? activeSecs.map(s=>`<div class="bsum-row"><span class="sk">${s.code} ${s.label.split('—')[0].split(' ').slice(0,3).join(' ').trim()}</span><span class="sv">${gbpA(secNet(s))}</span></div>`).join('') : '<div style="padding:10px 15px;font-size:12px;color:var(--text-tertiary)">No sections active</div>'}
+            ${activeSecs.length ? activeSecs.map(s=>`<div class="bsum-row"><span class="sk">${s.code} ${s.label.split('—')[0].split(' ').slice(0,3).join(' ').trim()}</span><span class="sv">${gbpA(secNet(s,edTr))}</span></div>`).join('') : '<div style="padding:10px 15px;font-size:12px;color:var(--text-tertiary)">No sections active</div>'}
             <div class="bsum-row" style="border-top:0.5px solid var(--border-light)"><span class="sk">Net total</span><span class="sv">${gbpA(net)}</span></div>
             ${(parseFloat(b.markup)||0)>0 ? `<div class="bsum-row"><span class="sk">Production fee (${b.markup}%)</span><span class="sv">${gbpA(mu)}</span></div>` : ''}
             ${(parseFloat(b.custom_pct)||0)>0 ? `<div class="bsum-row"><span class="sk">Add-on (${b.custom_pct}%)</span><span class="sv">${gbpA(customVal)}</span></div>` : ''}
@@ -304,6 +444,16 @@ export class BudgetsView {
               <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">Reply-to email</div>
               <input class="bl-in w" type="email" id="be-email" value="${esc(b.quote_email||this.app.settings?.email)}" placeholder="${esc(this.app.settings?.email||'hello@yourcompany.com')}" style="font-size:12px;padding:5px 8px" />
             </div>
+            <div style="padding-top:4px;border-top:0.5px solid var(--border-light)">
+              <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Version history</div>
+              <div style="display:flex;gap:6px">
+                <input class="bl-in w" type="text" id="be-version-name" placeholder="e.g. Sent to client" style="font-size:12px;padding:5px 8px;flex:1" />
+                <button class="btn-secondary" id="be-save-version" style="font-size:11px;padding:5px 10px;white-space:nowrap">Save version</button>
+              </div>
+              <div id="be-version-list" style="margin-top:8px;display:flex;flex-direction:column;gap:4px;max-height:180px;overflow-y:auto">
+                <div style="font-size:11px;color:var(--text-tertiary)">Loading history…</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>`
@@ -312,7 +462,8 @@ export class BudgetsView {
   }
 
   sectionHTML(b, s, si) {
-    const sn = secNet(s)
+    const tr = parseFloat(b.travel_rate) || 50
+    const sn = secNet(s, tr)
     // All sections now use the same column layout:
     // ☐ | Item | Notes | Days | Qty | Travel | Rate | Total | ×
     // The Days and Travel cells are shown/hidden per line via the checkbox
@@ -326,29 +477,31 @@ export class BudgetsView {
       </div>
       <div class="bsec-body ${s.open?'open':''}">
         <table class="bl-table" style="table-layout:fixed"><colgroup>
-          <col style="width:22px" />
-          <col style="width:30%" />
-          <col style="width:13%" />
-          <col style="width:58px" />
-          <col style="width:46px" />
-          <col style="width:58px" />
-          <col style="width:70px" />
-          <col style="width:70px" />
+          <col style="width:80px" />
+          <col style="width:28%" />
+          <col style="width:11%" />
+          <col style="width:54px" />
+          <col style="width:50px" />
+          <col style="width:54px" />
+          <col style="width:64px" />
+          <col style="width:54px" />
+          <col style="width:64px" />
           <col />
         </colgroup><thead><tr>
-          <th title="Use days">D</th>
+          <th style="font-size:10px;white-space:nowrap" title="Tick for daily rate pricing">Daily Rate</th>
           <th>Item</th>
           <th>Notes</th>
           <th class="r">Days</th>
           <th class="r">Qty</th>
           <th class="r">Travel</th>
           <th class="r">Rate £</th>
+          <th class="r">Disc %</th>
           <th class="r">Total</th>
           <th></th>
         </tr></thead><tbody>
-          ${(s.lines||[]).map((l,li) => this.lineHTML(si, li, l)).join('')}
+          ${(s.lines||[]).map((l,li) => this.lineHTML(si, li, l, tr)).join('')}
           <tr class="sub">
-            <td colspan="7" style="text-align:right;color:var(--text-secondary);font-size:11px;padding-right:8px">Section total</td>
+            <td colspan="8" style="text-align:right;color:var(--text-secondary);font-size:11px;padding-right:8px">Section total</td>
             <td style="text-align:right" id="bst-${si}">${gbpA(sn)}</td><td></td>
           </tr>
         </tbody></table>
@@ -357,14 +510,14 @@ export class BudgetsView {
     </div>`
   }
 
-  lineHTML(si, li, l) {
-    // useDays defaults true for existing crew lines (those with a travelDays field defined)
+  lineHTML(si, li, l, travelRate) {
     const useDays = !!(l.useDays ?? (l.travelDays !== undefined))
-    const t = lineTotal(l)
+    const t = lineTotal(l, travelRate)
     const dim = 'color:var(--text-tertiary);font-size:11px;text-align:center'
+    const disc = l.discount != null ? l.discount : ''
     return `<tr id="bl-${si}-${li}">
-      <td style="text-align:center;padding:4px 4px">
-        <input type="checkbox" title="Days-based line" ${useDays?'checked':''} data-toggle-line-days="${si},${li}" style="cursor:pointer;width:13px;height:13px" />
+      <td style="text-align:center;padding:4px 8px">
+        <input type="checkbox" title="Daily rate (Days × Qty × Rate)" ${useDays?'checked':''} data-toggle-line-days="${si},${li}" style="cursor:pointer;width:13px;height:13px" />
       </td>
       <td><input class="bl-in w" value="${esc(l.item)}" placeholder="Item" data-field="${si},${li},item" /></td>
       <td><input class="bl-in w" value="${esc(l.notes||'')}" placeholder="Notes" data-field="${si},${li},notes" /></td>
@@ -372,12 +525,13 @@ export class BudgetsView {
         ? `<input class="bl-in w" type="number" value="${l.days||''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},days" style="text-align:right" />`
         : `<span style="${dim}">—</span>`}
       </td>
-      <td><input class="bl-in w" type="number" value="${l.qty??1}" placeholder="1" min="1" data-num="${si},${li},qty" style="text-align:right" /></td>
+      <td><input class="bl-in w" type="number" value="${l.qty??1}" placeholder="0" min="0" data-num="${si},${li},qty" style="text-align:right" /></td>
       <td>${useDays
-        ? `<input class="bl-in w" type="number" value="${l.travelDays??0}" placeholder="0" min="0" step="0.5" data-num="${si},${li},travelDays" style="text-align:right" title="Travel days @ 50% rate" />`
+        ? `<input class="bl-in w" type="number" value="${l.travelDays??0}" placeholder="0" min="0" step="0.5" data-num="${si},${li},travelDays" style="text-align:right" title="Travel days" />`
         : `<span style="${dim}">—</span>`}
       </td>
       <td><input class="bl-in w" type="number" value="${l.rate||''}" placeholder="0" min="0" data-num="${si},${li},rate" style="text-align:right" /></td>
+      <td><input class="bl-in w" type="number" value="${disc}" placeholder="0" min="0" max="100" step="0.5" data-num="${si},${li},discount" style="text-align:right" title="Discount %" /></td>
       <td class="bl-tot ${t>0?'nz':''}" id="blt-${si}-${li}">${t>0?gbpA(t):'—'}</td>
       <td style="text-align:right"><button class="row-btn" style="color:#c03020" data-rem-line="${si},${li}">×</button></td>
     </tr>`
@@ -387,15 +541,16 @@ export class BudgetsView {
     const sections = b.sections
     const save = () => this.saveField(b)
     const refreshSummary = () => {
+      const rsTr = parseFloat(b.travel_rate)||50
       const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100), afterFee = net+mu
       const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
       const vatVal = b.vat ? afterCustom*0.2 : 0, tot = afterCustom+vatVal
       const card = mc.querySelector('.bsum-card')
       if (!card) return
-      const activeSecs = sections.filter(s => s.enabled && secNet(s) > 0)
+      const activeSecs = sections.filter(s => s.enabled && secNet(s, rsTr) > 0)
       card.innerHTML = `
         <div class="bsum-head">Summary</div>
-        ${activeSecs.length ? activeSecs.map(s=>`<div class="bsum-row"><span class="sk">${s.code} ${s.label.split('—')[0].split(' ').slice(0,3).join(' ').trim()}</span><span class="sv">${gbpA(secNet(s))}</span></div>`).join('') : '<div style="padding:10px 15px;font-size:12px;color:var(--text-tertiary)">No sections active</div>'}
+        ${activeSecs.length ? activeSecs.map(s=>`<div class="bsum-row"><span class="sk">${s.code} ${s.label.split('—')[0].split(' ').slice(0,3).join(' ').trim()}</span><span class="sv">${gbpA(secNet(s,rsTr))}</span></div>`).join('') : '<div style="padding:10px 15px;font-size:12px;color:var(--text-tertiary)">No sections active</div>'}
         <div class="bsum-row" style="border-top:0.5px solid var(--border-light)"><span class="sk">Net total</span><span class="sv">${gbpA(net)}</span></div>
         ${(parseFloat(b.markup)||0)>0?`<div class="bsum-row"><span class="sk">Production fee (${b.markup}%)</span><span class="sv">${gbpA(mu)}</span></div>`:''}
         ${(parseFloat(b.custom_pct)||0)>0?`<div class="bsum-row"><span class="sk">Add-on (${b.custom_pct}%)</span><span class="sv">${gbpA(customVal)}</span></div>`:''}
@@ -403,7 +558,8 @@ export class BudgetsView {
         <div class="bsum-row grand"><span class="sk">Grand total</span><span class="sv">${gbpA(tot)}</span></div>`
     }
 
-    mc.querySelector('#back-to-list')?.addEventListener('click', () => { this.currentId = null; this.renderList(mc); this.app.updateTitle() })
+    mc.querySelector('#back-to-list')?.addEventListener('click', () => { this.currentId = null; this.editingId = null; this.renderList(mc); this.app.updateTitle() })
+    mc.querySelector('#be-save-close')?.addEventListener('click', () => { this.editingId = null; this.render(mc); this.app.updateTitle() })
     mc.querySelector('#be-name')?.addEventListener('change', e => {
       const val = e.target.value.trim()
       if (!val) { e.target.value = b.name; return }
@@ -412,10 +568,36 @@ export class BudgetsView {
     })
     mc.querySelector('#be-markup')?.addEventListener('change', e => { b.markup = parseFloat(e.target.value)||0; save(); refreshSummary() })
     mc.querySelector('#be-custom')?.addEventListener('change', e => { b.custom_pct = parseFloat(e.target.value)||0; save(); refreshSummary() })
+    mc.querySelector('#be-travelrate')?.addEventListener('change', e => { b.travel_rate = parseFloat(e.target.value)??50; save(); refreshSummary() })
+    mc.querySelector('#be-discount')?.addEventListener('change', e => {
+      const pct = Math.min(Math.max(parseFloat(e.target.value)||0, 0), 100)
+      b.discount = pct
+      // Autofill all line discount fields with the master value
+      sections.forEach(s => s.lines.forEach(l => { l.discount = pct }))
+      save(); this.renderEditor(mc)
+    })
     mc.querySelector('#be-vat')?.addEventListener('change',    e => { b.vat = e.target.checked; save(); refreshSummary() })
     mc.querySelector('#be-pipeline')?.addEventListener('change', e => { b.include_in_pipeline = e.target.checked; save() })
     mc.querySelector('#be-preparedby')?.addEventListener('change', e => { b.prepared_by = e.target.value; save() })
     mc.querySelector('#be-email')?.addEventListener('change',      e => { b.quote_email = e.target.value; save() })
+
+    // Version history
+    this._loadVersionList(mc, b)
+    mc.querySelector('#be-save-version')?.addEventListener('click', async () => {
+      const nameEl = mc.querySelector('#be-version-name')
+      const name = nameEl?.value.trim() || 'Unnamed version'
+      try {
+        const snapshot = {
+          name: b.name, markup: b.markup, custom_pct: b.custom_pct, vat: b.vat,
+          travel_rate: b.travel_rate??50, discount: b.discount??0,
+          sections: b.sections, prepared_by: b.prepared_by, quote_email: b.quote_email, notes: b.notes,
+        }
+        await saveBudgetVersion(this.app.userId, b.id, snapshot, name, false)
+        if (nameEl) nameEl.value = ''
+        this._loadVersionList(mc, b)
+        this.app.toast(`Version "${name}" saved`)
+      } catch(e) { console.error(e); this.app.toast('Error saving version') }
+    })
     mc.querySelector('#be-csv')?.addEventListener('click', () => this.exportCSV(b))
     mc.querySelector('#be-pdf')?.addEventListener('click', () => this.exportPDF(b))
     mc.querySelector('#be-add-section')?.addEventListener('click', () => {
@@ -489,13 +671,14 @@ export class BudgetsView {
             if (tog) { tog.classList.add('on'); tog.textContent = 'On' }
           }
         }
-        const t = lineTotal(l)
+        const tr = parseFloat(b.travel_rate)||50
+        const t = lineTotal(l, tr)
         const ltEl = mc.querySelector(`#blt-${si}-${li}`)
         if (ltEl) { ltEl.textContent = t>0?gbpA(t):'—'; ltEl.className = 'bl-tot'+(t>0?' nz':'') }
         const stEl = mc.querySelector(`#bst-${si}`)
-        if (stEl) stEl.textContent = gbpA(secNet(s))
+        if (stEl) stEl.textContent = gbpA(secNet(s, tr))
         const amtEl = mc.querySelector(`#bamt-${si}`)
-        if (amtEl) amtEl.textContent = s.enabled&&secNet(s)>0?gbpA(secNet(s)):''
+        if (amtEl) amtEl.textContent = s.enabled&&secNet(s,tr)>0?gbpA(secNet(s,tr)):''
         refreshSummary()
         save()
       })
@@ -522,16 +705,82 @@ export class BudgetsView {
     })
   }
 
+  async _loadVersionList(mc, b) {
+    const listEl = mc.querySelector('#be-version-list')
+    if (!listEl) return
+    try {
+      const versions = await getBudgetVersions(b.id)
+      if (!versions.length) {
+        listEl.innerHTML = '<div style="font-size:11px;color:var(--text-tertiary)">No versions saved yet</div>'
+        return
+      }
+      const fmt = ts => {
+        const d = new Date(ts)
+        return d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) + ' ' + d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})
+      }
+      listEl.innerHTML = versions.map(v => `
+        <div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:0.5px solid var(--border-light)" data-vid="${v.id}">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:11px;font-weight:${v.is_auto?'400':'500'};color:${v.is_auto?'var(--text-tertiary)':'var(--text-secondary)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${v.name}</div>
+            <div style="font-size:10px;color:var(--text-tertiary)">${fmt(v.created_at)}</div>
+          </div>
+          <button class="row-btn" data-restore="${v.id}" title="Restore this version" style="font-size:10px;flex-shrink:0">Restore</button>
+          <button class="row-btn" data-del-ver="${v.id}" style="font-size:10px;color:#b03020;flex-shrink:0">×</button>
+        </div>`).join('')
+
+      listEl.querySelectorAll('[data-restore]').forEach(btn => {
+        btn.addEventListener('click', () => this._restoreVersion(btn.dataset.restore, versions, b, mc))
+      })
+      listEl.querySelectorAll('[data-del-ver]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Delete this version?')) return
+          await deleteBudgetVersion(btn.dataset.delVer)
+          this._loadVersionList(mc, b)
+        })
+      })
+    } catch(e) { console.error(e); listEl.innerHTML = '<div style="font-size:11px;color:var(--text-tertiary)">Could not load history</div>' }
+  }
+
+  async _restoreVersion(versionId, versions, b, mc) {
+    const v = versions.find(x => x.id === versionId)
+    if (!v || !confirm(`Restore "${v.name}"? This will overwrite the current budget. A snapshot of the current state will be saved first.`)) return
+    try {
+      // Save current state as auto-snapshot before overwriting
+      const currentSnap = {
+        name: b.name, markup: b.markup, custom_pct: b.custom_pct, vat: b.vat,
+        travel_rate: b.travel_rate??50, discount: b.discount??0,
+        sections: b.sections, prepared_by: b.prepared_by, quote_email: b.quote_email, notes: b.notes,
+      }
+      await saveBudgetVersion(this.app.userId, b.id, currentSnap, 'Before restore', true)
+      // Apply snapshot
+      const snap = v.snapshot
+      Object.assign(b, snap)
+      await updateBudget(this.app.userId, b.id, snap)
+      const idx = this.app.budgets.findIndex(x => x.id === b.id)
+      if (idx >= 0) this.app.budgets[idx] = { ...this.app.budgets[idx], ...snap }
+      this.renderEditor(mc)
+      this.app.toast(`Restored to "${v.name}"`)
+    } catch(e) { console.error(e); this.app.toast('Restore failed') }
+  }
+
   async saveField(b) {
     try {
-      const [updated] = await updateBudget(this.app.userId, b.id, {
+      const data = {
         name: b.name,
         markup: b.markup, custom_pct: b.custom_pct, vat: b.vat,
+        travel_rate: b.travel_rate ?? 50, discount: b.discount ?? 0,
         sections: b.sections, prepared_by: b.prepared_by, quote_email: b.quote_email,
         notes: b.notes, include_in_pipeline: b.include_in_pipeline ?? false,
-      })
+      }
+      const [updated] = await updateBudget(this.app.userId, b.id, data)
       const idx = this.app.budgets.findIndex(x => x.id === b.id)
       if (idx >= 0) this.app.budgets[idx] = { ...this.app.budgets[idx], ...updated }
+      // Auto-snapshot (throttled — max one per 30s to avoid flood on rapid edits)
+      const now = Date.now()
+      if (!b._lastAutoSnap || now - b._lastAutoSnap > 30000) {
+        b._lastAutoSnap = now
+        saveBudgetVersion(this.app.userId, b.id, data, 'Auto-save', true).catch(console.error)
+      }
     } catch (e) { console.error('Budget save failed:', e) }
   }
 
@@ -544,23 +793,24 @@ export class BudgetsView {
     const vatVal = b.vat ? afterCustom*0.2 : 0
     let rows = [
       ['Budget',b.name],['Client',cl?cl.first_name+' '+cl.last_name:''],
-      ['Production fee %',b.markup],['Custom add-on %',b.custom_pct||0],['VAT',b.vat?'Yes':'No'],[''],
-      ['Section','Item','Notes','Days','Qty','Travel Days','Rate (£)','Total (£)']
+      ['Production fee %',b.markup],['Custom add-on %',b.custom_pct||0],['Travel rate %',b.travel_rate??50],['Master discount %',b.discount||0],['VAT',b.vat?'Yes':'No'],[''],
+      ['Section','Item','Notes','Days','Qty','Travel Days','Rate (£)','Discount %','Total (£)']
     ]
+    const tr = parseFloat(b.travel_rate)||50
     ;(b.sections||[]).filter(s=>s.enabled).forEach(s => {
       const al = (s.lines||[]).filter(l => hasValue(l))
       if (!al.length) return
       al.forEach(l => {
         const useDays = !!(l.useDays ?? (l.travelDays !== undefined))
-        rows.push([s.code+' — '+s.label, l.item, l.notes||'', useDays?l.days||0:'N/A', l.qty||1, useDays&&l.travelDays!=null?l.travelDays||0:'N/A', l.rate||0, Math.round(lineTotal(l))])
+        rows.push([s.code+' — '+s.label, l.item, l.notes||'', useDays?l.days||0:'N/A', l.qty??1, useDays&&l.travelDays!=null?l.travelDays||0:'N/A', l.rate||0, l.discount||0, Math.round(lineTotal(l,tr))])
       })
-      rows.push([s.code+' SUBTOTAL','','','','','','',Math.round(secNet(s))]); rows.push([])
+      rows.push([s.code+' SUBTOTAL','','','','','','','',Math.round(secNet(s,tr))]); rows.push([])
     })
-    rows.push(['NET TOTAL','','','','','','',Math.round(net)])
-    if ((parseFloat(b.markup)||0)>0)     rows.push(['PRODUCTION FEE ('+b.markup+'%)','','','','','','',Math.round(mu)])
-    if ((parseFloat(b.custom_pct)||0)>0) rows.push(['CUSTOM ADD-ON ('+b.custom_pct+'%)','','','','','','',Math.round(customVal)])
-    if (b.vat)                           rows.push(['VAT (20%)','','','','','','',Math.round(vatVal)])
-    rows.push(['GRAND TOTAL','','','','','','',Math.round(afterCustom+vatVal)])
+    rows.push(['NET TOTAL','','','','','','','',Math.round(net)])
+    if ((parseFloat(b.markup)||0)>0)     rows.push(['PRODUCTION FEE ('+b.markup+'%)','','','','','','','',Math.round(mu)])
+    if ((parseFloat(b.custom_pct)||0)>0) rows.push(['CUSTOM ADD-ON ('+b.custom_pct+'%)','','','','','','','',Math.round(customVal)])
+    if (b.vat)                           rows.push(['VAT (20%)','','','','','','','',Math.round(vatVal)])
+    rows.push(['GRAND TOTAL','','','','','','','',Math.round(afterCustom+vatVal)])
     const csv = rows.map(r => r.map(v => '"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n')
     const a = document.createElement('a')
     a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv)
@@ -574,6 +824,7 @@ export class BudgetsView {
   exportPDF(b) {
     const cl = this.app.contacts.find(c => c.id === b.client_id)
     const s  = this.app.settings || {}
+    const pdfTr = parseFloat(b.travel_rate)||50
     const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100), afterFee = net+mu
     const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
     const vatVal = b.vat ? afterCustom*0.2 : 0, tot = afterCustom+vatVal
@@ -582,7 +833,7 @@ export class BudgetsView {
     const dateStr = today.getDate()+' '+months[today.getMonth()]+' '+today.getFullYear()
     const validDate = new Date(today); validDate.setDate(validDate.getDate()+30)
     const validStr = validDate.getDate()+' '+months[validDate.getMonth()]+' '+validDate.getFullYear()
-    const activeSecs = (b.sections||[]).filter(s => s.enabled && secNet(s) > 0)
+    const activeSecs = (b.sections||[]).filter(s => s.enabled && secNet(s, pdfTr) > 0)
     const LOGO_WHITE = '/peny-logo-white.png'
     const LOGO_BLACK = '/peny-logo.png'
 
@@ -596,7 +847,7 @@ export class BudgetsView {
           ${b.notes?`<div style="font-size:13px;color:rgba(255,255,255,0.55);margin-bottom:28px;line-height:1.6">${esc(b.notes)}</div>`:''}
           <hr class="pdf-cover-divider" />
           <table class="pdf-cover-summary"><tbody>
-            ${activeSecs.map(sec=>`<tr><td class="sec-code">${sec.code}</td><td class="sec-name">${sec.label}</td><td class="sec-total">${gbpA(secNet(sec))}</td></tr>`).join('')}
+            ${activeSecs.map(sec=>`<tr><td class="sec-code">${sec.code}</td><td class="sec-name">${sec.label}</td><td class="sec-total">${gbpA(secNet(sec,pdfTr))}</td></tr>`).join('')}
           </tbody></table>
           <div class="pdf-cover-totals">
             <div class="pdf-cover-total-row"><span class="tk">Net total</span><span class="tv">${gbpA(net)}</span></div>
@@ -629,7 +880,7 @@ export class BudgetsView {
           <div class="pdf-section-header">
             <span class="pdf-section-code">${sec.code}</span>
             <span class="pdf-section-name">${sec.label}</span>
-            <span class="pdf-section-total">${gbpA(secNet(sec))}</span>
+            <span class="pdf-section-total">${gbpA(secNet(sec,pdfTr))}</span>
           </div>
           <div class="pdf-col-heads">
             <div class="pdf-col-head" style="text-align:left">Item</div>
@@ -639,12 +890,13 @@ export class BudgetsView {
           </div>
           ${al.map(l => {
             const useDays = !!(l.useDays ?? (l.travelDays !== undefined))
-            const t=lineTotal(l),d=parseFloat(l.days)||0,q=parseFloat(l.qty)||1,r=parseFloat(l.rate)||0,td=parseFloat(l.travelDays)||0
+            const t=lineTotal(l,pdfTr),d=parseFloat(l.days)||0,q=parseFloat(l.qty)??1,r=parseFloat(l.rate)||0,td=parseFloat(l.travelDays)||0
+            const disc = parseFloat(l.discount)||0
             return `<div class="pdf-line">
-              <div class="pdf-line-item">${esc(l.item)}${l.notes?`<div class="pdf-line-sub">${esc(l.notes)}</div>`:''}${useDays&&td>0?`<div class="pdf-line-sub">+${td} travel day${td!==1?'s':''} @ 50%</div>`:''}</div>
+              <div class="pdf-line-item">${esc(l.item)}${l.notes?`<div class="pdf-line-sub">${esc(l.notes)}</div>`:''}${useDays&&td>0?`<div class="pdf-line-sub">+${td} travel day${td!==1?'s':''} @ ${pdfTr}%</div>`:''}${disc>0?`<div class="pdf-line-sub">Discount: ${disc}%</div>`:''}</div>
               <div class="pdf-line-num">${useDays&&d>0?d:''}</div>
               <div class="pdf-line-num">${useDays?(d>0&&q!==1?q:''):q}</div>
-              <div class="pdf-line-num">${useDays?(td>0?gbpA(r*td*0.5):''):(r>0?gbpA(r):'')}</div>
+              <div class="pdf-line-num">${useDays?(td>0?gbpA(r*td*(pdfTr/100)):''):(r>0?gbpA(r):'')}</div>
               <div class="pdf-line-total">${gbpA(t)}</div>
             </div>`
           }).join('')}

@@ -10,7 +10,7 @@ export const db = drizzle(sql, { schema })
 // Call them with the Clerk userId from useAuth().
 
 import { eq, and, desc, inArray } from 'drizzle-orm'
-import { contacts, projects, budgets, settings, project_budgets } from './schema.js'
+import { contacts, projects, budgets, settings, project_budgets, budget_versions, activity_log } from './schema.js'
 
 // Settings
 export async function getSettings(userId) {
@@ -113,4 +113,102 @@ export async function updateBudget(userId, id, data) {
 export async function deleteBudget(userId, id) {
   return db.delete(budgets)
     .where(and(eq(budgets.id, id), eq(budgets.user_id, userId)))
+}
+
+// Budget versions
+export async function saveBudgetVersion(userId, budgetId, budgetData, name = 'Auto-save', isAuto = true) {
+  return db.insert(budget_versions).values({
+    budget_id: budgetId,
+    user_id:   userId,
+    name,
+    is_auto:   isAuto,
+    snapshot:  budgetData,
+  }).returning()
+}
+export async function getBudgetVersions(budgetId) {
+  return db.select().from(budget_versions)
+    .where(eq(budget_versions.budget_id, budgetId))
+    .orderBy(desc(budget_versions.created_at))
+}
+export async function deleteBudgetVersion(id) {
+  return db.delete(budget_versions).where(eq(budget_versions.id, id))
+}
+
+// Activity log
+export async function logActivity(userId, entityType, entityId, entityName, summary) {
+  return db.insert(activity_log).values({
+    user_id:     userId,
+    entity_type: entityType,
+    entity_id:   entityId,
+    entity_name: entityName,
+    summary,
+  })
+}
+export async function getActivityLog(entityId, limit = 30) {
+  return db.select().from(activity_log)
+    .where(eq(activity_log.entity_id, entityId))
+    .orderBy(desc(activity_log.created_at))
+    .limit(limit)
+}
+
+// ── Users & permissions ───────────────────────────────────────────────────────
+
+import { app_users } from './schema.js'
+
+// Role presets — what each role gets by default
+export const ROLE_PRESETS = {
+  admin: {
+    contacts_view: true, contacts_edit: true,
+    projects_view: true, projects_edit: true,
+    budgets_view:  true, budgets_edit:  true,
+    export:        true, settings:      true,
+  },
+  member: {
+    contacts_view: true, contacts_edit: true,
+    projects_view: true, projects_edit: true,
+    budgets_view:  true, budgets_edit:  true,
+    export:        true, settings:      false,
+  },
+  readonly: {
+    contacts_view: true, contacts_edit: false,
+    projects_view: true, projects_edit: false,
+    budgets_view:  true, budgets_edit:  false,
+    export:        false, settings:     false,
+  },
+}
+
+// Resolve effective permissions = role preset merged with per-user overrides
+export function resolvePermissions(user) {
+  const preset = ROLE_PRESETS[user.role] ?? ROLE_PRESETS.member
+  return { ...preset, ...(user.permissions ?? {}) }
+}
+
+// Get or create the current user record
+export async function getOrCreateAppUser(clerkUser) {
+  const existing = await db.select().from(app_users)
+    .where(eq(app_users.clerk_id, clerkUser.id))
+  if (existing[0]) return existing[0]
+
+  // First user ever = auto-promote to admin
+  const allUsers = await db.select({ id: app_users.id }).from(app_users)
+  const role = allUsers.length === 0 ? 'admin' : 'member'
+
+  const [created] = await db.insert(app_users).values({
+    clerk_id: clerkUser.id,
+    email:    clerkUser.primaryEmailAddress?.emailAddress ?? '',
+    name:     clerkUser.fullName ?? clerkUser.username ?? '',
+    role,
+  }).returning()
+  return created
+}
+
+export async function getAllAppUsers() {
+  return db.select().from(app_users).orderBy(app_users.created_at)
+}
+
+export async function updateAppUser(id, data) {
+  return db.update(app_users)
+    .set({ ...data, updated_at: new Date() })
+    .where(eq(app_users.id, id))
+    .returning()
 }

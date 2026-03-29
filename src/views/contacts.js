@@ -1,5 +1,5 @@
 import {
-  createContact, updateContact, deleteContact,
+  createContact, updateContact, deleteContact, logActivity, getActivityLog,
 } from '../db/client.js'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -195,6 +195,10 @@ export class ContactsView {
         <button class="dashed-btn" data-note="${c.id}">+ add note</button>
       </div>
       <div class="detail-section">
+        <div class="section-title">Activity</div>
+        <div id="contact-activity-${c.id}" style="font-size:11px;color:var(--text-tertiary)">Loading…</div>
+      </div>
+      <div class="detail-section">
         <button class="row-btn" style="width:100%;padding:8px;text-align:center;color:#b03020;border-color:rgba(180,50,30,0.25)" data-delete="${c.id}">Delete contact</button>
       </div>`
   }
@@ -289,6 +293,28 @@ export class ContactsView {
       btn.addEventListener('click', () => this.openNoteModal(btn.dataset.note, document.getElementById('main-content')))
     })
     dp.querySelector('[data-delete]')?.addEventListener('click', () => this.deleteContact(id))
+
+    // Load activity log asynchronously
+    getActivityLog(id, 20).then(log => {
+      const el = dp.querySelector(`#contact-activity-${id}`)
+      if (!el) return
+      if (!log.length) { el.textContent = 'No activity yet'; return }
+      const fmt = ts => {
+        const d = new Date(ts)
+        return d.toLocaleDateString('en-GB',{day:'numeric',month:'short'}) + ' ' + d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})
+      }
+      el.innerHTML = log.map(entry => `
+        <div style="padding:5px 0;border-bottom:0.5px solid var(--border-light);display:flex;gap:6px">
+          <div style="width:5px;height:5px;border-radius:50%;background:var(--border-strong);flex-shrink:0;margin-top:4px"></div>
+          <div>
+            <div style="color:var(--text-secondary)">${entry.summary}</div>
+            <div style="font-size:10px;color:var(--text-tertiary);margin-top:1px">${fmt(entry.created_at)}</div>
+          </div>
+        </div>`).join('')
+    }).catch(() => {
+      const el = dp.querySelector(`#contact-activity-${id}`)
+      if (el) el.textContent = 'Could not load activity'
+    })
   }
 
   openAdd(mc) {
@@ -337,16 +363,24 @@ export class ContactsView {
     }
     try {
       if (this.editingId) {
+        const existing = this.app.contacts.find(c => c.id === this.editingId)
         const [updated] = await updateContact(this.app.userId, this.editingId, data)
         const idx = this.app.contacts.findIndex(c => c.id === this.editingId)
         if (idx >= 0) this.app.contacts[idx] = updated
         this.app.toast('Contact updated')
+        // Log meaningful changes
+        const changes = []
+        if (existing?.status !== data.status) changes.push(`Status → ${data.status}`)
+        if (existing?.company !== data.company && data.company) changes.push(`Company: ${data.company}`)
+        if (existing?.role !== data.role && data.role) changes.push(`Role: ${data.role}`)
+        if (changes.length) logActivity(this.app.userId, 'contact', this.editingId, `${first} ${last}`, changes.join(' · ')).catch(console.error)
       } else {
         data.since = moy()
         data.notes = []
         const [created] = await createContact(this.app.userId, data)
         this.app.contacts.unshift(created)
         this.app.toast('Contact added')
+        logActivity(this.app.userId, 'contact', created.id, `${first} ${last}`, 'Contact created').catch(console.error)
       }
       mc.querySelector('#contact-modal')?.classList.remove('open')
       this.render(mc)
@@ -378,6 +412,7 @@ export class ContactsView {
       mc.querySelector('#note-modal')?.classList.remove('open')
       if (this.selectedId === c.id) this.showDetail(c.id)
       this.app.toast('Note saved')
+      logActivity(this.app.userId, 'contact', c.id, `${c.first_name} ${c.last_name}`, `Note added: "${text.slice(0,60)}${text.length>60?'…':''}"` ).catch(console.error)
     } catch (e) {
       console.error(e)
       this.app.toast('Error saving note')

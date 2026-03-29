@@ -5,15 +5,17 @@ import { ProjectsView } from './views/projects.js'
 import { BudgetsView, budTotal } from './views/budgets.js'
 
 export class App {
-  constructor({ userId, user, contacts, projects, budgets, settings, onSignOut }) {
-    this.userId   = userId
-    this.user     = user
+  constructor({ userId, user, appUser, permissions, contacts, projects, budgets, settings, onSignOut }) {
+    this.userId      = userId
+    this.user        = user
+    this.appUser     = appUser
+    this.permissions = permissions  // resolved effective permissions
     this.contacts = contacts ?? []
     this.projects = projects ?? []
     this.budgets  = budgets  ?? []
     this.settings = settings ?? {}
     this.onSignOut = onSignOut
-    this.currentView = 'contacts'
+    this.currentView = 'dashboard'
     this.contactsView = new ContactsView(this)
     this.projectsView = new ProjectsView(this)
     this.budgetsView  = new BudgetsView(this)
@@ -35,10 +37,10 @@ export class App {
       <div class="sidebar">
         <div class="logo"><img src="/peny-logo.png" alt="Peny" /></div>
         <div class="nav-label">Main</div>
-        ${[['contacts','Contacts',this.iconContacts()],['projects','Projects',this.iconProjects()],['budgets','Budgets',this.iconBudgets()],['pipeline','Pipeline',this.iconPipeline()]].map(([id,label,icon])=>`
+        ${[['dashboard','Dashboard',this.iconPipeline()],['contacts','Contacts',this.iconContacts()],['projects','Projects',this.iconProjects()],['budgets','Budgets',this.iconBudgets()]].map(([id,label,icon])=>`
           <div class="nav-item ${this.currentView===id?'active':''}" data-view="${id}">${icon} ${label}</div>`).join('')}
         <div class="nav-bottom">
-          <div class="nav-item" data-view="settings">${this.iconSettings()} Settings</div>
+          ${this.permissions.settings ? `<div class="nav-item" data-view="settings">${this.iconSettings()} Settings</div>` : ''}
           <div class="nav-item" id="sign-out-btn">${this.iconSignOut()} Sign out</div>
           <div style="padding:8px 12px">
             <button class="theme-toggle" id="theme-toggle-btn" title="Toggle dark mode">
@@ -66,9 +68,20 @@ export class App {
   }
 
   topbarButton() {
-    if (this.currentView === 'contacts') return `<button class="btn-primary" id="topbar-btn">+ Add contact</button>`
-    if (this.currentView === 'budgets')  return this.budgetsView.currentId ? `<button class="btn-secondary" id="topbar-btn">← All budgets</button>` : `<button class="btn-primary" id="topbar-btn">+ New budget</button>`
-    if (this.currentView === 'projects') return this.projectsView.currentId ? `<button class="btn-secondary" id="topbar-btn">← All projects</button>` : `<button class="btn-primary" id="topbar-btn">+ New project</button>`
+    const p = this.permissions ?? {}
+    if (this.currentView === 'contacts') {
+      return p.contacts_edit ? `<button class="btn-primary" id="topbar-btn">+ Add contact</button>` : ''
+    }
+    if (this.currentView === 'budgets') {
+      if (!this.budgetsView.currentId) return p.budgets_edit ? `<button class="btn-primary" id="topbar-btn">+ New budget</button>` : ''
+      if (this.budgetsView.editingId) return `<button class="btn-secondary" id="topbar-btn">← All budgets</button>`
+      return ''
+    }
+    if (this.currentView === 'projects') {
+      if (!this.projectsView.currentId) return p.projects_edit ? `<button class="btn-primary" id="topbar-btn">+ New project</button>` : ''
+      if (this.projectsView.editingId) return `<button class="btn-secondary" id="topbar-btn">← All projects</button>`
+      return ''
+    }
     return ''
   }
 
@@ -104,32 +117,51 @@ export class App {
     btn.addEventListener('click', () => {
       const mc = document.getElementById('main-content')
       if (this.currentView === 'contacts') { this.contactsView.openAdd(mc) }
-      else if (this.currentView === 'budgets') { if (this.budgetsView.currentId) { this.budgetsView.currentId = null; this.render() } else this.budgetsView.openNewModal() }
-      else if (this.currentView === 'projects') { if (this.projectsView.currentId) { this.projectsView.currentId = null; this.render() } else this.projectsView.openNewModal(null, null, mc) }
+      else if (this.currentView === 'budgets') {
+        if (this.budgetsView.editingId) { this.budgetsView.editingId = null; this.render() }
+        else if (!this.budgetsView.currentId) this.budgetsView.openNewModal()
+      }
+      else if (this.currentView === 'projects') {
+        if (this.projectsView.editingId) { this.projectsView.editingId = null; this.render() }
+        else if (!this.projectsView.currentId) this.projectsView.openNewModal(null, null, mc)
+      }
     })
   }
 
   navigate(view) {
     this.currentView = view
     this.projectsView.currentId = null
+    this.projectsView.editingId = null
     this.budgetsView.currentId  = null
+    this.budgetsView.editingId  = null
     this.render()
   }
 
   renderCurrentView() {
     const mc = document.getElementById('main-content')
     if (!mc) return
-    if (this.currentView === 'contacts') this.contactsView.render(mc)
-    else if (this.currentView === 'projects') this.projectsView.render(mc)
-    else if (this.currentView === 'budgets')  this.budgetsView.render(mc)
-    else if (this.currentView === 'pipeline') this.renderPipeline(mc)
-    else this.renderSettings(mc)
+    const p = this.permissions ?? {}
+    const locked = (msg) => { mc.innerHTML = `<div class="empty-state" style="padding-top:80px">🔒 ${msg}</div>` }
+    if (this.currentView === 'contacts') {
+      if (!p.contacts_view) return locked("You don't have access to Contacts.")
+      this.contactsView.render(mc)
+    } else if (this.currentView === 'projects') {
+      if (!p.projects_view) return locked("You don't have access to Projects.")
+      this.projectsView.render(mc)
+    } else if (this.currentView === 'budgets') {
+      if (!p.budgets_view) return locked("You don't have access to Budgets.")
+      this.budgetsView.render(mc)
+    } else if (this.currentView === 'dashboard') {
+      this.renderDashboard(mc)
+    } else {
+      this.renderSettings(mc)
+    }
   }
 
   viewTitle() {
     if (this.currentView === 'projects' && this.projectsView?.currentId) return this.projects.find(p=>p.id===this.projectsView.currentId)?.name ?? 'Project'
     if (this.currentView === 'budgets'  && this.budgetsView?.currentId)  return this.budgets.find(b=>b.id===this.budgetsView.currentId)?.name  ?? 'Budget'
-    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',pipeline:'Pipeline',settings:'Settings'}[this.currentView] ?? ''
+    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',settings:'Settings'}[this.currentView] ?? ''
   }
 
   updateTitle() {
@@ -145,7 +177,7 @@ export class App {
   openProject(id) { this.currentView = 'projects'; this.projectsView.currentId = id; this.render() }
   openBudget(id)  { this.currentView = 'budgets';  this.budgetsView.currentId  = id; this.render() }
 
-  renderPipeline(mc) {
+  renderDashboard(mc) {
     const stages = ['Enquiry','Pre-production','In Production','Post','Delivered']
     mc.innerHTML = `<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px">${stages.map(st => {
       const col = this.projects.filter(p => p.status === st)
@@ -157,27 +189,38 @@ export class App {
             .map(id => this.budgets.find(b => b.id === id))
             .filter(b => b && b.include_in_pipeline)
           const combinedTotal = pipelineBudgets.reduce((sum, b) => {
+            const tr = parseFloat(b.travel_rate)||50
             const n = b.sections ? b.sections.filter(s=>s.enabled).reduce((t,s)=>{
               return t + (s.lines||[]).reduce((lt,l)=>{
-                const d=parseFloat(l.days)||0,q=parseFloat(l.qty)||1,r=parseFloat(l.rate)||0,td=parseFloat(l.travelDays)||0
-                return lt+d*q*r+td*0.5*r
+                const useDays=!!(l.useDays??(l.travelDays!==undefined))
+                const d=parseFloat(l.days)||0,q=isNaN(parseFloat(l.qty))?1:parseFloat(l.qty),r=parseFloat(l.rate)||0,td=parseFloat(l.travelDays)||0
+                const disc=Math.min(Math.max(parseFloat(l.discount)||0,0),100)
+                const gross=useDays?d*q*r+td*(tr/100)*r:q*r
+                return lt+gross*(1-disc/100)
               },0)
             },0) : 0
             const afterFee = n + n*((parseFloat(b.markup)||0)/100)
             const afterCustom = afterFee + afterFee*((parseFloat(b.custom_pct)||0)/100)
             return sum + afterCustom + (b.vat ? afterCustom*0.2 : 0)
           }, 0)
-          return `<div class="kanban-card" style="cursor:pointer" data-pid="${p.id}">
-            <div class="kanban-card-title">${p.name}</div>
+          const delivs = (p.deliverables||[]).filter(d=>d.text)
+          return `<div class="kanban-card" data-pid="${p.id}">
+            <div class="kanban-card-title" style="cursor:pointer" data-open-pid="${p.id}">${p.name}</div>
             <div class="kanban-card-client">${cl ? cl.first_name+' '+cl.last_name : 'No client'}</div>
+            ${delivs.length ? `
+              <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
+                ${delivs.map((d,di) => `
+                  <label style="display:flex;align-items:baseline;gap:6px;font-size:11px;cursor:pointer;color:${d.done?'var(--text-tertiary)':'var(--text-secondary)'}">
+                    <input type="checkbox" ${d.done?'checked':''} data-deliv-pid="${p.id}" data-deliv-idx="${di}" style="cursor:pointer;flex-shrink:0;margin-top:1px" />
+                    <span style="${d.done?'text-decoration:line-through':''}">${d.text}</span>
+                  </label>`).join('')}
+              </div>` : ''}
             ${pipelineBudgets.length ? `
               <div style="margin-top:8px;padding-top:8px;border-top:0.5px solid var(--border-light);display:flex;flex-direction:column;gap:3px">
                 ${pipelineBudgets.map(b => {
-                  const n = b.sections ? b.sections.filter(s=>s.enabled).reduce((t,s)=>{
-                    return t+(s.lines||[]).reduce((lt,l)=>{const d=parseFloat(l.days)||0,q=parseFloat(l.qty)||1,r=parseFloat(l.rate)||0,td=parseFloat(l.travelDays)||0;return lt+d*q*r+td*0.5*r},0)
-                  },0) : 0
-                  const afterFee=n+n*((parseFloat(b.markup)||0)/100), afterCustom=afterFee+afterFee*((parseFloat(b.custom_pct)||0)/100)
-                  const t = afterCustom+(b.vat?afterCustom*0.2:0)
+                  const tr2=parseFloat(b.travel_rate)||50
+                  const n2=b.sections?b.sections.filter(s=>s.enabled).reduce((t,s)=>t+(s.lines||[]).reduce((lt,l)=>{const useDays=!!(l.useDays??(l.travelDays!==undefined));const d=parseFloat(l.days)||0,q=isNaN(parseFloat(l.qty))?1:parseFloat(l.qty),r=parseFloat(l.rate)||0,td=parseFloat(l.travelDays)||0,disc=Math.min(Math.max(parseFloat(l.discount)||0,0),100),gross=useDays?d*q*r+td*(tr2/100)*r:q*r;return lt+gross*(1-disc/100)},0),0):0
+                  const ae=n2+n2*((parseFloat(b.markup)||0)/100),ac=ae+ae*((parseFloat(b.custom_pct)||0)/100),t=ac+(b.vat?ac*0.2:0)
                   return `<div style="display:flex;justify-content:space-between;font-size:11px">
                     <span style="color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">${b.name}</span>
                     <span style="color:var(--text-primary);font-weight:500;font-variant-numeric:tabular-nums">£${Math.round(t).toLocaleString('en-GB')}</span>
@@ -193,13 +236,44 @@ export class App {
         }).join('')}
       </div>`
     }).join('')}</div>`
-    mc.querySelectorAll('[data-pid]').forEach(el => el.addEventListener('click', () => this.openProject(el.dataset.pid)))
+
+    // Open project on title click
+    mc.querySelectorAll('[data-open-pid]').forEach(el => {
+      el.addEventListener('click', () => this.openProject(el.dataset.openPid))
+    })
+    // Deliverable tick without opening the project
+    mc.querySelectorAll('[data-deliv-pid]').forEach(el => {
+      el.addEventListener('change', async () => {
+        const p = this.projects.find(x => x.id === el.dataset.delivPid)
+        if (!p) return
+        const idx = +el.dataset.delivIdx
+        p.deliverables[idx].done = el.checked
+        // Update label style immediately
+        const label = el.closest('label')
+        if (label) {
+          label.style.color = el.checked ? 'var(--text-tertiary)' : 'var(--text-secondary)'
+          const span = label.querySelector('span')
+          if (span) span.style.textDecoration = el.checked ? 'line-through' : ''
+        }
+        try {
+          const { updateProject } = await import('./db/client.js')
+          await updateProject(this.userId, p.id, { deliverables: p.deliverables })
+        } catch(e) { console.error('Deliverable save failed:', e) }
+      })
+    })
   }
 
   renderSettings(mc) {
     const s = this.settings ?? {}
-    mc.innerHTML = `<div style="max-width:560px">
-      <div class="panel" style="margin-bottom:16px">
+    const isAdmin = this.appUser?.role === 'admin'
+    const PERM_LABELS = {
+      contacts_view:'View contacts', contacts_edit:'Edit contacts',
+      projects_view:'View projects', projects_edit:'Edit projects',
+      budgets_view:'View budgets',   budgets_edit:'Edit budgets',
+      settings:'Access settings',
+    }
+    mc.innerHTML = `<div style="max-width:680px;display:flex;flex-direction:column;gap:16px">
+      <div class="panel">
         <div class="panel-header"><span class="panel-title">Company details</span></div>
         <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
           <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">These details appear in quote PDFs and exports.</div>
@@ -217,16 +291,157 @@ export class App {
           <div><button class="btn-primary" id="settings-save-btn">Save settings</button></div>
         </div>
       </div>
+
+      ${isAdmin ? `
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Users</span></div>
+        <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+          <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Invite-only. New users receive an email invitation from Clerk and are assigned Member role by default.</div>
+          <div style="display:flex;gap:8px">
+            <input type="email" id="invite-email" placeholder="colleague@email.com" style="flex:1;padding:8px 11px;font-size:13px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+            <button class="btn-primary" id="invite-btn">Send invite</button>
+          </div>
+          <div id="users-list"><div style="font-size:12px;color:var(--text-tertiary)">Loading users…</div></div>
+        </div>
+      </div>` : ''}
+
       <div class="panel">
         <div class="panel-header"><span class="panel-title">Account</span></div>
         <div style="padding:20px;display:flex;flex-direction:column;gap:10px">
-          <div style="font-size:13px;color:var(--text-secondary)">Signed in as <strong>${this.user.primaryEmailAddress?.emailAddress??''}</strong></div>
+          <div style="font-size:13px;color:var(--text-secondary)">
+            Signed in as <strong>${this.user.primaryEmailAddress?.emailAddress??''}</strong>
+            <span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary);margin-left:8px;text-transform:capitalize">${this.appUser?.role??'member'}</span>
+          </div>
           <button class="btn-cancel" style="width:fit-content" id="signout-settings">Sign out</button>
         </div>
       </div>
     </div>`
+
     mc.querySelector('#settings-save-btn')?.addEventListener('click', () => this.saveSettings(mc))
     mc.querySelector('#signout-settings')?.addEventListener('click', () => this.onSignOut())
+
+    if (isAdmin) {
+      this._loadUsersPanel(mc)
+      mc.querySelector('#invite-btn')?.addEventListener('click', () => this._sendInvite(mc))
+    }
+  }
+
+  async _loadUsersPanel(mc) {
+    const el = mc.querySelector('#users-list')
+    if (!el) return
+    try {
+      const { getAllAppUsers, updateAppUser, ROLE_PRESETS } = await import('./db/client.js')
+      const users = await getAllAppUsers()
+      const PERM_KEYS = ['contacts_view','contacts_edit','projects_view','projects_edit','budgets_view','budgets_edit','settings']
+      const PERM_LABELS = {
+        contacts_view:'View contacts', contacts_edit:'Edit contacts',
+        projects_view:'View projects', projects_edit:'Edit projects',
+        budgets_view:'View budgets',   budgets_edit:'Edit budgets',
+        settings:'Settings access',
+      }
+
+      el.innerHTML = users.map(u => {
+        const preset = ROLE_PRESETS[u.role] ?? ROLE_PRESETS.member
+        const overrides = u.permissions ?? {}
+        const isSelf = u.clerk_id === this.userId
+        return `<div style="border:0.5px solid var(--border-light);border-radius:var(--radius-md);padding:14px;margin-bottom:10px" data-uid="${u.id}">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+            <div style="flex:1">
+              <div style="font-size:13px;font-weight:500">${u.name||'—'} ${isSelf?'<span style="font-size:10px;color:var(--text-tertiary)">(you)</span>':''}</div>
+              <div style="font-size:12px;color:var(--text-secondary)">${u.email}</div>
+            </div>
+            <select class="status-select" data-role-uid="${u.id}" ${isSelf?'disabled':''} style="width:120px">
+              ${['admin','member','readonly'].map(r=>`<option value="${r}" ${u.role===r?'selected':''}>${r.charAt(0).toUpperCase()+r.slice(1)}</option>`).join('')}
+            </select>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+            ${PERM_KEYS.map(k => {
+              const fromRole = preset[k]
+              const override = overrides[k]
+              const effective = override !== undefined ? override : fromRole
+              return `<label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text-secondary);cursor:${isSelf?'default':'pointer'}">
+                <input type="checkbox" ${effective?'checked':''} data-perm="${u.id}:${k}" ${isSelf?'disabled':''} style="cursor:${isSelf?'default':'pointer'}" />
+                ${PERM_LABELS[k]}
+                ${override!==undefined?`<span style="font-size:10px;color:#d48c10" title="Overrides role preset">✱</span>`:''}
+              </label>`
+            }).join('')}
+          </div>
+          ${!isSelf ? `<div style="margin-top:10px;text-align:right"><button class="row-btn" data-save-user="${u.id}" style="font-size:11px">Save changes</button></div>` : ''}
+        </div>`
+      }).join('')
+
+      // Role change — update preset display immediately
+      el.querySelectorAll('[data-role-uid]').forEach(sel => {
+        sel.addEventListener('change', () => {
+          const uid = sel.dataset.roleUid
+          const newRole = sel.value
+          const newPreset = ROLE_PRESETS[newRole] ?? ROLE_PRESETS.member
+          PERM_KEYS.forEach(k => {
+            const cb = el.querySelector(`[data-perm="${uid}:${k}"]`)
+            if (cb && !cb.disabled) cb.checked = newPreset[k]
+          })
+        })
+      })
+
+      // Save user
+      el.querySelectorAll('[data-save-user]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const uid = btn.dataset.saveUser
+          const role = el.querySelector(`[data-role-uid="${uid}"]`)?.value ?? 'member'
+          const preset = ROLE_PRESETS[role] ?? ROLE_PRESETS.member
+          const perms = {}
+          PERM_KEYS.forEach(k => {
+            const cb = el.querySelector(`[data-perm="${uid}:${k}"]`)
+            if (cb) {
+              const val = cb.checked
+              // Only store if it differs from preset (override)
+              if (val !== preset[k]) perms[k] = val
+            }
+          })
+          try {
+            await updateAppUser(uid, { role, permissions: perms })
+            this.toast('User updated')
+            this._loadUsersPanel(mc)
+          } catch(e) { console.error(e); this.toast('Error saving user') }
+        })
+      })
+    } catch(e) { console.error(e); el.innerHTML = '<div style="font-size:12px;color:var(--text-tertiary)">Could not load users</div>' }
+  }
+
+  async _sendInvite(mc) {
+    const emailEl = mc.querySelector('#invite-email')
+    const email = emailEl?.value.trim()
+    if (!email) { this.toast('Please enter an email address'); return }
+
+    const btn = mc.querySelector('#invite-btn')
+    if (btn) { btn.disabled = true; btn.textContent = 'Sending…' }
+
+    try {
+      // Get the current Clerk session token to authenticate the API call
+      const { clerk } = await import('./auth/clerk.js')
+      const token = await clerk.session?.getToken()
+      if (!token) throw new Error('No session token')
+
+      const res = await fetch('/api/invite', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ email }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Invite failed')
+
+      if (emailEl) emailEl.value = ''
+      this.toast(`Invitation sent to ${email}`)
+    } catch (e) {
+      console.error(e)
+      this.toast(e.message || 'Error sending invite')
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Send invite' }
+    }
   }
 
   async saveSettings(mc) {
