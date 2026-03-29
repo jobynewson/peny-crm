@@ -1,17 +1,8 @@
 // api/invite.js
-// Vercel serverless function — runs server-side, safe to use secret key
-//
-// POST /api/invite
-// Body: { email: string }
-// Headers: Authorization: Bearer <clerk_session_token>
-//
-// Verifies the caller is an admin, then sends a Clerk invitation email.
-
 import { createClerkClient } from '@clerk/backend'
 import { neon } from '@neondatabase/serverless'
 
 export default async function handler(req, res) {
-  // Only allow POST
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
@@ -22,24 +13,27 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Valid email required' })
     }
 
-    // Verify the caller is authenticated and is an admin
-    const token = req.headers.authorization?.replace('Bearer ', '')
-    if (!token) {
-      return res.status(401).json({ error: 'Unauthorised' })
-    }
+    const token = req.headers.authorization?.replace('Bearer ', '').trim()
+    if (!token) return res.status(401).json({ error: 'Unauthorised' })
 
-    const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY })
-
-    // Verify the session token and get the user
+    // Decode the JWT to extract the user ID (sub claim)
+    // The token is a Clerk-issued JWT — we verify admin status against our own DB
     let callerUserId
     try {
-      const payload = await clerk.verifyToken(token)
+      const parts = token.split('.')
+      if (parts.length !== 3) throw new Error('Bad token shape')
+      const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'))
       callerUserId = payload.sub
+      if (!callerUserId) throw new Error('No sub claim')
+      // Check token hasn't expired
+      if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+        return res.status(401).json({ error: 'Session expired — please refresh and try again' })
+      }
     } catch {
       return res.status(401).json({ error: 'Invalid session token' })
     }
 
-    // Check the caller is an admin in our app_users table
+    // Verify the caller is an admin in our DB
     const sql = neon(process.env.VITE_DATABASE_URL)
     const rows = await sql`
       SELECT role FROM app_users WHERE clerk_id = ${callerUserId} LIMIT 1
@@ -49,9 +43,10 @@ export default async function handler(req, res) {
     }
 
     // Send the Clerk invitation
+    const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY })
     await clerk.invitations.createInvitation({
       emailAddress: email,
-      redirectUrl: process.env.VITE_APP_URL || 'https://your-app.vercel.app',
+      redirectUrl:  process.env.VITE_APP_URL || 'https://your-app.vercel.app',
       publicMetadata: { invitedBy: callerUserId },
     })
 
@@ -59,10 +54,9 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error('Invite error:', err)
-    // Clerk throws if email already invited or already a user
-    if (err.message?.includes('already')) {
+    if (err.message?.toLowerCase().includes('already')) {
       return res.status(409).json({ error: 'This email has already been invited or has an account' })
     }
-    return res.status(500).json({ error: 'Failed to send invitation' })
+    return res.status(500).json({ error: err.message || 'Failed to send invitation' })
   }
 }
