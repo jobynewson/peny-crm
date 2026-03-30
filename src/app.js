@@ -5,11 +5,12 @@ import { ProjectsView } from './views/projects.js'
 import { BudgetsView, budTotal } from './views/budgets.js'
 
 export class App {
-  constructor({ userId, user, appUser, permissions, contacts, projects, budgets, settings, onSignOut }) {
-    this.userId      = userId
+  constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, onSignOut }) {
+    this.userId      = userId        // workspace ID — used for all DB scoping
+    this.clerkUserId = clerkUserId   // actual logged-in user — for audit trails
     this.user        = user
     this.appUser     = appUser
-    this.permissions = permissions  // resolved effective permissions
+    this.permissions = permissions
     this.contacts = contacts ?? []
     this.projects = projects ?? []
     this.budgets  = budgets  ?? []
@@ -177,17 +178,68 @@ export class App {
   openProject(id) { this.currentView = 'projects'; this.projectsView.currentId = id; this.render() }
   openBudget(id)  { this.currentView = 'budgets';  this.budgetsView.currentId  = id; this.render() }
 
-  renderDashboard(mc) {
+  // Returns [periodStart, periodEnd] Date objects for the current retainer period
+  _retainerPeriod(retainerStart) {
+    if (!retainerStart) return [null, null]
+    const anchor = new Date(retainerStart)
+    const day = anchor.getUTCDate()
+    const now = new Date()
+    const y = now.getUTCFullYear(), m = now.getUTCMonth()
+    // Current period starts on `day` of this month (or last month if we haven't hit it yet)
+    let start = new Date(Date.UTC(y, m, day))
+    if (start > now) start = new Date(Date.UTC(y, m - 1, day))
+    const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, day))
+    return [start, end]
+  }
+
+  async renderDashboard(mc) {
     const stages = ['Enquiry','Pre-production','In Production','Post','Delivered']
-    mc.innerHTML = `<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px">${stages.map(st => {
-      const col = this.projects.filter(p => p.status === st)
-      return `<div>
-        <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:12px">${st} <span style="font-weight:500;color:var(--text-secondary)">${col.length}</span></div>
-        ${col.map(p => {
+    const retainers = this.projects.filter(p => p.is_retainer)
+    const regularProjects = this.projects.filter(p => !p.is_retainer)
+
+    mc.innerHTML = `
+      ${retainers.length ? `
+      <div style="margin-bottom:24px">
+        <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:12px;display:flex;align-items:center;gap:8px">
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#a78bfa;flex-shrink:0"></span>
+          Retainers <span style="font-weight:500;color:var(--text-secondary)">${retainers.length}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px" id="retainer-cards">
+          ${retainers.map(p => {
+            const cl = this.contacts.find(c => c.id === p.client_id)
+            const hours = parseFloat(p.retainer_hours)||0
+            const fee   = parseFloat(p.retainer_fee)||0
+            return `<div class="kanban-card" style="border-left:3px solid #a78bfa;cursor:default" data-retainer="${p.id}">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
+                <div class="kanban-card-title" style="cursor:pointer" data-open-pid="${p.id}">${p.name}</div>
+                ${fee ? `<div style="font-size:12px;font-weight:600;color:#a78bfa;white-space:nowrap;margin-left:8px">£${fee.toLocaleString('en-GB')}/mo</div>` : ''}
+              </div>
+              <div class="kanban-card-client">${cl ? cl.first_name+' '+cl.last_name : 'No client'}</div>
+              ${hours ? `
+                <div style="margin-top:8px">
+                  <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px">
+                    <span style="color:var(--text-tertiary)">This month</span>
+                    <span style="color:var(--text-secondary)" data-ret-label="${p.id}">— / ${hours}h</span>
+                  </div>
+                  <div style="height:6px;background:var(--bg-secondary);border-radius:3px;overflow:hidden">
+                    <div style="height:100%;width:0%;border-radius:3px;transition:width 0.3s" data-ret-bar="${p.id}"></div>
+                  </div>
+                  <div data-ret-alert="${p.id}" style="font-size:10px;margin-top:4px;display:none"></div>
+                </div>` : ''}
+            </div>`
+          }).join('')}
+        </div>
+      </div>` : ''}
+
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px">${stages.map(st => {
+        const col = regularProjects.filter(p => p.status === st)
+        return `<div>
+          <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:12px">${st} <span style="font-weight:500;color:var(--text-secondary)">${col.length}</span></div>
+          ${col.map(p => {
           const cl = this.contacts.find(c => c.id === p.client_id)
           const pipelineBudgets = (p.budget_ids || [])
             .map(id => this.budgets.find(b => b.id === id))
-            .filter(b => b && b.include_in_pipeline)
+            .filter(b => b && b.signed_off)
           const combinedTotal = pipelineBudgets.reduce((sum, b) => {
             const tr = parseFloat(b.travel_rate)||50
             const n = b.sections ? b.sections.filter(s=>s.enabled).reduce((t,s)=>{
@@ -250,13 +302,28 @@ export class App {
               </div>` : ''}
           </div>`
         }).join('')}
-      </div>`
-    }).join('')}</div>`
+        </div>`
+      }).join('')}</div>`
 
     // Open project on title click
     mc.querySelectorAll('[data-open-pid]').forEach(el => {
       el.addEventListener('click', () => this.openProject(el.dataset.openPid))
     })
+    // New retainer button
+    if (this.permissions?.projects_edit) {
+      const addRetainerBtn = document.createElement('button')
+      addRetainerBtn.className = 'dashed-btn'
+      addRetainerBtn.style.cssText = 'margin-top:8px;font-size:12px;width:100%;max-width:220px'
+      addRetainerBtn.textContent = '+ New retainer'
+      const retainerGrid = mc.querySelector('#retainer-cards')
+      if (retainerGrid) retainerGrid.after(addRetainerBtn)
+      else mc.prepend(addRetainerBtn)
+      addRetainerBtn.addEventListener('click', () => {
+        const mc2 = document.getElementById('main-content')
+        this.navigate('projects')
+        setTimeout(() => this.projectsView.openNewModal(null, null, mc2, true), 50)
+      })
+    }
     // Deliverable tick without opening the project
     mc.querySelectorAll('[data-deliv-pid]').forEach(el => {
       el.addEventListener('change', async () => {
@@ -278,7 +345,7 @@ export class App {
     })
 
     // Load hours bars asynchronously
-    const projectsWithHours = this.projects.filter(p =>
+    const projectsWithHours = regularProjects.filter(p =>
       mc.querySelector(`[data-hours-bar="${p.id}"]`)
     )
     if (projectsWithHours.length > 0) {
@@ -299,6 +366,49 @@ export class App {
         } catch(e) { /* silent */ }
       }
     }
+
+    // Load retainer current-period hours
+    if (retainers.length > 0) {
+      const { getTimeEntries } = await import('./db/client.js')
+      for (const p of retainers) {
+        if (!p.retainer_hours) continue
+        try {
+          const [periodStart, periodEnd] = this._retainerPeriod(p.retainer_start)
+          const allEntries = await getTimeEntries(p.id)
+          const entries = periodStart
+            ? allEntries.filter(e => {
+                const d = new Date(e.entry_date)
+                return d >= periodStart && d < periodEnd
+              })
+            : allEntries
+          const logged = entries.reduce((s, e) => s + parseFloat(e.hours), 0)
+          const hours = parseFloat(p.retainer_hours)
+          const pct = Math.min(100, Math.round(logged / hours * 100))
+          const alertPct = parseFloat(p.retainer_alert) || 80
+
+          const bar = mc.querySelector(`[data-ret-bar="${p.id}"]`)
+          const label = mc.querySelector(`[data-ret-label="${p.id}"]`)
+          const alertEl = mc.querySelector(`[data-ret-alert="${p.id}"]`)
+
+          const colour = pct >= 100 ? '#ef4444' : pct >= alertPct ? '#f59e0b' : '#a78bfa'
+          if (bar) { bar.style.width = pct + '%'; bar.style.background = colour }
+          if (label) {
+            label.textContent = `${logged.toFixed(1)} / ${hours}h`
+            label.style.color = pct >= alertPct ? colour : ''
+          }
+          if (alertEl && pct >= alertPct && pct < 100) {
+            alertEl.style.display = 'block'
+            alertEl.style.color = colour
+            alertEl.textContent = `⚠ ${pct}% used — ${(hours - logged).toFixed(1)}h remaining`
+          }
+          if (alertEl && pct >= 100) {
+            alertEl.style.display = 'block'
+            alertEl.style.color = colour
+            alertEl.textContent = `⚠ Over allocation by ${(logged - hours).toFixed(1)}h`
+          }
+        } catch(e) { /* silent */ }
+      }
+    }
   }
 
   renderSettings(mc) {
@@ -310,48 +420,66 @@ export class App {
       budgets_view:'View budgets',   budgets_edit:'Edit budgets',
       settings:'Access settings',
     }
-    mc.innerHTML = `<div style="max-width:680px;display:flex;flex-direction:column;gap:16px">
-      <div class="panel">
-        <div class="panel-header"><span class="panel-title">Company details</span></div>
-        <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
-          <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">These details appear in quote PDFs and exports.</div>
-          <div class="field"><div class="field-label">Company name</div><input type="text" id="s-name" value="${s.company_name??''}" placeholder="Peny" /></div>
-          <div class="field-row">
-            <div class="field"><div class="field-label">Email address</div><input type="email" id="s-email" value="${s.email??''}" /></div>
-            <div class="field"><div class="field-label">Phone</div><input type="text" id="s-phone" value="${s.phone??''}" /></div>
+    mc.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;max-width:1100px">
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Company details</span></div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">These details appear in quote PDFs and exports.</div>
+            <div class="field"><div class="field-label">Company name</div><input type="text" id="s-name" value="${s.company_name??''}" placeholder="Peny" /></div>
+            <div class="field-row">
+              <div class="field"><div class="field-label">Email address</div><input type="email" id="s-email" value="${s.email??''}" /></div>
+              <div class="field"><div class="field-label">Phone</div><input type="text" id="s-phone" value="${s.phone??''}" /></div>
+            </div>
+            <div class="field"><div class="field-label">Website</div><input type="text" id="s-website" value="${s.website??''}" /></div>
+            <div class="field"><div class="field-label">Address (optional)</div><input type="text" id="s-address" value="${s.address??''}" /></div>
+            <div class="field-row">
+              <div class="field"><div class="field-label">VAT number</div><input type="text" id="s-vat" value="${s.vat_number??''}" placeholder="GB 000 0000 00" /></div>
+              <div class="field"><div class="field-label">Default prepared by</div><input type="text" id="s-preparedby" value="${s.prepared_by??''}" placeholder="e.g. Robbie Meade" /></div>
+            </div>
+            <div><button class="btn-primary" id="settings-save-btn">Save settings</button></div>
           </div>
-          <div class="field"><div class="field-label">Website</div><input type="text" id="s-website" value="${s.website??''}" /></div>
-          <div class="field"><div class="field-label">Address (optional)</div><input type="text" id="s-address" value="${s.address??''}" /></div>
-          <div class="field-row">
-            <div class="field"><div class="field-label">VAT number</div><input type="text" id="s-vat" value="${s.vat_number??''}" placeholder="GB 000 0000 00" /></div>
-            <div class="field"><div class="field-label">Default prepared by</div><input type="text" id="s-preparedby" value="${s.prepared_by??''}" placeholder="e.g. Robbie Meade" /></div>
+        </div>
+
+        ${isAdmin ? `
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Users</span></div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Invite-only. New users receive an email invitation from Clerk and are assigned Member role by default.</div>
+            <div style="display:flex;gap:8px">
+              <input type="email" id="invite-email" placeholder="colleague@email.com" style="flex:1;padding:8px 11px;font-size:13px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+              <button class="btn-primary" id="invite-btn">Send invite</button>
+            </div>
+            <div id="users-list"><div style="font-size:12px;color:var(--text-tertiary)">Loading users…</div></div>
           </div>
-          <div><button class="btn-primary" id="settings-save-btn">Save settings</button></div>
+        </div>` : ''}
+
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Account</span></div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:10px">
+            <div style="font-size:13px;color:var(--text-secondary)">
+              Signed in as <strong>${this.user.primaryEmailAddress?.emailAddress??''}</strong>
+              <span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary);margin-left:8px;text-transform:capitalize">${this.appUser?.role??'member'}</span>
+            </div>
+            <button class="btn-cancel" style="width:fit-content" id="signout-settings">Sign out</button>
+          </div>
         </div>
       </div>
 
-      ${isAdmin ? `
-      <div class="panel">
-        <div class="panel-header"><span class="panel-title">Users</span></div>
-        <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
-          <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Invite-only. New users receive an email invitation from Clerk and are assigned Member role by default.</div>
-          <div style="display:flex;gap:8px">
-            <input type="email" id="invite-email" placeholder="colleague@email.com" style="flex:1;padding:8px 11px;font-size:13px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
-            <button class="btn-primary" id="invite-btn">Send invite</button>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        ${isAdmin ? `
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Budget template</span></div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:12px">
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">
+              Define the default sections and line items that appear when creating a new budget.
+              Changes here affect new budgets only — existing budgets are not modified.
+            </div>
+            <div id="budget-template-editor">
+              <div style="font-size:12px;color:var(--text-tertiary)">Loading template…</div>
+            </div>
           </div>
-          <div id="users-list"><div style="font-size:12px;color:var(--text-tertiary)">Loading users…</div></div>
-        </div>
-      </div>` : ''}
-
-      <div class="panel">
-        <div class="panel-header"><span class="panel-title">Account</span></div>
-        <div style="padding:20px;display:flex;flex-direction:column;gap:10px">
-          <div style="font-size:13px;color:var(--text-secondary)">
-            Signed in as <strong>${this.user.primaryEmailAddress?.emailAddress??''}</strong>
-            <span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary);margin-left:8px;text-transform:capitalize">${this.appUser?.role??'member'}</span>
-          </div>
-          <button class="btn-cancel" style="width:fit-content" id="signout-settings">Sign out</button>
-        </div>
+        </div>` : '<div></div>'}
       </div>
     </div>`
 
@@ -361,7 +489,160 @@ export class App {
     if (isAdmin) {
       this._loadUsersPanel(mc)
       mc.querySelector('#invite-btn')?.addEventListener('click', () => this._sendInvite(mc))
+      this._mountTemplateEditor(mc)
     }
+  }
+
+  async _mountTemplateEditor(mc) {
+    const { SECTIONS } = await import('./views/budgets.js')
+    const el = mc.querySelector('#budget-template-editor')
+    if (!el) return
+
+    // Deep clone the template — use saved or fall back to built-in SECTIONS
+    let template = JSON.parse(JSON.stringify(
+      this.settings?.budget_template ?? SECTIONS
+    ))
+
+    const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')
+
+    const render = () => {
+      el.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:8px" id="tpl-sections">
+          ${template.map((s, si) => `
+            <div style="border:0.5px solid var(--border-light);border-radius:var(--radius-md);overflow:hidden" data-tsi="${si}">
+              <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--bg-secondary);border-bottom:0.5px solid var(--border-light)">
+                <input type="text" value="${esc(s.code)}" data-tpl-code="${si}"
+                  style="width:48px;font-size:12px;font-weight:600;padding:4px 6px;border:0.5px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+                <input type="text" value="${esc(s.label)}" data-tpl-label="${si}"
+                  style="flex:1;font-size:13px;padding:4px 8px;border:0.5px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+                <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-tertiary);cursor:pointer;white-space:nowrap">
+                  <input type="checkbox" ${s.crew?'checked':''} data-tpl-crew="${si}" style="cursor:pointer" /> Crew section
+                </label>
+                <button class="row-btn" data-tpl-del-sec="${si}" style="color:#b03020;flex-shrink:0">× Remove section</button>
+              </div>
+              <table style="width:100%;border-collapse:collapse">
+                <thead>
+                  <tr style="background:var(--bg-secondary)">
+                    <th style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;padding:6px 8px;text-align:left;font-weight:400;border-bottom:0.5px solid var(--border-light)">Item name</th>
+                    <th style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;padding:6px 8px;text-align:right;font-weight:400;border-bottom:0.5px solid var(--border-light)">Default rate £</th>
+                    <th style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;padding:6px 4px;text-align:center;font-weight:400;border-bottom:0.5px solid var(--border-light)" title="Daily rate">Daily</th>
+                    <th style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;padding:6px 4px;text-align:center;font-weight:400;border-bottom:0.5px solid var(--border-light)" title="Track time">⏱</th>
+                    <th style="border-bottom:0.5px solid var(--border-light);width:28px"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${(s.lines||[]).map((l, li) => `
+                    <tr style="border-bottom:0.5px solid var(--border-light)">
+                      <td style="padding:5px 8px">
+                        <input type="text" value="${esc(l.item)}" data-tpl-item="${si},${li}"
+                          style="width:100%;font-size:13px;padding:5px 7px;border:0.5px solid var(--border-light);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+                      </td>
+                      <td style="padding:5px 8px">
+                        <input type="number" value="${l.rate??''}" placeholder="0" min="0"
+                          data-tpl-rate="${si},${li}"
+                          style="width:80px;font-size:13px;padding:5px 7px;border:0.5px solid var(--border-light);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;text-align:right;display:block;margin-left:auto" />
+                      </td>
+                      <td style="padding:5px 4px;text-align:center">
+                        <input type="checkbox" ${l.useDays?'checked':''} data-tpl-usedays="${si},${li}" style="cursor:pointer" />
+                      </td>
+                      <td style="padding:5px 4px;text-align:center">
+                        <input type="checkbox" ${l.track_time?'checked':''} data-tpl-track="${si},${li}" style="cursor:pointer" ${!l.useDays?'disabled title="Enable daily rate first"':''} />
+                      </td>
+                      <td style="padding:5px 4px;text-align:center">
+                        <button class="row-btn" data-tpl-del-line="${si},${li}" style="color:#b03020;font-size:11px;padding:2px 6px">×</button>
+                      </td>
+                    </tr>`).join('')}
+                </tbody>
+              </table>
+              <button data-tpl-add-line="${si}"
+                style="display:flex;align-items:center;gap:6px;padding:8px 12px;font-size:12px;color:var(--text-tertiary);cursor:pointer;border:none;border-top:0.5px solid var(--border-light);background:transparent;width:100%;text-align:left;font-family:var(--font);transition:background 0.1s,color 0.1s"
+                onmouseover="this.style.background='var(--bg-secondary)';this.style.color='var(--text-secondary)'"
+                onmouseout="this.style.background='transparent';this.style.color='var(--text-tertiary)'">
+                + add line item
+              </button>
+            </div>`).join('')}
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="dashed-btn" id="tpl-add-section" style="flex:1">+ add section</button>
+          <button class="btn-secondary" id="tpl-reset">Reset to defaults</button>
+          <button class="btn-primary" id="tpl-save">Save template</button>
+        </div>`
+
+      // ── Bindings ──────────────────────────────────────────────────────────
+
+      // Section code / label / crew
+      el.querySelectorAll('[data-tpl-code]').forEach(inp => {
+        inp.addEventListener('change', () => { template[+inp.dataset.tplCode].code = inp.value.trim().toUpperCase() })
+      })
+      el.querySelectorAll('[data-tpl-label]').forEach(inp => {
+        inp.addEventListener('change', () => { template[+inp.dataset.tplLabel].label = inp.value.trim() })
+      })
+      el.querySelectorAll('[data-tpl-crew]').forEach(cb => {
+        cb.addEventListener('change', () => { template[+cb.dataset.tplCrew].crew = cb.checked })
+      })
+      el.querySelector('#tpl-add-section')?.addEventListener('click', () => {
+        template.push({ code: 'X', label: 'New section', crew: false, lines: [{ item: '', rate: null, useDays: false, track_time: false }] })
+        render()
+      })
+      el.querySelectorAll('[data-tpl-del-sec]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (!confirm('Remove this section from the template?')) return
+          template.splice(+btn.dataset.tplDelSec, 1); render()
+        })
+      })
+
+      // Line item / rate / useDays / track_time / delete
+      el.querySelectorAll('[data-tpl-item]').forEach(inp => {
+        inp.addEventListener('change', () => {
+          const [si,li] = inp.dataset.tplItem.split(',').map(Number)
+          template[si].lines[li].item = inp.value
+        })
+      })
+      el.querySelectorAll('[data-tpl-rate]').forEach(inp => {
+        inp.addEventListener('change', () => {
+          const [si,li] = inp.dataset.tplRate.split(',').map(Number)
+          template[si].lines[li].rate = parseFloat(inp.value) || null
+        })
+      })
+      el.querySelectorAll('[data-tpl-usedays]').forEach(cb => {
+        cb.addEventListener('change', () => {
+          const [si,li] = cb.dataset.tplUsedays.split(',').map(Number)
+          template[si].lines[li].useDays = cb.checked
+          if (!cb.checked) template[si].lines[li].track_time = false
+          render()  // re-render to enable/disable track checkbox
+        })
+      })
+      el.querySelectorAll('[data-tpl-track]').forEach(cb => {
+        cb.addEventListener('change', () => {
+          const [si,li] = cb.dataset.tplTrack.split(',').map(Number)
+          template[si].lines[li].track_time = cb.checked
+        })
+      })
+      el.querySelectorAll('[data-tpl-del-line]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const [si,li] = btn.dataset.tplDelLine.split(',').map(Number)
+          template[si].lines.splice(li, 1); render()
+        })
+      })
+      el.querySelectorAll('[data-tpl-add-line]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const si = +btn.dataset.tplAddLine
+          const isCrew = !!template[si].crew
+          template[si].lines.push({ item: '', rate: null, qty: 0, useDays: isCrew, track_time: false })
+          render()
+        })
+      })
+
+      // Save / reset
+      el.querySelector('#tpl-save')?.addEventListener('click', () => this._saveBudgetTemplate(template))
+      el.querySelector('#tpl-reset')?.addEventListener('click', () => {
+        if (!confirm('Reset to built-in defaults? Your custom template will be lost.')) return
+        template = JSON.parse(JSON.stringify(SECTIONS))
+        render()
+      })
+    }
+
+    render()
   }
 
   async _loadUsersPanel(mc) {
@@ -483,9 +764,30 @@ export class App {
   }
 
   async saveSettings(mc) {
-    const data = { company_name:mc.querySelector('#s-name')?.value.trim()||'Peny', email:mc.querySelector('#s-email')?.value.trim()||null, phone:mc.querySelector('#s-phone')?.value.trim()||null, website:mc.querySelector('#s-website')?.value.trim()||null, address:mc.querySelector('#s-address')?.value.trim()||null, vat_number:mc.querySelector('#s-vat')?.value.trim()||null, prepared_by:mc.querySelector('#s-preparedby')?.value.trim()||null }
+    const data = {
+      company_name: mc.querySelector('#s-name')?.value.trim()||'Peny',
+      email:        mc.querySelector('#s-email')?.value.trim()||null,
+      phone:        mc.querySelector('#s-phone')?.value.trim()||null,
+      website:      mc.querySelector('#s-website')?.value.trim()||null,
+      address:      mc.querySelector('#s-address')?.value.trim()||null,
+      vat_number:   mc.querySelector('#s-vat')?.value.trim()||null,
+      prepared_by:  mc.querySelector('#s-preparedby')?.value.trim()||null,
+      // Preserve budget_template — it's saved separately via _saveBudgetTemplate
+      budget_template: this.settings?.budget_template ?? null,
+    }
     try { const [updated] = await upsertSettings(this.userId, data); this.settings = updated; this.toast('Settings saved') }
     catch (e) { console.error(e); this.toast('Error saving settings') }
+  }
+
+  async _saveBudgetTemplate(template) {
+    try {
+      const [updated] = await upsertSettings(this.userId, {
+        ...this.settings,
+        budget_template: template,
+      })
+      this.settings = updated
+      this.toast('Budget template saved')
+    } catch(e) { console.error(e); this.toast('Error saving template') }
   }
 
   toast(msg) {
@@ -590,11 +892,11 @@ export class App {
       .bsec-chev{color:var(--text-tertiary);font-size:9px;transition:transform 0.18s;flex-shrink:0}.bsec-chev.open{transform:rotate(90deg)}
       .bsec-body{display:none;border-top:0.5px solid var(--border-light)}.bsec-body.open{display:block}
       .bl-table{width:100%;border-collapse:collapse}
-      .bl-table th{font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;padding:7px 8px;text-align:left;border-bottom:0.5px solid var(--border-light);font-weight:400}
-      .bl-table th.r{text-align:right}.bl-table td{padding:5px 8px;vertical-align:middle;border-bottom:0.5px solid var(--border-light)}
+      .bl-table th{font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;padding:8px 6px;text-align:left;border-bottom:0.5px solid var(--border-light);font-weight:400}
+      .bl-table th.r{text-align:right}.bl-table td{padding:4px 4px;vertical-align:middle;border-bottom:0.5px solid var(--border-light)}
       .bl-table tr:last-child td{border-bottom:none}.bl-table tr.sub td{background:var(--bg-secondary);font-size:12px;font-weight:500}
-      .bl-in{font-size:12px;padding:4px 6px;border:0.5px solid var(--border-light);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;transition:border 0.12s}
-      .bl-in:focus{border-color:var(--border-strong)}.bl-in.w{width:100%}.bl-in.n{width:54px;text-align:right;font-variant-numeric:tabular-nums}
+      .bl-in{font-size:13px;padding:6px 8px;border:0.5px solid var(--border-light);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;transition:border 0.12s;min-height:32px}
+      .bl-in:focus{border-color:var(--border-strong)}.bl-in.w{width:100%}.bl-in.n{width:60px;text-align:right;font-variant-numeric:tabular-nums}
       .bl-tot{font-size:12px;font-variant-numeric:tabular-nums;color:var(--text-tertiary);text-align:right;white-space:nowrap}.bl-tot.nz{color:var(--text-primary);font-weight:500}
       .add-line{display:flex;align-items:center;gap:6px;padding:8px 10px;font-size:12px;color:var(--text-tertiary);cursor:pointer;border:none;border-top:0.5px solid var(--border-light);background:transparent;width:100%;text-align:left;font-family:var(--font);transition:background 0.1s,color 0.1s}
       .add-line:hover{background:var(--bg-secondary);color:var(--text-secondary)}

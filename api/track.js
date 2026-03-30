@@ -21,7 +21,7 @@ export default async function handler(req, res) {
 
     // Fetch the project by token
     const projects = await sql`
-      SELECT id, name, crew, budget_ids
+      SELECT id, name, crew, budget_ids, is_retainer, retainer_hours, retainer_start, retainer_alert
       FROM projects
       WHERE track_token = ${token}
       LIMIT 1
@@ -56,6 +56,15 @@ export default async function handler(req, res) {
           }
         }
       }
+    }
+
+    // For retainers with no budget trackable lines, add a default "Retainer work" line
+    if (trackableLines.length === 0 && project.is_retainer) {
+      trackableLines.push({
+        label: 'Retainer work',
+        allocatedHours: parseFloat(project.retainer_hours) || 0,
+        budgetId: null,
+      })
     }
 
     // Extract crew names from the project crew list

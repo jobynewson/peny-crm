@@ -6,17 +6,26 @@ const timestamps = {
   updated_at: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }
 
+// ── Workspace ─────────────────────────────────────────────────────────────────
+export const workspace = pgTable('workspace', {
+  id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  owner_id:   text('owner_id').notNull().unique(),
+  name:       text('name').notNull().default('Peny'),
+  created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 // ── Settings ──────────────────────────────────────────────────────────────────
 export const settings = pgTable('settings', {
-  id:           uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
-  user_id:      text('user_id').notNull().unique(),
-  company_name: text('company_name').notNull().default('Peny'),
-  email:        text('email'),
-  phone:        text('phone'),
-  website:      text('website'),
-  address:      text('address'),
-  vat_number:   text('vat_number'),
-  prepared_by:  text('prepared_by'),
+  id:              uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id:         text('user_id').notNull().unique(),
+  company_name:    text('company_name').notNull().default('Peny'),
+  email:           text('email'),
+  phone:           text('phone'),
+  website:         text('website'),
+  address:         text('address'),
+  vat_number:      text('vat_number'),
+  prepared_by:     text('prepared_by'),
+  budget_template: jsonb('budget_template'),
   ...timestamps,
 })
 
@@ -55,6 +64,11 @@ export const projects = pgTable('projects', {
   approvals:   jsonb('approvals').notNull().default([]),
   notes:       text('notes'),
   track_token: text('track_token'),
+  is_retainer:    boolean('is_retainer').notNull().default(false),
+  retainer_fee:   numeric('retainer_fee',   { precision: 10, scale: 2 }),
+  retainer_hours: numeric('retainer_hours', { precision: 6,  scale: 2 }),
+  retainer_alert: numeric('retainer_alert', { precision: 5,  scale: 2 }).notNull().default('80'),
+  retainer_start: date('retainer_start'),
   ...timestamps,
 })
 
@@ -71,6 +85,9 @@ export const budgets = pgTable('budgets', {
   custom_pct:  numeric('custom_pct', { precision: 5, scale: 2 }).notNull().default('0'),
   vat:         boolean('vat').notNull().default(false),
   include_in_pipeline: boolean('include_in_pipeline').notNull().default(false),
+  signed_off:    boolean('signed_off').notNull().default(false),
+  signed_off_at: timestamp('signed_off_at', { withTimezone: true }),
+  signed_off_by: text('signed_off_by'),
   travel_rate: numeric('travel_rate', { precision: 5, scale: 2 }).notNull().default('50'),
   discount:    numeric('discount', { precision: 5, scale: 2 }).notNull().default('0'),
   sections:    jsonb('sections').notNull().default([]),

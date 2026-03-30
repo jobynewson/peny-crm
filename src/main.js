@@ -1,8 +1,9 @@
 import './style.css'
 import { initAuth, getCurrentUserId, signOut } from './auth/clerk.js'
-import { getContacts, getProjects, getBudgets, getSettings, getOrCreateAppUser, resolvePermissions } from './db/client.js'
-
-// ── Bootstrap ─────────────────────────────────────────────────────────────────
+import {
+  getContacts, getProjects, getBudgets, getSettings,
+  getOrCreateAppUser, getOrCreateWorkspace, resolvePermissions,
+} from './db/client.js'
 
 async function bootstrap() {
   document.body.innerHTML = '<div class="loading">Loading…</div>'
@@ -19,22 +20,31 @@ async function bootstrap() {
   const user = await initAuth()
   if (!user) return
 
-  const userId = getCurrentUserId()
+  const clerkUserId = getCurrentUserId()
 
-  // Load app user (creates on first login; auto-admin if first user ever)
+  // 1. Get/create app user record (handles role, first-user = admin)
   const appUser = await getOrCreateAppUser(user)
   const permissions = resolvePermissions(appUser)
 
+  // 2. Get/create workspace — returns the shared owner ID used for all data
+  //    First admin to ever sign in becomes the workspace owner automatically
+  const workspaceId = await getOrCreateWorkspace(clerkUserId)
+
+  // 3. Load all shared workspace data in parallel
   const [contactsData, projectsData, budgetsData, settingsData] = await Promise.all([
-    getContacts(userId),
-    getProjects(userId),
-    getBudgets(userId),
-    getSettings(userId),
+    getContacts(workspaceId),
+    getProjects(workspaceId),
+    getBudgets(workspaceId),
+    getSettings(workspaceId),
   ])
 
   const { App } = await import('./app.js')
   const app = new App({
-    userId, user, appUser, permissions,
+    userId: workspaceId,   // all DB writes use workspace ID
+    clerkUserId,           // actual logged-in user (for activity logs, signed-off-by etc)
+    user,
+    appUser,
+    permissions,
     contacts: contactsData,
     projects: projectsData,
     budgets:  budgetsData,

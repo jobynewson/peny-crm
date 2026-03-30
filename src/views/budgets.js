@@ -1,17 +1,17 @@
 import { createBudget, updateBudget, deleteBudget, saveBudgetVersion, getBudgetVersions, deleteBudgetVersion } from '../db/client.js'
 
-const SECTIONS = [
-  {code:'A1',label:'Pre-production — Scouting',lines:[{item:'Location Scout (Director)',days:0,qty:1,rate:501},{item:'Assistant Location Scout',days:0,qty:1,rate:369},{item:'Location Scout car / mileage',days:0,qty:1,rate:null},{item:'Congestion Charge',days:0,qty:1,rate:13},{item:'Unit Driver / Bus Hire',days:0,qty:1,rate:450},{item:'Subsistence',days:0,qty:1,rate:null},{item:'Flights',days:0,qty:1,rate:null},{item:'Accommodation',days:0,qty:1,rate:null}]},
-  {code:'A2',label:'Pre-production — Expenses',lines:[{item:'Researcher',days:0,qty:1,rate:350},{item:'References / Materials / PPM Prep',days:0,qty:1,rate:150},{item:'Taxis',days:0,qty:1,rate:null},{item:'Couriers',days:0,qty:1,rate:null},{item:'Tel / Comms',days:0,qty:1,rate:null}]},
-  {code:'C',label:'Cast',crew:true,lines:[{item:'Presenter / Talent',days:0,qty:1,rate:null,travelDays:0},{item:'Supporting Artists',days:0,qty:1,rate:null,travelDays:0},{item:'Stunt Performers',days:0,qty:1,rate:null,travelDays:0}]},
-  {code:'D',label:'Production Crew',crew:true,lines:[{item:'Director',days:0,qty:1,rate:850,travelDays:0},{item:'Producer',days:0,qty:1,rate:650,travelDays:0},{item:'Production Manager',days:0,qty:1,rate:450,travelDays:0},{item:'Production Assistant',days:0,qty:1,rate:250,travelDays:0},{item:'Camera Operator',days:0,qty:1,rate:600,travelDays:0},{item:'1st AC / Focus Puller',days:0,qty:1,rate:450,travelDays:0},{item:'DIT',days:0,qty:1,rate:400,travelDays:0},{item:'Drone Pilot',days:0,qty:1,rate:550,travelDays:0},{item:'Sound Recordist',days:0,qty:1,rate:450,travelDays:0},{item:'Gaffer / Spark',days:0,qty:1,rate:400,travelDays:0},{item:'Grip',days:0,qty:1,rate:380,travelDays:0},{item:'Make-up / Hair',days:0,qty:1,rate:350,travelDays:0},{item:'Stylist',days:0,qty:1,rate:350,travelDays:0},{item:'Runner',days:0,qty:1,rate:150,travelDays:0}]},
-  {code:'E',label:'Equipment',lines:[{item:'Camera Package',days:0,qty:1,rate:null},{item:'Lens Package',days:0,qty:1,rate:null},{item:'Lighting Package',days:0,qty:1,rate:null},{item:'Grip Package',days:0,qty:1,rate:null},{item:'Sound Package',days:0,qty:1,rate:null},{item:'Drone Package',days:0,qty:1,rate:null},{item:'Generator',days:0,qty:1,rate:null},{item:'Data / Media',days:0,qty:1,rate:null}]},
-  {code:'F',label:'Art Department',lines:[{item:'Art Director',days:0,qty:1,rate:500},{item:'Props',days:0,qty:1,rate:null},{item:'Set Dressing / Hire',days:0,qty:1,rate:null},{item:'Wardrobe',days:0,qty:1,rate:null}]},
-  {code:'G',label:'Studio / Location',lines:[{item:'Studio Hire (per day)',days:0,qty:1,rate:null},{item:'Location Fees / Permits',days:0,qty:1,rate:null},{item:'Security',days:0,qty:1,rate:null},{item:'Facilities / Portaloos',days:0,qty:1,rate:null}]},
-  {code:'H',label:'Travel & Accommodation',lines:[{item:'Unit Vehicles / Transport',days:0,qty:1,rate:null},{item:'Flights',days:0,qty:1,rate:null},{item:'Accommodation',days:0,qty:1,rate:null},{item:'Subsistence / Catering',days:0,qty:1,rate:null},{item:'Mileage',days:0,qty:1,rate:0.45},{item:'Congestion / Parking',days:0,qty:1,rate:null}]},
-  {code:'I',label:'Post-production',lines:[{item:'Editor (pre-production)',days:0,qty:1,rate:350},{item:'Assembly Editor',days:0,qty:1,rate:450},{item:'Assistant Editor',days:0,qty:1,rate:400},{item:'Finishing Editor (incl. suite)',days:0,qty:1,rate:500},{item:'Grade (all assets + suite)',days:0,qty:1,rate:650},{item:'Sound Design',days:0,qty:1,rate:750},{item:'Graphics / Motion',days:0,qty:1,rate:450},{item:'Versioning',days:0,qty:1,rate:null},{item:'Stock Track Licences',days:0,qty:1,rate:10},{item:'Composition',days:0,qty:1,rate:null},{item:'Hard Drives / Media',days:0,qty:1,rate:250},{item:'Library Footage / SFX',days:0,qty:1,rate:null}]},
-  {code:'J',label:'Sundries',lines:[{item:'Legal Fees / Visas / Work Permits',days:0,qty:1,rate:null},{item:'Contingency',days:0,qty:1,rate:null},{item:'Miscellaneous',days:0,qty:1,rate:null}]},
-  {code:'K',label:'Insurance',lines:[{item:'General Production Insurance',days:0,qty:1,rate:null},{item:'Specialist Travel Insurance',days:0,qty:1,rate:null},{item:'Equipment Insurance',days:0,qty:1,rate:null}]},
+export const SECTIONS = [
+  {code:'A1',label:'Pre-production — Scouting',lines:[{item:'Location Scout (Director)',days:0,qty:0,rate:501},{item:'Assistant Location Scout',days:0,qty:0,rate:369},{item:'Location Scout car / mileage',days:0,qty:0,rate:null},{item:'Congestion Charge',days:0,qty:0,rate:13},{item:'Unit Driver / Bus Hire',days:0,qty:0,rate:450},{item:'Subsistence',days:0,qty:0,rate:null},{item:'Flights',days:0,qty:0,rate:null},{item:'Accommodation',days:0,qty:0,rate:null}]},
+  {code:'A2',label:'Pre-production — Expenses',lines:[{item:'Researcher',days:0,qty:0,rate:350},{item:'References / Materials / PPM Prep',days:0,qty:0,rate:150},{item:'Taxis',days:0,qty:0,rate:null},{item:'Couriers',days:0,qty:0,rate:null},{item:'Tel / Comms',days:0,qty:0,rate:null}]},
+  {code:'C',label:'Cast',crew:true,lines:[{item:'Presenter / Talent',days:0,qty:0,rate:null,travelDays:0},{item:'Supporting Artists',days:0,qty:0,rate:null,travelDays:0},{item:'Stunt Performers',days:0,qty:0,rate:null,travelDays:0}]},
+  {code:'D',label:'Production Crew',crew:true,lines:[{item:'Director',days:0,qty:0,rate:850,travelDays:0},{item:'Producer',days:0,qty:0,rate:650,travelDays:0},{item:'Production Manager',days:0,qty:0,rate:450,travelDays:0},{item:'Production Assistant',days:0,qty:0,rate:250,travelDays:0},{item:'Camera Operator',days:0,qty:0,rate:600,travelDays:0},{item:'1st AC / Focus Puller',days:0,qty:0,rate:450,travelDays:0},{item:'DIT',days:0,qty:0,rate:400,travelDays:0},{item:'Drone Pilot',days:0,qty:0,rate:550,travelDays:0},{item:'Sound Recordist',days:0,qty:0,rate:450,travelDays:0},{item:'Gaffer / Spark',days:0,qty:0,rate:400,travelDays:0},{item:'Grip',days:0,qty:0,rate:380,travelDays:0},{item:'Make-up / Hair',days:0,qty:0,rate:350,travelDays:0},{item:'Stylist',days:0,qty:0,rate:350,travelDays:0},{item:'Runner',days:0,qty:0,rate:150,travelDays:0}]},
+  {code:'E',label:'Equipment',lines:[{item:'Camera Package',days:0,qty:0,rate:null},{item:'Lens Package',days:0,qty:0,rate:null},{item:'Lighting Package',days:0,qty:0,rate:null},{item:'Grip Package',days:0,qty:0,rate:null},{item:'Sound Package',days:0,qty:0,rate:null},{item:'Drone Package',days:0,qty:0,rate:null},{item:'Generator',days:0,qty:0,rate:null},{item:'Data / Media',days:0,qty:0,rate:null}]},
+  {code:'F',label:'Art Department',lines:[{item:'Art Director',days:0,qty:0,rate:500},{item:'Props',days:0,qty:0,rate:null},{item:'Set Dressing / Hire',days:0,qty:0,rate:null},{item:'Wardrobe',days:0,qty:0,rate:null}]},
+  {code:'G',label:'Studio / Location',lines:[{item:'Studio Hire (per day)',days:0,qty:0,rate:null},{item:'Location Fees / Permits',days:0,qty:0,rate:null},{item:'Security',days:0,qty:0,rate:null},{item:'Facilities / Portaloos',days:0,qty:0,rate:null}]},
+  {code:'H',label:'Travel & Accommodation',lines:[{item:'Unit Vehicles / Transport',days:0,qty:0,rate:null},{item:'Flights',days:0,qty:0,rate:null},{item:'Accommodation',days:0,qty:0,rate:null},{item:'Subsistence / Catering',days:0,qty:0,rate:null},{item:'Mileage',days:0,qty:0,rate:0.45},{item:'Congestion / Parking',days:0,qty:0,rate:null}]},
+  {code:'I',label:'Post-production',lines:[{item:'Editor (pre-production)',days:0,qty:0,rate:350},{item:'Assembly Editor',days:0,qty:0,rate:450},{item:'Assistant Editor',days:0,qty:0,rate:400},{item:'Finishing Editor (incl. suite)',days:0,qty:0,rate:500},{item:'Grade (all assets + suite)',days:0,qty:0,rate:650},{item:'Sound Design',days:0,qty:0,rate:750},{item:'Graphics / Motion',days:0,qty:0,rate:450},{item:'Versioning',days:0,qty:0,rate:null},{item:'Stock Track Licences',days:0,qty:0,rate:10},{item:'Composition',days:0,qty:0,rate:null},{item:'Hard Drives / Media',days:0,qty:0,rate:250},{item:'Library Footage / SFX',days:0,qty:0,rate:null}]},
+  {code:'J',label:'Sundries',lines:[{item:'Legal Fees / Visas / Work Permits',days:0,qty:0,rate:null},{item:'Contingency',days:0,qty:0,rate:null},{item:'Miscellaneous',days:0,qty:0,rate:null}]},
+  {code:'K',label:'Insurance',lines:[{item:'General Production Insurance',days:0,qty:0,rate:null},{item:'Specialist Travel Insurance',days:0,qty:0,rate:null},{item:'Equipment Insurance',days:0,qty:0,rate:null}]},
 ]
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')
@@ -83,18 +83,25 @@ export class BudgetsView {
       </div>
       <div class="panel">
         <div class="panel-header"><span class="panel-title">All budgets</span></div>
-        <div class="col-header" style="grid-template-columns:2fr 1.2fr 1.2fr 1fr 1fr 80px">
-          <div>Budget</div><div>Project</div><div>Client</div><div>Net</div><div>Total</div><div></div>
+        <div class="col-header" style="grid-template-columns:2fr 1.2fr 1.2fr 1fr 1fr 1.2fr 80px">
+          <div>Budget</div><div>Project</div><div>Client</div><div>Net</div><div>Total</div><div>Signed off</div><div></div>
         </div>
         ${budgets.length ? budgets.map(b => {
           const cl = contacts.find(c => c.id === b.client_id)
           const proj = projects.find(p => Array.isArray(p.budget_ids) && p.budget_ids.includes(b.id))
-          return `<div class="contact-row" style="grid-template-columns:2fr 1.2fr 1.2fr 1fr 1fr 80px" data-open="${b.id}">
+          const soDate = b.signed_off_at ? new Date(b.signed_off_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : null
+          return `<div class="contact-row" style="grid-template-columns:2fr 1.2fr 1.2fr 1fr 1fr 1.2fr 80px" data-open="${b.id}">
             <div style="font-weight:500">${esc(b.name)}</div>
             <div style="font-size:12px;color:var(--text-secondary)">${proj ? esc(proj.name) : '—'}</div>
             <div style="font-size:12px;color:var(--text-secondary)">${cl ? esc(cl.first_name)+' '+esc(cl.last_name) : '—'}</div>
             <div style="color:var(--text-secondary)">${gbpA(budNet(b))}</div>
             <div style="font-weight:500">${gbpA(budTotal(b))}</div>
+            <div style="font-size:11px">
+              ${b.signed_off
+                ? `<span style="color:#6ec96e;font-weight:500">✓ ${soDate}</span>
+                   ${b.signed_off_by ? `<div style="color:var(--text-tertiary);font-size:10px">${esc(b.signed_off_by)}</div>` : ''}`
+                : `<span style="color:var(--text-tertiary)">—</span>`}
+            </div>
             <div style="text-align:right"><button class="row-btn" style="color:#b03020" data-delete="${b.id}">Delete</button></div>
           </div>`
         }).join('') : '<div class="empty-state">No budgets yet</div>'}
@@ -203,9 +210,18 @@ export class BudgetsView {
     const name = mc.querySelector('#bf-name')?.value.trim()
     if (!name) { this.app.toast('Please enter a budget title'); return }
 
-    const sections = SECTIONS.map(def => ({
-      code: def.code, label: def.label, enabled: false, open: false, crew: !!def.crew,
-      lines: def.lines.map(l => ({ ...l, days: 0, qty: l.qty ?? 1, notes: '', travelDays: 'travelDays' in l ? 0 : undefined }))
+    // Use workspace template if set, otherwise fall back to built-in SECTIONS
+    const templateDefs = this.app.settings?.budget_template ?? SECTIONS
+    const sections = templateDefs.map(def => ({
+      code: def.code, label: def.label, enabled: def.enabled ?? false, open: false,
+      crew: !!def.crew,
+      lines: (def.lines || []).map(l => ({
+        ...l,
+        days: 0,
+        qty: l.qty ?? 0,
+        notes: '',
+        travelDays: (l.useDays || 'travelDays' in l) ? 0 : undefined,
+      }))
     }))
 
     // Prefill crew from project if available
@@ -299,6 +315,7 @@ export class BudgetsView {
         ${cl ? `<span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary)">${esc(cl.first_name)} ${esc(cl.last_name)} — ${esc(cl.company)}</span>` : ''}
         ${proj ? `<span class="tag" style="background:#daeeff;color:#0d4a8a">${esc(proj.name)}</span>` : ''}
         ${b.vat ? `<span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary)">VAT included</span>` : ''}
+        ${b.signed_off ? `<span class="tag" style="background:rgba(110,201,110,0.15);color:#6ec96e">✓ Signed off${b.signed_off_at ? ' · '+new Date(b.signed_off_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : ''}</span>` : ''}
       </div>
       <div class="budget-layout">
         <div class="budget-main">
@@ -433,8 +450,9 @@ export class BudgetsView {
           </div>
           <div style="margin-top:14px;display:flex;flex-direction:column;gap:10px">
             <label style="display:flex;align-items:center;gap:9px;padding:10px 12px;background:var(--bg-secondary);border-radius:var(--radius-md);cursor:pointer;font-size:13px;color:var(--text-secondary)">
-              <input type="checkbox" id="be-pipeline" ${b.include_in_pipeline?'checked':''} style="cursor:pointer;width:15px;height:15px;flex-shrink:0" />
-              Include in Pipeline
+              <input type="checkbox" id="be-signedoff" ${b.signed_off?'checked':''} style="cursor:pointer;width:15px;height:15px;flex-shrink:0" />
+              Signed off
+              ${b.signed_off && b.signed_off_at ? `<span style="margin-left:auto;font-size:11px;color:var(--text-tertiary)">${new Date(b.signed_off_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}${b.signed_off_by?' · '+esc(b.signed_off_by):''}</span>` : ''}
             </label>
             <div>
               <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">Prepared by</div>
@@ -582,7 +600,17 @@ export class BudgetsView {
       save(); this.renderEditor(mc)
     })
     mc.querySelector('#be-vat')?.addEventListener('change',    e => { b.vat = e.target.checked; save(); refreshSummary() })
-    mc.querySelector('#be-pipeline')?.addEventListener('change', e => { b.include_in_pipeline = e.target.checked; save() })
+    mc.querySelector('#be-signedoff')?.addEventListener('change', e => {
+      b.signed_off = e.target.checked
+      if (e.target.checked) {
+        b.signed_off_at = new Date().toISOString()
+        b.signed_off_by = this.app.appUser?.name || this.app.user?.primaryEmailAddress?.emailAddress || ''
+      } else {
+        b.signed_off_at = null
+        b.signed_off_by = null
+      }
+      save(); this.renderEditor(mc)
+    })
     mc.querySelector('#be-preparedby')?.addEventListener('change', e => { b.prepared_by = e.target.value; save() })
     mc.querySelector('#be-email')?.addEventListener('change',      e => { b.quote_email = e.target.value; save() })
 
@@ -704,7 +732,7 @@ export class BudgetsView {
       btn.addEventListener('click', () => {
         const si = +btn.dataset.addLine
         const defaultDays = !!sections[si].crew
-        sections[si].lines.push({ item:'', notes:'', useDays: defaultDays, qty:1, rate:null, ...(defaultDays ? {days:0, travelDays:0} : {}) })
+        sections[si].lines.push({ item:'', notes:'', useDays: defaultDays, qty:0, rate:null, ...(defaultDays ? {days:0, travelDays:0} : {}) })
         save(); this.renderEditor(mc)
       })
     })
@@ -784,8 +812,11 @@ export class BudgetsView {
         name: b.name,
         markup: b.markup, custom_pct: b.custom_pct, vat: b.vat,
         travel_rate: b.travel_rate ?? 50, discount: b.discount ?? 0,
+        signed_off: b.signed_off ?? false,
+        signed_off_at: b.signed_off_at ?? null,
+        signed_off_by: b.signed_off_by ?? null,
         sections: b.sections, prepared_by: b.prepared_by, quote_email: b.quote_email,
-        notes: b.notes, include_in_pipeline: b.include_in_pipeline ?? false,
+        notes: b.notes, include_in_pipeline: b.signed_off ?? false,  // keep in sync for dashboard
       }
       const [updated] = await updateBudget(this.app.userId, b.id, data)
       const idx = this.app.budgets.findIndex(x => x.id === b.id)

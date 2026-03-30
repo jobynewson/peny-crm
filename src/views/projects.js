@@ -106,17 +106,22 @@ export class ProjectsView {
       </div>`
   }
 
-  openNewModal(clientId, stage, mc) {
+  openNewModal(clientId, stage, mc, isRetainer = false) {
     const el = (mc || document.getElementById('main-content'))
     el.querySelector('#pf-name').value   = ''
     el.querySelector('#pf-status').value = stage || 'Enquiry'
     if (clientId) el.querySelector('#pf-client').value = clientId
-    el.querySelector('#proj-new-modal')?.classList.add('open')
+    // Store retainer flag on the modal for saveNew to read
+    const modal = el.querySelector('#proj-new-modal')
+    if (modal) modal.dataset.isRetainer = isRetainer ? '1' : ''
+    modal?.classList.add('open')
   }
 
   async saveNew(mc) {
     const name = mc.querySelector('#pf-name')?.value.trim()
     if (!name) { this.app.toast('Please enter a project title'); return }
+    const isRetainer = mc.querySelector('#proj-new-modal')?.dataset.isRetainer === '1'
+    const today = new Date().toISOString().split('T')[0]
     const data = {
       name,
       client_id:    mc.querySelector('#pf-client')?.value  || null,
@@ -136,6 +141,11 @@ export class ProjectsView {
       ],
       budget_ids: [],
       notes: '',
+      is_retainer:    isRetainer,
+      retainer_fee:   null,
+      retainer_hours: null,
+      retainer_alert: 80,
+      retainer_start: isRetainer ? today : null,
     }
     try {
       const [created] = await createProject(this.app.userId, data)
@@ -194,6 +204,18 @@ export class ProjectsView {
               ${!p.brief && !p.location && !p.shoot_start && !cl ? '<div style="font-size:13px;color:var(--text-tertiary)">No details yet — click Edit project to add.</div>' : ''}
             </div>
           </div>
+
+          ${p.is_retainer ? `
+          <div class="proj-panel">
+            <div class="proj-panel-head">Retainer</div>
+            <div class="proj-panel-body">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                ${p.retainer_fee    ? `<div><div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Monthly fee</div><div style="font-size:15px;font-weight:600">£${Number(p.retainer_fee).toLocaleString('en-GB')}</div></div>` : ''}
+                ${p.retainer_hours  ? `<div><div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Hours / month</div><div style="font-size:15px;font-weight:600">${p.retainer_hours}h</div></div>` : ''}
+              </div>
+              ${p.retainer_start ? `<div style="font-size:12px;color:var(--text-tertiary)">Resets on day ${new Date(p.retainer_start).getUTCDate()} each month · Alert at ${p.retainer_alert??80}%</div>` : ''}
+            </div>
+          </div>` : ''}
 
           ${delivs.length ? `
           <div class="proj-panel">
@@ -254,16 +276,17 @@ export class ProjectsView {
             </div>
           </div>
 
-          ${linked.length ? `
           <div class="proj-panel">
             <div class="proj-panel-head">Linked budgets</div>
             <div style="padding:10px 14px;display:flex;flex-direction:column;gap:6px">
               ${linked.map(b => `
                 <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;background:var(--bg-secondary);border-radius:var(--radius-md);font-size:12px;cursor:pointer" data-open-budget="${b.id}">
                   <span style="font-weight:500">${esc(b.name)}</span>
+                  ${b.signed_off ? `<span style="font-size:10px;color:#6ec96e">✓ Signed off</span>` : ''}
                 </div>`).join('')}
+              ${this.app.permissions?.budgets_edit ? `<button class="dashed-btn" id="pv-new-budget" style="font-size:12px">+ create new budget</button>` : ''}
             </div>
-          </div>` : ''}
+          </div>
 
           ${p.notes ? `
           <div class="proj-panel">
@@ -332,6 +355,9 @@ export class ProjectsView {
     mc.querySelectorAll('[data-open-budget]').forEach(el => {
       el.addEventListener('click', () => this.app.openBudget(el.dataset.openBudget))
     })
+    mc.querySelector('#pv-new-budget')?.addEventListener('click', () => {
+      this.app.budgetsView.openNewModalFromProject(p)
+    })
 
     // Load activity log
     this._loadProjectActivity(mc, p.id)
@@ -362,17 +388,36 @@ export class ProjectsView {
       }
     }
 
-    if (!trackableLines.length) {
+    if (!trackableLines.length && !p.is_retainer) {
       el.innerHTML = `<div style="font-size:11px;color:var(--text-tertiary);padding:10px 0">No trackable lines. In the linked budget, tick ⏱ on any daily-rate line to enable time tracking.</div>`
       this._renderTrackingLink(mc, p, el)
       return
     }
 
     try {
-      const entries = await getTimeEntries(p.id)
-      const totalAlloc  = trackableLines.reduce((s, l) => s + l.allocHours, 0)
+      const allEntries = await getTimeEntries(p.id)
+
+      // For retainers: filter to current period only for "this month" stats, keep all for history
+      let entries = allEntries
+      let periodLabel = 'All time'
+      if (p.is_retainer && p.retainer_start) {
+        const [periodStart, periodEnd] = this.app._retainerPeriod(p.retainer_start)
+        if (periodStart) {
+          entries = allEntries.filter(e => {
+            const d = new Date(e.entry_date)
+            return d >= periodStart && d < periodEnd
+          })
+          periodLabel = periodStart.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) + ' — ' + new Date(periodEnd - 1).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})
+        }
+      }
+
+      const allocHours = p.is_retainer
+        ? (parseFloat(p.retainer_hours) || 0)
+        : trackableLines.reduce((s, l) => s + l.allocHours, 0)
       const totalLogged = entries.reduce((s, e) => s + parseFloat(e.hours), 0)
-      const pct = totalAlloc > 0 ? Math.min(100, Math.round(totalLogged / totalAlloc * 100)) : 0
+      const pct = allocHours > 0 ? Math.min(100, Math.round(totalLogged / allocHours * 100)) : 0
+      const alertPct = p.is_retainer ? (parseFloat(p.retainer_alert)||80) : 100
+      const barColour = pct >= 100 ? (p.is_retainer ? '#ef4444' : '#6ec96e') : pct >= alertPct ? '#f59e0b' : '#4a90d9'
 
       // Per-line breakdown
       const byLine = {}
@@ -383,14 +428,17 @@ export class ProjectsView {
       el.innerHTML = `
         <div style="margin-top:10px">
           <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px">
-            <span style="color:var(--text-secondary)">Overall progress</span>
-            <span style="font-weight:500">${totalLogged.toFixed(1)} / ${totalAlloc}h</span>
+            <span style="color:var(--text-secondary)">${p.is_retainer ? 'This period' : 'Overall progress'}</span>
+            <span style="font-weight:500;color:${pct>=alertPct?barColour:''}">${totalLogged.toFixed(1)} / ${allocHours}h</span>
           </div>
           <div style="height:6px;background:var(--bg-secondary);border-radius:3px;overflow:hidden">
-            <div style="height:100%;width:${pct}%;background:${pct>=100?'#6ec96e':'#4a90d9'};border-radius:3px;transition:width 0.3s"></div>
+            <div style="height:100%;width:${pct}%;background:${barColour};border-radius:3px;transition:width 0.3s"></div>
           </div>
+          ${p.is_retainer ? `<div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">${periodLabel}</div>` : ''}
+          ${pct >= alertPct && pct < 100 ? `<div style="font-size:11px;color:${barColour};margin-top:4px">⚠ ${pct}% used — ${(allocHours - totalLogged).toFixed(1)}h remaining</div>` : ''}
+          ${pct >= 100 && p.is_retainer ? `<div style="font-size:11px;color:${barColour};margin-top:4px">⚠ Over by ${(totalLogged - allocHours).toFixed(1)}h</div>` : ''}
         </div>
-        ${trackableLines.map(l => {
+        ${!p.is_retainer ? trackableLines.map(l => {
           const logged = byLine[l.label] || 0
           const lPct = l.allocHours > 0 ? Math.min(100, Math.round(logged / l.allocHours * 100)) : 0
           return `<div style="margin-top:10px">
@@ -402,11 +450,11 @@ export class ProjectsView {
               <div style="height:100%;width:${lPct}%;background:${lPct>=100?'#6ec96e':'#4a90d9'};border-radius:2px"></div>
             </div>
           </div>`
-        }).join('')}
-        ${entries.length > 0 ? `
+        }).join('') : ''}
+        ${allEntries.length > 0 ? `
         <div style="margin-top:14px">
           <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Recent entries</div>
-          ${entries.slice(0,8).map(e => `
+          ${allEntries.slice(0,8).map(e => `
             <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:0.5px solid var(--border-light);font-size:12px" data-eid="${e.id}">
               <div>
                 <span style="color:var(--text-primary)">${e.crew_name}</span>
@@ -556,7 +604,40 @@ export class ProjectsView {
           </div>
 
           <div class="proj-panel">
-            <div class="proj-panel-head">Deliverables</div>
+            <div class="proj-panel-head">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0">
+                <input type="checkbox" id="pe-is-retainer" ${p.is_retainer?'checked':''} style="cursor:pointer;width:14px;height:14px" />
+                Retainer
+              </label>
+              ${p.is_retainer ? `<span style="font-size:11px;color:var(--text-tertiary);font-weight:400;text-transform:none;letter-spacing:0;margin-left:4px">— recurring monthly engagement</span>` : ''}
+            </div>
+            ${p.is_retainer ? `<div class="proj-panel-body">
+              <div class="proj-date-row">
+                <div>
+                  <div class="proj-field-label">Monthly fee £</div>
+                  <input type="number" class="proj-input" id="pe-ret-fee" value="${p.retainer_fee??''}" placeholder="0" min="0" step="100" />
+                </div>
+                <div>
+                  <div class="proj-field-label">Hours per month</div>
+                  <input type="number" class="proj-input" id="pe-ret-hours" value="${p.retainer_hours??''}" placeholder="0" min="0" step="0.5" />
+                </div>
+              </div>
+              <div class="proj-date-row">
+                <div>
+                  <div class="proj-field-label">Period start date</div>
+                  <input type="date" class="proj-input" id="pe-ret-start" value="${p.retainer_start??''}" title="Day-of-month used for period reset" />
+                </div>
+                <div>
+                  <div class="proj-field-label">Alert threshold %</div>
+                  <input type="number" class="proj-input" id="pe-ret-alert" value="${p.retainer_alert??80}" min="1" max="100" step="5" />
+                </div>
+              </div>
+              <div style="font-size:11px;color:var(--text-tertiary);line-height:1.5">
+                Period resets on day <strong>${p.retainer_start ? new Date(p.retainer_start).getUTCDate() : '—'}</strong> of each month.
+                Alert fires when hours logged reach <strong>${p.retainer_alert??80}%</strong> of the monthly allocation.
+              </div>
+            </div>` : ''}
+          </div>
             <div style="padding:0 16px" id="pe-delivs">
               ${delivs.map((d,i) => this.delivHTML(p.id, d, i)).join('')}
             </div>
@@ -685,6 +766,18 @@ export class ProjectsView {
     mc.querySelector('#pe-end')?.addEventListener('change',     e => { p.shoot_end   = e.target.value || null; save() })
     mc.querySelector('#pe-notes')?.addEventListener('change',   e => { p.notes   = e.target.value; save() })
 
+    // Retainer fields
+    mc.querySelector('#pe-is-retainer')?.addEventListener('change', e => {
+      p.is_retainer = e.target.checked
+      if (e.target.checked && !p.retainer_start) p.retainer_start = new Date().toISOString().split('T')[0]
+      if (e.target.checked && !p.retainer_alert) p.retainer_alert = 80
+      save(); this.renderEditor(mc)
+    })
+    mc.querySelector('#pe-ret-fee')?.addEventListener('change',   e => { p.retainer_fee   = parseFloat(e.target.value)||null; save() })
+    mc.querySelector('#pe-ret-hours')?.addEventListener('change', e => { p.retainer_hours = parseFloat(e.target.value)||null; save() })
+    mc.querySelector('#pe-ret-start')?.addEventListener('change', e => { p.retainer_start = e.target.value||null; save(); this.renderEditor(mc) })
+    mc.querySelector('#pe-ret-alert')?.addEventListener('change', e => { p.retainer_alert = parseFloat(e.target.value)||80; save() })
+
     // Deliverables
     mc.querySelectorAll('[data-deliv-done]').forEach(el => {
       el.addEventListener('change', () => { p.deliverables[+el.dataset.delivDone].done = el.checked; save() })
@@ -788,6 +881,11 @@ export class ProjectsView {
         shoot_start: p.shoot_start || null, shoot_end: p.shoot_end || null,
         deliverables: p.deliverables, crew: p.crew, shots: p.shots,
         approvals: p.approvals, notes: p.notes,
+        is_retainer:    p.is_retainer    ?? false,
+        retainer_fee:   p.retainer_fee   ?? null,
+        retainer_hours: p.retainer_hours ?? null,
+        retainer_alert: p.retainer_alert ?? 80,
+        retainer_start: p.retainer_start || null,
       }
       const [updated] = await updateProject(this.app.userId, p.id, data)
       const idx = this.app.projects.findIndex(x => x.id === p.id)

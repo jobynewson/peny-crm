@@ -3,7 +3,7 @@ import { drizzle } from 'drizzle-orm/neon-http'
 import { eq, and, desc, inArray } from 'drizzle-orm'
 import * as schema from './schema.js'
 import {
-  contacts, projects, budgets, settings,
+  contacts, projects, budgets, settings, workspace,
   project_budgets, budget_versions, activity_log,
   app_users, time_entries,
 } from './schema.js'
@@ -11,42 +11,54 @@ import {
 const sql = neon(import.meta.env.VITE_DATABASE_URL)
 export const db = drizzle(sql, { schema })
 
+// ── Workspace ─────────────────────────────────────────────────────────────────
+// Returns the workspace owner ID — all data is scoped to this single ID.
+// If no workspace exists yet, the current user becomes the owner (first admin).
+export async function getOrCreateWorkspace(clerkUserId) {
+  const rows = await db.select().from(workspace).limit(1)
+  if (rows[0]) return rows[0].owner_id
+
+  // No workspace yet — this user is the first admin, create the workspace
+  await db.insert(workspace).values({ owner_id: clerkUserId }).onConflictDoNothing()
+  return clerkUserId
+}
+
 // ── Settings ──────────────────────────────────────────────────────────────────
-export async function getSettings(userId) {
-  const rows = await db.select().from(settings).where(eq(settings.user_id, userId))
+export async function getSettings(workspaceId) {
+  const rows = await db.select().from(settings).where(eq(settings.user_id, workspaceId))
   return rows[0] ?? null
 }
-export async function upsertSettings(userId, data) {
+export async function upsertSettings(workspaceId, data) {
   return db.insert(settings)
-    .values({ user_id: userId, ...data })
+    .values({ user_id: workspaceId, ...data })
     .onConflictDoUpdate({ target: settings.user_id, set: { ...data, updated_at: new Date() } })
     .returning()
 }
 
 // ── Contacts ──────────────────────────────────────────────────────────────────
-export async function getContacts(userId) {
+export async function getContacts(workspaceId) {
   return db.select().from(contacts)
-    .where(eq(contacts.user_id, userId))
+    .where(eq(contacts.user_id, workspaceId))
     .orderBy(desc(contacts.created_at))
 }
-export async function createContact(userId, data) {
-  return db.insert(contacts).values({ user_id: userId, ...data }).returning()
+export async function createContact(workspaceId, data) {
+  return db.insert(contacts).values({ user_id: workspaceId, ...data }).returning()
 }
-export async function updateContact(userId, id, data) {
+export async function updateContact(workspaceId, id, data) {
   return db.update(contacts)
     .set({ ...data, updated_at: new Date() })
-    .where(and(eq(contacts.id, id), eq(contacts.user_id, userId)))
+    .where(and(eq(contacts.id, id), eq(contacts.user_id, workspaceId)))
     .returning()
 }
-export async function deleteContact(userId, id) {
+export async function deleteContact(workspaceId, id) {
   return db.delete(contacts)
-    .where(and(eq(contacts.id, id), eq(contacts.user_id, userId)))
+    .where(and(eq(contacts.id, id), eq(contacts.user_id, workspaceId)))
 }
 
 // ── Projects ──────────────────────────────────────────────────────────────────
-export async function getProjects(userId) {
+export async function getProjects(workspaceId) {
   const rows = await db.select().from(projects)
-    .where(eq(projects.user_id, userId))
+    .where(eq(projects.user_id, workspaceId))
     .orderBy(desc(projects.created_at))
 
   if (!rows.length) return []
@@ -63,18 +75,18 @@ export async function getProjects(userId) {
 
   return rows.map(r => ({ ...r, budget_ids: linkMap[r.id] ?? [] }))
 }
-export async function createProject(userId, data) {
-  return db.insert(projects).values({ user_id: userId, ...data }).returning()
+export async function createProject(workspaceId, data) {
+  return db.insert(projects).values({ user_id: workspaceId, ...data }).returning()
 }
-export async function updateProject(userId, id, data) {
+export async function updateProject(workspaceId, id, data) {
   return db.update(projects)
     .set({ ...data, updated_at: new Date() })
-    .where(and(eq(projects.id, id), eq(projects.user_id, userId)))
+    .where(and(eq(projects.id, id), eq(projects.user_id, workspaceId)))
     .returning()
 }
-export async function deleteProject(userId, id) {
+export async function deleteProject(workspaceId, id) {
   return db.delete(projects)
-    .where(and(eq(projects.id, id), eq(projects.user_id, userId)))
+    .where(and(eq(projects.id, id), eq(projects.user_id, workspaceId)))
 }
 
 // ── Project ↔ Budget links ────────────────────────────────────────────────────
@@ -95,30 +107,30 @@ export async function getBudgetIdsForProject(projectId) {
 }
 
 // ── Budgets ───────────────────────────────────────────────────────────────────
-export async function getBudgets(userId) {
+export async function getBudgets(workspaceId) {
   return db.select().from(budgets)
-    .where(eq(budgets.user_id, userId))
+    .where(eq(budgets.user_id, workspaceId))
     .orderBy(desc(budgets.created_at))
 }
-export async function createBudget(userId, data) {
-  return db.insert(budgets).values({ user_id: userId, ...data }).returning()
+export async function createBudget(workspaceId, data) {
+  return db.insert(budgets).values({ user_id: workspaceId, ...data }).returning()
 }
-export async function updateBudget(userId, id, data) {
+export async function updateBudget(workspaceId, id, data) {
   return db.update(budgets)
     .set({ ...data, updated_at: new Date() })
-    .where(and(eq(budgets.id, id), eq(budgets.user_id, userId)))
+    .where(and(eq(budgets.id, id), eq(budgets.user_id, workspaceId)))
     .returning()
 }
-export async function deleteBudget(userId, id) {
+export async function deleteBudget(workspaceId, id) {
   return db.delete(budgets)
-    .where(and(eq(budgets.id, id), eq(budgets.user_id, userId)))
+    .where(and(eq(budgets.id, id), eq(budgets.user_id, workspaceId)))
 }
 
 // ── Budget versions ───────────────────────────────────────────────────────────
-export async function saveBudgetVersion(userId, budgetId, budgetData, name = 'Auto-save', isAuto = true) {
+export async function saveBudgetVersion(workspaceId, budgetId, budgetData, name = 'Auto-save', isAuto = true) {
   return db.insert(budget_versions).values({
     budget_id: budgetId,
-    user_id:   userId,
+    user_id:   workspaceId,
     name,
     is_auto:   isAuto,
     snapshot:  budgetData,
@@ -134,9 +146,9 @@ export async function deleteBudgetVersion(id) {
 }
 
 // ── Activity log ──────────────────────────────────────────────────────────────
-export async function logActivity(userId, entityType, entityId, entityName, summary) {
+export async function logActivity(workspaceId, entityType, entityId, entityName, summary) {
   return db.insert(activity_log).values({
-    user_id:     userId,
+    user_id:     workspaceId,
     entity_type: entityType,
     entity_id:   entityId,
     entity_name: entityName,
@@ -227,9 +239,9 @@ export async function getProjectByToken(token) {
   return rows[0] ?? null
 }
 
-export async function setTrackToken(userId, projectId, token) {
+export async function setTrackToken(workspaceId, projectId, token) {
   return db.update(projects)
     .set({ track_token: token, updated_at: new Date() })
-    .where(and(eq(projects.id, projectId), eq(projects.user_id, userId)))
+    .where(and(eq(projects.id, projectId), eq(projects.user_id, workspaceId)))
     .returning()
 }
