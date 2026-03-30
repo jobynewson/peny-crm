@@ -5,9 +5,9 @@ import { ProjectsView } from './views/projects.js'
 import { BudgetsView, budTotal } from './views/budgets.js'
 
 export class App {
-  constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, onSignOut }) {
-    this.userId      = userId        // workspace ID — used for all DB scoping
-    this.clerkUserId = clerkUserId   // actual logged-in user — for audit trails
+  constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, onSignOut }) {
+    this.userId      = userId
+    this.clerkUserId = clerkUserId
     this.user        = user
     this.appUser     = appUser
     this.permissions = permissions
@@ -15,6 +15,7 @@ export class App {
     this.projects = projects ?? []
     this.budgets  = budgets  ?? []
     this.settings = settings ?? {}
+    this.allUsers = allUsers ?? []
     this.onSignOut = onSignOut
     this.currentView = 'dashboard'
     this.contactsView = new ContactsView(this)
@@ -309,21 +310,6 @@ export class App {
     mc.querySelectorAll('[data-open-pid]').forEach(el => {
       el.addEventListener('click', () => this.openProject(el.dataset.openPid))
     })
-    // New retainer button
-    if (this.permissions?.projects_edit) {
-      const addRetainerBtn = document.createElement('button')
-      addRetainerBtn.className = 'dashed-btn'
-      addRetainerBtn.style.cssText = 'margin-top:8px;font-size:12px;width:100%;max-width:220px'
-      addRetainerBtn.textContent = '+ New retainer'
-      const retainerGrid = mc.querySelector('#retainer-cards')
-      if (retainerGrid) retainerGrid.after(addRetainerBtn)
-      else mc.prepend(addRetainerBtn)
-      addRetainerBtn.addEventListener('click', () => {
-        const mc2 = document.getElementById('main-content')
-        this.navigate('projects')
-        setTimeout(() => this.projectsView.openNewModal(null, null, mc2, true), 50)
-      })
-    }
     // Deliverable tick without opening the project
     mc.querySelectorAll('[data-deliv-pid]').forEach(el => {
       el.addEventListener('change', async () => {
@@ -685,6 +671,11 @@ export class App {
               </label>`
             }).join('')}
           </div>
+          <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+            <div style="font-size:12px;color:var(--text-secondary);white-space:nowrap">Default crew role:</div>
+            <input type="text" value="${u.default_role||''}" placeholder="e.g. Camera Operator" data-default-role="${u.id}"
+              style="flex:1;font-size:12px;padding:4px 8px;border:0.5px solid var(--border-light);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+          </div>
           ${!isSelf ? `<div style="margin-top:10px;text-align:right"><button class="row-btn" data-save-user="${u.id}" style="font-size:11px">Save changes</button></div>` : ''}
         </div>`
       }).join('')
@@ -707,6 +698,7 @@ export class App {
         btn.addEventListener('click', async () => {
           const uid = btn.dataset.saveUser
           const role = el.querySelector(`[data-role-uid="${uid}"]`)?.value ?? 'member'
+          const default_role = el.querySelector(`[data-default-role="${uid}"]`)?.value.trim() || null
           const preset = ROLE_PRESETS[role] ?? ROLE_PRESETS.member
           const perms = {}
           PERM_KEYS.forEach(k => {
@@ -718,7 +710,10 @@ export class App {
             }
           })
           try {
-            await updateAppUser(uid, { role, permissions: perms })
+            await updateAppUser(uid, { role, permissions: perms, default_role })
+            // Update in-memory allUsers so crew dropdown reflects changes immediately
+            const u = this.allUsers?.find(x => x.id === uid)
+            if (u) { u.role = role; u.permissions = perms; u.default_role = default_role }
             this.toast('User updated')
             this._loadUsersPanel(mc)
           } catch(e) { console.error(e); this.toast('Error saving user') }

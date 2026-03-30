@@ -2,7 +2,7 @@ import './style.css'
 import { initAuth, getCurrentUserId, signOut } from './auth/clerk.js'
 import {
   getContacts, getProjects, getBudgets, getSettings,
-  getOrCreateAppUser, getOrCreateWorkspace, resolvePermissions,
+  getOrCreateAppUser, getOrCreateWorkspace, resolvePermissions, getAllAppUsers,
 } from './db/client.js'
 
 async function bootstrap() {
@@ -31,17 +31,18 @@ async function bootstrap() {
   const workspaceId = await getOrCreateWorkspace(clerkUserId)
 
   // 3. Load all shared workspace data in parallel
-  const [contactsData, projectsData, budgetsData, settingsData] = await Promise.all([
+  const [contactsData, projectsData, budgetsData, settingsData, allUsersData] = await Promise.all([
     getContacts(workspaceId),
     getProjects(workspaceId),
     getBudgets(workspaceId),
     getSettings(workspaceId),
+    getAllAppUsers(),
   ])
 
   const { App } = await import('./app.js')
   const app = new App({
-    userId: workspaceId,   // all DB writes use workspace ID
-    clerkUserId,           // actual logged-in user (for activity logs, signed-off-by etc)
+    userId: workspaceId,
+    clerkUserId,
     user,
     appUser,
     permissions,
@@ -49,6 +50,7 @@ async function bootstrap() {
     projects: projectsData,
     budgets:  budgetsData,
     settings: settingsData,
+    allUsers: allUsersData,
     onSignOut: signOut,
   })
 

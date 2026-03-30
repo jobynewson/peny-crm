@@ -69,6 +69,7 @@ export const projects = pgTable('projects', {
   retainer_hours: numeric('retainer_hours', { precision: 6,  scale: 2 }),
   retainer_alert: numeric('retainer_alert', { precision: 5,  scale: 2 }).notNull().default('80'),
   retainer_start: date('retainer_start'),
+  monthly_deliverables: jsonb('monthly_deliverables').notNull().default([]),
   ...timestamps,
 })
 
@@ -116,15 +117,16 @@ export const time_entries = pgTable('time_entries', {
 
 // ── App users & permissions ───────────────────────────────────────────────────
 export const app_users = pgTable('app_users', {
-  id:          uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
-  clerk_id:    text('clerk_id').notNull().unique(),
-  email:       text('email').notNull(),
-  name:        text('name'),
-  role:        text('role').notNull().default('member'),
-  permissions: jsonb('permissions').notNull().default({}),
-  invited_by:  text('invited_by'),
-  created_at:  timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updated_at:  timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id:           uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  clerk_id:     text('clerk_id').notNull().unique(),
+  email:        text('email').notNull(),
+  name:         text('name'),
+  role:         text('role').notNull().default('member'),
+  permissions:  jsonb('permissions').notNull().default({}),
+  default_role: text('default_role'),   // e.g. "Camera Operator" — used when adding to crew
+  invited_by:   text('invited_by'),
+  created_at:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updated_at:   timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
 // ── Budget versions ───────────────────────────────────────────────────────────

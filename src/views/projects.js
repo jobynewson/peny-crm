@@ -1,6 +1,8 @@
 import { createProject, updateProject, deleteProject, linkBudgetToProject, unlinkBudgetFromProject, logActivity, getActivityLog, getTimeEntries, setTrackToken, deleteTimeEntry } from '../db/client.js'
 
 const STAGES = ['Enquiry','Pre-production','In Production','Post','Delivered']
+const RETAINER_STAGE = 'Retainer'
+const ALL_STAGES = [...STAGES, RETAINER_STAGE]
 const STAGE_DOT = { Enquiry:'#b5d4f4', 'Pre-production':'#dddaf7', 'In Production':'#d0e8b0', Post:'#fce2b0', Delivered:'#ebebeb' }
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')
 const moy = () => { const d = new Date(); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] + ' ' + d.getFullYear() }
@@ -27,15 +29,18 @@ export class ProjectsView {
   // ── Kanban ──────────────────────────────────────────────────────────────────
 
   renderKanban(mc) {
-    const { projects, contacts, budgets } = this.app
+    const { projects, contacts } = this.app
+    const regularProjects  = projects.filter(p => !p.is_retainer)
+    const retainerProjects = projects.filter(p => p.is_retainer)
     mc.innerHTML = `
       <div class="stats-row">
-        <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value">${projects.length}</div><div class="stat-sub">projects</div></div>
-        ${STAGES.slice(0,3).map(s=>`<div class="stat-card"><div class="stat-label">${s}</div><div class="stat-value">${projects.filter(p=>p.status===s).length}</div><div class="stat-sub">projects</div></div>`).join('')}
+        <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value">${regularProjects.length}</div><div class="stat-sub">projects</div></div>
+        ${STAGES.slice(0,3).map(s=>`<div class="stat-card"><div class="stat-label">${s}</div><div class="stat-value">${regularProjects.filter(p=>p.status===s).length}</div><div class="stat-sub">projects</div></div>`).join('')}
+        <div class="stat-card"><div class="stat-label">Retainers</div><div class="stat-value">${retainerProjects.length}</div><div class="stat-sub">active</div></div>
       </div>
-      <div class="kanban-wrap">
+      <div class="kanban-wrap" style="grid-template-columns:repeat(6,1fr)">
         ${STAGES.map(stage => {
-          const col = projects.filter(p => p.status === stage)
+          const col = regularProjects.filter(p => p.status === stage)
           return `<div class="kanban-col">
             <div class="kanban-col-head">
               <span style="width:8px;height:8px;border-radius:50%;background:${STAGE_DOT[stage]};border:1px solid rgba(0,0,0,0.15);display:inline-block;flex-shrink:0"></span>
@@ -60,6 +65,26 @@ export class ProjectsView {
             <button class="kanban-add" data-stage="${stage}">+ add</button>
           </div>`
         }).join('')}
+        <div class="kanban-col">
+          <div class="kanban-col-head">
+            <span style="width:8px;height:8px;border-radius:50%;background:#a78bfa;border:1px solid rgba(0,0,0,0.15);display:inline-block;flex-shrink:0"></span>
+            Retainer <span class="kanban-count">${retainerProjects.length}</span>
+          </div>
+          ${retainerProjects.map(p => {
+            const cl = contacts.find(c => c.id === p.client_id)
+            const fee = parseFloat(p.retainer_fee)||0
+            const hours = parseFloat(p.retainer_hours)||0
+            return `<div class="kanban-card" data-open="${p.id}" style="border-left:3px solid #a78bfa">
+              <div class="kanban-card-title">${esc(p.name)}</div>
+              <div class="kanban-card-client">${cl ? esc(cl.first_name)+' '+esc(cl.last_name)+' · '+esc(cl.company) : 'No client'}</div>
+              <div class="kanban-card-meta">
+                ${fee ? `<span class="tag" style="background:rgba(167,139,250,0.15);color:#a78bfa">£${fee.toLocaleString('en-GB')}/mo</span>` : ''}
+                ${hours ? `<span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary)">${hours}h/mo</span>` : ''}
+              </div>
+            </div>`
+          }).join('')}
+          <button class="kanban-add" data-stage="${RETAINER_STAGE}" data-is-retainer="1">+ add retainer</button>
+        </div>
       </div>
       ${this.newModalHTML()}
     `
@@ -67,7 +92,7 @@ export class ProjectsView {
       el.addEventListener('click', () => { this.currentId = el.dataset.open; this.render(mc); this.app.updateTitle() })
     })
     mc.querySelectorAll('.kanban-add[data-stage]').forEach(btn => {
-      btn.addEventListener('click', () => this.openNewModal(null, btn.dataset.stage, mc))
+      btn.addEventListener('click', () => this.openNewModal(null, btn.dataset.stage, mc, !!btn.dataset.isRetainer))
     })
     mc.querySelectorAll('[data-close]').forEach(btn => {
       btn.addEventListener('click', () => mc.querySelector(`#${btn.dataset.close}`)?.classList.remove('open'))
@@ -168,6 +193,9 @@ export class ProjectsView {
   renderViewer(mc) {
     const p = this.app.projects.find(x => x.id === this.currentId)
     if (!p) { this.currentId = null; this.renderKanban(mc); return }
+
+    // Auto-reset monthly deliverables if period has rolled over
+    if (p.is_retainer && p.retainer_start) this._checkRetainerReset(p)
     const { contacts, budgets } = this.app
     const cl = contacts.find(c => c.id === p.client_id)
     const delivs = (p.deliverables||[]).filter(d => d.text)
@@ -220,7 +248,7 @@ export class ProjectsView {
           ${delivs.length ? `
           <div class="proj-panel">
             <div class="proj-panel-head">
-              Deliverables
+              ${p.is_retainer ? 'Fixed monthly deliverables' : 'Deliverables'}
               <span style="margin-left:auto;font-size:11px;color:var(--text-tertiary);font-weight:400;text-transform:none;letter-spacing:0">${doneCount}/${delivs.length} done</span>
             </div>
             <div style="padding:0 16px" id="pv-delivs">
@@ -231,6 +259,32 @@ export class ProjectsView {
                 </div>`).join('')}
             </div>
           </div>` : ''}
+
+          ${p.is_retainer ? (() => {
+            const mDelivs = (p.monthly_deliverables||[]).filter(d => d.text)
+            const mDone = mDelivs.filter(d => d.done).length
+            return `<div class="proj-panel">
+              <div class="proj-panel-head">
+                This month's deliverables
+                <span style="margin-left:auto;font-size:11px;color:var(--text-tertiary);font-weight:400;text-transform:none;letter-spacing:0">${mDone}/${mDelivs.length} done</span>
+              </div>
+              <div style="padding:0 16px" id="pv-monthly-delivs">
+                ${mDelivs.map((d, di) => `
+                  <div class="deliverable-row" id="pvmd-${p.id}-${di}">
+                    <input type="checkbox" class="deliverable-check" ${d.done?'checked':''} data-pv-monthly-deliv="${p.id}" data-pv-monthly-idx="${di}" />
+                    <span style="font-size:13px;${d.done?'text-decoration:line-through;color:var(--text-tertiary)':'color:var(--text-primary)'}">${esc(d.text)}</span>
+                  </div>`).join('')}
+                ${this.app.permissions?.projects_edit ? `
+                <div style="padding:8px 0" id="pv-add-monthly-form">
+                  <div style="display:flex;gap:6px;margin-top:4px">
+                    <input type="text" id="pv-new-monthly-text" placeholder="Add this month's deliverable…"
+                      style="flex:1;font-size:12px;padding:6px 8px;border:0.5px solid var(--border-light);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+                    <button class="btn-secondary" id="pv-add-monthly-btn" style="font-size:12px;white-space:nowrap">Add</button>
+                  </div>
+                </div>` : ''}
+              </div>
+            </div>`
+          })() : ''}
 
           ${shots.length ? `
           <div class="proj-panel">
@@ -337,6 +391,43 @@ export class ProjectsView {
         try { await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }) }
         catch(e) { console.error(e) }
       })
+    })
+
+    // Monthly deliverable tickboxes (retainer viewer)
+    mc.querySelectorAll('[data-pv-monthly-deliv]').forEach(el => {
+      el.addEventListener('change', async () => {
+        if (!Array.isArray(p.monthly_deliverables)) p.monthly_deliverables = []
+        const idx = +el.dataset.pvMonthlyIdx
+        p.monthly_deliverables[idx].done = el.checked
+        const row = mc.querySelector(`#pvmd-${p.id}-${idx}`)
+        if (row) {
+          const span = row.querySelector('span')
+          if (span) { span.style.textDecoration = el.checked ? 'line-through' : ''; span.style.color = el.checked ? 'var(--text-tertiary)' : 'var(--text-primary)' }
+        }
+        const mDone = p.monthly_deliverables.filter(d=>d.done&&d.text).length
+        const mTotal = p.monthly_deliverables.filter(d=>d.text).length
+        const heads = mc.querySelectorAll('.proj-panel-head')
+        heads.forEach(h => { if (h.textContent.includes("This month")) { const sp = h.querySelector('span'); if (sp) sp.textContent = `${mDone}/${mTotal} done` } })
+        try { await updateProject(this.app.userId, p.id, { monthly_deliverables: p.monthly_deliverables }) }
+        catch(e) { console.error(e) }
+      })
+    })
+
+    // Inline add monthly deliverable
+    mc.querySelector('#pv-add-monthly-btn')?.addEventListener('click', async () => {
+      const inp = mc.querySelector('#pv-new-monthly-text')
+      const text = inp?.value.trim()
+      if (!text) return
+      if (!Array.isArray(p.monthly_deliverables)) p.monthly_deliverables = []
+      p.monthly_deliverables.push({ text, done: false })
+      inp.value = ''
+      try {
+        await updateProject(this.app.userId, p.id, { monthly_deliverables: p.monthly_deliverables })
+        this.renderViewer(mc)
+      } catch(e) { console.error(e) }
+    })
+    mc.querySelector('#pv-new-monthly-text')?.addEventListener('keydown', e => {
+      if (e.key === 'Enter') mc.querySelector('#pv-add-monthly-btn')?.click()
     })
 
     // Approval cycle in view mode
@@ -556,6 +647,11 @@ export class ProjectsView {
   renderEditor(mc) {
     const p = this.app.projects.find(x => x.id === this.currentId)
     if (!p) { this.currentId = null; this.renderKanban(mc); return }
+
+    // Auto-reset monthly deliverables if period has rolled over
+    if (p.is_retainer && p.retainer_start && Array.isArray(p.monthly_deliverables)) {
+      this._checkRetainerReset(p)
+    }
     const { contacts, budgets } = this.app
     const delivs   = Array.isArray(p.deliverables) ? p.deliverables : []
     const crew     = Array.isArray(p.crew)          ? p.crew         : []
@@ -638,11 +734,25 @@ export class ProjectsView {
               </div>
             </div>` : ''}
           </div>
+          <div class="proj-panel">
+            <div class="proj-panel-head">${p.is_retainer ? 'Fixed monthly deliverables' : 'Deliverables'}</div>
             <div style="padding:0 16px" id="pe-delivs">
               ${delivs.map((d,i) => this.delivHTML(p.id, d, i)).join('')}
             </div>
-            <button class="add-line" id="pe-add-deliv">+ add deliverable</button>
+            <button class="add-line" id="pe-add-deliv">+ add ${p.is_retainer ? 'fixed deliverable' : 'deliverable'}</button>
           </div>
+
+          ${p.is_retainer ? `
+          <div class="proj-panel">
+            <div class="proj-panel-head">
+              This month's deliverables
+              <span style="margin-left:auto;font-size:11px;color:var(--text-tertiary);font-weight:400;text-transform:none;letter-spacing:0">resets with period</span>
+            </div>
+            <div style="padding:0 16px" id="pe-monthly-delivs">
+              ${(p.monthly_deliverables||[]).map((d,i) => this.delivHTML(p.id, d, i, true)).join('')}
+            </div>
+            <button class="add-line" id="pe-add-monthly-deliv">+ add this month's deliverable</button>
+          </div>` : ''}
 
           <div class="proj-panel">
             <div class="proj-panel-head">Shot list / run of show</div>
@@ -655,6 +765,17 @@ export class ProjectsView {
           <div class="proj-panel">
             <div class="proj-panel-head">Crew &amp; team</div>
             <div style="padding:0 16px">
+              ${this.app.allUsers?.length > 0 ? `
+              <div style="padding:10px 0;border-bottom:0.5px solid var(--border-light);display:flex;gap:8px;align-items:center">
+                <select id="pe-add-user-select" style="flex:1;font-size:12px;padding:5px 8px;border:0.5px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none">
+                  <option value="">+ Add team member…</option>
+                  ${this.app.allUsers.filter(u => !crew.some(c => c.name === u.name)).map(u =>
+                    `<option value="${esc(u.clerk_id)}" data-name="${esc(u.name)}" data-role="${esc(u.default_role||'')}">
+                      ${esc(u.name||u.email)}${u.default_role ? ' — '+esc(u.default_role) : ''}
+                    </option>`
+                  ).join('')}
+                </select>
+              </div>` : ''}
               <div style="display:grid;grid-template-columns:1fr 1fr 40px;gap:8px;padding:6px 0;border-bottom:0.5px solid var(--border-light)">
                 <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Name</div>
                 <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Role</div>
@@ -662,7 +783,7 @@ export class ProjectsView {
               </div>
               <div id="pe-crew">${crew.map((c,i) => this.crewHTML(p.id, c, i)).join('')}</div>
             </div>
-            <button class="add-line" id="pe-add-crew">+ add crew member</button>
+            <button class="add-line" id="pe-add-crew">+ add crew member manually</button>
           </div>
 
         </div>
@@ -707,11 +828,37 @@ export class ProjectsView {
     this.bindEditor(mc, p)
   }
 
-  delivHTML(pid, d, i) {
+  // Check if the retainer period has rolled over and reset monthly deliverable done states
+  _checkRetainerReset(p) {
+    if (!p.retainer_start || !p.monthly_deliverables?.length) return
+    const anchor = new Date(p.retainer_start)
+    const day = anchor.getUTCDate()
+    const now = new Date()
+    const y = now.getUTCFullYear(), m = now.getUTCMonth()
+    let periodStart = new Date(Date.UTC(y, m, day))
+    if (periodStart > now) periodStart = new Date(Date.UTC(y, m - 1, day))
+
+    const lastReset = p._lastRetainerReset ? new Date(p._lastRetainerReset) : null
+    if (!lastReset || lastReset < periodStart) {
+      // Reset done states on all monthly deliverables
+      const anyDone = p.monthly_deliverables.some(d => d.done)
+      if (anyDone) {
+        p.monthly_deliverables = p.monthly_deliverables.map(d => ({ ...d, done: false }))
+        p._lastRetainerReset = periodStart.toISOString()
+        // Save silently
+        updateProject(this.app.userId, p.id, {
+          monthly_deliverables: p.monthly_deliverables,
+        }).catch(console.error)
+      }
+    }
+  }
+
+  delivHTML(pid, d, i, isMonthly = false) {
+    const pfx = isMonthly ? 'monthly-' : ''
     return `<div class="deliverable-row" data-di="${i}">
-      <input type="checkbox" class="deliverable-check" ${d.done?'checked':''} data-deliv-done="${i}" />
-      <input type="text" class="deliverable-text" value="${esc(d.text)}" placeholder="e.g. 90s hero film, 3x social cutdowns..." data-deliv-text="${i}" />
-      <button class="row-btn" style="color:#b03020;flex-shrink:0" data-deliv-rem="${i}">×</button>
+      <input type="checkbox" class="deliverable-check" ${d.done?'checked':''} data-${pfx}deliv-done="${i}" />
+      <input type="text" class="deliverable-text" value="${esc(d.text)}" placeholder="${isMonthly ? 'e.g. Monthly edit, Social content...' : 'e.g. 90s hero film, 3x social cutdowns...'}" data-${pfx}deliv-text="${i}" />
+      <button class="row-btn" style="color:#b03020;flex-shrink:0" data-${pfx}deliv-rem="${i}">×</button>
     </div>`
   }
 
@@ -796,6 +943,24 @@ export class ProjectsView {
       p.deliverables.push({ text: '', done: false }); save(); this.renderEditor(mc)
     })
 
+    // Monthly deliverables (retainer only)
+    if (!Array.isArray(p.monthly_deliverables)) p.monthly_deliverables = []
+    mc.querySelectorAll('[data-monthly-deliv-done]').forEach(el => {
+      el.addEventListener('change', () => { p.monthly_deliverables[+el.dataset.monthlyDelivDone].done = el.checked; save() })
+    })
+    mc.querySelectorAll('[data-monthly-deliv-text]').forEach(el => {
+      el.addEventListener('change', () => { p.monthly_deliverables[+el.dataset.monthlyDelivText].text = el.value; save() })
+    })
+    mc.querySelectorAll('[data-monthly-deliv-rem]').forEach(el => {
+      el.addEventListener('click', () => {
+        p.monthly_deliverables.splice(+el.dataset.monthlyDelivRem, 1)
+        save(); this.renderEditor(mc)
+      })
+    })
+    mc.querySelector('#pe-add-monthly-deliv')?.addEventListener('click', () => {
+      p.monthly_deliverables.push({ text: '', done: false }); save(); this.renderEditor(mc)
+    })
+
     // Shots
     mc.querySelectorAll('[data-shot-text]').forEach(el => {
       el.addEventListener('change', () => { p.shots[+el.dataset.shotText].text = el.value; save() })
@@ -811,6 +976,16 @@ export class ProjectsView {
     })
 
     // Crew
+    mc.querySelector('#pe-add-user-select')?.addEventListener('change', e => {
+      const opt = e.target.selectedOptions[0]
+      if (!opt?.value) return
+      const name = opt.dataset.name || opt.text
+      const role = opt.dataset.role || ''
+      if (!p.crew.some(c => c.name === name)) {
+        p.crew.push({ name, role }); save(); this.renderEditor(mc)
+      }
+      e.target.value = ''
+    })
     mc.querySelectorAll('[data-crew-name]').forEach(el => {
       el.addEventListener('change', () => { p.crew[+el.dataset.crewName].name = el.value; save() })
     })
@@ -886,6 +1061,7 @@ export class ProjectsView {
         retainer_hours: p.retainer_hours ?? null,
         retainer_alert: p.retainer_alert ?? 80,
         retainer_start: p.retainer_start || null,
+        monthly_deliverables: p.monthly_deliverables ?? [],
       }
       const [updated] = await updateProject(this.app.userId, p.id, data)
       const idx = this.app.projects.findIndex(x => x.id === p.id)
