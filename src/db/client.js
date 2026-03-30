@@ -1,18 +1,17 @@
 import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
+import { eq, and, desc, inArray } from 'drizzle-orm'
 import * as schema from './schema.js'
+import {
+  contacts, projects, budgets, settings,
+  project_budgets, budget_versions, activity_log,
+  app_users, time_entries,
+} from './schema.js'
 
 const sql = neon(import.meta.env.VITE_DATABASE_URL)
 export const db = drizzle(sql, { schema })
 
-// ── Scoped query helpers ───────────────────────────────────────────────────────
-// Every query goes through these — they enforce user_id scoping automatically.
-// Call them with the Clerk userId from useAuth().
-
-import { eq, and, desc, inArray } from 'drizzle-orm'
-import { contacts, projects, budgets, settings, project_budgets, budget_versions, activity_log } from './schema.js'
-
-// Settings
+// ── Settings ──────────────────────────────────────────────────────────────────
 export async function getSettings(userId) {
   const rows = await db.select().from(settings).where(eq(settings.user_id, userId))
   return rows[0] ?? null
@@ -24,7 +23,7 @@ export async function upsertSettings(userId, data) {
     .returning()
 }
 
-// Contacts
+// ── Contacts ──────────────────────────────────────────────────────────────────
 export async function getContacts(userId) {
   return db.select().from(contacts)
     .where(eq(contacts.user_id, userId))
@@ -44,7 +43,7 @@ export async function deleteContact(userId, id) {
     .where(and(eq(contacts.id, id), eq(contacts.user_id, userId)))
 }
 
-// Projects
+// ── Projects ──────────────────────────────────────────────────────────────────
 export async function getProjects(userId) {
   const rows = await db.select().from(projects)
     .where(eq(projects.user_id, userId))
@@ -78,7 +77,7 @@ export async function deleteProject(userId, id) {
     .where(and(eq(projects.id, id), eq(projects.user_id, userId)))
 }
 
-// Project ↔ Budget links
+// ── Project ↔ Budget links ────────────────────────────────────────────────────
 export async function linkBudgetToProject(projectId, budgetId) {
   return db.insert(project_budgets)
     .values({ project_id: projectId, budget_id: budgetId })
@@ -95,7 +94,7 @@ export async function getBudgetIdsForProject(projectId) {
   return rows.map(r => r.budget_id)
 }
 
-// Budgets
+// ── Budgets ───────────────────────────────────────────────────────────────────
 export async function getBudgets(userId) {
   return db.select().from(budgets)
     .where(eq(budgets.user_id, userId))
@@ -115,7 +114,7 @@ export async function deleteBudget(userId, id) {
     .where(and(eq(budgets.id, id), eq(budgets.user_id, userId)))
 }
 
-// Budget versions
+// ── Budget versions ───────────────────────────────────────────────────────────
 export async function saveBudgetVersion(userId, budgetId, budgetData, name = 'Auto-save', isAuto = true) {
   return db.insert(budget_versions).values({
     budget_id: budgetId,
@@ -134,7 +133,7 @@ export async function deleteBudgetVersion(id) {
   return db.delete(budget_versions).where(eq(budget_versions.id, id))
 }
 
-// Activity log
+// ── Activity log ──────────────────────────────────────────────────────────────
 export async function logActivity(userId, entityType, entityId, entityName, summary) {
   return db.insert(activity_log).values({
     user_id:     userId,
@@ -152,10 +151,6 @@ export async function getActivityLog(entityId, limit = 30) {
 }
 
 // ── Users & permissions ───────────────────────────────────────────────────────
-
-import { app_users } from './schema.js'
-
-// Role presets — what each role gets by default
 export const ROLE_PRESETS = {
   admin: {
     contacts_view: true, contacts_edit: true,
@@ -177,19 +172,16 @@ export const ROLE_PRESETS = {
   },
 }
 
-// Resolve effective permissions = role preset merged with per-user overrides
 export function resolvePermissions(user) {
   const preset = ROLE_PRESETS[user.role] ?? ROLE_PRESETS.member
   return { ...preset, ...(user.permissions ?? {}) }
 }
 
-// Get or create the current user record
 export async function getOrCreateAppUser(clerkUser) {
   const existing = await db.select().from(app_users)
     .where(eq(app_users.clerk_id, clerkUser.id))
   if (existing[0]) return existing[0]
 
-  // First user ever = auto-promote to admin
   const allUsers = await db.select({ id: app_users.id }).from(app_users)
   const role = allUsers.length === 0 ? 'admin' : 'member'
 
@@ -210,5 +202,34 @@ export async function updateAppUser(id, data) {
   return db.update(app_users)
     .set({ ...data, updated_at: new Date() })
     .where(eq(app_users.id, id))
+    .returning()
+}
+
+// ── Time tracking ─────────────────────────────────────────────────────────────
+export async function getTimeEntries(projectId) {
+  return db.select().from(time_entries)
+    .where(eq(time_entries.project_id, projectId))
+    .orderBy(desc(time_entries.created_at))
+}
+
+export async function addTimeEntry(data) {
+  const [entry] = await db.insert(time_entries).values(data).returning()
+  return entry
+}
+
+export async function deleteTimeEntry(id) {
+  return db.delete(time_entries).where(eq(time_entries.id, id))
+}
+
+export async function getProjectByToken(token) {
+  const rows = await db.select().from(projects)
+    .where(eq(projects.track_token, token))
+  return rows[0] ?? null
+}
+
+export async function setTrackToken(userId, projectId, token) {
+  return db.update(projects)
+    .set({ track_token: token, updated_at: new Date() })
+    .where(and(eq(projects.id, projectId), eq(projects.user_id, userId)))
     .returning()
 }

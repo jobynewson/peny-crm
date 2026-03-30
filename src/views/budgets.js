@@ -478,14 +478,15 @@ export class BudgetsView {
       <div class="bsec-body ${s.open?'open':''}">
         <table class="bl-table" style="table-layout:fixed"><colgroup>
           <col style="width:80px" />
-          <col style="width:28%" />
+          <col style="width:27%" />
           <col style="width:11%" />
           <col style="width:54px" />
           <col style="width:50px" />
           <col style="width:54px" />
-          <col style="width:64px" />
-          <col style="width:54px" />
-          <col style="width:64px" />
+          <col style="width:62px" />
+          <col style="width:50px" />
+          <col style="width:36px" />
+          <col style="width:62px" />
           <col />
         </colgroup><thead><tr>
           <th style="font-size:10px;white-space:nowrap" title="Tick for daily rate pricing">Daily Rate</th>
@@ -496,12 +497,13 @@ export class BudgetsView {
           <th class="r">Travel</th>
           <th class="r">Rate £</th>
           <th class="r">Disc %</th>
+          <th class="r" title="Track time">⏱</th>
           <th class="r">Total</th>
           <th></th>
         </tr></thead><tbody>
           ${(s.lines||[]).map((l,li) => this.lineHTML(si, li, l, tr)).join('')}
           <tr class="sub">
-            <td colspan="8" style="text-align:right;color:var(--text-secondary);font-size:11px;padding-right:8px">Section total</td>
+            <td colspan="9" style="text-align:right;color:var(--text-secondary);font-size:11px;padding-right:8px">Section total</td>
             <td style="text-align:right" id="bst-${si}">${gbpA(sn)}</td><td></td>
           </tr>
         </tbody></table>
@@ -532,6 +534,9 @@ export class BudgetsView {
       </td>
       <td><input class="bl-in w" type="number" value="${l.rate||''}" placeholder="0" min="0" data-num="${si},${li},rate" style="text-align:right" /></td>
       <td><input class="bl-in w" type="number" value="${disc}" placeholder="0" min="0" max="100" step="0.5" data-num="${si},${li},discount" style="text-align:right" title="Discount %" /></td>
+      <td style="text-align:center;padding:4px 6px">
+        ${useDays ? `<input type="checkbox" title="Track time for this line" ${l.track_time?'checked':''} data-toggle-track="${si},${li}" style="cursor:pointer;width:13px;height:13px" />` : `<span style="color:var(--text-tertiary);font-size:11px">—</span>`}
+      </td>
       <td class="bl-tot ${t>0?'nz':''}" id="blt-${si}-${li}">${t>0?gbpA(t):'—'}</td>
       <td style="text-align:right"><button class="row-btn" style="color:#c03020" data-rem-line="${si},${li}">×</button></td>
     </tr>`
@@ -628,7 +633,17 @@ export class BudgetsView {
         const l = sections[si].lines[li]
         l.useDays = el.checked
         if (el.checked && l.travelDays === undefined) l.travelDays = 0
+        if (!el.checked) l.track_time = false  // can't track if not days-based
         save(); this.renderEditor(mc)
+      })
+    })
+
+    // Per-line track time toggle
+    mc.querySelectorAll('[data-toggle-track]').forEach(el => {
+      el.addEventListener('change', () => {
+        const [si, li] = el.dataset.toggleTrack.split(',').map(Number)
+        sections[si].lines[li].track_time = el.checked
+        save()
       })
     })
 

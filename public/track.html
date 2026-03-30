@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Log Time — Peny</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+    :root {
+      --bg: #0f0f0f;
+      --surface: #1a1a1a;
+      --border: #2a2a2a;
+      --text: #e8e8e4;
+      --text-sec: #9a9a90;
+      --text-ter: #5a5a54;
+      --accent: #4a90d9;
+      --radius: 10px;
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 40px 16px }
+    .logo { width: 80px; margin-bottom: 32px; opacity: 0.9 }
+    .card { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 28px; width: 100%; max-width: 420px; margin-bottom: 16px }
+    .project-name { font-size: 20px; font-weight: 600; margin-bottom: 4px }
+    .project-sub { font-size: 13px; color: var(--text-sec); margin-bottom: 24px }
+    label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-ter); margin-bottom: 6px; margin-top: 16px }
+    label:first-of-type { margin-top: 0 }
+    select, input, textarea {
+      width: 100%; padding: 10px 12px; background: var(--bg); border: 0.5px solid var(--border);
+      border-radius: 8px; color: var(--text); font-family: var(--font); font-size: 14px; outline: none;
+      transition: border-color 0.15s
+    }
+    select:focus, input:focus, textarea:focus { border-color: var(--accent) }
+    textarea { resize: vertical; min-height: 72px }
+    .hours-row { display: flex; gap: 10px; align-items: flex-end }
+    .hours-row input { flex: 1 }
+    .hours-hint { font-size: 11px; color: var(--text-ter); margin-top: 6px }
+    button {
+      width: 100%; padding: 12px; background: var(--accent); color: #fff; border: none;
+      border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; margin-top: 20px;
+      font-family: var(--font); transition: opacity 0.15s
+    }
+    button:hover { opacity: 0.9 }
+    button:disabled { opacity: 0.5; cursor: default }
+    .msg { font-size: 13px; text-align: center; padding: 10px; border-radius: 8px; margin-top: 12px }
+    .msg.ok { background: rgba(80,180,80,0.12); color: #6ec96e }
+    .msg.err { background: rgba(200,60,60,0.12); color: #e07070 }
+    .entries-card { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 20px; width: 100%; max-width: 420px }
+    .entries-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-ter); margin-bottom: 12px }
+    .entry-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 0.5px solid var(--border); font-size: 13px }
+    .entry-row:last-child { border-bottom: none }
+    .entry-meta { color: var(--text-sec); font-size: 11px; margin-top: 2px }
+    .entry-hours { font-weight: 600; color: var(--accent); white-space: nowrap }
+    .no-entries { font-size: 13px; color: var(--text-ter) }
+    .loading { color: var(--text-ter); font-size: 14px; text-align: center; padding: 40px }
+    .error-state { text-align: center; padding: 60px 20px }
+    .error-state h2 { font-size: 18px; margin-bottom: 8px }
+    .error-state p { color: var(--text-sec); font-size: 14px }
+    .total-bar { background: var(--bg); border-radius: 8px; padding: 12px 14px; margin-top: 16px; display: flex; justify-content: space-between; font-size: 13px }
+    .total-bar span:last-child { font-weight: 600; color: var(--accent) }
+  </style>
+</head>
+<body>
+  <img src="/peny-logo-white.png" alt="Peny" class="logo" onerror="this.style.display='none'" />
+  <div id="root"><div class="loading">Loading…</div></div>
+
+  <script type="module">
+    const token = location.pathname.split('/track/')[1]?.split('/')[0]
+    if (!token) {
+      document.getElementById('root').innerHTML = `
+        <div class="error-state"><h2>Invalid link</h2><p>This time tracking link is not valid.</p></div>`
+      throw new Error('No token')
+    }
+
+    let projectData = null
+    let entries = []
+
+    async function load() {
+      const res = await fetch(`/api/track?token=${token}`)
+      if (!res.ok) {
+        document.getElementById('root').innerHTML = `
+          <div class="error-state"><h2>Link not found</h2><p>This tracking link may have been revoked or doesn't exist.</p></div>`
+        return
+      }
+      const data = await res.json()
+      projectData = data
+      entries = data.entries || []
+      render()
+    }
+
+    function render() {
+      const { project, trackableLines, crew } = projectData
+      const totalLogged = entries.reduce((s, e) => s + parseFloat(e.hours), 0)
+
+      document.getElementById('root').innerHTML = `
+        <div class="card">
+          <div class="project-name">${esc(project.name)}</div>
+          <div class="project-sub">Log your hours below</div>
+
+          <label>Your name</label>
+          <select id="crew-select">
+            <option value="">— Select your name —</option>
+            ${crew.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
+          </select>
+
+          <label>Task</label>
+          <select id="line-select">
+            <option value="">— Select task —</option>
+            ${trackableLines.map(l => `<option value="${esc(l.label)}" data-alloc="${l.allocatedHours}">${esc(l.label)} (${l.allocatedHours}h allocated)</option>`).join('')}
+          </select>
+
+          <label>Date</label>
+          <input type="date" id="entry-date" value="${today()}" max="${today()}" />
+
+          <label>Hours worked today</label>
+          <div class="hours-row">
+            <input type="number" id="hours-input" placeholder="0" min="0.5" max="24" step="0.5" />
+          </div>
+          <div class="hours-hint">Enter hours to 0.5 precision (e.g. 3.5 = 3 hours 30 mins)</div>
+
+          <label>Note (optional)</label>
+          <textarea id="note-input" placeholder="What did you work on?"></textarea>
+
+          <button id="submit-btn">Log hours</button>
+          <div id="msg"></div>
+        </div>
+
+        <div class="entries-card">
+          <div class="entries-title">Recent entries — ${esc(project.name)}</div>
+          ${entries.length === 0 ? '<div class="no-entries">No entries yet</div>' : entries.slice(0, 15).map(e => `
+            <div class="entry-row">
+              <div>
+                <div>${esc(e.crew_name)} — ${esc(e.line_label)}</div>
+                <div class="entry-meta">${formatDate(e.entry_date)}${e.note ? ' · ' + esc(e.note) : ''}</div>
+              </div>
+              <div class="entry-hours">${parseFloat(e.hours)}h</div>
+            </div>`).join('')}
+          ${entries.length > 0 ? `
+            <div class="total-bar">
+              <span>Total logged</span>
+              <span>${totalLogged.toFixed(1)}h</span>
+            </div>` : ''}
+        </div>`
+
+      document.getElementById('submit-btn').addEventListener('click', submit)
+    }
+
+    async function submit() {
+      const crewName  = document.getElementById('crew-select').value
+      const lineLabel = document.getElementById('line-select').value
+      const hours     = parseFloat(document.getElementById('hours-input').value)
+      const date      = document.getElementById('entry-date').value
+      const note      = document.getElementById('note-input').value.trim()
+      const msg       = document.getElementById('msg')
+
+      if (!crewName) { showMsg('Please select your name', 'err'); return }
+      if (!lineLabel) { showMsg('Please select a task', 'err'); return }
+      if (!hours || hours <= 0) { showMsg('Please enter valid hours', 'err'); return }
+
+      const btn = document.getElementById('submit-btn')
+      btn.disabled = true; btn.textContent = 'Logging…'
+
+      try {
+        const res = await fetch('/api/track', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token, crewName, lineLabel, hours, date, note, budgetId: projectData.budgetId }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error)
+        entries.unshift(data.entry)
+        showMsg(`✓ ${hours}h logged successfully`, 'ok')
+        document.getElementById('hours-input').value = ''
+        document.getElementById('note-input').value = ''
+        // Re-render entries section
+        render()
+        showMsg(`✓ ${hours}h logged successfully`, 'ok')
+      } catch(e) {
+        showMsg(e.message || 'Error logging hours', 'err')
+        btn.disabled = false; btn.textContent = 'Log hours'
+      }
+    }
+
+    function showMsg(text, type) {
+      const el = document.getElementById('msg')
+      if (!el) return
+      el.textContent = text
+      el.className = `msg ${type}`
+    }
+
+    function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;') }
+    function today() { return new Date().toISOString().split('T')[0] }
+    function formatDate(d) {
+      if (!d) return ''
+      const dt = new Date(d)
+      return dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    }
+
+    load()
+  </script>
+</body>
+</html>

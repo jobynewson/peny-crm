@@ -54,6 +54,7 @@ export const projects = pgTable('projects', {
   shots:       jsonb('shots').notNull().default([]),
   approvals:   jsonb('approvals').notNull().default([]),
   notes:       text('notes'),
+  track_token: text('track_token'),
   ...timestamps,
 })
 
@@ -81,6 +82,19 @@ export const project_budgets = pgTable('project_budgets', {
   project_id: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
   budget_id:  uuid('budget_id').notNull().references(() => budgets.id,  { onDelete: 'cascade' }),
   created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// ── Time entries ──────────────────────────────────────────────────────────────
+export const time_entries = pgTable('time_entries', {
+  id:          uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  project_id:  uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  budget_id:   uuid('budget_id').references(() => budgets.id, { onDelete: 'set null' }),
+  line_label:  text('line_label').notNull(),
+  crew_name:   text('crew_name').notNull(),
+  hours:       numeric('hours', { precision: 5, scale: 2 }).notNull(),
+  entry_date:  date('entry_date').notNull(),
+  note:        text('note'),
+  created_at:  timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
 // ── App users & permissions ───────────────────────────────────────────────────

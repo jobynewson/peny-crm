@@ -1,4 +1,4 @@
-import { createProject, updateProject, deleteProject, linkBudgetToProject, unlinkBudgetFromProject, logActivity, getActivityLog } from '../db/client.js'
+import { createProject, updateProject, deleteProject, linkBudgetToProject, unlinkBudgetFromProject, logActivity, getActivityLog, getTimeEntries, setTrackToken, deleteTimeEntry } from '../db/client.js'
 
 const STAGES = ['Enquiry','Pre-production','In Production','Post','Delivered']
 const STAGE_DOT = { Enquiry:'#b5d4f4', 'Pre-production':'#dddaf7', 'In Production':'#d0e8b0', Post:'#fce2b0', Delivered:'#ebebeb' }
@@ -272,6 +272,13 @@ export class ProjectsView {
           </div>` : ''}
 
           <div class="proj-panel">
+            <div class="proj-panel-head">Time tracking</div>
+            <div id="pv-time" style="padding:0 14px 14px">
+              <div style="font-size:11px;color:var(--text-tertiary);padding:10px 0">Loading…</div>
+            </div>
+          </div>
+
+          <div class="proj-panel">
             <div class="proj-panel-head">Activity log</div>
             <div id="pv-activity" style="padding:0 14px">
               <div style="font-size:11px;color:var(--text-tertiary);padding:10px 0">Loading…</div>
@@ -328,6 +335,146 @@ export class ProjectsView {
 
     // Load activity log
     this._loadProjectActivity(mc, p.id)
+    // Load time tracking panel
+    this._loadTimePanel(mc, p)
+  }
+
+  async _loadTimePanel(mc, p) {
+    const el = mc.querySelector('#pv-time')
+    if (!el) return
+
+    // Gather trackable lines from linked budgets
+    const budgets = this.app.budgets
+    const budgetIds = Array.isArray(p.budget_ids) ? p.budget_ids : []
+    const trackableLines = []
+    for (const bid of budgetIds) {
+      const b = budgets.find(x => x.id === bid)
+      if (!b) continue
+      for (const s of (b.sections || [])) {
+        if (!s.enabled) continue
+        for (const l of (s.lines || [])) {
+          if (!l.track_time || !l.item) continue
+          const days = parseFloat(l.days) || 0
+          const qty = isNaN(parseFloat(l.qty)) ? 1 : parseFloat(l.qty)
+          const allocHours = l.useDays ? Math.round(days * qty * 8) : Math.round(qty * 8)
+          trackableLines.push({ label: l.item, allocHours })
+        }
+      }
+    }
+
+    if (!trackableLines.length) {
+      el.innerHTML = `<div style="font-size:11px;color:var(--text-tertiary);padding:10px 0">No trackable lines. In the linked budget, tick ⏱ on any daily-rate line to enable time tracking.</div>`
+      this._renderTrackingLink(mc, p, el)
+      return
+    }
+
+    try {
+      const entries = await getTimeEntries(p.id)
+      const totalAlloc  = trackableLines.reduce((s, l) => s + l.allocHours, 0)
+      const totalLogged = entries.reduce((s, e) => s + parseFloat(e.hours), 0)
+      const pct = totalAlloc > 0 ? Math.min(100, Math.round(totalLogged / totalAlloc * 100)) : 0
+
+      // Per-line breakdown
+      const byLine = {}
+      entries.forEach(e => {
+        byLine[e.line_label] = (byLine[e.line_label] || 0) + parseFloat(e.hours)
+      })
+
+      el.innerHTML = `
+        <div style="margin-top:10px">
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px">
+            <span style="color:var(--text-secondary)">Overall progress</span>
+            <span style="font-weight:500">${totalLogged.toFixed(1)} / ${totalAlloc}h</span>
+          </div>
+          <div style="height:6px;background:var(--bg-secondary);border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:${pct>=100?'#6ec96e':'#4a90d9'};border-radius:3px;transition:width 0.3s"></div>
+          </div>
+        </div>
+        ${trackableLines.map(l => {
+          const logged = byLine[l.label] || 0
+          const lPct = l.allocHours > 0 ? Math.min(100, Math.round(logged / l.allocHours * 100)) : 0
+          return `<div style="margin-top:10px">
+            <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px">
+              <span style="color:var(--text-tertiary)">${l.label}</span>
+              <span style="color:var(--text-secondary)">${logged.toFixed(1)} / ${l.allocHours}h</span>
+            </div>
+            <div style="height:4px;background:var(--bg-secondary);border-radius:2px;overflow:hidden">
+              <div style="height:100%;width:${lPct}%;background:${lPct>=100?'#6ec96e':'#4a90d9'};border-radius:2px"></div>
+            </div>
+          </div>`
+        }).join('')}
+        ${entries.length > 0 ? `
+        <div style="margin-top:14px">
+          <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Recent entries</div>
+          ${entries.slice(0,8).map(e => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:0.5px solid var(--border-light);font-size:12px" data-eid="${e.id}">
+              <div>
+                <span style="color:var(--text-primary)">${e.crew_name}</span>
+                <span style="color:var(--text-tertiary)"> · ${e.line_label}</span>
+                ${e.note ? `<div style="font-size:10px;color:var(--text-tertiary)">${e.note}</div>` : ''}
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-weight:500;color:#4a90d9">${parseFloat(e.hours)}h</span>
+                <button class="row-btn" data-del-entry="${e.id}" style="font-size:10px;color:#b03020;flex-shrink:0">×</button>
+              </div>
+            </div>`).join('')}
+        </div>` : ''}
+      `
+
+      el.querySelectorAll('[data-del-entry]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Delete this time entry?')) return
+          await deleteTimeEntry(btn.dataset.delEntry)
+          this._loadTimePanel(mc, p)
+        })
+      })
+
+    } catch(e) { console.error(e); el.innerHTML = '<div style="font-size:11px;color:var(--text-tertiary)">Could not load time entries</div>' }
+
+    this._renderTrackingLink(mc, p, el)
+  }
+
+  _renderTrackingLink(mc, p, el) {
+    const linkDiv = document.createElement('div')
+    linkDiv.style.cssText = 'margin-top:14px;padding-top:12px;border-top:0.5px solid var(--border-light)'
+    const appUrl = import.meta.env.VITE_APP_URL || window.location.origin
+    if (p.track_token) {
+      const url = `${appUrl}/track/${p.track_token}`
+      linkDiv.innerHTML = `
+        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Tracking link</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="text" value="${url}" readonly style="flex:1;font-size:10px;padding:5px 7px;background:var(--bg-secondary);border:0.5px solid var(--border-light);border-radius:6px;color:var(--text-secondary);font-family:monospace;cursor:pointer" onclick="this.select()" />
+          <button class="row-btn" id="copy-track-link" style="font-size:10px;white-space:nowrap">Copy</button>
+          <button class="row-btn" id="revoke-track-link" style="font-size:10px;color:#b03020;white-space:nowrap">Revoke</button>
+        </div>`
+      el.appendChild(linkDiv)
+      mc.querySelector('#copy-track-link')?.addEventListener('click', () => {
+        navigator.clipboard.writeText(url).then(() => this.app.toast('Link copied'))
+      })
+      mc.querySelector('#revoke-track-link')?.addEventListener('click', async () => {
+        if (!confirm('Revoke this link? Anyone with it will no longer be able to log time.')) return
+        await setTrackToken(this.app.userId, p.id, null)
+        p.track_token = null
+        const idx = this.app.projects.findIndex(x => x.id === p.id)
+        if (idx >= 0) this.app.projects[idx].track_token = null
+        this.app.toast('Tracking link revoked')
+        this._loadTimePanel(mc, p)
+      })
+    } else {
+      linkDiv.innerHTML = `
+        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Tracking link</div>
+        <button class="dashed-btn" id="gen-track-link" style="width:100%;font-size:12px">Generate tracking link</button>`
+      el.appendChild(linkDiv)
+      mc.querySelector('#gen-track-link')?.addEventListener('click', async () => {
+        const token = crypto.randomUUID().replace(/-/g,'').slice(0,12)
+        const [updated] = await setTrackToken(this.app.userId, p.id, token)
+        p.track_token = token
+        const idx = this.app.projects.findIndex(x => x.id === p.id)
+        if (idx >= 0) this.app.projects[idx].track_token = token
+        this.app.toast('Tracking link generated')
+        this._loadTimePanel(mc, p)
+      })
+    }
   }
 
   async _loadProjectActivity(mc, projectId) {

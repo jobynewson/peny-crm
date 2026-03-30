@@ -204,9 +204,25 @@ export class App {
             return sum + afterCustom + (b.vat ? afterCustom*0.2 : 0)
           }, 0)
           const delivs = (p.deliverables||[]).filter(d=>d.text)
+          // Compute allocated hours from linked budgets
+          const allocHours = (p.budget_ids||[]).reduce((sum, bid) => {
+            const b = this.budgets.find(x => x.id === bid)
+            if (!b) return sum
+            return sum + (b.sections||[]).filter(s=>s.enabled).reduce((ss, s) =>
+              ss + (s.lines||[]).filter(l=>l.track_time&&l.item).reduce((ls, l) => {
+                const d = parseFloat(l.days)||0, q = isNaN(parseFloat(l.qty))?1:parseFloat(l.qty)
+                return ls + (l.useDays ? Math.round(d*q*8) : Math.round(q*8))
+              }, 0), 0)
+          }, 0)
           return `<div class="kanban-card" data-pid="${p.id}">
             <div class="kanban-card-title" style="cursor:pointer" data-open-pid="${p.id}">${p.name}</div>
             <div class="kanban-card-client">${cl ? cl.first_name+' '+cl.last_name : 'No client'}</div>
+            ${allocHours > 0 ? `<div style="margin-top:6px;display:flex;align-items:center;gap:6px">
+              <div style="flex:1;height:4px;background:var(--bg-secondary);border-radius:2px;overflow:hidden">
+                <div style="height:100%;width:0%;background:#4a90d9;border-radius:2px" data-hours-bar="${p.id}"></div>
+              </div>
+              <span style="font-size:10px;color:var(--text-tertiary);white-space:nowrap" data-hours-label="${p.id}">— / ${allocHours}h</span>
+            </div>` : ''}
             ${delivs.length ? `
               <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
                 ${delivs.map((d,di) => `
@@ -248,7 +264,6 @@ export class App {
         if (!p) return
         const idx = +el.dataset.delivIdx
         p.deliverables[idx].done = el.checked
-        // Update label style immediately
         const label = el.closest('label')
         if (label) {
           label.style.color = el.checked ? 'var(--text-tertiary)' : 'var(--text-secondary)'
@@ -261,6 +276,29 @@ export class App {
         } catch(e) { console.error('Deliverable save failed:', e) }
       })
     })
+
+    // Load hours bars asynchronously
+    const projectsWithHours = this.projects.filter(p =>
+      mc.querySelector(`[data-hours-bar="${p.id}"]`)
+    )
+    if (projectsWithHours.length > 0) {
+      const { getTimeEntries } = await import('./db/client.js')
+      for (const p of projectsWithHours) {
+        try {
+          const entries = await getTimeEntries(p.id)
+          const logged = entries.reduce((s, e) => s + parseFloat(e.hours), 0)
+          const allocHours = parseInt(mc.querySelector(`[data-hours-label="${p.id}"]`)?.textContent?.split('/')[1]) || 0
+          const bar = mc.querySelector(`[data-hours-bar="${p.id}"]`)
+          const label = mc.querySelector(`[data-hours-label="${p.id}"]`)
+          if (bar && allocHours > 0) {
+            const pct = Math.min(100, Math.round(logged / allocHours * 100))
+            bar.style.width = pct + '%'
+            bar.style.background = pct >= 100 ? '#6ec96e' : '#4a90d9'
+          }
+          if (label) label.textContent = `${logged.toFixed(1)} / ${allocHours}h`
+        } catch(e) { /* silent */ }
+      }
+    }
   }
 
   renderSettings(mc) {
