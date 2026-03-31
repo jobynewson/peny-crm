@@ -19,7 +19,7 @@ export default async function handler(req, res) {
     if (!token) return res.status(400).json({ error: 'Token required' })
 
     const rows = await sql`
-      SELECT id, name, crew, budget_ids, is_retainer, retainer_hours, retainer_start, retainer_alert
+      SELECT id, name, crew, is_retainer, retainer_hours, retainer_start, retainer_alert
       FROM projects
       WHERE track_token = ${token}
       LIMIT 1
@@ -27,12 +27,11 @@ export default async function handler(req, res) {
     if (!rows[0]) return res.status(404).json({ error: 'Tracking link not found' })
     const project = rows[0]
 
-    // budget_ids comes back as a string from raw SQL — parse it
-    let budgetIds = []
-    try {
-      const raw = project.budget_ids
-      budgetIds = Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : [])
-    } catch { budgetIds = [] }
+    // budget_ids lives in the project_budgets join table, not on the projects row
+    const budgetLinks = await sql`
+      SELECT budget_id FROM project_budgets WHERE project_id = ${project.id}
+    `
+    const budgetIds = budgetLinks.map(r => r.budget_id)
 
     let trackableLines = []
     let budgetId = null

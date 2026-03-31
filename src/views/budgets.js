@@ -347,7 +347,14 @@ export class BudgetsView {
         ${cl ? `<span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary)">${esc(cl.first_name)} ${esc(cl.last_name)} — ${esc(cl.company)}</span>` : ''}
         ${proj ? `<span class="tag" style="background:#daeeff;color:#0d4a8a">${esc(proj.name)}</span>` : ''}
         ${b.vat ? `<span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary)">VAT included</span>` : ''}
-        ${b.signed_off ? `<span class="tag" style="background:rgba(110,201,110,0.15);color:#6ec96e">✓ Signed off${b.signed_off_at ? ' · '+new Date(b.signed_off_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : ''}</span>` : ''}
+        ${b.signed_off
+          ? `<button id="bv-signedoff-toggle" style="display:flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(110,201,110,0.12);border:0.5px solid rgba(110,201,110,0.3);border-radius:20px;color:#6ec96e;font-size:12px;font-weight:500;cursor:pointer;font-family:var(--font)">
+               ✓ Signed off${b.signed_off_at ? ' · '+new Date(b.signed_off_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : ''}
+               <span style="font-size:10px;opacity:0.6">✕</span>
+             </button>`
+          : `<button id="bv-signedoff-toggle" style="display:flex;align-items:center;gap:6px;padding:5px 12px;background:var(--bg-secondary);border:0.5px solid var(--border-med);border-radius:20px;color:var(--text-tertiary);font-size:12px;cursor:pointer;font-family:var(--font)">
+               Mark as signed off
+             </button>`}
       </div>
       <div class="budget-layout">
         <div class="budget-main">
@@ -399,6 +406,22 @@ export class BudgetsView {
           ${(b.prepared_by||this.app.settings?.prepared_by) ? `<div style="font-size:11px;color:var(--text-tertiary);padding:4px 2px">Prepared by ${esc(b.prepared_by||this.app.settings?.prepared_by)}</div>` : ''}
         </div>
       </div>`
+
+    mc.querySelector('#bv-signedoff-toggle')?.addEventListener('click', async () => {
+      b.signed_off = !b.signed_off
+      b.signed_off_at = b.signed_off ? new Date().toISOString() : null
+      b.signed_off_by = b.signed_off ? (this.app.appUser?.name || this.app.user?.primaryEmailAddress?.emailAddress || '') : null
+      try {
+        await updateBudget(this.app.userId, b.id, {
+          signed_off: b.signed_off, signed_off_at: b.signed_off_at, signed_off_by: b.signed_off_by,
+          include_in_pipeline: b.signed_off,
+        })
+        const idx = this.app.budgets.findIndex(x => x.id === b.id)
+        if (idx >= 0) Object.assign(this.app.budgets[idx], { signed_off: b.signed_off, signed_off_at: b.signed_off_at, signed_off_by: b.signed_off_by })
+        this.app.toast(b.signed_off ? '✓ Budget signed off' : 'Sign-off removed')
+        this.renderViewer(mc)
+      } catch(e) { console.error(e); this.app.toast('Error updating sign-off') }
+    })
 
     mc.querySelector('#bv-back')?.addEventListener('click', () => {
       this.currentId = null; this.editingId = null; this.renderList(mc); this.app.updateTitle()

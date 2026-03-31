@@ -44,19 +44,36 @@ export default async function handler(req, res) {
 
     // Send the Clerk invitation
     const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY })
-    await clerk.invitations.createInvitation({
+
+    const inviteParams = {
       emailAddress: email,
-      redirectUrl:  process.env.VITE_APP_URL || 'https://your-app.vercel.app',
       publicMetadata: { invitedBy: callerUserId },
-    })
+    }
+
+    // Only set redirectUrl if VITE_APP_URL is configured and not the placeholder
+    const appUrl = process.env.VITE_APP_URL
+    if (appUrl && !appUrl.includes('your-app.vercel.app')) {
+      inviteParams.redirectUrl = appUrl
+    }
+
+    try {
+      await clerk.invitations.createInvitation(inviteParams)
+    } catch (clerkErr) {
+      console.error('Clerk invitation error:', JSON.stringify(clerkErr, null, 2))
+      const msg = clerkErr.errors?.[0]?.longMessage
+            || clerkErr.errors?.[0]?.message
+            || clerkErr.message
+            || 'Clerk error'
+      if (msg.toLowerCase().includes('already')) {
+        return res.status(409).json({ error: 'This email has already been invited or has an account' })
+      }
+      return res.status(500).json({ error: msg })
+    }
 
     return res.status(200).json({ ok: true, message: `Invitation sent to ${email}` })
 
   } catch (err) {
     console.error('Invite error:', err)
-    if (err.message?.toLowerCase().includes('already')) {
-      return res.status(409).json({ error: 'This email has already been invited or has an account' })
-    }
     return res.status(500).json({ error: err.message || 'Failed to send invitation' })
   }
 }

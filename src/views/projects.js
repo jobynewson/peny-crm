@@ -215,7 +215,10 @@ export class ProjectsView {
       <div class="bh-row">
         <button class="btn-secondary" id="back-to-kanban">← All projects</button>
         <h2 style="flex:1;font-size:15px;font-weight:500">${esc(p.name)}</h2>
-        <span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary);font-size:12px;padding:4px 10px">${p.status}</span>
+        <select id="pv-status" class="status-select" style="font-size:12px">
+          ${STAGES.map(s => `<option value="${s}" ${p.status===s?'selected':''}>${s}</option>`).join('')}
+          ${p.is_retainer ? `<option value="Retainer" ${p.status==='Retainer'?'selected':''}>Retainer</option>` : ''}
+        </select>
         ${this.app.permissions?.projects_edit ? `<button class="btn-secondary" id="pv-duplicate">Duplicate</button>` : ''}
         ${this.app.permissions?.projects_edit ? `<button class="btn-primary" id="enter-edit">Edit project</button>` : ''}
         <button class="row-btn" id="pv-delete" style="color:#b03020;border-color:rgba(180,50,30,0.2)">Delete</button>
@@ -386,6 +389,12 @@ export class ProjectsView {
     mc.querySelector('#back-to-kanban')?.addEventListener('click', () => {
       this.currentId = null; this.editingId = null; this.render(mc); this.app.updateTitle()
     })
+    mc.querySelector('#pv-status')?.addEventListener('change', async e => {
+      p.status = e.target.value
+      try { await updateProject(this.app.userId, p.id, { status: p.status }); this.app.toast(`Status → ${p.status}`) }
+      catch(err) { console.error(err) }
+    })
+
     mc.querySelector('#enter-edit')?.addEventListener('click', () => {
       this.editingId = this.currentId; this.render(mc)
     })
