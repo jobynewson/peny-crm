@@ -102,7 +102,10 @@ export class BudgetsView {
                    ${b.signed_off_by ? `<div style="color:var(--text-tertiary);font-size:10px">${esc(b.signed_off_by)}</div>` : ''}`
                 : `<span style="color:var(--text-tertiary)">—</span>`}
             </div>
-            <div style="text-align:right"><button class="row-btn" style="color:#b03020" data-delete="${b.id}">Delete</button></div>
+            <div style="text-align:right;display:flex;gap:6px;justify-content:flex-end">
+              <button class="row-btn" data-dup="${b.id}" style="font-size:10px">Copy</button>
+              <button class="row-btn" style="color:#b03020" data-delete="${b.id}">Delete</button>
+            </div>
           </div>`
         }).join('') : '<div class="empty-state">No budgets yet</div>'}
       </div>
@@ -118,6 +121,9 @@ export class BudgetsView {
     })
     mc.querySelectorAll('[data-delete]').forEach(btn => {
       btn.addEventListener('click', e => { e.stopPropagation(); this.deleteBudget(btn.dataset.delete, mc) })
+    })
+    mc.querySelectorAll('[data-dup]').forEach(btn => {
+      btn.addEventListener('click', e => { e.stopPropagation(); this.duplicateBudget(btn.dataset.dup, mc) })
     })
     this.bindNewModal(mc)
   }
@@ -275,6 +281,31 @@ export class BudgetsView {
     } catch (e) { console.error(e); this.app.toast('Error creating budget') }
   }
 
+  async duplicateBudget(id, mc) {
+    const b = this.app.budgets.find(x => x.id === id)
+    if (!b) return
+    try {
+      const copy = {
+        name: b.name + ' (copy)',
+        client_id: b.client_id,
+        markup: b.markup, custom_pct: b.custom_pct, vat: b.vat,
+        travel_rate: b.travel_rate ?? 50, discount: b.discount ?? 0,
+        sections: JSON.parse(JSON.stringify(b.sections || [])),
+        prepared_by: b.prepared_by, quote_email: b.quote_email,
+        notes: b.notes,
+        signed_off: false, signed_off_at: null, signed_off_by: null,
+        include_in_pipeline: false,
+      }
+      const [created] = await createBudget(this.app.userId, copy)
+      this.app.budgets.unshift(created)
+      this.currentId = created.id
+      this.editingId = created.id
+      this.render(mc)
+      this.app.updateTitle()
+      this.app.toast('Budget duplicated — now editing copy')
+    } catch(e) { console.error(e); this.app.toast('Error duplicating budget') }
+  }
+
   async deleteBudget(id, mc) {
     if (!confirm('Delete this budget?')) return
     try {
@@ -305,6 +336,7 @@ export class BudgetsView {
         <button class="btn-secondary" id="bv-back">← All budgets</button>
         <h2 style="flex:1;font-size:15px;font-weight:500">${esc(b.name)}</h2>
         <button class="btn-secondary" id="bv-history" style="font-size:12px">History</button>
+        <button class="btn-secondary" id="bv-dup" style="font-size:12px">Duplicate</button>
         <button class="btn-secondary" id="bv-csv">Export CSV</button>
         <button class="btn-secondary" id="bv-pdf">Export PDF</button>
         ${this.app.permissions?.budgets_edit ? `<button class="btn-primary" id="bv-edit">Edit budget</button>` : ''}
@@ -374,6 +406,7 @@ export class BudgetsView {
     mc.querySelector('#bv-edit')?.addEventListener('click', () => {
       this.editingId = this.currentId; this.render(mc)
     })
+    mc.querySelector('#bv-dup')?.addEventListener('click', () => this.duplicateBudget(b.id, mc))
     mc.querySelector('#bv-csv')?.addEventListener('click', () => this.exportCSV(b))
     mc.querySelector('#bv-pdf')?.addEventListener('click', () => this.exportPDF(b))
     mc.querySelector('#bv-history')?.addEventListener('click', async () => {
@@ -545,7 +578,7 @@ export class BudgetsView {
         ? `<input class="bl-in w" type="number" value="${l.days||''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},days" style="text-align:right" />`
         : `<span style="${dim}">—</span>`}
       </td>
-      <td><input class="bl-in w" type="number" value="${l.qty??1}" placeholder="0" min="0" data-num="${si},${li},qty" style="text-align:right" /></td>
+      <td><input class="bl-in w" type="number" value="${l.qty??0}" placeholder="0" min="0" data-num="${si},${li},qty" style="text-align:right" /></td>
       <td>${useDays
         ? `<input class="bl-in w" type="number" value="${l.travelDays??0}" placeholder="0" min="0" step="0.5" data-num="${si},${li},travelDays" style="text-align:right" title="Travel days" />`
         : `<span style="${dim}">—</span>`}
@@ -636,7 +669,7 @@ export class BudgetsView {
     mc.querySelector('#be-add-section')?.addEventListener('click', () => {
       const label = prompt('Section name:')
       if (!label) return
-      sections.push({ code: 'X', label, enabled: true, open: true, lines: [{ item: '', notes: '', days: 0, qty: 1, rate: null }] })
+      sections.push({ code: 'X', label, enabled: true, open: true, lines: [{ item: '', notes: '', days: 0, qty: 0, rate: null }] })
       save(); this.renderEditor(mc)
     })
 
@@ -695,8 +728,28 @@ export class BudgetsView {
       })
     })
 
-    // Numeric inputs
+    // Numeric inputs — update totals live on input, save on change
+    const updateLineTotal = (el) => {
+      const [si,li,field] = el.dataset.num.split(',')
+      const s = sections[+si]; const l = s.lines[+li]
+      const val = parseFloat(el.value)
+      if (isNaN(val)) return  // don't update mid-typing (e.g. "-" or ".")
+      l[field] = val || 0
+      const tr = parseFloat(b.travel_rate)||50
+      const t = lineTotal(l, tr)
+      const ltEl = mc.querySelector(`#blt-${si}-${li}`)
+      if (ltEl) { ltEl.textContent = t>0?gbpA(t):'—'; ltEl.className = 'bl-tot'+(t>0?' nz':'') }
+      const stEl = mc.querySelector(`#bst-${si}`)
+      if (stEl) stEl.textContent = gbpA(secNet(s, tr))
+      const amtEl = mc.querySelector(`#bamt-${si}`)
+      if (amtEl) amtEl.textContent = s.enabled&&secNet(s,tr)>0?gbpA(secNet(s,tr)):''
+      refreshSummary()
+    }
+
     mc.querySelectorAll('[data-num]').forEach(el => {
+      // Live update on every keystroke
+      el.addEventListener('input', () => updateLineTotal(el))
+      // Full save + auto-enable logic on blur/change
       el.addEventListener('change', () => {
         const [si,li,field] = el.dataset.num.split(',')
         const s = sections[+si]; const l = s.lines[+li]
@@ -848,7 +901,7 @@ export class BudgetsView {
       if (!al.length) return
       al.forEach(l => {
         const useDays = !!(l.useDays ?? (l.travelDays !== undefined))
-        rows.push([s.code+' — '+s.label, l.item, l.notes||'', useDays?l.days||0:'N/A', l.qty??1, useDays&&l.travelDays!=null?l.travelDays||0:'N/A', l.rate||0, l.discount||0, Math.round(lineTotal(l,tr))])
+        rows.push([s.code+' — '+s.label, l.item, l.notes||'', useDays?l.days||0:'N/A', l.qty??0, useDays&&l.travelDays!=null?l.travelDays||0:'N/A', l.rate||0, l.discount||0, Math.round(lineTotal(l,tr))])
       })
       rows.push([s.code+' SUBTOTAL','','','','','','','',Math.round(secNet(s,tr))]); rows.push([])
     })

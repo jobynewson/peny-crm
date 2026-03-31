@@ -143,6 +143,13 @@ body {
 }
 #auth-logo { height: 52px; width: auto; }
 
+/* Sidebar logo — follows theme (dark logo on light sidebar, white on dark) */
+.logo img { height: 32px; width: auto; display: block; }
+[data-theme="dark"] .logo img { filter: brightness(0) invert(1); }
+
+/* Auth screen — dark logo default, inverted in dark mode */
+[data-theme="dark"] #auth-logo { filter: brightness(0) invert(1); }
+
 /* ── App shell ── */
 #app { height: 100vh; display: flex; }
 

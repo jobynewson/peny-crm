@@ -7,56 +7,53 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
     :root {
-      --bg: #0f0f0f;
-      --surface: #1a1a1a;
-      --border: #2a2a2a;
-      --text: #e8e8e4;
-      --text-sec: #9a9a90;
-      --text-ter: #5a5a54;
-      --accent: #4a90d9;
-      --radius: 10px;
-      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --bg: #0f0f0f; --surface: #1a1a1a; --surface2: #222;
+      --border: #2a2a2a; --text: #e8e8e4; --text-sec: #9a9a90; --text-ter: #5a5a54;
+      --accent: #4a90d9; --green: #6ec96e; --amber: #f59e0b; --red: #ef4444;
+      --radius: 10px; --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     }
-    body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 40px 16px }
-    .logo { width: 80px; margin-bottom: 32px; opacity: 0.9 }
-    .card { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 28px; width: 100%; max-width: 420px; margin-bottom: 16px }
-    .project-name { font-size: 20px; font-weight: 600; margin-bottom: 4px }
-    .project-sub { font-size: 13px; color: var(--text-sec); margin-bottom: 24px }
-    label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-ter); margin-bottom: 6px; margin-top: 16px }
-    label:first-of-type { margin-top: 0 }
+    body { background:var(--bg); color:var(--text); font-family:var(--font); min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:32px 16px 60px }
+    .logo { height:36px; margin-bottom:28px; opacity:0.9 }
+    .card { background:var(--surface); border:0.5px solid var(--border); border-radius:var(--radius); padding:24px; width:100%; max-width:440px; margin-bottom:12px }
+    .project-name { font-size:19px; font-weight:600; margin-bottom:2px }
+    .project-sub { font-size:13px; color:var(--text-sec); margin-bottom:20px }
+    label { display:block; font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-ter); margin-bottom:5px; margin-top:14px }
+    label:first-of-type { margin-top:0 }
     select, input, textarea {
-      width: 100%; padding: 10px 12px; background: var(--bg); border: 0.5px solid var(--border);
-      border-radius: 8px; color: var(--text); font-family: var(--font); font-size: 14px; outline: none;
-      transition: border-color 0.15s
+      width:100%; padding:10px 12px; background:var(--bg); border:0.5px solid var(--border);
+      border-radius:8px; color:var(--text); font-family:var(--font); font-size:14px; outline:none; transition:border-color 0.15s
     }
-    select:focus, input:focus, textarea:focus { border-color: var(--accent) }
-    textarea { resize: vertical; min-height: 72px }
-    .hours-row { display: flex; gap: 10px; align-items: flex-end }
-    .hours-row input { flex: 1 }
-    .hours-hint { font-size: 11px; color: var(--text-ter); margin-top: 6px }
-    button {
-      width: 100%; padding: 12px; background: var(--accent); color: #fff; border: none;
-      border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; margin-top: 20px;
-      font-family: var(--font); transition: opacity 0.15s
-    }
-    button:hover { opacity: 0.9 }
-    button:disabled { opacity: 0.5; cursor: default }
-    .msg { font-size: 13px; text-align: center; padding: 10px; border-radius: 8px; margin-top: 12px }
-    .msg.ok { background: rgba(80,180,80,0.12); color: #6ec96e }
-    .msg.err { background: rgba(200,60,60,0.12); color: #e07070 }
-    .entries-card { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 20px; width: 100%; max-width: 420px }
-    .entries-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-ter); margin-bottom: 12px }
-    .entry-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 0.5px solid var(--border); font-size: 13px }
-    .entry-row:last-child { border-bottom: none }
-    .entry-meta { color: var(--text-sec); font-size: 11px; margin-top: 2px }
-    .entry-hours { font-weight: 600; color: var(--accent); white-space: nowrap }
-    .no-entries { font-size: 13px; color: var(--text-ter) }
-    .loading { color: var(--text-ter); font-size: 14px; text-align: center; padding: 40px }
-    .error-state { text-align: center; padding: 60px 20px }
-    .error-state h2 { font-size: 18px; margin-bottom: 8px }
-    .error-state p { color: var(--text-sec); font-size: 14px }
-    .total-bar { background: var(--bg); border-radius: 8px; padding: 12px 14px; margin-top: 16px; display: flex; justify-content: space-between; font-size: 13px }
-    .total-bar span:last-child { font-weight: 600; color: var(--accent) }
+    select:focus, input:focus, textarea:focus { border-color:var(--accent) }
+    textarea { resize:vertical; min-height:64px }
+    .hint { font-size:11px; color:var(--text-ter); margin-top:5px }
+    .btn { width:100%; padding:12px; background:var(--accent); color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:500; cursor:pointer; margin-top:16px; font-family:var(--font); transition:opacity 0.15s }
+    .btn:hover { opacity:0.88 }
+    .btn:disabled { opacity:0.45; cursor:default }
+    .btn-sec { background:var(--surface2); color:var(--text-sec); border:0.5px solid var(--border) }
+    .msg { font-size:13px; text-align:center; padding:10px; border-radius:8px; margin-top:10px }
+    .msg.ok { background:rgba(110,201,110,0.12); color:var(--green) }
+    .msg.err { background:rgba(200,60,60,0.12); color:var(--red) }
+    .totals { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:4px }
+    .total-cell { background:var(--surface2); border-radius:8px; padding:10px 12px }
+    .total-label { font-size:10px; color:var(--text-ter); text-transform:uppercase; letter-spacing:0.4px; margin-bottom:4px }
+    .total-val { font-size:18px; font-weight:600; color:var(--accent) }
+    .entries-card { background:var(--surface); border:0.5px solid var(--border); border-radius:var(--radius); padding:20px; width:100%; max-width:440px }
+    .entry-row { display:flex; justify-content:space-between; align-items:flex-start; padding:8px 0; border-bottom:0.5px solid var(--border); font-size:13px }
+    .entry-row:last-child { border-bottom:none }
+    .entry-meta { color:var(--text-sec); font-size:11px; margin-top:2px }
+    .entry-hours { font-weight:600; color:var(--accent); white-space:nowrap; margin-left:12px; flex-shrink:0 }
+    .no-entries { font-size:13px; color:var(--text-ter) }
+    .loading { color:var(--text-ter); font-size:14px; text-align:center; padding:40px }
+    .error-state { text-align:center; padding:60px 20px }
+    .error-state h2 { font-size:18px; margin-bottom:8px }
+    .error-state p { color:var(--text-sec); font-size:14px }
+    .repeat-bar { display:flex; gap:8px; margin-top:10px }
+    .repeat-bar button { flex:1; padding:8px; font-size:12px; background:var(--surface2); color:var(--text-sec); border:0.5px solid var(--border); border-radius:8px; cursor:pointer; font-family:var(--font) }
+    .repeat-bar button:hover { color:var(--text); border-color:var(--accent) }
+    .name-row { display:flex; gap:8px; align-items:flex-end }
+    .name-row input { flex:1 }
+    .name-save { font-size:11px; color:var(--accent); cursor:pointer; white-space:nowrap; padding-bottom:11px; flex-shrink:0; background:none; border:none; font-family:var(--font) }
+    .section-head { font-size:11px; color:var(--text-ter); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; margin-top:16px }
   </style>
 </head>
 <body>
@@ -66,93 +63,153 @@
   <script type="module">
     const token = location.pathname.split('/track/')[1]?.split('/')[0]
     if (!token) {
-      document.getElementById('root').innerHTML = `
-        <div class="error-state"><h2>Invalid link</h2><p>This time tracking link is not valid.</p></div>`
+      document.getElementById('root').innerHTML = `<div class="error-state"><h2>Invalid link</h2><p>This time tracking link is not valid.</p></div>`
       throw new Error('No token')
     }
+
+    // ── Persistence (improvements 1 & 2) ─────────────────────────────────────
+    const LS_NAME = 'peny_track_name_' + token
+    const LS_LAST = 'peny_track_last_' + token
+    let savedName = localStorage.getItem(LS_NAME) || ''
+    let lastEntry = null
+    try { lastEntry = JSON.parse(localStorage.getItem(LS_LAST)) } catch {}
 
     let projectData = null
     let entries = []
 
     async function load() {
-      const res = await fetch(`/api/track?token=${token}`)
-      if (!res.ok) {
-        document.getElementById('root').innerHTML = `
-          <div class="error-state"><h2>Link not found</h2><p>This tracking link may have been revoked or doesn't exist.</p></div>`
-        return
+      try {
+        const res = await fetch(`/api/track?token=${token}`)
+        if (!res.ok) {
+          document.getElementById('root').innerHTML = `<div class="error-state"><h2>Link not found</h2><p>This tracking link may have been revoked or doesn't exist.</p></div>`
+          return
+        }
+        projectData = await res.json()
+        entries = projectData.entries || []
+        render()
+      } catch(e) {
+        document.getElementById('root').innerHTML = `<div class="error-state"><h2>Connection error</h2><p>${e.message}</p></div>`
       }
-      const data = await res.json()
-      projectData = data
-      entries = data.entries || []
-      render()
     }
 
-    function render() {
+    function render(opts = {}) {
       const { project, trackableLines, crew } = projectData
-      const totalLogged = entries.reduce((s, e) => s + parseFloat(e.hours), 0)
+
+      // ── Improvement 3: running totals ─────────────────────────────────────
+      const totalAll = entries.reduce((s,e) => s + parseFloat(e.hours), 0)
+      const now = new Date()
+      const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay() + (now.getDay()===0?-6:1))
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+      const totalWeek  = entries.filter(e => new Date(e.entry_date) >= weekStart).reduce((s,e) => s+parseFloat(e.hours),0)
+      const totalMonth = entries.filter(e => new Date(e.entry_date) >= monthStart).reduce((s,e) => s+parseFloat(e.hours),0)
+
+      // ── Improvement 4: free-text fallback if no crew ──────────────────────
+      const hasCrew = crew && crew.length > 0
+      const nameHtml = hasCrew
+        ? `<label>Your name</label>
+           <select id="crew-select">
+             <option value="">— Select your name —</option>
+             ${crew.map(c => `<option value="${esc(c)}" ${c===savedName?'selected':''}>${esc(c)}</option>`).join('')}
+           </select>`
+        : `<label>Your name</label>
+           <div class="name-row">
+             <input type="text" id="crew-input" value="${esc(savedName)}" placeholder="Enter your name" autocomplete="name" />
+             <button class="name-save" id="save-name-btn" title="Remember my name">Save</button>
+           </div>`
+
+      // ── Improvement 6: budget name alongside task ─────────────────────────
+      const taskOptions = trackableLines.map(l =>
+        `<option value="${esc(l.label)}" data-bid="${esc(l.budgetId||'')}" ${l.label===(lastEntry?.lineLabel)?'selected':''}>
+          ${esc(l.label)}${l.budgetName ? ' — '+esc(l.budgetName) : ''}${l.allocatedHours ? ' ('+l.allocatedHours+'h)' : ''}
+        </option>`).join('')
 
       document.getElementById('root').innerHTML = `
         <div class="card">
           <div class="project-name">${esc(project.name)}</div>
           <div class="project-sub">Log your hours below</div>
 
-          <label>Your name</label>
-          <select id="crew-select">
-            <option value="">— Select your name —</option>
-            ${crew.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
-          </select>
+          <div class="totals">
+            <div class="total-cell"><div class="total-label">This week</div><div class="total-val">${totalWeek.toFixed(1)}h</div></div>
+            <div class="total-cell"><div class="total-label">This month</div><div class="total-val">${totalMonth.toFixed(1)}h</div></div>
+            <div class="total-cell"><div class="total-label">All time</div><div class="total-val">${totalAll.toFixed(1)}h</div></div>
+          </div>
+
+          ${nameHtml}
 
           <label>Task</label>
-          <select id="line-select">
-            <option value="">— Select task —</option>
-            ${trackableLines.map(l => `<option value="${esc(l.label)}" data-alloc="${l.allocatedHours}">${esc(l.label)} (${l.allocatedHours}h allocated)</option>`).join('')}
-          </select>
+          <select id="line-select">${taskOptions}</select>
 
           <label>Date</label>
-          <input type="date" id="entry-date" value="${today()}" max="${today()}" />
+          <input type="date" id="entry-date" value="${opts.date||today()}" max="${today()}" />
 
-          <label>Hours worked today</label>
-          <div class="hours-row">
-            <input type="number" id="hours-input" placeholder="0" min="0.5" max="24" step="0.5" />
-          </div>
-          <div class="hours-hint">Enter hours to 0.5 precision (e.g. 3.5 = 3 hours 30 mins)</div>
+          <label>Hours worked</label>
+          <input type="number" id="hours-input" value="${opts.hours||''}" placeholder="e.g. 4 or 3.5" min="0.5" max="24" step="0.5" />
+          <div class="hint">Half-hour precision — 3.5 = 3 hrs 30 mins</div>
 
           <label>Note (optional)</label>
-          <textarea id="note-input" placeholder="What did you work on?"></textarea>
+          <textarea id="note-input" placeholder="What did you work on?">${opts.note||''}</textarea>
 
-          <button id="submit-btn">Log hours</button>
+          <button class="btn" id="submit-btn">Log hours</button>
           <div id="msg"></div>
+
+          ${lastEntry ? `
+          <div class="section-head">Quick repeat</div>
+          <div class="repeat-bar">
+            <button id="repeat-btn">↩ Same as last time (${esc(lastEntry.lineLabel)}, ${lastEntry.hours}h)</button>
+          </div>` : ''}
         </div>
 
         <div class="entries-card">
-          <div class="entries-title">Recent entries — ${esc(project.name)}</div>
-          ${entries.length === 0 ? '<div class="no-entries">No entries yet</div>' : entries.slice(0, 15).map(e => `
+          <div class="section-head">Recent entries</div>
+          ${entries.length === 0 ? '<div class="no-entries">No entries logged yet</div>' : entries.slice(0,20).map(e => `
             <div class="entry-row">
               <div>
-                <div>${esc(e.crew_name)} — ${esc(e.line_label)}</div>
-                <div class="entry-meta">${formatDate(e.entry_date)}${e.note ? ' · ' + esc(e.note) : ''}</div>
+                <div>${esc(e.crew_name)} <span style="color:var(--text-ter)">·</span> ${esc(e.line_label)}</div>
+                <div class="entry-meta">${formatDate(e.entry_date)}${e.note?' · '+esc(e.note):''}</div>
               </div>
               <div class="entry-hours">${parseFloat(e.hours)}h</div>
             </div>`).join('')}
-          ${entries.length > 0 ? `
-            <div class="total-bar">
-              <span>Total logged</span>
-              <span>${totalLogged.toFixed(1)}h</span>
-            </div>` : ''}
         </div>`
 
-      document.getElementById('submit-btn').addEventListener('click', submit)
+      // Bindings
+      document.getElementById('submit-btn').addEventListener('click', () => submit())
+
+      // Save name to localStorage
+      const crewSel = document.getElementById('crew-select')
+      const crewInp = document.getElementById('crew-input')
+      if (crewSel) crewSel.addEventListener('change', () => { savedName = crewSel.value; localStorage.setItem(LS_NAME, savedName) })
+      if (crewInp) crewInp.addEventListener('change', () => { savedName = crewInp.value.trim(); localStorage.setItem(LS_NAME, savedName) })
+      document.getElementById('save-name-btn')?.addEventListener('click', () => {
+        savedName = crewInp?.value.trim() || ''
+        localStorage.setItem(LS_NAME, savedName)
+        const btn = document.getElementById('save-name-btn')
+        if (btn) { btn.textContent = '✓ Saved'; setTimeout(() => { btn.textContent = 'Save' }, 1500) }
+      })
+
+      // Repeat last entry
+      document.getElementById('repeat-btn')?.addEventListener('click', () => {
+        if (!lastEntry) return
+        const ls = document.getElementById('line-select')
+        if (ls) { for (let i=0;i<ls.options.length;i++) { if (ls.options[i].value===lastEntry.lineLabel) { ls.selectedIndex=i; break } } }
+        document.getElementById('hours-input').value = lastEntry.hours
+        document.getElementById('entry-date').value = today()
+        if (lastEntry.note) document.getElementById('note-input').value = lastEntry.note
+      })
     }
 
     async function submit() {
-      const crewName  = document.getElementById('crew-select').value
-      const lineLabel = document.getElementById('line-select').value
-      const hours     = parseFloat(document.getElementById('hours-input').value)
-      const date      = document.getElementById('entry-date').value
-      const note      = document.getElementById('note-input').value.trim()
-      const msg       = document.getElementById('msg')
+      const hasCrew = projectData.crew?.length > 0
+      const crewName = hasCrew
+        ? document.getElementById('crew-select')?.value
+        : document.getElementById('crew-input')?.value.trim()
+      const taskEl = document.getElementById('line-select')
+      const lineLabel = taskEl?.value
+      const budgetId = taskEl?.selectedOptions[0]?.dataset.bid || null
+      const hours = parseFloat(document.getElementById('hours-input')?.value)
+      const date = document.getElementById('entry-date')?.value
+      const note = document.getElementById('note-input')?.value.trim()
 
-      if (!crewName) { showMsg('Please select your name', 'err'); return }
+      if (!crewName) { showMsg('Please enter your name', 'err'); return }
       if (!lineLabel) { showMsg('Please select a task', 'err'); return }
       if (!hours || hours <= 0) { showMsg('Please enter valid hours', 'err'); return }
 
@@ -163,17 +220,22 @@
         const res = await fetch('/api/track', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token, crewName, lineLabel, hours, date, note, budgetId: projectData.budgetId }),
+          body: JSON.stringify({ token, crewName, lineLabel, hours, date, note, budgetId }),
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.error)
+
+        // Save last entry for repeat
+        lastEntry = { lineLabel, hours, note }
+        localStorage.setItem(LS_LAST, JSON.stringify(lastEntry))
+        // Save name
+        savedName = crewName
+        localStorage.setItem(LS_NAME, savedName)
+
         entries.unshift(data.entry)
-        showMsg(`✓ ${hours}h logged successfully`, 'ok')
-        document.getElementById('hours-input').value = ''
-        document.getElementById('note-input').value = ''
-        // Re-render entries section
+        showMsg(`✓ ${hours}h logged`, 'ok')
         render()
-        showMsg(`✓ ${hours}h logged successfully`, 'ok')
+        showMsg(`✓ ${hours}h logged`, 'ok')
       } catch(e) {
         showMsg(e.message || 'Error logging hours', 'err')
         btn.disabled = false; btn.textContent = 'Log hours'
@@ -183,16 +245,14 @@
     function showMsg(text, type) {
       const el = document.getElementById('msg')
       if (!el) return
-      el.textContent = text
-      el.className = `msg ${type}`
+      el.textContent = text; el.className = `msg ${type}`
     }
 
-    function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;') }
+    function esc(s) { return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;') }
     function today() { return new Date().toISOString().split('T')[0] }
     function formatDate(d) {
       if (!d) return ''
-      const dt = new Date(d)
-      return dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+      return new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})
     }
 
     load()

@@ -26,11 +26,172 @@ export class App {
 
   mount(container) {
     this.container = container
-    // Restore saved theme before first render
     const saved = localStorage.getItem('peny-theme') || 'dark'
     document.documentElement.setAttribute('data-theme', saved)
     this.injectGlobalStyles()
     this.render()
+    this._bindKeyboard()
+  }
+
+  _openSearch() {
+    // Remove existing if open (toggle)
+    const existing = document.getElementById('search-overlay')
+    if (existing) { existing.remove(); return }
+
+    const overlay = document.createElement('div')
+    overlay.id = 'search-overlay'
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:flex-start;justify-content:center;padding-top:15vh;z-index:9999;cursor:pointer'
+
+    const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+
+    const render = (query = '') => {
+      const q = query.toLowerCase().trim()
+      const results = []
+
+      if (q.length > 0) {
+        // Contacts
+        this.contacts.forEach(c => {
+          const text = `${c.first_name} ${c.last_name} ${c.company||''} ${c.email||''}`.toLowerCase()
+          if (text.includes(q)) results.push({ type:'contact', label:`${c.first_name} ${c.last_name}`, sub: c.company||c.email||'', id: c.id })
+        })
+        // Projects
+        this.projects.forEach(p => {
+          const cl = this.contacts.find(c => c.id === p.client_id)
+          const text = `${p.name} ${cl?.company||''} ${cl?.first_name||''} ${cl?.last_name||''}`.toLowerCase()
+          if (text.includes(q)) results.push({ type:'project', label: p.name, sub: cl ? `${cl.first_name} ${cl.last_name}` : p.status, id: p.id })
+        })
+        // Budgets
+        this.budgets.forEach(b => {
+          const cl = this.contacts.find(c => c.id === b.client_id)
+          const text = `${b.name} ${cl?.company||''} ${cl?.first_name||''} ${cl?.last_name||''}`.toLowerCase()
+          if (text.includes(q)) results.push({ type:'budget', label: b.name, sub: cl ? `${cl.first_name} ${cl.last_name}` : '', id: b.id })
+        })
+      }
+
+      const typeIcon = { contact:'👤', project:'🎬', budget:'£' }
+      const typeColour = { contact:'#a78bfa', project:'#4a90d9', budget:'#6ec96e' }
+
+      overlay.innerHTML = `
+        <div style="background:var(--bg-primary);border:0.5px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:520px;overflow:hidden;cursor:default;box-shadow:0 20px 60px rgba(0,0,0,0.4)" onclick="event.stopPropagation()">
+          <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:0.5px solid var(--border-light)">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--text-tertiary)" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+            <input id="search-input" placeholder="Search contacts, projects, budgets…" value="${esc(query)}"
+              style="flex:1;background:transparent;border:none;outline:none;font-size:15px;color:var(--text-primary);font-family:var(--font)" autofocus />
+            <kbd style="font-size:11px;color:var(--text-tertiary);background:var(--bg-secondary);border:0.5px solid var(--border-light);border-radius:4px;padding:2px 6px">Esc</kbd>
+          </div>
+          <div id="search-results" style="max-height:360px;overflow-y:auto">
+            ${q.length === 0 ? `<div style="padding:24px;text-align:center;font-size:13px;color:var(--text-tertiary)">Start typing to search across all records</div>`
+            : results.length === 0 ? `<div style="padding:24px;text-align:center;font-size:13px;color:var(--text-tertiary)">No results for "${esc(query)}"</div>`
+            : results.map((r,i) => `
+              <div data-result="${i}" style="display:flex;align-items:center;gap:12px;padding:11px 16px;cursor:pointer;border-bottom:0.5px solid var(--border-light);transition:background 0.1s"
+                onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''">
+                <span style="font-size:16px;flex-shrink:0">${typeIcon[r.type]}</span>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.label)}</div>
+                  ${r.sub ? `<div style="font-size:11px;color:var(--text-tertiary)">${esc(r.sub)}</div>` : ''}
+                </div>
+                <span style="font-size:10px;color:${typeColour[r.type]};background:${typeColour[r.type]}22;border-radius:4px;padding:2px 7px;flex-shrink:0;text-transform:capitalize">${r.type}</span>
+              </div>`).join('')}
+          </div>
+          ${q.length > 0 && results.length > 0 ? `<div style="padding:8px 16px;font-size:11px;color:var(--text-tertiary);border-top:0.5px solid var(--border-light)">${results.length} result${results.length!==1?'s':''}</div>` : ''}
+        </div>`
+
+      // Input handler
+      const input = overlay.querySelector('#search-input')
+      input?.addEventListener('input', e => render(e.target.value))
+      input?.addEventListener('keydown', e => {
+        if (e.key === 'Escape') { overlay.remove() }
+        if (e.key === 'Enter' && results.length > 0) {
+          overlay.querySelector('[data-result="0"]')?.click()
+        }
+      })
+      setTimeout(() => input?.focus(), 10)
+
+      // Click result
+      overlay.querySelectorAll('[data-result]').forEach(el => {
+        el.addEventListener('click', () => {
+          const r = results[+el.dataset.result]
+          overlay.remove()
+          if (r.type === 'contact') { this.navigate('contacts'); setTimeout(() => this.contactsView.showDetail(r.id), 50) }
+          else if (r.type === 'project') { this.openProject(r.id) }
+          else if (r.type === 'budget') { this.openBudget(r.id) }
+        })
+      })
+    }
+
+    overlay.addEventListener('click', () => overlay.remove())
+    document.body.appendChild(overlay)
+    render()
+  }
+
+  _bindKeyboard() {
+    document.addEventListener('keydown', e => {
+      // Don't fire shortcuts when typing in an input/textarea/select
+      const tag = document.activeElement?.tagName
+      if (['INPUT','TEXTAREA','SELECT'].includes(tag)) {
+        // Only handle Escape from inputs
+        if (e.key === 'Escape') document.activeElement.blur()
+        return
+      }
+
+      const meta = e.metaKey || e.ctrlKey
+
+      // Cmd/Ctrl+K — global search
+      if (meta && e.key === 'k') {
+        e.preventDefault()
+        this._openSearch()
+        return
+      }
+
+      // Cmd/Ctrl+S — save (exit edit mode)
+      if (meta && e.key === 's') {
+        e.preventDefault()
+        if (this.currentView === 'projects' && this.projectsView.editingId) {
+          document.querySelector('#pe-save-close')?.click()
+        } else if (this.currentView === 'budgets' && this.budgetsView.editingId) {
+          document.querySelector('#be-save-close')?.click()
+        } else if (this.currentView === 'settings') {
+          document.querySelector('#settings-save-btn')?.click()
+        }
+        return
+      }
+
+      // Escape — close modals, exit edit mode, go back
+      if (e.key === 'Escape') {
+        // Close search overlay first
+        const searchOverlay = document.getElementById('search-overlay')
+        if (searchOverlay) { searchOverlay.remove(); return }
+        // Close any open modal first
+        const openModal = document.querySelector('.modal-backdrop.open')
+        if (openModal) { openModal.classList.remove('open'); return }
+        // Exit edit mode → viewer
+        if (this.currentView === 'projects' && this.projectsView.editingId) {
+          document.querySelector('#pe-save-close')?.click(); return
+        }
+        if (this.currentView === 'budgets' && this.budgetsView.editingId) {
+          document.querySelector('#be-save-close')?.click(); return
+        }
+        // Back from viewer → list
+        if (this.currentView === 'projects' && this.projectsView.currentId) {
+          document.querySelector('#back-to-kanban')?.click(); return
+        }
+        if (this.currentView === 'budgets' && this.budgetsView.currentId) {
+          document.querySelector('#bv-back')?.click(); return
+        }
+        return
+      }
+
+      // N — new item (only on list views, not when viewing a record)
+      if (e.key === 'n' && !meta) {
+        if (this.currentView === 'contacts' && this.permissions?.contacts_edit) {
+          document.querySelector('#topbar-btn')?.click()
+        } else if (this.currentView === 'projects' && !this.projectsView.currentId && this.permissions?.projects_edit) {
+          document.querySelector('#topbar-btn')?.click()
+        } else if (this.currentView === 'budgets' && !this.budgetsView.currentId && this.permissions?.budgets_edit) {
+          document.querySelector('#topbar-btn')?.click()
+        }
+      }
+    })
   }
 
   render() {
@@ -54,7 +215,9 @@ export class App {
       <div class="main">
         <div class="topbar">
           <div class="topbar-title" id="view-title">${this.viewTitle()}</div>
-          <div id="topbar-actions" style="display:flex;gap:8px;align-items:center">${this.topbarSearch()}${this.topbarButton()}</div>
+          <div id="topbar-actions" style="display:flex;gap:8px;align-items:center">${this.topbarSearch()}${this.topbarButton()}
+            <button id="shortcut-hint" title="Keyboard shortcuts" style="width:24px;height:24px;border-radius:50%;border:0.5px solid var(--border-med);background:transparent;color:var(--text-tertiary);font-size:12px;cursor:pointer;font-family:var(--font);display:flex;align-items:center;justify-content:center;flex-shrink:0">?</button>
+          </div>
         </div>
         <div class="content" id="main-content"></div>
       </div>
@@ -111,6 +274,32 @@ export class App {
       search.value = this.contactsView.search
       search.addEventListener('input', e => { this.contactsView.search = e.target.value; this.contactsView.refreshList() })
     }
+
+    // Keyboard shortcut hint
+    this.container.querySelector('#shortcut-hint')?.addEventListener('click', () => {
+      let overlay = document.getElementById('shortcut-overlay')
+      if (overlay) { overlay.remove(); return }
+      overlay = document.createElement('div')
+      overlay.id = 'shortcut-overlay'
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;cursor:pointer'
+      overlay.innerHTML = `
+        <div style="background:var(--bg-primary);border:0.5px solid var(--border-med);border-radius:var(--radius-lg);padding:28px 32px;width:320px;cursor:default" onclick="event.stopPropagation()">
+          <div style="font-size:13px;font-weight:600;margin-bottom:16px">Keyboard shortcuts</div>
+          ${[
+            ['⌘K', 'Search everything'],
+            ['N', 'New project / budget / contact'],
+            ['Esc', 'Close modal / exit edit / go back'],
+            ['⌘S', 'Save & close current editor'],
+          ].map(([key,desc]) => `
+            <div style="display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:0.5px solid var(--border-light)">
+              <kbd style="font-size:11px;font-family:monospace;background:var(--bg-secondary);border:0.5px solid var(--border-med);border-radius:5px;padding:3px 8px;color:var(--text-secondary);white-space:nowrap">${key}</kbd>
+              <span style="font-size:13px;color:var(--text-secondary)">${desc}</span>
+            </div>`).join('')}
+          <div style="margin-top:14px;font-size:11px;color:var(--text-tertiary);text-align:center">Click anywhere to close</div>
+        </div>`
+      overlay.addEventListener('click', () => overlay.remove())
+      document.body.appendChild(overlay)
+    })
   }
 
   bindTopbarBtn() {
@@ -198,7 +387,41 @@ export class App {
     const retainers = this.projects.filter(p => p.is_retainer)
     const regularProjects = this.projects.filter(p => !p.is_retainer)
 
+    if (!this.projects.length) {
+      mc.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:50vh;gap:16px;text-align:center">
+          <div style="font-size:40px">🎬</div>
+          <div style="font-size:18px;font-weight:500">No projects yet</div>
+          <div style="font-size:14px;color:var(--text-tertiary);max-width:320px;line-height:1.6">Create your first project to start tracking work, budgets and deliverables.</div>
+          ${this.permissions?.projects_edit ? `<button class="btn-primary" id="empty-new-project" style="margin-top:4px">+ Create first project</button>` : ''}
+        </div>`
+      mc.querySelector('#empty-new-project')?.addEventListener('click', () => {
+        this.navigate('projects')
+        setTimeout(() => document.querySelector('#topbar-btn')?.click(), 50)
+      })
+      return
+    }
+
+    // Compute financial summary
+    const signedOffValue = this.budgets
+      .filter(b => b.signed_off)
+      .reduce((s, b) => {
+        const n = budTotal(b); return s + (isNaN(n) ? 0 : n)
+      }, 0)
+    const retainerMRR = retainers.reduce((s, p) => s + (parseFloat(p.retainer_fee)||0), 0)
+    const pipelineValue = regularProjects.reduce((sum, p) => {
+      const pBudgets = (p.budget_ids||[]).map(id => this.budgets.find(b => b.id === id)).filter(Boolean)
+      return sum + pBudgets.reduce((s, b) => s + (budTotal(b)||0), 0)
+    }, 0)
+    const gbp = n => '£' + Math.round(n).toLocaleString('en-GB')
+
     mc.innerHTML = `
+      <div class="stats-row" style="margin-bottom:20px">
+        <div class="stat-card"><div class="stat-label">Signed-off budgets</div><div class="stat-value" style="color:#6ec96e">${gbp(signedOffValue)}</div><div class="stat-sub">total value</div></div>
+        <div class="stat-card"><div class="stat-label">Retainer MRR</div><div class="stat-value" style="color:#a78bfa">${gbp(retainerMRR)}</div><div class="stat-sub">per month</div></div>
+        <div class="stat-card"><div class="stat-label">Pipeline</div><div class="stat-value">${gbp(pipelineValue)}</div><div class="stat-sub">${regularProjects.length} project${regularProjects.length!==1?'s':''}</div></div>
+        <div class="stat-card"><div class="stat-label">Active projects</div><div class="stat-value">${regularProjects.filter(p=>p.status==='In Production').length}</div><div class="stat-sub">in production</div></div>
+      </div>
       ${retainers.length ? `
       <div style="margin-bottom:24px">
         <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:12px;display:flex;align-items:center;gap:8px">
@@ -326,6 +549,7 @@ export class App {
         try {
           const { updateProject } = await import('./db/client.js')
           await updateProject(this.userId, p.id, { deliverables: p.deliverables })
+          this.toast(el.checked ? '✓ Deliverable marked done' : 'Deliverable unmarked')
         } catch(e) { console.error('Deliverable save failed:', e) }
       })
     })
@@ -648,7 +872,7 @@ export class App {
       el.innerHTML = users.map(u => {
         const preset = ROLE_PRESETS[u.role] ?? ROLE_PRESETS.member
         const overrides = u.permissions ?? {}
-        const isSelf = u.clerk_id === this.userId
+        const isSelf = u.clerk_id === this.clerkUserId
         return `<div style="border:0.5px solid var(--border-light);border-radius:var(--radius-md);padding:14px;margin-bottom:10px" data-uid="${u.id}">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
             <div style="flex:1">
@@ -785,12 +1009,12 @@ export class App {
     } catch(e) { console.error(e); this.toast('Error saving template') }
   }
 
-  toast(msg) {
+  toast(msg, duration = 2400) {
     let el = document.getElementById('app-toast')
     if (!el) { el = document.createElement('div'); el.id = 'app-toast'; el.className = 'toast'; document.body.appendChild(el) }
     el.textContent = msg; el.classList.add('show')
     clearTimeout(this._toastTimer)
-    this._toastTimer = setTimeout(() => el.classList.remove('show'), 2400)
+    this._toastTimer = setTimeout(() => el.classList.remove('show'), duration)
   }
 
   injectGlobalStyles() {

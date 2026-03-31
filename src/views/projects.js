@@ -216,6 +216,7 @@ export class ProjectsView {
         <button class="btn-secondary" id="back-to-kanban">← All projects</button>
         <h2 style="flex:1;font-size:15px;font-weight:500">${esc(p.name)}</h2>
         <span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary);font-size:12px;padding:4px 10px">${p.status}</span>
+        ${this.app.permissions?.projects_edit ? `<button class="btn-secondary" id="pv-duplicate">Duplicate</button>` : ''}
         ${this.app.permissions?.projects_edit ? `<button class="btn-primary" id="enter-edit">Edit project</button>` : ''}
         <button class="row-btn" id="pv-delete" style="color:#b03020;border-color:rgba(180,50,30,0.2)">Delete</button>
       </div>
@@ -225,7 +226,11 @@ export class ProjectsView {
           <div class="proj-panel">
             <div class="proj-panel-head">Brief &amp; overview</div>
             <div class="proj-panel-body">
-              ${field('Client', cl ? esc(cl.first_name)+' '+esc(cl.last_name)+' — '+esc(cl.company) : '')}
+              ${cl ? `
+              <div>
+                <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Client</div>
+                <div style="font-size:13px;color:var(--accent);cursor:pointer;text-decoration:underline;text-underline-offset:2px;text-decoration-color:rgba(74,144,217,0.4)" data-open-contact="${cl.id}">${esc(cl.first_name)} ${esc(cl.last_name)} — ${esc(cl.company)}</div>
+              </div>` : ''}
               ${field('Creative brief', esc(p.brief))}
               ${field('Location', esc(p.location))}
               ${(p.shoot_start||p.shoot_end) ? field('Shoot dates', [p.shoot_start, p.shoot_end].filter(Boolean).join(' → ')) : ''}
@@ -249,14 +254,27 @@ export class ProjectsView {
           <div class="proj-panel">
             <div class="proj-panel-head">
               ${p.is_retainer ? 'Fixed monthly deliverables' : 'Deliverables'}
-              <span style="margin-left:auto;font-size:11px;color:var(--text-tertiary);font-weight:400;text-transform:none;letter-spacing:0">${doneCount}/${delivs.length} done</span>
+              <div style="margin-left:auto;display:flex;gap:6px;font-weight:400;text-transform:none;letter-spacing:0">
+                <button class="row-btn" id="pv-delivs-all" style="font-size:10px">All done</button>
+                <button class="row-btn" id="pv-delivs-clear" style="font-size:10px">Clear</button>
+                <span style="font-size:11px;color:var(--text-tertiary)">${doneCount}/${delivs.length}</span>
+              </div>
             </div>
             <div style="padding:0 16px" id="pv-delivs">
-              ${delivs.map((d, di) => `
-                <div class="deliverable-row" id="pvd-${p.id}-${di}">
+              ${delivs.map((d, di) => {
+                const today = new Date(); today.setHours(0,0,0,0)
+                const due = d.due ? new Date(d.due) : null
+                const daysUntil = due ? Math.round((due - today) / 86400000) : null
+                const overdue = !d.done && due && daysUntil < 0
+                const dueSoon = !d.done && due && daysUntil >= 0 && daysUntil <= 3
+                const dueColour = overdue ? '#ef4444' : dueSoon ? '#f59e0b' : 'var(--text-tertiary)'
+                const dueLabel = due && !d.done ? (overdue ? `⚠ ${Math.abs(daysUntil)}d overdue` : daysUntil === 0 ? '⏰ due today' : dueSoon ? `⏰ ${daysUntil}d left` : new Date(d.due).toLocaleDateString('en-GB',{day:'numeric',month:'short'})) : ''
+                return `<div class="deliverable-row" id="pvd-${p.id}-${di}" style="${overdue?'background:rgba(239,68,68,0.05);border-radius:6px;margin:1px 0':''}">
                   <input type="checkbox" class="deliverable-check" ${d.done?'checked':''} data-pv-deliv="${p.id}" data-pv-idx="${di}" />
-                  <span style="font-size:13px;${d.done?'text-decoration:line-through;color:var(--text-tertiary)':'color:var(--text-primary)'}">${esc(d.text)}</span>
-                </div>`).join('')}
+                  <span style="font-size:13px;flex:1;${d.done?'text-decoration:line-through;color:var(--text-tertiary)':'color:var(--text-primary)'}">${esc(d.text)}</span>
+                  ${dueLabel ? `<span style="font-size:10px;color:${dueColour};white-space:nowrap;flex-shrink:0;font-weight:${overdue||dueSoon?'500':'400'}">${dueLabel}</span>` : ''}
+                </div>`
+              }).join('')}
             </div>
           </div>` : ''}
 
@@ -371,7 +389,44 @@ export class ProjectsView {
     mc.querySelector('#enter-edit')?.addEventListener('click', () => {
       this.editingId = this.currentId; this.render(mc)
     })
+    mc.querySelector('#pv-duplicate')?.addEventListener('click', async () => {
+      const copy = {
+        name: p.name + ' (copy)', status: 'Enquiry', client_id: p.client_id,
+        brief: p.brief, location: p.location, shoot_start: null, shoot_end: null,
+        deliverables: JSON.parse(JSON.stringify(p.deliverables||[])).map(d=>({...d,done:false})),
+        crew: JSON.parse(JSON.stringify(p.crew||[])),
+        shots: JSON.parse(JSON.stringify(p.shots||[])),
+        approvals: (p.approvals||[]).map(a=>({...a,status:'Pending'})),
+        notes: p.notes, is_retainer: p.is_retainer,
+        retainer_fee: p.retainer_fee, retainer_hours: p.retainer_hours,
+        retainer_alert: p.retainer_alert, retainer_start: p.retainer_start,
+        monthly_deliverables: [],
+      }
+      try {
+        const [created] = await createProject(this.app.userId, copy)
+        this.app.projects.unshift({...created, budget_ids:[]})
+        this.currentId = created.id; this.editingId = created.id
+        this.render(mc); this.app.updateTitle()
+        this.app.toast('Project duplicated — now editing copy')
+      } catch(e) { console.error(e); this.app.toast('Error duplicating project') }
+    })
     mc.querySelector('#pv-delete')?.addEventListener('click', () => this.deleteProject(p.id, mc))
+
+    // Clickable client link
+    mc.querySelector('[data-open-contact]')?.addEventListener('click', () => {
+      const cid = mc.querySelector('[data-open-contact]').dataset.openContact
+      this.app.navigate('contacts')
+      setTimeout(() => this.app.contactsView.showDetail(cid), 50)
+    })
+
+    mc.querySelector('#pv-delivs-all')?.addEventListener('click', async () => {
+      p.deliverables.forEach(d => { if (d.text) d.done = true })
+      try { await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }); this.renderViewer(mc); this.app.toast('All deliverables marked done') } catch(e) { console.error(e) }
+    })
+    mc.querySelector('#pv-delivs-clear')?.addEventListener('click', async () => {
+      p.deliverables.forEach(d => d.done = false)
+      try { await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }); this.renderViewer(mc) } catch(e) { console.error(e) }
+    })
 
     // Deliverable tickboxes — interactive in view mode
     mc.querySelectorAll('[data-pv-deliv]').forEach(el => {
@@ -388,7 +443,7 @@ export class ProjectsView {
         const total = (p.deliverables||[]).filter(d=>d.text).length
         const head = mc.querySelector('.proj-panel-head span[style*="text-tertiary"]')
         if (head) head.textContent = `${done}/${total} done`
-        try { await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }) }
+        try { await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }); this.app.toast(el.checked ? '✓ Done' : 'Unmarked') }
         catch(e) { console.error(e) }
       })
     })
@@ -577,43 +632,120 @@ export class ProjectsView {
     const linkDiv = document.createElement('div')
     linkDiv.style.cssText = 'margin-top:14px;padding-top:12px;border-top:0.5px solid var(--border-light)'
     const appUrl = import.meta.env.VITE_APP_URL || window.location.origin
+
+    // Quick log form for logged-in users
+    const crew = (p.crew||[]).filter(c=>c.name)
+    const budgets = this.app.budgets
+    const budgetIds = Array.isArray(p.budget_ids) ? p.budget_ids : []
+    const trackableLines = []
+    for (const bid of budgetIds) {
+      const b = budgets.find(x => x.id === bid)
+      if (!b) continue
+      for (const s of (b.sections||[])) {
+        if (!s.enabled) continue
+        for (const l of (s.lines||[])) {
+          if (!l.track_time || !l.item) continue
+          trackableLines.push({ label: l.item, budgetId: bid, budgetName: b.name })
+        }
+      }
+    }
+    if (trackableLines.length === 0 && p.is_retainer) trackableLines.push({ label: 'Retainer work', budgetId: null })
+    if (trackableLines.length === 0) trackableLines.push({ label: 'General / production work', budgetId: null })
+
+    // Find the current user in crew to pre-select
+    const myName = this.app.appUser?.name || ''
+    const crewOptions = crew.length
+      ? crew.map(c => `<option value="${c.name}" ${c.name===myName?'selected':''}>${c.name}</option>`).join('')
+      : `<option value="${myName||'Me'}">${myName||'Me'}</option>`
+
+    linkDiv.innerHTML = `
+      <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Quick log time</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="display:flex;gap:6px">
+          <select id="ql-crew" style="flex:1;font-size:12px;padding:5px 8px;border:0.5px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none">
+            ${crewOptions}
+          </select>
+          <input type="number" id="ql-hours" placeholder="Hours" min="0.5" max="24" step="0.5"
+            style="width:70px;font-size:12px;padding:5px 8px;border:0.5px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;text-align:right" />
+        </div>
+        <select id="ql-task" style="font-size:12px;padding:5px 8px;border:0.5px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none">
+          ${trackableLines.map(l => `<option value="${l.label}" data-bid="${l.budgetId||''}">${l.label}${l.budgetName?' ('+l.budgetName+')':''}</option>`).join('')}
+        </select>
+        <div style="display:flex;gap:6px">
+          <input type="date" id="ql-date" value="${new Date().toISOString().split('T')[0]}" max="${new Date().toISOString().split('T')[0]}"
+            style="flex:1;font-size:12px;padding:5px 8px;border:0.5px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+          <button class="btn-primary" id="ql-submit" style="font-size:12px;padding:5px 14px;white-space:nowrap">Log</button>
+        </div>
+        <div id="ql-msg" style="font-size:11px;display:none"></div>
+      </div>
+
+      <div style="margin-top:12px;padding-top:10px;border-top:0.5px solid var(--border-light)">`
+
+    el.appendChild(linkDiv)
+
+    // Quick log submission
+    linkDiv.querySelector('#ql-submit')?.addEventListener('click', async () => {
+      const crewName = linkDiv.querySelector('#ql-crew')?.value
+      const hours = parseFloat(linkDiv.querySelector('#ql-hours')?.value)
+      const taskEl = linkDiv.querySelector('#ql-task')
+      const lineLabel = taskEl?.value
+      const budgetId = taskEl?.selectedOptions[0]?.dataset.bid || null
+      const date = linkDiv.querySelector('#ql-date')?.value
+      const msgEl = linkDiv.querySelector('#ql-msg')
+
+      if (!crewName || !hours || hours <= 0 || !lineLabel) {
+        if (msgEl) { msgEl.style.display='block'; msgEl.style.color='#e07070'; msgEl.textContent='Please fill in name, task and hours' }
+        return
+      }
+      try {
+        const { addTimeEntry } = await import('../db/client.js')
+        await addTimeEntry({ project_id: p.id, budget_id: budgetId||null, line_label: lineLabel, crew_name: crewName, hours, entry_date: date, note: null })
+        if (msgEl) { msgEl.style.display='block'; msgEl.style.color='#6ec96e'; msgEl.textContent=`✓ ${hours}h logged` }
+        linkDiv.querySelector('#ql-hours').value = ''
+        setTimeout(() => { if (msgEl) msgEl.style.display='none' }, 3000)
+        this._loadTimePanel(mc, p)
+      } catch(e) { console.error(e); if (msgEl) { msgEl.style.display='block'; msgEl.style.color='#e07070'; msgEl.textContent='Error logging time' } }
+    })
+
+    // Public link section
+    const linkSection = document.createElement('div')
     if (p.track_token) {
       const url = `${appUrl}/track/${p.track_token}`
-      linkDiv.innerHTML = `
-        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Tracking link</div>
+      linkSection.innerHTML = `
+        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Public tracking link</div>
         <div style="display:flex;gap:6px;align-items:center">
           <input type="text" value="${url}" readonly style="flex:1;font-size:10px;padding:5px 7px;background:var(--bg-secondary);border:0.5px solid var(--border-light);border-radius:6px;color:var(--text-secondary);font-family:monospace;cursor:pointer" onclick="this.select()" />
           <button class="row-btn" id="copy-track-link" style="font-size:10px;white-space:nowrap">Copy</button>
           <button class="row-btn" id="revoke-track-link" style="font-size:10px;color:#b03020;white-space:nowrap">Revoke</button>
         </div>`
-      el.appendChild(linkDiv)
-      mc.querySelector('#copy-track-link')?.addEventListener('click', () => {
-        navigator.clipboard.writeText(url).then(() => this.app.toast('Link copied'))
-      })
-      mc.querySelector('#revoke-track-link')?.addEventListener('click', async () => {
-        if (!confirm('Revoke this link? Anyone with it will no longer be able to log time.')) return
-        await setTrackToken(this.app.userId, p.id, null)
-        p.track_token = null
-        const idx = this.app.projects.findIndex(x => x.id === p.id)
-        if (idx >= 0) this.app.projects[idx].track_token = null
-        this.app.toast('Tracking link revoked')
-        this._loadTimePanel(mc, p)
-      })
     } else {
-      linkDiv.innerHTML = `
-        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Tracking link</div>
-        <button class="dashed-btn" id="gen-track-link" style="width:100%;font-size:12px">Generate tracking link</button>`
-      el.appendChild(linkDiv)
-      mc.querySelector('#gen-track-link')?.addEventListener('click', async () => {
-        const token = crypto.randomUUID().replace(/-/g,'').slice(0,12)
-        const [updated] = await setTrackToken(this.app.userId, p.id, token)
-        p.track_token = token
-        const idx = this.app.projects.findIndex(x => x.id === p.id)
-        if (idx >= 0) this.app.projects[idx].track_token = token
-        this.app.toast('Tracking link generated')
-        this._loadTimePanel(mc, p)
-      })
+      linkSection.innerHTML = `
+        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Public tracking link</div>
+        <button class="dashed-btn" id="gen-track-link" style="width:100%;font-size:12px">Generate link for external editors</button>`
     }
+    linkDiv.appendChild(linkSection)
+
+    mc.querySelector('#copy-track-link')?.addEventListener('click', () => {
+      navigator.clipboard.writeText(`${appUrl}/track/${p.track_token}`).then(() => this.app.toast('Link copied'))
+    })
+    mc.querySelector('#revoke-track-link')?.addEventListener('click', async () => {
+      if (!confirm('Revoke this link? Anyone with it will no longer be able to log time.')) return
+      await setTrackToken(this.app.userId, p.id, null)
+      p.track_token = null
+      const idx = this.app.projects.findIndex(x => x.id === p.id)
+      if (idx >= 0) this.app.projects[idx].track_token = null
+      this.app.toast('Tracking link revoked')
+      this._loadTimePanel(mc, p)
+    })
+    mc.querySelector('#gen-track-link')?.addEventListener('click', async () => {
+      const token = crypto.randomUUID().replace(/-/g,'').slice(0,12)
+      const [updated] = await setTrackToken(this.app.userId, p.id, token)
+      p.track_token = token
+      const idx = this.app.projects.findIndex(x => x.id === p.id)
+      if (idx >= 0) this.app.projects[idx].track_token = token
+      this.app.toast('Tracking link generated')
+      this._loadTimePanel(mc, p)
+    })
   }
 
   async _loadProjectActivity(mc, projectId) {
@@ -735,7 +867,13 @@ export class ProjectsView {
             </div>` : ''}
           </div>
           <div class="proj-panel">
-            <div class="proj-panel-head">${p.is_retainer ? 'Fixed monthly deliverables' : 'Deliverables'}</div>
+            <div class="proj-panel-head">
+              ${p.is_retainer ? 'Fixed monthly deliverables' : 'Deliverables'}
+              <div style="margin-left:auto;display:flex;gap:6px">
+                <button class="row-btn" id="pe-delivs-all" style="font-size:10px">Mark all done</button>
+                <button class="row-btn" id="pe-delivs-clear" style="font-size:10px">Clear all</button>
+              </div>
+            </div>
             <div style="padding:0 16px" id="pe-delivs">
               ${delivs.map((d,i) => this.delivHTML(p.id, d, i)).join('')}
             </div>
@@ -855,9 +993,23 @@ export class ProjectsView {
 
   delivHTML(pid, d, i, isMonthly = false) {
     const pfx = isMonthly ? 'monthly-' : ''
-    return `<div class="deliverable-row" data-di="${i}">
+    const today = new Date(); today.setHours(0,0,0,0)
+    const due = d.due ? new Date(d.due) : null
+    const daysUntil = due ? Math.round((due - today) / 86400000) : null
+    const overdue  = !d.done && due && daysUntil < 0
+    const dueSoon  = !d.done && due && daysUntil >= 0 && daysUntil <= 3
+    const dueColour = overdue ? '#ef4444' : dueSoon ? '#f59e0b' : 'var(--text-tertiary)'
+    const dueLabel  = due && !d.done
+      ? overdue
+        ? `${Math.abs(daysUntil)}d overdue`
+        : daysUntil === 0 ? 'due today' : `${daysUntil}d left`
+      : ''
+    return `<div class="deliverable-row" data-di="${i}" style="${overdue?'background:rgba(239,68,68,0.04);border-radius:6px;margin:1px 0':''}">
       <input type="checkbox" class="deliverable-check" ${d.done?'checked':''} data-${pfx}deliv-done="${i}" />
       <input type="text" class="deliverable-text" value="${esc(d.text)}" placeholder="${isMonthly ? 'e.g. Monthly edit, Social content...' : 'e.g. 90s hero film, 3x social cutdowns...'}" data-${pfx}deliv-text="${i}" />
+      <input type="date" class="deliverable-date" value="${d.due||''}" data-${pfx}deliv-due="${i}"
+        title="Due date" style="width:120px;font-size:11px;padding:3px 6px;border:0.5px solid var(--border-light);border-radius:5px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none;flex-shrink:0" />
+      ${dueLabel ? `<span style="font-size:10px;color:${dueColour};white-space:nowrap;flex-shrink:0;font-weight:${overdue||dueSoon?'500':'400'}">${overdue?'⚠ ':dueSoon?'⏰ ':''}${dueLabel}</span>` : ''}
       <button class="row-btn" style="color:#b03020;flex-shrink:0" data-${pfx}deliv-rem="${i}">×</button>
     </div>`
   }
@@ -925,12 +1077,22 @@ export class ProjectsView {
     mc.querySelector('#pe-ret-start')?.addEventListener('change', e => { p.retainer_start = e.target.value||null; save(); this.renderEditor(mc) })
     mc.querySelector('#pe-ret-alert')?.addEventListener('change', e => { p.retainer_alert = parseFloat(e.target.value)||80; save() })
 
+    mc.querySelector('#pe-delivs-all')?.addEventListener('click', () => {
+      p.deliverables.forEach(d => { if (d.text) d.done = true }); save(); this.renderEditor(mc)
+    })
+    mc.querySelector('#pe-delivs-clear')?.addEventListener('click', () => {
+      p.deliverables.forEach(d => d.done = false); save(); this.renderEditor(mc)
+    })
+
     // Deliverables
     mc.querySelectorAll('[data-deliv-done]').forEach(el => {
       el.addEventListener('change', () => { p.deliverables[+el.dataset.delivDone].done = el.checked; save() })
     })
     mc.querySelectorAll('[data-deliv-text]').forEach(el => {
       el.addEventListener('change', () => { p.deliverables[+el.dataset.delivText].text = el.value; save() })
+    })
+    mc.querySelectorAll('[data-deliv-due]').forEach(el => {
+      el.addEventListener('change', () => { p.deliverables[+el.dataset.delivDue].due = el.value || null; save(); this.renderEditor(mc) })
     })
     mc.querySelectorAll('[data-deliv-rem]').forEach(el => {
       el.addEventListener('click', () => {
