@@ -33,6 +33,136 @@ export class App {
     this._bindKeyboard()
   }
 
+  async _openDevRequest() {
+    const isAdmin = this.appUser?.role === 'admin'
+    const existing = document.getElementById('dev-req-overlay')
+    if (existing) { existing.remove(); return }
+
+    const overlay = document.createElement('div')
+    overlay.id = 'dev-req-overlay'
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
+
+    const { getDevRequests, addDevRequest, toggleDevRequest, deleteDevRequest } = await import('./db/client.js')
+
+    const renderModal = async () => {
+      const requests = isAdmin ? await getDevRequests() : []
+      const pending  = requests.filter(r => !r.done)
+      const done     = requests.filter(r => r.done)
+
+      overlay.innerHTML = `
+        <div style="background:var(--bg-primary);border:0.5px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:${isAdmin?'620px':'440px'};max-height:85vh;display:flex;flex-direction:column;overflow:hidden" onclick="event.stopPropagation()">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:0.5px solid var(--border-light);flex-shrink:0">
+            <div>
+              <div style="font-size:14px;font-weight:600">Dev request</div>
+              <div style="font-size:11px;color:var(--text-tertiary);margin-top:1px">Suggest a feature or report an issue</div>
+            </div>
+            <button id="dev-req-close" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-tertiary);line-height:1;padding:4px">×</button>
+          </div>
+
+          <div style="padding:20px;display:flex;flex-direction:column;gap:10px;flex-shrink:0;border-bottom:0.5px solid var(--border-light)">
+            <textarea id="dev-req-text" placeholder="Describe what you'd like added or changed…"
+              style="width:100%;min-height:90px;padding:10px 12px;font-size:13px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.5"></textarea>
+            <div style="display:flex;justify-content:flex-end;gap:8px">
+              <button class="btn-cancel" id="dev-req-cancel">Cancel</button>
+              <button class="btn-primary" id="dev-req-submit">Submit request</button>
+            </div>
+            <div id="dev-req-msg" style="font-size:12px;display:none"></div>
+          </div>
+
+          ${isAdmin ? `
+          <div style="overflow-y:auto;flex:1;min-height:0">
+            ${pending.length === 0 && done.length === 0 ? `
+              <div style="padding:24px;text-align:center;font-size:13px;color:var(--text-tertiary)">No requests yet</div>` : ''}
+
+            ${pending.length > 0 ? `
+            <div style="padding:12px 20px 4px;display:flex;align-items:center;justify-content:space-between">
+              <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Pending · ${pending.length}</div>
+              <button id="dev-req-copy" style="font-size:11px;color:var(--text-tertiary);background:none;border:0.5px solid var(--border-light);border-radius:5px;padding:3px 8px;cursor:pointer;font-family:var(--font)">Copy all</button>
+            </div>
+            ${pending.map(r => `
+              <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 20px;border-bottom:0.5px solid var(--border-light)" data-rid="${r.id}">
+                <input type="checkbox" data-done-req="${r.id}" style="margin-top:2px;cursor:pointer;flex-shrink:0" />
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:13px;line-height:1.5">${esc(r.message)}</div>
+                  <div style="font-size:10px;color:var(--text-tertiary);margin-top:3px">${r.user_name||r.user_id} · ${new Date(r.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>
+                </div>
+                <button data-del-req="${r.id}" style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:14px;flex-shrink:0;padding:0 2px" title="Delete">×</button>
+              </div>`).join('')}` : ''}
+
+            ${done.length > 0 ? `
+            <div style="padding:12px 20px 4px;font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Done · ${done.length}</div>
+            ${done.map(r => `
+              <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 20px;border-bottom:0.5px solid var(--border-light);opacity:0.5" data-rid="${r.id}">
+                <input type="checkbox" checked data-done-req="${r.id}" style="margin-top:2px;cursor:pointer;flex-shrink:0" />
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:13px;line-height:1.5;text-decoration:line-through">${esc(r.message)}</div>
+                  <div style="font-size:10px;color:var(--text-tertiary);margin-top:3px">${r.user_name||r.user_id} · ${new Date(r.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>
+                </div>
+                <button data-del-req="${r.id}" style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:14px;flex-shrink:0;padding:0 2px" title="Delete">×</button>
+              </div>`).join('')}` : ''}
+          </div>` : ''}
+        </div>`
+
+      const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+
+      // Close
+      overlay.querySelector('#dev-req-close')?.addEventListener('click', () => overlay.remove())
+      overlay.querySelector('#dev-req-cancel')?.addEventListener('click', () => overlay.remove())
+
+      // Submit
+      overlay.querySelector('#dev-req-submit')?.addEventListener('click', async () => {
+        const msg = overlay.querySelector('#dev-req-text')?.value.trim()
+        const msgEl = overlay.querySelector('#dev-req-msg')
+        if (!msg) { if (msgEl) { msgEl.style.display='block'; msgEl.style.color='var(--text-tertiary)'; msgEl.textContent='Please enter a message' } return }
+        try {
+          const name = this.appUser?.name || this.user?.primaryEmailAddress?.emailAddress || this.clerkUserId
+          await addDevRequest(this.clerkUserId, name, msg)
+          overlay.querySelector('#dev-req-text').value = ''
+          if (msgEl) { msgEl.style.display='block'; msgEl.style.color='#6ec96e'; msgEl.textContent='✓ Request submitted' }
+          setTimeout(() => { if (msgEl) msgEl.style.display='none' }, 2500)
+          if (isAdmin) renderModal()
+        } catch(e) { console.error(e); if (msgEl) { msgEl.style.display='block'; msgEl.style.color='#e07070'; msgEl.textContent='Error submitting' } }
+      })
+
+      // Enter to submit (Shift+Enter for newline)
+      overlay.querySelector('#dev-req-text')?.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); overlay.querySelector('#dev-req-submit')?.click() }
+      })
+
+      // Admin: copy all to clipboard
+      overlay.querySelector('#dev-req-copy')?.addEventListener('click', async () => {
+        const text = requests.map(r => {
+          const status = r.done ? '[done]' : '[pending]'
+          const date = new Date(r.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})
+          return `${status} ${r.message}  —  ${r.user_name||r.user_id}, ${date}`
+        }).join('\n')
+        await navigator.clipboard.writeText(text)
+        const btn = overlay.querySelector('#dev-req-copy')
+        if (btn) { btn.textContent = '✓ Copied'; setTimeout(() => { btn.textContent = 'Copy all' }, 1500) }
+      })
+
+      // Admin: mark done toggle
+      overlay.querySelectorAll('[data-done-req]').forEach(cb => {
+        cb.addEventListener('change', async () => {
+          await toggleDevRequest(cb.dataset.doneReq, cb.checked)
+          renderModal()
+        })
+      })
+
+      // Admin: delete
+      overlay.querySelectorAll('[data-del-req]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          await deleteDevRequest(btn.dataset.delReq)
+          renderModal()
+        })
+      })
+    }
+
+    overlay.addEventListener('click', () => overlay.remove())
+    document.body.appendChild(overlay)
+    renderModal()
+  }
+
   _openSearch() {
     // Remove existing if open (toggle)
     const existing = document.getElementById('search-overlay')
@@ -204,6 +334,10 @@ export class App {
           <div class="nav-item ${this.currentView===id?'active':''}" data-view="${id}">${icon} ${label}</div>`).join('')}
         <div class="nav-bottom">
           ${this.permissions.settings ? `<div class="nav-item" data-view="settings">${this.iconSettings()} Settings</div>` : ''}
+          <div class="nav-item" id="dev-request-btn" style="color:var(--text-tertiary);font-size:12px">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v4M8 11v.5"/></svg>
+            Dev request
+          </div>
           <div class="nav-item" id="sign-out-btn">${this.iconSignOut()} Sign out</div>
           <div style="padding:8px 12px">
             <button class="theme-toggle" id="theme-toggle-btn" title="Toggle dark mode">
@@ -255,6 +389,7 @@ export class App {
       el.addEventListener('click', () => this.navigate(el.dataset.view))
     })
     this.container.querySelector('#sign-out-btn')?.addEventListener('click', () => this.onSignOut())
+    this.container.querySelector('#dev-request-btn')?.addEventListener('click', () => this._openDevRequest())
 
     // Dark mode toggle
     const toggleBtn = this.container.querySelector('#theme-toggle-btn')

@@ -245,3 +245,34 @@ export async function setTrackToken(workspaceId, projectId, token) {
     .where(and(eq(projects.id, projectId), eq(projects.user_id, workspaceId)))
     .returning()
 }
+
+// ── Dev requests ──────────────────────────────────────────────────────────────
+export async function getDevRequests() {
+  const { sql } = await import('drizzle-orm')
+  return db.execute(sql`
+    SELECT * FROM dev_requests ORDER BY created_at DESC LIMIT 200
+  `).then(r => r.rows ?? r)
+}
+
+export async function addDevRequest(userId, userName, message) {
+  const { sql } = await import('drizzle-orm')
+  return db.execute(sql`
+    INSERT INTO dev_requests (user_id, user_name, message)
+    VALUES (${userId}, ${userName}, ${message})
+    RETURNING *
+  `).then(r => (r.rows ?? r)[0])
+}
+
+export async function toggleDevRequest(id, done) {
+  const { sql } = await import('drizzle-orm')
+  return db.execute(sql`
+    UPDATE dev_requests SET done = ${done} WHERE id = ${id} RETURNING *
+  `).then(r => (r.rows ?? r)[0])
+}
+
+export async function deleteDevRequest(id) {
+  const { sql } = await import('drizzle-orm')
+  return db.execute(sql`
+    DELETE FROM dev_requests WHERE id = ${id}
+  `)
+}
