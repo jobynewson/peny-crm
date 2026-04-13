@@ -43,6 +43,7 @@ export class App {
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
 
     const { getDevRequests, addDevRequest, toggleDevRequest, deleteDevRequest } = await import('./db/client.js')
+    const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 
     const renderModal = async () => {
       const requests = isAdmin ? await getDevRequests() : []
@@ -102,8 +103,6 @@ export class App {
               </div>`).join('')}` : ''}
           </div>` : ''}
         </div>`
-
-      const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 
       // Close
       overlay.querySelector('#dev-req-close')?.addEventListener('click', () => overlay.remove())
@@ -566,7 +565,7 @@ export class App {
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px" id="retainer-cards">
           ${retainers.map(p => {
             const cl = this.contacts.find(c => c.id === p.client_id)
-            const hours = parseFloat(p.retainer_hours)||0
+            const hours = (p.retainer_items||[]).reduce((s,i)=>s+(parseFloat(i.qty)||0)*(i.unit==='hours'?1:8),0) || parseFloat(p.retainer_hours)||0
             const fee   = parseFloat(p.retainer_fee)||0
             return `<div class="kanban-card" style="border-left:3px solid #a78bfa;cursor:default" data-retainer="${p.id}">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
@@ -716,7 +715,8 @@ export class App {
     if (retainers.length > 0) {
       const { getTimeEntries } = await import('./db/client.js')
       for (const p of retainers) {
-        if (!p.retainer_hours) continue
+        const hours = (p.retainer_items||[]).reduce((s,i)=>s+(parseFloat(i.qty)||0)*(i.unit==='hours'?1:8),0) || parseFloat(p.retainer_hours)||0
+        if (!hours) continue
         try {
           const [periodStart, periodEnd] = this._retainerPeriod(p.retainer_start)
           const allEntries = await getTimeEntries(p.id)
@@ -727,7 +727,6 @@ export class App {
               })
             : allEntries
           const logged = entries.reduce((s, e) => s + parseFloat(e.hours), 0)
-          const hours = parseFloat(p.retainer_hours)
           const pct = Math.min(100, Math.round(logged / hours * 100))
           const alertPct = parseFloat(p.retainer_alert) || 80
 

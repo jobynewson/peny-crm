@@ -39,9 +39,10 @@ function budNet(b)  {
 }
 function budTotal(b) {
   const n = budNet(b)
-  const afterFee = n + n * ((parseFloat(b.markup)||0)/100)
+  const afterFee    = n + n * ((parseFloat(b.markup)||0)/100)
   const afterCustom = afterFee + afterFee * ((parseFloat(b.custom_pct)||0)/100)
-  return afterCustom + (b.vat ? afterCustom*0.2 : 0)
+  const afterInsurance = afterCustom + afterCustom * 0.025
+  return afterInsurance + (b.vat ? afterInsurance*0.2 : 0)
 }
 const hasValue = l => {
   const useDays = !!(l.useDays ?? (l.travelDays !== undefined))
@@ -327,7 +328,8 @@ export class BudgetsView {
     const edTr = parseFloat(b.travel_rate)||50
     const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100), afterFee = net+mu
     const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
-    const vatVal = b.vat ? afterCustom*0.2 : 0, tot = afterCustom+vatVal
+    const insVal = afterCustom*0.025, afterInsurance = afterCustom+insVal
+    const vatVal = b.vat ? afterInsurance*0.2 : 0, tot = afterInsurance+vatVal
     const activeSecs = (b.sections||[]).filter(s => s.enabled && secNet(s, edTr) > 0)
     const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 
@@ -400,6 +402,7 @@ export class BudgetsView {
             <div class="bsum-row" style="border-top:0.5px solid var(--border-light)"><span class="sk">Net total</span><span class="sv">${gbpA(net)}</span></div>
             ${(parseFloat(b.markup)||0)>0?`<div class="bsum-row"><span class="sk">Production fee (${b.markup}%)</span><span class="sv">${gbpA(mu)}</span></div>`:''}
             ${(parseFloat(b.custom_pct)||0)>0?`<div class="bsum-row"><span class="sk">Add-on (${b.custom_pct}%)</span><span class="sv">${gbpA(customVal)}</span></div>`:''}
+            <div class="bsum-row"><span class="sk">Insurance (2.5%)</span><span class="sv">${gbpA(insVal)}</span></div>
             ${b.vat?`<div class="bsum-row"><span class="sk">VAT (20%)</span><span class="sv">${gbpA(vatVal)}</span></div>`:''}
             <div class="bsum-row grand"><span class="sk">Grand total</span><span class="sv">${gbpA(tot)}</span></div>
           </div>
@@ -466,7 +469,8 @@ export class BudgetsView {
     const sections = Array.isArray(b.sections) ? b.sections : []
     const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100), afterFee = net+mu
     const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
-    const vatVal = b.vat ? afterCustom*0.2 : 0, tot = afterCustom+vatVal
+    const insVal = afterCustom*0.025, afterInsurance = afterCustom+insVal
+    const vatVal = b.vat ? afterInsurance*0.2 : 0, tot = afterInsurance+vatVal
     const edTr = parseFloat(b.travel_rate)||50
     const activeSecs = sections.filter(s => s.enabled && secNet(s, edTr) > 0)
 
@@ -623,7 +627,8 @@ export class BudgetsView {
       const rsTr = parseFloat(b.travel_rate)||50
       const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100), afterFee = net+mu
       const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
-      const vatVal = b.vat ? afterCustom*0.2 : 0, tot = afterCustom+vatVal
+      const insVal = afterCustom*0.025, afterInsurance = afterCustom+insVal
+    const vatVal = b.vat ? afterInsurance*0.2 : 0, tot = afterInsurance+vatVal
       const card = mc.querySelector('.bsum-card')
       if (!card) return
       const activeSecs = sections.filter(s => s.enabled && secNet(s, rsTr) > 0)
@@ -633,7 +638,8 @@ export class BudgetsView {
         <div class="bsum-row" style="border-top:0.5px solid var(--border-light)"><span class="sk">Net total</span><span class="sv">${gbpA(net)}</span></div>
         ${(parseFloat(b.markup)||0)>0?`<div class="bsum-row"><span class="sk">Production fee (${b.markup}%)</span><span class="sv">${gbpA(mu)}</span></div>`:''}
         ${(parseFloat(b.custom_pct)||0)>0?`<div class="bsum-row"><span class="sk">Add-on (${b.custom_pct}%)</span><span class="sv">${gbpA(customVal)}</span></div>`:''}
-        ${b.vat?`<div class="bsum-row"><span class="sk">VAT (20%)</span><span class="sv">${gbpA(vatVal)}</span></div>`:''}
+        <div class="bsum-row"><span class="sk">Insurance (2.5%)</span><span class="sv">${gbpA(insVal)}</span></div>
+            ${b.vat?`<div class="bsum-row"><span class="sk">VAT (20%)</span><span class="sv">${gbpA(vatVal)}</span></div>`:''}
         <div class="bsum-row grand"><span class="sk">Grand total</span><span class="sv">${gbpA(tot)}</span></div>`
     }
 
@@ -931,8 +937,9 @@ export class BudgetsView {
     rows.push(['NET TOTAL','','','','','','','',Math.round(net)])
     if ((parseFloat(b.markup)||0)>0)     rows.push(['PRODUCTION FEE ('+b.markup+'%)','','','','','','','',Math.round(mu)])
     if ((parseFloat(b.custom_pct)||0)>0) rows.push(['CUSTOM ADD-ON ('+b.custom_pct+'%)','','','','','','','',Math.round(customVal)])
+    rows.push(['INSURANCE (2.5%)','','','','','','','',Math.round(insVal)])
     if (b.vat)                           rows.push(['VAT (20%)','','','','','','','',Math.round(vatVal)])
-    rows.push(['GRAND TOTAL','','','','','','','',Math.round(afterCustom+vatVal)])
+    rows.push(['GRAND TOTAL','','','','','','','',Math.round(tot)])
     const csv = rows.map(r => r.map(v => '"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n')
     const a = document.createElement('a')
     a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv)
@@ -949,7 +956,8 @@ export class BudgetsView {
     const pdfTr = parseFloat(b.travel_rate)||50
     const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100), afterFee = net+mu
     const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
-    const vatVal = b.vat ? afterCustom*0.2 : 0, tot = afterCustom+vatVal
+    const insVal = afterCustom*0.025, afterInsurance = afterCustom+insVal
+    const vatVal = b.vat ? afterInsurance*0.2 : 0, tot = afterInsurance+vatVal
     const today = new Date()
     const months = ['January','February','March','April','May','June','July','August','September','October','November','December']
     const dateStr = today.getDate()+' '+months[today.getMonth()]+' '+today.getFullYear()
@@ -975,6 +983,7 @@ export class BudgetsView {
             <div class="pdf-cover-total-row"><span class="tk">Net total</span><span class="tv">${gbpA(net)}</span></div>
             ${(parseFloat(b.markup)||0)>0?`<div class="pdf-cover-total-row"><span class="tk">Production fee (${b.markup}%)</span><span class="tv">${gbpA(mu)}</span></div>`:''}
             ${(parseFloat(b.custom_pct)||0)>0?`<div class="pdf-cover-total-row"><span class="tk">Add-on (${b.custom_pct}%)</span><span class="tv">${gbpA(customVal)}</span></div>`:''}
+            <div class="pdf-cover-total-row"><span class="tk">Insurance (2.5%)</span><span class="tv">${gbpA(insVal)}</span></div>
             ${b.vat?`<div class="pdf-cover-total-row"><span class="tk">VAT (20%)</span><span class="tv">${gbpA(vatVal)}</span></div>`:''}
             <div class="pdf-cover-total-row grand"><span class="tk">Grand total</span><span class="tv">${gbpA(tot)}</span></div>
           </div>
@@ -1039,6 +1048,7 @@ export class BudgetsView {
           <div class="pdf-detail-total-row"><span class="dk">Net total</span><span>${gbpA(net)}</span></div>
           ${(parseFloat(b.markup)||0)>0?`<div class="pdf-detail-total-row"><span class="dk">Production fee (${b.markup}%)</span><span>${gbpA(mu)}</span></div>`:''}
           ${(parseFloat(b.custom_pct)||0)>0?`<div class="pdf-detail-total-row"><span class="dk">Add-on (${b.custom_pct}%)</span><span>${gbpA(customVal)}</span></div>`:''}
+          <div class="pdf-detail-total-row"><span class="dk">Insurance (2.5%)</span><span>${gbpA(insVal)}</span></div>
           ${b.vat?`<div class="pdf-detail-total-row"><span class="dk">VAT (20%)</span><span>${gbpA(vatVal)}</span></div>`:''}
           <div class="pdf-detail-total-row grand"><span class="dk">Grand total</span><span>${gbpA(tot)}</span></div>
         </div>

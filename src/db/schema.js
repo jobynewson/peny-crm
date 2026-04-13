@@ -69,6 +69,7 @@ export const projects = pgTable('projects', {
   retainer_hours: numeric('retainer_hours', { precision: 6,  scale: 2 }),
   retainer_alert: numeric('retainer_alert', { precision: 5,  scale: 2 }).notNull().default('80'),
   retainer_start: date('retainer_start'),
+  retainer_items: jsonb('retainer_items').notNull().default([]),
   monthly_deliverables: jsonb('monthly_deliverables').notNull().default([]),
   ...timestamps,
 })

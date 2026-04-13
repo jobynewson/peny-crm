@@ -73,14 +73,18 @@ export class ProjectsView {
           ${retainerProjects.map(p => {
             const cl = contacts.find(c => c.id === p.client_id)
             const fee = parseFloat(p.retainer_fee)||0
-            const hours = parseFloat(p.retainer_hours)||0
+            const items = (p.retainer_items||[]).filter(i => i.label && (parseFloat(i.qty)||0) > 0)
+            const totalHours = items.reduce((s,i) => s + (parseFloat(i.qty)||0) * (i.unit==='hours'?1:8), 0) || parseFloat(p.retainer_hours)||0
             return `<div class="kanban-card" data-open="${p.id}" style="border-left:3px solid #a78bfa">
               <div class="kanban-card-title">${esc(p.name)}</div>
               <div class="kanban-card-client">${cl ? esc(cl.first_name)+' '+esc(cl.last_name)+' · '+esc(cl.company) : 'No client'}</div>
               <div class="kanban-card-meta">
                 ${fee ? `<span class="tag" style="background:rgba(167,139,250,0.15);color:#a78bfa">£${fee.toLocaleString('en-GB')}/mo</span>` : ''}
-                ${hours ? `<span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary)">${hours}h/mo</span>` : ''}
+                ${totalHours ? `<span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary)">${totalHours}h/mo</span>` : ''}
               </div>
+              ${items.length ? `<div style="margin-top:6px;display:flex;flex-direction:column;gap:2px">
+                ${items.map(i => `<div style="font-size:10px;color:var(--text-tertiary)">${esc(i.label)}: ${parseFloat(i.qty)||0} ${i.unit||'days'}</div>`).join('')}
+              </div>` : ''}
             </div>`
           }).join('')}
           <button class="kanban-add" data-stage="${RETAINER_STAGE}" data-is-retainer="1">+ add retainer</button>
@@ -171,6 +175,10 @@ export class ProjectsView {
       retainer_hours: null,
       retainer_alert: 80,
       retainer_start: isRetainer ? today : null,
+      retainer_items: isRetainer ? [
+        { label: 'Shoot days', type: 'shoot', qty: 1, unit: 'days', rate: null },
+        { label: 'Edit days',  type: 'edit',  qty: 1, unit: 'days', rate: null },
+      ] : [],
     }
     try {
       const [created] = await createProject(this.app.userId, data)
@@ -243,13 +251,41 @@ export class ProjectsView {
 
           ${p.is_retainer ? `
           <div class="proj-panel">
-            <div class="proj-panel-head">Retainer</div>
+            <div class="proj-panel-head">
+              Retainer
+              ${this.app.permissions?.budgets_edit ? `<button class="btn-secondary" id="pv-create-budget" style="margin-left:auto;font-size:11px;padding:4px 10px">Create budget</button>` : ''}
+            </div>
             <div class="proj-panel-body">
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-                ${p.retainer_fee    ? `<div><div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Monthly fee</div><div style="font-size:15px;font-weight:600">£${Number(p.retainer_fee).toLocaleString('en-GB')}</div></div>` : ''}
-                ${p.retainer_hours  ? `<div><div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Hours / month</div><div style="font-size:15px;font-weight:600">${p.retainer_hours}h</div></div>` : ''}
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+                ${p.retainer_fee ? `<div><div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Monthly fee</div><div style="font-size:15px;font-weight:600">£${Number(p.retainer_fee).toLocaleString('en-GB')}</div></div>` : ''}
+                ${p.retainer_start ? `<div><div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Period</div><div style="font-size:13px">Resets day ${new Date(p.retainer_start).getUTCDate()} · Alert ${p.retainer_alert??80}%</div></div>` : ''}
               </div>
-              ${p.retainer_start ? `<div style="font-size:12px;color:var(--text-tertiary)">Resets on day ${new Date(p.retainer_start).getUTCDate()} each month · Alert at ${p.retainer_alert??80}%</div>` : ''}
+              ${(p.retainer_items||[]).length > 0 ? `
+              <table style="width:100%;border-collapse:collapse;font-size:12px">
+                <thead>
+                  <tr style="border-bottom:0.5px solid var(--border-light)">
+                    <th style="text-align:left;font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;font-weight:400;padding:4px 0">Item</th>
+                    <th style="text-align:right;font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;font-weight:400;padding:4px 8px">Qty</th>
+                    <th style="text-align:left;font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;font-weight:400;padding:4px 0">Unit</th>
+                    <th style="text-align:right;font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;font-weight:400;padding:4px 0">Rate</th>
+                    <th style="text-align:right;font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;font-weight:400;padding:4px 0">Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${(p.retainer_items||[]).map(item => {
+                    const qty = parseFloat(item.qty)||0
+                    const rate = parseFloat(item.rate)||0
+                    const val = qty * rate
+                    return `<tr style="border-bottom:0.5px solid var(--border-light)">
+                      <td style="padding:6px 0;font-weight:500">${esc(item.label)}</td>
+                      <td style="padding:6px 8px;text-align:right;color:var(--text-secondary)">${qty}</td>
+                      <td style="padding:6px 0;color:var(--text-secondary)">${item.unit||'days'}</td>
+                      <td style="padding:6px 0;text-align:right;color:var(--text-secondary)">${rate ? '£'+rate.toLocaleString('en-GB') : '—'}</td>
+                      <td style="padding:6px 0;text-align:right;font-weight:500">${val ? '£'+Math.round(val).toLocaleString('en-GB') : '—'}</td>
+                    </tr>`
+                  }).join('')}
+                </tbody>
+              </table>` : '<div style="font-size:12px;color:var(--text-tertiary)">No items defined — click Edit project to add.</div>'}
             </div>
           </div>` : ''}
 
@@ -421,7 +457,8 @@ export class ProjectsView {
     })
     mc.querySelector('#pv-delete')?.addEventListener('click', () => this.deleteProject(p.id, mc))
 
-    // Clickable client link
+    // Create budget from retainer items
+    mc.querySelector('#pv-create-budget')?.addEventListener('click', () => this._createBudgetFromRetainer(p, mc))
     mc.querySelector('[data-open-contact]')?.addEventListener('click', () => {
       const cid = mc.querySelector('[data-open-contact]').dataset.openContact
       this.app.navigate('contacts')
@@ -567,7 +604,7 @@ export class ProjectsView {
       }
 
       const allocHours = p.is_retainer
-        ? (parseFloat(p.retainer_hours) || 0)
+        ? ((p.retainer_items||[]).reduce((s,i) => s + (parseFloat(i.qty)||0) * (i.unit==='hours' ? 1 : 8), 0) || parseFloat(p.retainer_hours) || 0)
         : trackableLines.reduce((s, l) => s + l.allocHours, 0)
       const totalLogged = entries.reduce((s, e) => s + parseFloat(e.hours), 0)
       const pct = allocHours > 0 ? Math.min(100, Math.round(totalLogged / allocHours * 100)) : 0
@@ -855,8 +892,8 @@ export class ProjectsView {
                   <input type="number" class="proj-input" id="pe-ret-fee" value="${p.retainer_fee??''}" placeholder="0" min="0" step="100" />
                 </div>
                 <div>
-                  <div class="proj-field-label">Hours per month</div>
-                  <input type="number" class="proj-input" id="pe-ret-hours" value="${p.retainer_hours??''}" placeholder="0" min="0" step="0.5" />
+                  <div class="proj-field-label">Alert threshold %</div>
+                  <input type="number" class="proj-input" id="pe-ret-alert" value="${p.retainer_alert??80}" min="1" max="100" step="5" />
                 </div>
               </div>
               <div class="proj-date-row">
@@ -864,14 +901,35 @@ export class ProjectsView {
                   <div class="proj-field-label">Period start date</div>
                   <input type="date" class="proj-input" id="pe-ret-start" value="${p.retainer_start??''}" title="Day-of-month used for period reset" />
                 </div>
-                <div>
-                  <div class="proj-field-label">Alert threshold %</div>
-                  <input type="number" class="proj-input" id="pe-ret-alert" value="${p.retainer_alert??80}" min="1" max="100" step="5" />
-                </div>
               </div>
-              <div style="font-size:11px;color:var(--text-tertiary);line-height:1.5">
+
+              <div style="margin-top:14px">
+                <div style="display:grid;grid-template-columns:1fr 70px 80px 90px 28px;gap:6px;padding:5px 0;border-bottom:0.5px solid var(--border-light);margin-bottom:4px">
+                  <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px">Item</div>
+                  <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;text-align:right">Qty</div>
+                  <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px">Unit</div>
+                  <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;text-align:right">Rate £</div>
+                  <div></div>
+                </div>
+                <div id="pe-ret-items">
+                  ${(p.retainer_items||[]).map((item, i) => `
+                  <div style="display:grid;grid-template-columns:1fr 70px 80px 90px 28px;gap:6px;align-items:center;padding:3px 0" data-ret-item="${i}">
+                    <input type="text" class="proj-input" value="${esc(item.label)}" placeholder="Item name" data-ri-label="${i}" style="font-size:12px;padding:5px 8px" />
+                    <input type="number" class="proj-input" value="${item.qty??''}" placeholder="0" min="0" step="0.5" data-ri-qty="${i}" style="font-size:12px;padding:5px 8px;text-align:right" />
+                    <select class="proj-input" data-ri-unit="${i}" style="font-size:12px;padding:5px 6px">
+                      <option value="days" ${item.unit==='days'?'selected':''}>days</option>
+                      <option value="hours" ${item.unit==='hours'?'selected':''}>hours</option>
+                    </select>
+                    <input type="number" class="proj-input" value="${item.rate??''}" placeholder="—" min="0" step="50" data-ri-rate="${i}" style="font-size:12px;padding:5px 8px;text-align:right" />
+                    <button class="row-btn" data-ri-rem="${i}" style="color:#b03020;font-size:14px;padding:0;text-align:center">×</button>
+                  </div>`).join('')}
+                </div>
+                <button class="add-line" id="pe-add-ret-item" style="margin-top:4px">+ add retainer item</button>
+              </div>
+
+              <div style="font-size:11px;color:var(--text-tertiary);line-height:1.5;margin-top:10px">
                 Period resets on day <strong>${p.retainer_start ? new Date(p.retainer_start).getUTCDate() : '—'}</strong> of each month.
-                Alert fires when hours logged reach <strong>${p.retainer_alert??80}%</strong> of the monthly allocation.
+                Alert fires at <strong>${p.retainer_alert??80}%</strong> of monthly hours.
               </div>
             </div>` : ''}
           </div>
@@ -973,6 +1031,99 @@ export class ProjectsView {
       </div>`
 
     this.bindEditor(mc, p)
+  }
+
+  async _createBudgetFromRetainer(p, mc) {
+    // Show name modal
+    const overlay = document.createElement('div')
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:9999'
+    const cl = this.app.contacts.find(c => c.id === p.client_id)
+    const defaultName = `${p.name} — ${new Date().toLocaleDateString('en-GB',{month:'short',year:'numeric'})}`
+    overlay.innerHTML = `
+      <div style="background:var(--bg-primary);border:0.5px solid var(--border-med);border-radius:var(--radius-lg);padding:24px;width:400px" onclick="event.stopPropagation()">
+        <div style="font-size:14px;font-weight:600;margin-bottom:4px">Create budget from retainer</div>
+        <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:16px">Retainer items will be mapped to budget line items.</div>
+        <div class="field" style="margin-bottom:12px">
+          <div class="field-label">Budget name</div>
+          <input id="rb-name" type="text" value="${esc(defaultName)}" style="width:100%" />
+        </div>
+        <div id="rb-msg" style="font-size:12px;color:#e07070;margin-bottom:8px;display:none"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn-cancel" id="rb-cancel">Cancel</button>
+          <button class="btn-primary" id="rb-create">Create budget</button>
+        </div>
+      </div>`
+    overlay.addEventListener('click', () => overlay.remove())
+    document.body.appendChild(overlay)
+    setTimeout(() => overlay.querySelector('#rb-name')?.select(), 50)
+
+    overlay.querySelector('#rb-cancel')?.addEventListener('click', () => overlay.remove())
+    overlay.querySelector('#rb-create')?.addEventListener('click', async () => {
+      const name = overlay.querySelector('#rb-name')?.value.trim()
+      const msgEl = overlay.querySelector('#rb-msg')
+      if (!name) { msgEl.style.display='block'; msgEl.textContent='Please enter a budget name'; return }
+
+      // Map retainer items to budget sections
+      // shoot → Production Crew (D), edit → Post-production (I), custom → Sundries (J)
+      const sectionMap = { shoot: 'D', edit: 'I', custom: 'J' }
+      const sectionLabels = { D: 'Production Crew', I: 'Post-production', J: 'Sundries' }
+      const grouped = {}
+      for (const item of (p.retainer_items||[])) {
+        const code = sectionMap[item.type] || 'J'
+        if (!grouped[code]) grouped[code] = []
+        const isDay = item.unit === 'days'
+        grouped[code].push({
+          item:       item.label,
+          days:       isDay ? (parseFloat(item.qty)||0) : 0,
+          qty:        isDay ? 1 : (parseFloat(item.qty)||0),
+          rate:       parseFloat(item.rate)||null,
+          useDays:    isDay,
+          track_time: false,
+          notes:      '',
+          discount:   0,
+          ...(isDay ? { travelDays: 0 } : {}),
+        })
+      }
+
+      const sections = Object.entries(grouped).map(([code, lines]) => ({
+        code, label: sectionLabels[code] || 'Other', enabled: true, open: true, crew: code==='D', lines,
+      }))
+
+      // Add any empty sections for context (disabled)
+      const allCodes = ['D','I','J']
+      for (const code of allCodes) {
+        if (!grouped[code]) sections.push({ code, label: sectionLabels[code], enabled: false, open: false, crew: code==='D', lines: [] })
+      }
+
+      try {
+        const btn = overlay.querySelector('#rb-create')
+        btn.disabled = true; btn.textContent = 'Creating…'
+        const { createBudget, linkBudgetToProject } = await import('../db/client.js')
+        const [budget] = await createBudget(this.app.userId, {
+          name,
+          client_id:    p.client_id ?? null,
+          markup:       0,
+          custom_pct:   0,
+          travel_rate:  50,
+          discount:     0,
+          vat:          false,
+          signed_off:   false,
+          sections,
+          prepared_by:  this.app.settings?.prepared_by || null,
+          quote_email:  null,
+          notes:        `Created from retainer: ${p.name}`,
+          include_in_pipeline: false,
+        })
+        this.app.budgets.unshift(budget)
+        await linkBudgetToProject(this.app.userId, p.id, budget.id)
+        if (!Array.isArray(p.budget_ids)) p.budget_ids = []
+        p.budget_ids.push(budget.id)
+        overlay.remove()
+        this.app.toast('Budget created and linked to project')
+        // Open the new budget in editor
+        this.app.openBudget(budget.id)
+      } catch(e) { console.error(e); msgEl.style.display='block'; msgEl.textContent='Error creating budget' }
+    })
   }
 
   // Check if the retainer period has rolled over and reset monthly deliverable done states
@@ -1079,12 +1230,42 @@ export class ProjectsView {
       p.is_retainer = e.target.checked
       if (e.target.checked && !p.retainer_start) p.retainer_start = new Date().toISOString().split('T')[0]
       if (e.target.checked && !p.retainer_alert) p.retainer_alert = 80
+      if (e.target.checked && !Array.isArray(p.retainer_items)) p.retainer_items = []
+      if (e.target.checked && p.retainer_items.length === 0) {
+        p.retainer_items = [
+          { label: 'Shoot days', type: 'shoot', qty: 1, unit: 'days', rate: null },
+          { label: 'Edit days',  type: 'edit',  qty: 1, unit: 'days', rate: null },
+        ]
+      }
       save(); this.renderEditor(mc)
     })
     mc.querySelector('#pe-ret-fee')?.addEventListener('change',   e => { p.retainer_fee   = parseFloat(e.target.value)||null; save() })
-    mc.querySelector('#pe-ret-hours')?.addEventListener('change', e => { p.retainer_hours = parseFloat(e.target.value)||null; save() })
-    mc.querySelector('#pe-ret-start')?.addEventListener('change', e => { p.retainer_start = e.target.value||null; save(); this.renderEditor(mc) })
     mc.querySelector('#pe-ret-alert')?.addEventListener('change', e => { p.retainer_alert = parseFloat(e.target.value)||80; save() })
+    mc.querySelector('#pe-ret-start')?.addEventListener('change', e => { p.retainer_start = e.target.value||null; save(); this.renderEditor(mc) })
+
+    // Retainer items
+    if (!Array.isArray(p.retainer_items)) p.retainer_items = []
+    mc.querySelectorAll('[data-ri-label]').forEach(el => {
+      el.addEventListener('change', () => { p.retainer_items[+el.dataset.riLabel].label = el.value; save() })
+    })
+    mc.querySelectorAll('[data-ri-qty]').forEach(el => {
+      el.addEventListener('change', () => { p.retainer_items[+el.dataset.riQty].qty = parseFloat(el.value)||0; save() })
+    })
+    mc.querySelectorAll('[data-ri-unit]').forEach(el => {
+      el.addEventListener('change', () => { p.retainer_items[+el.dataset.riUnit].unit = el.value; save() })
+    })
+    mc.querySelectorAll('[data-ri-rate]').forEach(el => {
+      el.addEventListener('change', () => { p.retainer_items[+el.dataset.riRate].rate = parseFloat(el.value)||null; save() })
+    })
+    mc.querySelectorAll('[data-ri-rem]').forEach(el => {
+      el.addEventListener('click', () => {
+        p.retainer_items.splice(+el.dataset.riRem, 1); save(); this.renderEditor(mc)
+      })
+    })
+    mc.querySelector('#pe-add-ret-item')?.addEventListener('click', () => {
+      p.retainer_items.push({ label: '', type: 'custom', qty: 1, unit: 'days', rate: null })
+      save(); this.renderEditor(mc)
+    })
 
     mc.querySelector('#pe-delivs-all')?.addEventListener('click', () => {
       p.deliverables.forEach(d => { if (d.text) d.done = true }); save(); this.renderEditor(mc)
@@ -1232,6 +1413,7 @@ export class ProjectsView {
         retainer_hours: p.retainer_hours ?? null,
         retainer_alert: p.retainer_alert ?? 80,
         retainer_start: p.retainer_start || null,
+        retainer_items: p.retainer_items ?? [],
         monthly_deliverables: p.monthly_deliverables ?? [],
       }
       const [updated] = await updateProject(this.app.userId, p.id, data)
