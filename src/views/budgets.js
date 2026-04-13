@@ -19,15 +19,17 @@ const gbpA = n => '£' + Math.round(n).toLocaleString('en-GB')
 const moy = () => { const d = new Date(); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] + ' ' + d.getFullYear() }
 
 function lineTotal(l, travelRate) {
+  const useDays = !!(l.useDays ?? (l.travelDays !== undefined))
   const d = parseFloat(l.days)||0
-  const useDays = d > 0   // implicit: any days entered = day-rate mode
-  const q = parseFloat(l.qty)
-  const qty = isNaN(q) ? 0 : q
+  const q = parseFloat(l.qty)   // allow 0
+  const qty = isNaN(q) ? 1 : q
   const r = parseFloat(l.rate)||0
   const td = parseFloat(l.travelDays)||0
-  const tr = parseFloat(travelRate)||50
-  const disc = Math.min(Math.max(parseFloat(l.discount)||0, 0), 100)
-  const gross = useDays ? d*qty*r + td*(tr/100)*r : qty*r
+  const tr = parseFloat(travelRate)||50  // travel rate as percentage e.g. 50
+  const disc = Math.min(Math.max(parseFloat(l.discount)||0, 0), 100) // 0-100%
+  let gross
+  if (useDays) gross = d*qty*r + td*(tr/100)*r
+  else         gross = qty*r
   return gross * (1 - disc/100)
 }
 function secNet(s, travelRate)  { return (s.lines||[]).reduce((t,l) => t + lineTotal(l, travelRate), 0) }
@@ -37,17 +39,16 @@ function budNet(b)  {
 }
 function budTotal(b) {
   const n = budNet(b)
-  const afterFee      = n + n * ((parseFloat(b.markup)||0)/100)
-  const afterCustom   = afterFee + afterFee * ((parseFloat(b.custom_pct)||0)/100)
-  const afterInsurance = b.insurance ? afterCustom + afterCustom * 0.025 : afterCustom
-  return afterInsurance + (b.vat ? afterInsurance*0.2 : 0)
+  const afterFee = n + n * ((parseFloat(b.markup)||0)/100)
+  const afterCustom = afterFee + afterFee * ((parseFloat(b.custom_pct)||0)/100)
+  return afterCustom + (b.vat ? afterCustom*0.2 : 0)
 }
 const hasValue = l => {
-  const d = parseFloat(l.days)||0
-  const useDays = d > 0
+  const useDays = !!(l.useDays ?? (l.travelDays !== undefined))
+  const qty = parseFloat(l.qty); const qtyOk = !isNaN(qty)  // 0 is valid
   return useDays
-    ? (d > 0 || (parseFloat(l.travelDays)||0) > 0)
-    : ((parseFloat(l.qty)||0) > 0 && (parseFloat(l.rate)||0) > 0)
+    ? ((parseFloat(l.days)||0) > 0 || (parseFloat(l.travelDays)||0) > 0)
+    : (qtyOk && (parseFloat(l.rate)||0) > 0)
 }
 
 export { budTotal, budNet }
@@ -96,13 +97,10 @@ export class BudgetsView {
             <div style="color:var(--text-secondary)">${gbpA(budNet(b))}</div>
             <div style="font-weight:500">${gbpA(budTotal(b))}</div>
             <div style="font-size:11px">
-              ${b.invoiced
-                ? `<span style="color:#4a90d9;font-weight:500">✓ Invoiced</span>
-                   ${b.invoiced_at ? `<div style="color:var(--text-tertiary);font-size:10px">${new Date(b.invoiced_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>` : ''}`
-                : b.signed_off
-                  ? `<span style="color:#6ec96e;font-weight:500">✓ Signed off</span>
-                     ${b.signed_off_at ? `<div style="color:var(--text-tertiary);font-size:10px">${soDate}</div>` : ''}`
-                  : `<span style="color:var(--text-tertiary)">—</span>`}
+              ${b.signed_off
+                ? `<span style="color:#6ec96e;font-weight:500">✓ ${soDate}</span>
+                   ${b.signed_off_by ? `<div style="color:var(--text-tertiary);font-size:10px">${esc(b.signed_off_by)}</div>` : ''}`
+                : `<span style="color:var(--text-tertiary)">—</span>`}
             </div>
             <div style="text-align:right;display:flex;gap:6px;justify-content:flex-end">
               <button class="row-btn" data-dup="${b.id}" style="font-size:10px">Copy</button>
@@ -197,14 +195,14 @@ export class BudgetsView {
       const mc = document.getElementById('main-content')
       if (!mc) return
       const noteParts = []
-      if (p.brief) noteParts.push('Brief: ' + p.brief)
+      if (p.brief) noteParts.push(p.brief)
       if (p.location) noteParts.push('Location: ' + p.location)
-      if (p.shoot_start) noteParts.push('Shoot dates: ' + p.shoot_start + (p.shoot_end && p.shoot_end !== p.shoot_start ? ' – ' + p.shoot_end : ''))
+      if (p.shoot_start) noteParts.push('Shoot: ' + p.shoot_start + (p.shoot_end && p.shoot_end !== p.shoot_start ? ' – ' + p.shoot_end : ''))
       const delivs = (p.deliverables||[]).filter(d=>d.text)
-      if (delivs.length) noteParts.push('Deliverables:\n' + delivs.map(d=>'  · '+d.text).join('\n'))
+      if (delivs.length) noteParts.push('Deliverables: ' + delivs.map(d=>d.text).join(', '))
 
       mc.querySelector('#bf-name').value   = p.name ?? ''
-      mc.querySelector('#bf-notes').value  = noteParts.join('\n')
+      mc.querySelector('#bf-notes').value  = noteParts.join('\n\n')
       if (p.client_id) mc.querySelector('#bf-client').value = p.client_id
       mc.querySelector('#budget-new-modal')?.classList.add('open')
 
@@ -228,7 +226,7 @@ export class BudgetsView {
         days: 0,
         qty: l.qty ?? 0,
         notes: '',
-        travelDays: 0,
+        travelDays: (l.useDays || 'travelDays' in l) ? 0 : undefined,
       }))
     }))
 
@@ -329,8 +327,7 @@ export class BudgetsView {
     const edTr = parseFloat(b.travel_rate)||50
     const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100), afterFee = net+mu
     const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
-    const insVal = b.insurance ? afterCustom*0.025 : 0, afterInsurance = afterCustom+insVal
-    const vatVal = b.vat ? afterInsurance*0.2 : 0, tot = afterInsurance+vatVal
+    const vatVal = b.vat ? afterCustom*0.2 : 0, tot = afterCustom+vatVal
     const activeSecs = (b.sections||[]).filter(s => s.enabled && secNet(s, edTr) > 0)
     const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 
@@ -345,7 +342,7 @@ export class BudgetsView {
         ${this.app.permissions?.budgets_edit ? `<button class="btn-primary" id="bv-edit">Edit budget</button>` : ''}
       </div>
       <div id="bv-history-panel" style="display:none;background:var(--bg-secondary);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:16px"></div>
-      ${b.notes ? `<div style="background:var(--bg-secondary);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:16px;font-size:13px;color:var(--text-secondary);line-height:1.8;white-space:pre-line">${esc(b.notes)}</div>` : ''}
+      ${b.notes ? `<div style="background:var(--bg-secondary);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:16px;font-size:13px;color:var(--text-secondary);line-height:1.6">${esc(b.notes)}</div>` : ''}
       <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
         ${cl ? `<span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary)">${esc(cl.first_name)} ${esc(cl.last_name)} — ${esc(cl.company)}</span>` : ''}
         ${proj ? `<span class="tag" style="background:#daeeff;color:#0d4a8a">${esc(proj.name)}</span>` : ''}
@@ -358,16 +355,6 @@ export class BudgetsView {
           : `<button id="bv-signedoff-toggle" style="display:flex;align-items:center;gap:6px;padding:5px 12px;background:var(--bg-secondary);border:0.5px solid var(--border-med);border-radius:20px;color:var(--text-tertiary);font-size:12px;cursor:pointer;font-family:var(--font)">
                Mark as signed off
              </button>`}
-        ${b.signed_off
-          ? b.invoiced
-            ? `<button id="bv-invoiced-toggle" style="display:flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(74,144,217,0.12);border:0.5px solid rgba(74,144,217,0.3);border-radius:20px;color:#4a90d9;font-size:12px;font-weight:500;cursor:pointer;font-family:var(--font)">
-                 ✓ Invoiced${b.invoiced_at ? ' · '+new Date(b.invoiced_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : ''}
-                 <span style="font-size:10px;opacity:0.6">✕</span>
-               </button>`
-            : `<button id="bv-invoiced-toggle" style="display:flex;align-items:center;gap:6px;padding:5px 12px;background:var(--bg-secondary);border:0.5px solid var(--border-med);border-radius:20px;color:var(--text-tertiary);font-size:12px;cursor:pointer;font-family:var(--font)">
-                 Mark as invoiced
-               </button>`
-          : ''}
       </div>
       <div class="budget-layout">
         <div class="budget-main">
@@ -387,9 +374,9 @@ export class BudgetsView {
                   <th>Item</th><th>Notes</th><th class="r">Days/Qty</th><th class="r">Rate</th><th class="r">Disc%</th><th class="r">Total</th><th></th>
                 </tr></thead><tbody>
                   ${activeLines.map(l => {
-                    const d = parseFloat(l.days)||0, q = isNaN(parseFloat(l.qty))?0:parseFloat(l.qty), r = parseFloat(l.rate)||0
-                    const useDays = d > 0
+                    const useDays = !!(l.useDays??(l.travelDays!==undefined))
                     const t = lineTotal(l, edTr)
+                    const d = parseFloat(l.days)||0, q = isNaN(parseFloat(l.qty))?1:parseFloat(l.qty), r = parseFloat(l.rate)||0
                     const dqStr = useDays ? `${d}d × ${q}` : `×${q}`
                     return `<tr>
                       <td style="font-size:12px;padding:6px 8px">${esc(l.item)}${l.notes?`<div style="font-size:10px;color:var(--text-tertiary)">${esc(l.notes)}</div>`:''}</td>
@@ -413,7 +400,6 @@ export class BudgetsView {
             <div class="bsum-row" style="border-top:0.5px solid var(--border-light)"><span class="sk">Net total</span><span class="sv">${gbpA(net)}</span></div>
             ${(parseFloat(b.markup)||0)>0?`<div class="bsum-row"><span class="sk">Production fee (${b.markup}%)</span><span class="sv">${gbpA(mu)}</span></div>`:''}
             ${(parseFloat(b.custom_pct)||0)>0?`<div class="bsum-row"><span class="sk">Add-on (${b.custom_pct}%)</span><span class="sv">${gbpA(customVal)}</span></div>`:''}
-            ${b.insurance&&insVal>0?`<div class="bsum-row"><span class="sk">Insurance (2.5%)</span><span class="sv">${gbpA(insVal)}</span></div>`:""}
             ${b.vat?`<div class="bsum-row"><span class="sk">VAT (20%)</span><span class="sv">${gbpA(vatVal)}</span></div>`:''}
             <div class="bsum-row grand"><span class="sk">Grand total</span><span class="sv">${gbpA(tot)}</span></div>
           </div>
@@ -435,21 +421,6 @@ export class BudgetsView {
         this.app.toast(b.signed_off ? '✓ Budget signed off' : 'Sign-off removed')
         this.renderViewer(mc)
       } catch(e) { console.error(e); this.app.toast('Error updating sign-off') }
-    })
-
-    mc.querySelector('#bv-invoiced-toggle')?.addEventListener('click', async () => {
-      b.invoiced = !b.invoiced
-      b.invoiced_at = b.invoiced ? new Date().toISOString() : null
-      b.invoiced_by = b.invoiced ? (this.app.appUser?.name || this.app.user?.primaryEmailAddress?.emailAddress || '') : null
-      try {
-        await updateBudget(this.app.userId, b.id, {
-          invoiced: b.invoiced, invoiced_at: b.invoiced_at, invoiced_by: b.invoiced_by,
-        })
-        const idx = this.app.budgets.findIndex(x => x.id === b.id)
-        if (idx >= 0) Object.assign(this.app.budgets[idx], { invoiced: b.invoiced, invoiced_at: b.invoiced_at, invoiced_by: b.invoiced_by })
-        this.app.toast(b.invoiced ? '✓ Budget marked as invoiced' : 'Invoice status removed')
-        this.renderViewer(mc)
-      } catch(e) { console.error(e); this.app.toast('Error updating invoice status') }
     })
 
     mc.querySelector('#bv-back')?.addEventListener('click', () => {
@@ -495,8 +466,7 @@ export class BudgetsView {
     const sections = Array.isArray(b.sections) ? b.sections : []
     const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100), afterFee = net+mu
     const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
-    const insVal = b.insurance ? afterCustom*0.025 : 0, afterInsurance = afterCustom+insVal
-    const vatVal = b.vat ? afterInsurance*0.2 : 0, tot = afterInsurance+vatVal
+    const vatVal = b.vat ? afterCustom*0.2 : 0, tot = afterCustom+vatVal
     const edTr = parseFloat(b.travel_rate)||50
     const activeSecs = sections.filter(s => s.enabled && secNet(s, edTr) > 0)
 
@@ -508,7 +478,7 @@ export class BudgetsView {
         <button class="btn-secondary" id="be-pdf">Export PDF</button>
         <button class="btn-primary"   id="be-save-close">Save &amp; close</button>
       </div>
-      ${b.notes ? `<div style="background:var(--bg-secondary);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:16px;font-size:13px;color:var(--text-secondary);line-height:1.8;white-space:pre-line">${esc(b.notes)}</div>` : ''}
+      ${b.notes ? `<div style="background:var(--bg-secondary);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:16px;font-size:13px;color:var(--text-secondary);line-height:1.6">${esc(b.notes)}</div>` : ''}
       <div class="budget-layout">
         <div class="budget-main">
           <div class="mu-row">
@@ -517,8 +487,7 @@ export class BudgetsView {
             <div class="mu-field">Travel rate <input type="number" id="be-travelrate" value="${b.travel_rate??50}" min="0" max="100"> %</div>
             <div class="mu-field">Discount <input type="number" id="be-discount" value="${b.discount||0}" min="0" max="100" placeholder="0"> %</div>
             <div class="mu-field"><label style="display:flex;align-items:center;gap:7px;cursor:pointer"><input type="checkbox" id="be-vat" ${b.vat?'checked':''} style="cursor:pointer" /> VAT (20%)</label></div>
-            <div class="mu-field"><label style="display:flex;align-items:center;gap:7px;cursor:pointer"><input type="checkbox" id="be-insurance" ${b.insurance?'checked':''} style="cursor:pointer" /> Insurance (2.5%)</label></div>
-            <span style="font-size:11px;color:var(--text-tertiary);margin-left:auto">Days column: enter shoot days to enable day-rate pricing</span>
+            <span style="font-size:11px;color:var(--text-tertiary);margin-left:auto">Tick Daily Rate per line to enable days-based pricing</span>
           </div>
           <div id="be-sections">
             ${sections.map((s,si) => this.sectionHTML(b, s, si)).join('')}
@@ -583,20 +552,21 @@ export class BudgetsView {
       <div class="bsec-body ${s.open?'open':''}">
         <table class="bl-table" style="table-layout:fixed"><colgroup>
           <col style="width:80px" />
-          <col style="width:22%" />
-          <col style="width:10%" />
-          <col style="width:68px" />
+          <col style="width:27%" />
+          <col style="width:11%" />
+          <col style="width:54px" />
+          <col style="width:50px" />
+          <col style="width:54px" />
           <col style="width:62px" />
-          <col style="width:68px" />
-          <col style="width:76px" />
-          <col style="width:62px" />
+          <col style="width:50px" />
           <col style="width:36px" />
-          <col style="width:72px" />
+          <col style="width:62px" />
           <col />
         </colgroup><thead><tr>
+          <th style="font-size:10px;white-space:nowrap" title="Tick for daily rate pricing">Daily Rate</th>
           <th>Item</th>
           <th>Notes</th>
-          <th class="r" title="Shoot/production days — enter a value to enable day-rate mode">Days</th>
+          <th class="r">Days</th>
           <th class="r">Qty</th>
           <th class="r">Travel</th>
           <th class="r">Rate £</th>
@@ -607,7 +577,7 @@ export class BudgetsView {
         </tr></thead><tbody>
           ${(s.lines||[]).map((l,li) => this.lineHTML(si, li, l, tr)).join('')}
           <tr class="sub">
-            <td colspan="8" style="text-align:right;color:var(--text-secondary);font-size:11px;padding-right:8px">Section total</td>
+            <td colspan="9" style="text-align:right;color:var(--text-secondary);font-size:11px;padding-right:8px">Section total</td>
             <td style="text-align:right" id="bst-${si}">${gbpA(sn)}</td><td></td>
           </tr>
         </tbody></table>
@@ -617,18 +587,29 @@ export class BudgetsView {
   }
 
   lineHTML(si, li, l, travelRate) {
+    const useDays = !!(l.useDays ?? (l.travelDays !== undefined))
     const t = lineTotal(l, travelRate)
+    const dim = 'color:var(--text-tertiary);font-size:11px;text-align:center'
     const disc = l.discount != null ? l.discount : ''
     return `<tr id="bl-${si}-${li}">
+      <td style="text-align:center;padding:4px 8px">
+        <input type="checkbox" title="Daily rate (Days × Qty × Rate)" ${useDays?'checked':''} data-toggle-line-days="${si},${li}" style="cursor:pointer;width:13px;height:13px" />
+      </td>
       <td><input class="bl-in w" value="${esc(l.item)}" placeholder="Item" data-field="${si},${li},item" /></td>
       <td><input class="bl-in w" value="${esc(l.notes||'')}" placeholder="Notes" data-field="${si},${li},notes" /></td>
-      <td><input class="bl-in w" type="number" value="${l.days||''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},days" style="text-align:right" title="Shoot days — enter any value to enable day-rate mode" /></td>
+      <td>${useDays
+        ? `<input class="bl-in w" type="number" value="${l.days||''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},days" style="text-align:right" />`
+        : `<span style="${dim}">—</span>`}
+      </td>
       <td><input class="bl-in w" type="number" value="${l.qty??0}" placeholder="0" min="0" data-num="${si},${li},qty" style="text-align:right" /></td>
-      <td><input class="bl-in w" type="number" value="${l.travelDays??''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},travelDays" style="text-align:right" title="Travel days" /></td>
+      <td>${useDays
+        ? `<input class="bl-in w" type="number" value="${l.travelDays??0}" placeholder="0" min="0" step="0.5" data-num="${si},${li},travelDays" style="text-align:right" title="Travel days" />`
+        : `<span style="${dim}">—</span>`}
+      </td>
       <td><input class="bl-in w" type="number" value="${l.rate||''}" placeholder="0" min="0" data-num="${si},${li},rate" style="text-align:right" /></td>
       <td><input class="bl-in w" type="number" value="${disc}" placeholder="0" min="0" max="100" step="0.5" data-num="${si},${li},discount" style="text-align:right" title="Discount %" /></td>
       <td style="text-align:center;padding:4px 6px">
-        <input type="checkbox" title="Track time for this line" ${l.track_time?'checked':''} data-toggle-track="${si},${li}" style="cursor:pointer;width:13px;height:13px" />
+        ${useDays ? `<input type="checkbox" title="Track time for this line" ${l.track_time?'checked':''} data-toggle-track="${si},${li}" style="cursor:pointer;width:13px;height:13px" />` : `<span style="color:var(--text-tertiary);font-size:11px">—</span>`}
       </td>
       <td class="bl-tot ${t>0?'nz':''}" id="blt-${si}-${li}">${t>0?gbpA(t):'—'}</td>
       <td style="text-align:right"><button class="row-btn" style="color:#c03020" data-rem-line="${si},${li}">×</button></td>
@@ -642,8 +623,7 @@ export class BudgetsView {
       const rsTr = parseFloat(b.travel_rate)||50
       const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100), afterFee = net+mu
       const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
-      const insVal = b.insurance ? afterCustom*0.025 : 0, afterInsurance = afterCustom+insVal
-    const vatVal = b.vat ? afterInsurance*0.2 : 0, tot = afterInsurance+vatVal
+      const vatVal = b.vat ? afterCustom*0.2 : 0, tot = afterCustom+vatVal
       const card = mc.querySelector('.bsum-card')
       if (!card) return
       const activeSecs = sections.filter(s => s.enabled && secNet(s, rsTr) > 0)
@@ -653,8 +633,7 @@ export class BudgetsView {
         <div class="bsum-row" style="border-top:0.5px solid var(--border-light)"><span class="sk">Net total</span><span class="sv">${gbpA(net)}</span></div>
         ${(parseFloat(b.markup)||0)>0?`<div class="bsum-row"><span class="sk">Production fee (${b.markup}%)</span><span class="sv">${gbpA(mu)}</span></div>`:''}
         ${(parseFloat(b.custom_pct)||0)>0?`<div class="bsum-row"><span class="sk">Add-on (${b.custom_pct}%)</span><span class="sv">${gbpA(customVal)}</span></div>`:''}
-        ${b.insurance&&insVal>0?`<div class="bsum-row"><span class="sk">Insurance (2.5%)</span><span class="sv">${gbpA(insVal)}</span></div>`:""}
-            ${b.vat?`<div class="bsum-row"><span class="sk">VAT (20%)</span><span class="sv">${gbpA(vatVal)}</span></div>`:''}
+        ${b.vat?`<div class="bsum-row"><span class="sk">VAT (20%)</span><span class="sv">${gbpA(vatVal)}</span></div>`:''}
         <div class="bsum-row grand"><span class="sk">Grand total</span><span class="sv">${gbpA(tot)}</span></div>`
     }
 
@@ -676,8 +655,7 @@ export class BudgetsView {
       sections.forEach(s => s.lines.forEach(l => { l.discount = pct }))
       save(); this.renderEditor(mc)
     })
-    mc.querySelector('#be-vat')?.addEventListener('change',       e => { b.vat       = e.target.checked; save(); refreshSummary() })
-    mc.querySelector('#be-insurance')?.addEventListener('change', e => { b.insurance = e.target.checked; save(); refreshSummary() })
+    mc.querySelector('#be-vat')?.addEventListener('change',    e => { b.vat = e.target.checked; save(); refreshSummary() })
     mc.querySelector('#be-signedoff')?.addEventListener('change', e => {
       b.signed_off = e.target.checked
       if (e.target.checked) {
@@ -733,6 +711,16 @@ export class BudgetsView {
     })
 
     // Per-line days toggle
+    mc.querySelectorAll('[data-toggle-line-days]').forEach(el => {
+      el.addEventListener('change', () => {
+        const [si, li] = el.dataset.toggleLineDays.split(',').map(Number)
+        const l = sections[si].lines[li]
+        l.useDays = el.checked
+        if (el.checked && l.travelDays === undefined) l.travelDays = 0
+        if (!el.checked) l.track_time = false  // can't track if not days-based
+        save(); this.renderEditor(mc)
+      })
+    })
 
     // Per-line track time toggle
     mc.querySelectorAll('[data-toggle-track]').forEach(el => {
@@ -789,10 +777,12 @@ export class BudgetsView {
         const [si,li,field] = el.dataset.num.split(',')
         const s = sections[+si]; const l = s.lines[+li]
         l[field] = parseFloat(el.value) || 0
+        const useDays = !!(l.useDays ?? (l.travelDays !== undefined))
         // Auto-enable section when a meaningful value is entered
         if (!s.enabled) {
-          const triggers = field === 'days' && l.days > 0
-            || (field === 'qty' || field === 'rate') && (parseFloat(l.qty)||0) > 0 && (parseFloat(l.rate)||0) > 0
+          const triggers = useDays
+            ? field === 'days' && l.days > 0
+            : (field === 'qty' || field === 'rate') && (parseFloat(l.qty)||0) > 0 && (parseFloat(l.rate)||0) > 0
           if (triggers) {
             s.enabled = true; s.open = true
             mc.querySelector(`#bsw-${si} .bsec-head`)?.classList.add('enabled')
@@ -818,7 +808,7 @@ export class BudgetsView {
       btn.addEventListener('click', () => {
         const si = +btn.dataset.addLine
         const defaultDays = !!sections[si].crew
-        sections[si].lines.push({ item:'', notes:'', qty:0, rate:null, days:0, travelDays:0, track_time:false })
+        sections[si].lines.push({ item:'', notes:'', useDays: defaultDays, qty:0, rate:null, ...(defaultDays ? {days:0, travelDays:0} : {}) })
         save(); this.renderEditor(mc)
       })
     })
@@ -933,7 +923,7 @@ export class BudgetsView {
       const al = (s.lines||[]).filter(l => hasValue(l))
       if (!al.length) return
       al.forEach(l => {
-        const useDays = (parseFloat(l.days)||0) > 0
+        const useDays = !!(l.useDays ?? (l.travelDays !== undefined))
         rows.push([s.code+' — '+s.label, l.item, l.notes||'', useDays?l.days||0:'N/A', l.qty??0, useDays&&l.travelDays!=null?l.travelDays||0:'N/A', l.rate||0, l.discount||0, Math.round(lineTotal(l,tr))])
       })
       rows.push([s.code+' SUBTOTAL','','','','','','','',Math.round(secNet(s,tr))]); rows.push([])
@@ -941,9 +931,8 @@ export class BudgetsView {
     rows.push(['NET TOTAL','','','','','','','',Math.round(net)])
     if ((parseFloat(b.markup)||0)>0)     rows.push(['PRODUCTION FEE ('+b.markup+'%)','','','','','','','',Math.round(mu)])
     if ((parseFloat(b.custom_pct)||0)>0) rows.push(['CUSTOM ADD-ON ('+b.custom_pct+'%)','','','','','','','',Math.round(customVal)])
-    if (b.insurance && insVal > 0) rows.push(['INSURANCE (2.5%)','','','','','','','',Math.round(insVal)])
     if (b.vat)                           rows.push(['VAT (20%)','','','','','','','',Math.round(vatVal)])
-    rows.push(['GRAND TOTAL','','','','','','','',Math.round(tot)])
+    rows.push(['GRAND TOTAL','','','','','','','',Math.round(afterCustom+vatVal)])
     const csv = rows.map(r => r.map(v => '"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n')
     const a = document.createElement('a')
     a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv)
@@ -960,8 +949,7 @@ export class BudgetsView {
     const pdfTr = parseFloat(b.travel_rate)||50
     const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100), afterFee = net+mu
     const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
-    const insVal = b.insurance ? afterCustom*0.025 : 0, afterInsurance = afterCustom+insVal
-    const vatVal = b.vat ? afterInsurance*0.2 : 0, tot = afterInsurance+vatVal
+    const vatVal = b.vat ? afterCustom*0.2 : 0, tot = afterCustom+vatVal
     const today = new Date()
     const months = ['January','February','March','April','May','June','July','August','September','October','November','December']
     const dateStr = today.getDate()+' '+months[today.getMonth()]+' '+today.getFullYear()
@@ -978,9 +966,7 @@ export class BudgetsView {
           <div class="pdf-quote-label">Quote</div>
           <div class="pdf-budget-title">${esc(b.name)}</div>
           <div class="pdf-client-name">${cl?'Prepared for '+esc(cl.first_name)+' '+esc(cl.last_name)+', '+esc(cl.company):''}</div>
-          ${b.notes ? `<div style="font-size:13px;color:rgba(255,255,255,0.55);margin-bottom:28px;line-height:1.8">${
-            esc(b.notes).replace(/\n/g,'<br>')
-          }</div>` : ''}
+          ${b.notes?`<div style="font-size:13px;color:rgba(255,255,255,0.55);margin-bottom:28px;line-height:1.6">${esc(b.notes)}</div>`:''}
           <hr class="pdf-cover-divider" />
           <table class="pdf-cover-summary"><tbody>
             ${activeSecs.map(sec=>`<tr><td class="sec-code">${sec.code}</td><td class="sec-name">${sec.label}</td><td class="sec-total">${gbpA(secNet(sec,pdfTr))}</td></tr>`).join('')}
@@ -989,7 +975,6 @@ export class BudgetsView {
             <div class="pdf-cover-total-row"><span class="tk">Net total</span><span class="tv">${gbpA(net)}</span></div>
             ${(parseFloat(b.markup)||0)>0?`<div class="pdf-cover-total-row"><span class="tk">Production fee (${b.markup}%)</span><span class="tv">${gbpA(mu)}</span></div>`:''}
             ${(parseFloat(b.custom_pct)||0)>0?`<div class="pdf-cover-total-row"><span class="tk">Add-on (${b.custom_pct}%)</span><span class="tv">${gbpA(customVal)}</span></div>`:''}
-            ${b.insurance&&insVal>0?`<div class="pdf-cover-total-row"><span class="tk">Insurance (2.5%)</span><span class="tv">${gbpA(insVal)}</span></div>`:''}
             ${b.vat?`<div class="pdf-cover-total-row"><span class="tk">VAT (20%)</span><span class="tv">${gbpA(vatVal)}</span></div>`:''}
             <div class="pdf-cover-total-row grand"><span class="tk">Grand total</span><span class="tv">${gbpA(tot)}</span></div>
           </div>
@@ -1019,20 +1004,22 @@ export class BudgetsView {
             <span class="pdf-section-name">${sec.label}</span>
             <span class="pdf-section-total">${gbpA(secNet(sec,pdfTr))}</span>
           </div>
+          <div class="pdf-col-heads">
+            <div class="pdf-col-head" style="text-align:left">Item</div>
+            <div class="pdf-col-head">Days</div><div class="pdf-col-head">Qty</div>
+            <div class="pdf-col-head">Travel / Rate</div>
+            <div class="pdf-col-head">Total</div>
+          </div>
           ${al.map(l => {
-            const useDays = (parseFloat(l.days)||0) > 0
-            const t=lineTotal(l,pdfTr),d=parseFloat(l.days)||0,q=parseFloat(l.qty)||0,r=parseFloat(l.rate)||0,td=parseFloat(l.travelDays)||0
+            const useDays = !!(l.useDays ?? (l.travelDays !== undefined))
+            const t=lineTotal(l,pdfTr),d=parseFloat(l.days)||0,q=parseFloat(l.qty)??1,r=parseFloat(l.rate)||0,td=parseFloat(l.travelDays)||0
             const disc = parseFloat(l.discount)||0
-            const travelVal = td > 0 ? r * td * (pdfTr/100) : 0
             return `<div class="pdf-line">
-              <div class="pdf-line-name">${esc(l.item)}</div>
-              ${l.notes ? `<div class="pdf-line-field"><span class="pdf-fk">Notes</span><span class="pdf-fv">${esc(l.notes)}</span></div>` : ''}
-              ${useDays && d > 0 ? `<div class="pdf-line-field"><span class="pdf-fk">Days</span><span class="pdf-fv">${d}</span></div>` : ''}
-              ${q > 0 ? `<div class="pdf-line-field"><span class="pdf-fk">Qty</span><span class="pdf-fv">${q}</span></div>` : ''}
-              ${r > 0 ? `<div class="pdf-line-field"><span class="pdf-fk">Rate</span><span class="pdf-fv">${gbpA(r)}</span></div>` : ''}
-              ${useDays && td > 0 ? `<div class="pdf-line-field"><span class="pdf-fk">Travel days</span><span class="pdf-fv">${td} @ ${pdfTr}% = ${gbpA(travelVal)}</span></div>` : ''}
-              ${disc > 0 ? `<div class="pdf-line-field"><span class="pdf-fk">Discount</span><span class="pdf-fv">${disc}%</span></div>` : ''}
-              <div class="pdf-line-total-row"><span class="pdf-fk">Line total</span><span class="pdf-line-total">${gbpA(t)}</span></div>
+              <div class="pdf-line-item">${esc(l.item)}${l.notes?`<div class="pdf-line-sub">${esc(l.notes)}</div>`:''}${useDays&&td>0?`<div class="pdf-line-sub">+${td} travel day${td!==1?'s':''} @ ${pdfTr}%</div>`:''}${disc>0?`<div class="pdf-line-sub">Discount: ${disc}%</div>`:''}</div>
+              <div class="pdf-line-num">${useDays&&d>0?d:''}</div>
+              <div class="pdf-line-num">${useDays?(d>0&&q!==1?q:''):q}</div>
+              <div class="pdf-line-num">${useDays?(td>0?gbpA(r*td*(pdfTr/100)):''):(r>0?gbpA(r):'')}</div>
+              <div class="pdf-line-total">${gbpA(t)}</div>
             </div>`
           }).join('')}
         </div>`
@@ -1052,7 +1039,6 @@ export class BudgetsView {
           <div class="pdf-detail-total-row"><span class="dk">Net total</span><span>${gbpA(net)}</span></div>
           ${(parseFloat(b.markup)||0)>0?`<div class="pdf-detail-total-row"><span class="dk">Production fee (${b.markup}%)</span><span>${gbpA(mu)}</span></div>`:''}
           ${(parseFloat(b.custom_pct)||0)>0?`<div class="pdf-detail-total-row"><span class="dk">Add-on (${b.custom_pct}%)</span><span>${gbpA(customVal)}</span></div>`:''}
-          ${b.insurance&&insVal>0?`<div class="pdf-detail-total-row"><span class="dk">Insurance (2.5%)</span><span>${gbpA(insVal)}</span></div>`:''}
           ${b.vat?`<div class="pdf-detail-total-row"><span class="dk">VAT (20%)</span><span>${gbpA(vatVal)}</span></div>`:''}
           <div class="pdf-detail-total-row grand"><span class="dk">Grand total</span><span>${gbpA(tot)}</span></div>
         </div>

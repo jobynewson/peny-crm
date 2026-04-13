@@ -25,8 +25,7 @@ export const settings = pgTable('settings', {
   address:         text('address'),
   vat_number:      text('vat_number'),
   prepared_by:     text('prepared_by'),
-  budget_template:      jsonb('budget_template'),
-  financial_year_start: integer('financial_year_start').notNull().default(4),
+  budget_template: jsonb('budget_template'),
   ...timestamps,
 })
 
@@ -70,7 +69,6 @@ export const projects = pgTable('projects', {
   retainer_hours: numeric('retainer_hours', { precision: 6,  scale: 2 }),
   retainer_alert: numeric('retainer_alert', { precision: 5,  scale: 2 }).notNull().default('80'),
   retainer_start: date('retainer_start'),
-  retainer_items: jsonb('retainer_items').notNull().default([]),
   monthly_deliverables: jsonb('monthly_deliverables').notNull().default([]),
   ...timestamps,
 })
@@ -87,14 +85,10 @@ export const budgets = pgTable('budgets', {
   markup:      numeric('markup', { precision: 5, scale: 2 }).notNull().default('10'),
   custom_pct:  numeric('custom_pct', { precision: 5, scale: 2 }).notNull().default('0'),
   vat:         boolean('vat').notNull().default(false),
-  insurance:   boolean('insurance').notNull().default(false),
   include_in_pipeline: boolean('include_in_pipeline').notNull().default(false),
   signed_off:    boolean('signed_off').notNull().default(false),
   signed_off_at: timestamp('signed_off_at', { withTimezone: true }),
   signed_off_by: text('signed_off_by'),
-  invoiced:      boolean('invoiced').notNull().default(false),
-  invoiced_at:   timestamp('invoiced_at', { withTimezone: true }),
-  invoiced_by:   text('invoiced_by'),
   travel_rate: numeric('travel_rate', { precision: 5, scale: 2 }).notNull().default('50'),
   discount:    numeric('discount', { precision: 5, scale: 2 }).notNull().default('0'),
   sections:    jsonb('sections').notNull().default([]),
