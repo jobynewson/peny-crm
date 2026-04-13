@@ -43,6 +43,7 @@ export class App {
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
 
     const { getDevRequests, addDevRequest, toggleDevRequest, deleteDevRequest } = await import('./db/client.js')
+    const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 
     const renderModal = async () => {
       const requests = isAdmin ? await getDevRequests() : []
@@ -102,8 +103,6 @@ export class App {
               </div>`).join('')}` : ''}
           </div>` : ''}
         </div>`
-
-      const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 
       // Close
       overlay.querySelector('#dev-req-close')?.addEventListener('click', () => overlay.remove())
@@ -503,7 +502,23 @@ export class App {
   openProject(id) { this.currentView = 'projects'; this.projectsView.currentId = id; this.render() }
   openBudget(id)  { this.currentView = 'budgets';  this.budgetsView.currentId  = id; this.render() }
 
-  // Returns [periodStart, periodEnd] Date objects for the current retainer period
+  // Returns start date of current financial year given a start month (1=Jan, 4=Apr)
+  _financialYearStart(startMonth) {
+    const now = new Date()
+    const y = now.getFullYear(), m = now.getMonth() + 1 // 1-based
+    // If we haven't reached the start month yet this calendar year, go back a year
+    const fyYear = m >= startMonth ? y : y - 1
+    return new Date(fyYear, startMonth - 1, 1)
+  }
+
+  // Returns start of current financial quarter given FY start month
+  _financialQuarterStart(startMonth) {
+    const fyStart = this._financialYearStart(startMonth)
+    const now = new Date()
+    const monthsSinceFY = (now.getFullYear() - fyStart.getFullYear()) * 12 + (now.getMonth() - fyStart.getMonth())
+    const quarterIndex = Math.floor(monthsSinceFY / 3)
+    return new Date(fyStart.getFullYear(), fyStart.getMonth() + quarterIndex * 3, 1)
+  }
   _retainerPeriod(retainerStart) {
     if (!retainerStart) return [null, null]
     const anchor = new Date(retainerStart)
@@ -538,24 +553,72 @@ export class App {
     }
 
     // Compute financial summary
-    const signedOffValue = this.budgets
-      .filter(b => b.signed_off)
-      .reduce((s, b) => {
-        const n = budTotal(b); return s + (isNaN(n) ? 0 : n)
-      }, 0)
+    const fyStartMonth = this.settings?.financial_year_start ?? 4
+    const fyStart = this._financialYearStart(fyStartMonth)
+    const qStart  = this._financialQuarterStart(fyStartMonth)
+    const mStart  = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+
+    const inPeriod = (dateStr, from) => dateStr && new Date(dateStr) >= from
+
+    const allBudTot = b => { const n = budTotal(b); return isNaN(n) ? 0 : n }
+
+    // Signed off but not yet invoiced
+    const awaitingInvoice = this.budgets
+      .filter(b => b.signed_off && !b.invoiced)
+      .reduce((s, b) => s + allBudTot(b), 0)
+
+    // Invoiced within periods
+    const invoicedMonth   = this.budgets.filter(b => b.invoiced && inPeriod(b.invoiced_at, mStart)).reduce((s,b) => s + allBudTot(b), 0)
+    const invoicedQuarter = this.budgets.filter(b => b.invoiced && inPeriod(b.invoiced_at, qStart)).reduce((s,b) => s + allBudTot(b), 0)
+    const invoicedYear    = this.budgets.filter(b => b.invoiced && inPeriod(b.invoiced_at, fyStart)).reduce((s,b) => s + allBudTot(b), 0)
+
     const retainerMRR = retainers.reduce((s, p) => s + (parseFloat(p.retainer_fee)||0), 0)
     const pipelineValue = regularProjects.reduce((sum, p) => {
       const pBudgets = (p.budget_ids||[]).map(id => this.budgets.find(b => b.id === id)).filter(Boolean)
-      return sum + pBudgets.reduce((s, b) => s + (budTotal(b)||0), 0)
+      return sum + pBudgets.reduce((s, b) => s + (allBudTot(b)||0), 0)
     }, 0)
     const gbp = n => '£' + Math.round(n).toLocaleString('en-GB')
 
+    const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+    const fyLabel = MONTH_NAMES[fyStartMonth - 1]
+    const qLabels = (() => {
+      const qs = qStart.getMonth()
+      const qe = (qs + 2) % 12
+      return `${MONTH_NAMES[qs]}–${MONTH_NAMES[qe]}`
+    })()
+
     mc.innerHTML = `
-      <div class="stats-row" style="margin-bottom:20px">
-        <div class="stat-card"><div class="stat-label">Signed-off budgets</div><div class="stat-value" style="color:#6ec96e">${gbp(signedOffValue)}</div><div class="stat-sub">total value</div></div>
-        <div class="stat-card"><div class="stat-label">Retainer MRR</div><div class="stat-value" style="color:#a78bfa">${gbp(retainerMRR)}</div><div class="stat-sub">per month</div></div>
-        <div class="stat-card"><div class="stat-label">Pipeline</div><div class="stat-value">${gbp(pipelineValue)}</div><div class="stat-sub">${regularProjects.length} project${regularProjects.length!==1?'s':''}</div></div>
-        <div class="stat-card"><div class="stat-label">Active projects</div><div class="stat-value">${regularProjects.filter(p=>p.status==='In Production').length}</div><div class="stat-sub">in production</div></div>
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:20px">
+        <div class="stat-card">
+          <div class="stat-label">Pipeline</div>
+          <div class="stat-value">${gbp(pipelineValue)}</div>
+          <div class="stat-sub">${regularProjects.length} project${regularProjects.length!==1?'s':''}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Awaiting invoice</div>
+          <div class="stat-value" style="color:#6ec96e">${gbp(awaitingInvoice)}</div>
+          <div class="stat-sub">signed off</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Invoiced this month</div>
+          <div class="stat-value" style="color:#4a90d9">${gbp(invoicedMonth)}</div>
+          <div class="stat-sub">${MONTH_NAMES[new Date().getMonth()]} ${new Date().getFullYear()}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Invoiced this quarter</div>
+          <div class="stat-value" style="color:#4a90d9">${gbp(invoicedQuarter)}</div>
+          <div class="stat-sub">${qLabels}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Invoiced this year</div>
+          <div class="stat-value" style="color:#4a90d9">${gbp(invoicedYear)}</div>
+          <div class="stat-sub">Since ${fyLabel}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Retainer MRR</div>
+          <div class="stat-value" style="color:#a78bfa">${gbp(retainerMRR)}</div>
+          <div class="stat-sub">per month</div>
+        </div>
       </div>
       ${retainers.length ? `
       <div style="margin-bottom:24px">
@@ -566,11 +629,11 @@ export class App {
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px" id="retainer-cards">
           ${retainers.map(p => {
             const cl = this.contacts.find(c => c.id === p.client_id)
-            const hours = parseFloat(p.retainer_hours)||0
+            const hours = (p.retainer_items||[]).reduce((s,i)=>s+(parseFloat(i.qty)||0)*(i.unit==='hours'?1:8),0) || parseFloat(p.retainer_hours)||0
             const fee   = parseFloat(p.retainer_fee)||0
-            return `<div class="kanban-card" style="border-left:3px solid #a78bfa;cursor:default" data-retainer="${p.id}">
+            return `<div class="kanban-card" style="border-left:3px solid #a78bfa;cursor:pointer" data-open-pid="${p.id}">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
-                <div class="kanban-card-title" style="cursor:pointer" data-open-pid="${p.id}">${p.name}</div>
+                <div class="kanban-card-title">${p.name}</div>
                 ${fee ? `<div style="font-size:12px;font-weight:600;color:#a78bfa;white-space:nowrap;margin-left:8px">£${fee.toLocaleString('en-GB')}/mo</div>` : ''}
               </div>
               <div class="kanban-card-client">${cl ? cl.first_name+' '+cl.last_name : 'No client'}</div>
@@ -603,7 +666,7 @@ export class App {
             const tr = parseFloat(b.travel_rate)||50
             const n = b.sections ? b.sections.filter(s=>s.enabled).reduce((t,s)=>{
               return t + (s.lines||[]).reduce((lt,l)=>{
-                const useDays=!!(l.useDays??(l.travelDays!==undefined))
+                const useDays=(parseFloat(l.days)||0)>0
                 const d=parseFloat(l.days)||0,q=isNaN(parseFloat(l.qty))?1:parseFloat(l.qty),r=parseFloat(l.rate)||0,td=parseFloat(l.travelDays)||0
                 const disc=Math.min(Math.max(parseFloat(l.discount)||0,0),100)
                 const gross=useDays?d*q*r+td*(tr/100)*r:q*r
@@ -612,7 +675,8 @@ export class App {
             },0) : 0
             const afterFee = n + n*((parseFloat(b.markup)||0)/100)
             const afterCustom = afterFee + afterFee*((parseFloat(b.custom_pct)||0)/100)
-            return sum + afterCustom + (b.vat ? afterCustom*0.2 : 0)
+            const afterInsurance = b.insurance ? afterCustom + afterCustom*0.025 : afterCustom
+            return sum + afterInsurance + (b.vat ? afterInsurance*0.2 : 0)
           }, 0)
           const delivs = (p.deliverables||[]).filter(d=>d.text)
           // Compute allocated hours from linked budgets
@@ -622,11 +686,11 @@ export class App {
             return sum + (b.sections||[]).filter(s=>s.enabled).reduce((ss, s) =>
               ss + (s.lines||[]).filter(l=>l.track_time&&l.item).reduce((ls, l) => {
                 const d = parseFloat(l.days)||0, q = isNaN(parseFloat(l.qty))?1:parseFloat(l.qty)
-                return ls + (l.useDays ? Math.round(d*q*8) : Math.round(q*8))
+                const _ud=(parseFloat(l.days)||0)>0; return ls + (_ud ? Math.round(d*q*8) : Math.round(q*8))
               }, 0), 0)
           }, 0)
-          return `<div class="kanban-card" data-pid="${p.id}">
-            <div class="kanban-card-title" style="cursor:pointer" data-open-pid="${p.id}">${p.name}</div>
+          return `<div class="kanban-card" data-open-pid="${p.id}" style="cursor:pointer">
+            <div class="kanban-card-title">${p.name}</div>
             <div class="kanban-card-client">${cl ? cl.first_name+' '+cl.last_name : 'No client'}</div>
             ${allocHours > 0 ? `<div style="margin-top:6px;display:flex;align-items:center;gap:6px">
               <div style="flex:1;height:4px;background:var(--bg-secondary);border-radius:2px;overflow:hidden">
@@ -646,8 +710,8 @@ export class App {
               <div style="margin-top:8px;padding-top:8px;border-top:0.5px solid var(--border-light);display:flex;flex-direction:column;gap:3px">
                 ${pipelineBudgets.map(b => {
                   const tr2=parseFloat(b.travel_rate)||50
-                  const n2=b.sections?b.sections.filter(s=>s.enabled).reduce((t,s)=>t+(s.lines||[]).reduce((lt,l)=>{const useDays=!!(l.useDays??(l.travelDays!==undefined));const d=parseFloat(l.days)||0,q=isNaN(parseFloat(l.qty))?1:parseFloat(l.qty),r=parseFloat(l.rate)||0,td=parseFloat(l.travelDays)||0,disc=Math.min(Math.max(parseFloat(l.discount)||0,0),100),gross=useDays?d*q*r+td*(tr2/100)*r:q*r;return lt+gross*(1-disc/100)},0),0):0
-                  const ae=n2+n2*((parseFloat(b.markup)||0)/100),ac=ae+ae*((parseFloat(b.custom_pct)||0)/100),t=ac+(b.vat?ac*0.2:0)
+                  const n2=b.sections?b.sections.filter(s=>s.enabled).reduce((t,s)=>t+(s.lines||[]).reduce((lt,l)=>{const useDays=(parseFloat(l.days)||0)>0;const d=parseFloat(l.days)||0,q=isNaN(parseFloat(l.qty))?1:parseFloat(l.qty),r=parseFloat(l.rate)||0,td=parseFloat(l.travelDays)||0,disc=Math.min(Math.max(parseFloat(l.discount)||0,0),100),gross=useDays?d*q*r+td*(tr2/100)*r:q*r;return lt+gross*(1-disc/100)},0),0):0
+                  const ae=n2+n2*((parseFloat(b.markup)||0)/100),ac=ae+ae*((parseFloat(b.custom_pct)||0)/100),ai=b.insurance?ac+ac*0.025:ac,t=ai+(b.vat?ai*0.2:0)
                   return `<div style="display:flex;justify-content:space-between;font-size:11px">
                     <span style="color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">${b.name}</span>
                     <span style="color:var(--text-primary);font-weight:500;font-variant-numeric:tabular-nums">£${Math.round(t).toLocaleString('en-GB')}</span>
@@ -670,6 +734,7 @@ export class App {
     })
     // Deliverable tick without opening the project
     mc.querySelectorAll('[data-deliv-pid]').forEach(el => {
+      el.addEventListener('click', e => e.stopPropagation())
       el.addEventListener('change', async () => {
         const p = this.projects.find(x => x.id === el.dataset.delivPid)
         if (!p) return
@@ -716,7 +781,8 @@ export class App {
     if (retainers.length > 0) {
       const { getTimeEntries } = await import('./db/client.js')
       for (const p of retainers) {
-        if (!p.retainer_hours) continue
+        const hours = (p.retainer_items||[]).reduce((s,i)=>s+(parseFloat(i.qty)||0)*(i.unit==='hours'?1:8),0) || parseFloat(p.retainer_hours)||0
+        if (!hours) continue
         try {
           const [periodStart, periodEnd] = this._retainerPeriod(p.retainer_start)
           const allEntries = await getTimeEntries(p.id)
@@ -727,7 +793,6 @@ export class App {
               })
             : allEntries
           const logged = entries.reduce((s, e) => s + parseFloat(e.hours), 0)
-          const hours = parseFloat(p.retainer_hours)
           const pct = Math.min(100, Math.round(logged / hours * 100))
           const alertPct = parseFloat(p.retainer_alert) || 80
 
@@ -780,7 +845,17 @@ export class App {
             <div class="field"><div class="field-label">Address (optional)</div><input type="text" id="s-address" value="${s.address??''}" /></div>
             <div class="field-row">
               <div class="field"><div class="field-label">VAT number</div><input type="text" id="s-vat" value="${s.vat_number??''}" placeholder="GB 000 0000 00" /></div>
-              <div class="field"><div class="field-label">Default prepared by</div><input type="text" id="s-preparedby" value="${s.prepared_by??''}" placeholder="e.g. Robbie Meade" /></div>
+              <div class="field-row">
+                <div class="field"><div class="field-label">Default prepared by</div><input type="text" id="s-preparedby" value="${s.prepared_by??''}" placeholder="e.g. Robbie Meade" /></div>
+                ${isAdmin ? `<div class="field">
+                  <div class="field-label">Financial year start</div>
+                  <select id="s-fy-start">
+                    ${['January','February','March','April','May','June','July','August','September','October','November','December'].map((m,i) =>
+                      `<option value="${i+1}" ${(s.financial_year_start??4)===(i+1)?'selected':''}>${m}</option>`
+                    ).join('')}
+                  </select>
+                </div>` : ''}
+              </div>
             </div>
             <div><button class="btn-primary" id="settings-save-btn">Save settings</button></div>
           </div>
@@ -870,7 +945,6 @@ export class App {
                   <tr style="background:var(--bg-secondary)">
                     <th style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;padding:6px 8px;text-align:left;font-weight:400;border-bottom:0.5px solid var(--border-light)">Item name</th>
                     <th style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;padding:6px 8px;text-align:right;font-weight:400;border-bottom:0.5px solid var(--border-light)">Default rate £</th>
-                    <th style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;padding:6px 4px;text-align:center;font-weight:400;border-bottom:0.5px solid var(--border-light)" title="Daily rate">Daily</th>
                     <th style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;padding:6px 4px;text-align:center;font-weight:400;border-bottom:0.5px solid var(--border-light)" title="Track time">⏱</th>
                     <th style="border-bottom:0.5px solid var(--border-light);width:28px"></th>
                   </tr>
@@ -888,10 +962,7 @@ export class App {
                           style="width:80px;font-size:13px;padding:5px 7px;border:0.5px solid var(--border-light);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;text-align:right;display:block;margin-left:auto" />
                       </td>
                       <td style="padding:5px 4px;text-align:center">
-                        <input type="checkbox" ${l.useDays?'checked':''} data-tpl-usedays="${si},${li}" style="cursor:pointer" />
-                      </td>
-                      <td style="padding:5px 4px;text-align:center">
-                        <input type="checkbox" ${l.track_time?'checked':''} data-tpl-track="${si},${li}" style="cursor:pointer" ${!l.useDays?'disabled title="Enable daily rate first"':''} />
+                        <input type="checkbox" ${l.track_time?'checked':''} data-tpl-track="${si},${li}" style="cursor:pointer" />
                       </td>
                       <td style="padding:5px 4px;text-align:center">
                         <button class="row-btn" data-tpl-del-line="${si},${li}" style="color:#b03020;font-size:11px;padding:2px 6px">×</button>
@@ -926,7 +997,7 @@ export class App {
         cb.addEventListener('change', () => { template[+cb.dataset.tplCrew].crew = cb.checked })
       })
       el.querySelector('#tpl-add-section')?.addEventListener('click', () => {
-        template.push({ code: 'X', label: 'New section', crew: false, lines: [{ item: '', rate: null, useDays: false, track_time: false }] })
+        template.push({ code: 'X', label: 'New section', crew: false, lines: [{ item: '', rate: null, qty: 0, days: 0, travelDays: 0, track_time: false }] })
         render()
       })
       el.querySelectorAll('[data-tpl-del-sec]').forEach(btn => {
@@ -936,7 +1007,7 @@ export class App {
         })
       })
 
-      // Line item / rate / useDays / track_time / delete
+      // Line item / rate / track_time / delete
       el.querySelectorAll('[data-tpl-item]').forEach(inp => {
         inp.addEventListener('change', () => {
           const [si,li] = inp.dataset.tplItem.split(',').map(Number)
@@ -947,14 +1018,6 @@ export class App {
         inp.addEventListener('change', () => {
           const [si,li] = inp.dataset.tplRate.split(',').map(Number)
           template[si].lines[li].rate = parseFloat(inp.value) || null
-        })
-      })
-      el.querySelectorAll('[data-tpl-usedays]').forEach(cb => {
-        cb.addEventListener('change', () => {
-          const [si,li] = cb.dataset.tplUsedays.split(',').map(Number)
-          template[si].lines[li].useDays = cb.checked
-          if (!cb.checked) template[si].lines[li].track_time = false
-          render()  // re-render to enable/disable track checkbox
         })
       })
       el.querySelectorAll('[data-tpl-track]').forEach(cb => {
@@ -973,7 +1036,7 @@ export class App {
         btn.addEventListener('click', () => {
           const si = +btn.dataset.tplAddLine
           const isCrew = !!template[si].crew
-          template[si].lines.push({ item: '', rate: null, qty: 0, useDays: isCrew, track_time: false })
+          template[si].lines.push({ item: '', rate: null, qty: 0, days: 0, travelDays: 0, track_time: false })
           render()
         })
       })
@@ -1128,6 +1191,7 @@ export class App {
       prepared_by:  mc.querySelector('#s-preparedby')?.value.trim()||null,
       // Preserve budget_template — it's saved separately via _saveBudgetTemplate
       budget_template: this.settings?.budget_template ?? null,
+      financial_year_start: parseInt(mc.querySelector('#s-fy-start')?.value) || 4,
     }
     try { const [updated] = await upsertSettings(this.userId, data); this.settings = updated; this.toast('Settings saved') }
     catch (e) { console.error(e); this.toast('Error saving settings') }
@@ -1174,7 +1238,7 @@ export class App {
       .search-wrap input:focus{border-color:var(--border-strong)}
       .search-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--text-tertiary);pointer-events:none}
       .content{flex:1;overflow-y:auto;padding:24px}
-      .stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
+      .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:24px}
       .stat-card{background:var(--bg-secondary);border-radius:var(--radius-md);padding:14px 16px}
       .stat-label{font-size:11px;color:var(--text-secondary);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.4px}
       .stat-value{font-size:24px;font-weight:500;letter-spacing:-0.5px}
@@ -1250,7 +1314,7 @@ export class App {
       .bl-table th.r{text-align:right}.bl-table td{padding:4px 4px;vertical-align:middle;border-bottom:0.5px solid var(--border-light)}
       .bl-table tr:last-child td{border-bottom:none}.bl-table tr.sub td{background:var(--bg-secondary);font-size:12px;font-weight:500}
       .bl-in{font-size:13px;padding:6px 8px;border:0.5px solid var(--border-light);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;transition:border 0.12s;min-height:32px}
-      .bl-in:focus{border-color:var(--border-strong)}.bl-in.w{width:100%}.bl-in.n{width:60px;text-align:right;font-variant-numeric:tabular-nums}
+      .bl-in:focus{border-color:var(--border-strong)}.bl-in.w{width:100%}.bl-in.n{width:80px;text-align:right;font-variant-numeric:tabular-nums}
       .bl-tot{font-size:12px;font-variant-numeric:tabular-nums;color:var(--text-tertiary);text-align:right;white-space:nowrap}.bl-tot.nz{color:var(--text-primary);font-weight:500}
       .add-line{display:flex;align-items:center;gap:6px;padding:8px 10px;font-size:12px;color:var(--text-tertiary);cursor:pointer;border:none;border-top:0.5px solid var(--border-light);background:transparent;width:100%;text-align:left;font-family:var(--font);transition:background 0.1s,color 0.1s}
       .add-line:hover{background:var(--bg-secondary);color:var(--text-secondary)}
@@ -1317,11 +1381,13 @@ export class App {
       .pdf-section{margin-bottom:28px}
       .pdf-section-header{display:flex;align-items:baseline;gap:10px;margin-bottom:8px;padding-bottom:7px;border-bottom:1px solid #1a1a18}
       .pdf-section-code{font-size:10px;font-weight:700;color:#a8a8a0;letter-spacing:0.5px}.pdf-section-name{font-size:13px;font-weight:500;flex:1}.pdf-section-total{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
-      .pdf-col-heads{display:grid;grid-template-columns:1fr 44px 36px 44px 72px;gap:6px;padding:4px 0 5px}
-      .pdf-col-head{font-size:9px;text-transform:uppercase;letter-spacing:0.6px;color:#a8a8a0;text-align:right}.pdf-col-head:first-child{text-align:left}
-      .pdf-line{display:grid;grid-template-columns:1fr 44px 36px 44px 72px;gap:6px;padding:6px 0;border-bottom:0.5px solid #f0efe9;align-items:baseline}.pdf-line:last-child{border-bottom:none}
-      .pdf-line-item{font-size:12px}.pdf-line-sub{font-size:10px;color:#a8a8a0;margin-top:2px}
-      .pdf-line-num{font-size:12px;color:#6b6b66;text-align:right;font-variant-numeric:tabular-nums}.pdf-line-total{font-size:12px;font-weight:500;text-align:right;font-variant-numeric:tabular-nums}
+      .pdf-line{padding:8px 0;border-bottom:0.5px solid #f0efe9}.pdf-line:last-child{border-bottom:none}
+      .pdf-line-name{font-size:12px;font-weight:500;margin-bottom:3px}
+      .pdf-line-field{display:flex;justify-content:space-between;align-items:baseline;padding:1px 0}
+      .pdf-line-total-row{display:flex;justify-content:space-between;align-items:baseline;padding:3px 0;margin-top:3px;border-top:0.5px solid #f0efe9}
+      .pdf-fk{font-size:10px;color:#a8a8a0;text-transform:uppercase;letter-spacing:0.4px}
+      .pdf-fv{font-size:11px;color:#4a4a44;font-variant-numeric:tabular-nums}
+      .pdf-line-total{font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}
       .pdf-detail-totals{margin-top:36px;border-top:1px solid #1a1a18;padding-top:16px}
       .pdf-detail-total-row{display:flex;justify-content:space-between;padding:5px 0;font-size:12px;border-bottom:0.5px solid #f0efe9}.pdf-detail-total-row:last-child{border-bottom:none}
       .pdf-detail-total-row.grand{font-size:16px;font-weight:500;padding-top:12px}.pdf-detail-total-row .dk{color:#6b6b66}

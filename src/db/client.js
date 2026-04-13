@@ -248,31 +248,33 @@ export async function setTrackToken(workspaceId, projectId, token) {
 
 // ── Dev requests ──────────────────────────────────────────────────────────────
 export async function getDevRequests() {
-  const { sql } = await import('drizzle-orm')
-  return db.execute(sql`
-    SELECT * FROM dev_requests ORDER BY created_at DESC LIMIT 200
-  `).then(r => r.rows ?? r)
+  const { neon } = await import('@neondatabase/serverless')
+  const sql = neon(import.meta.env.VITE_DATABASE_URL)
+  return sql`SELECT * FROM dev_requests ORDER BY created_at DESC LIMIT 200`
 }
 
 export async function addDevRequest(userId, userName, message) {
-  const { sql } = await import('drizzle-orm')
-  return db.execute(sql`
+  const { neon } = await import('@neondatabase/serverless')
+  const sql = neon(import.meta.env.VITE_DATABASE_URL)
+  const rows = await sql`
     INSERT INTO dev_requests (user_id, user_name, message)
     VALUES (${userId}, ${userName}, ${message})
     RETURNING *
-  `).then(r => (r.rows ?? r)[0])
+  `
+  return rows[0]
 }
 
 export async function toggleDevRequest(id, done) {
-  const { sql } = await import('drizzle-orm')
-  return db.execute(sql`
+  const { neon } = await import('@neondatabase/serverless')
+  const sql = neon(import.meta.env.VITE_DATABASE_URL)
+  const rows = await sql`
     UPDATE dev_requests SET done = ${done} WHERE id = ${id} RETURNING *
-  `).then(r => (r.rows ?? r)[0])
+  `
+  return rows[0]
 }
 
 export async function deleteDevRequest(id) {
-  const { sql } = await import('drizzle-orm')
-  return db.execute(sql`
-    DELETE FROM dev_requests WHERE id = ${id}
-  `)
+  const { neon } = await import('@neondatabase/serverless')
+  const sql = neon(import.meta.env.VITE_DATABASE_URL)
+  return sql`DELETE FROM dev_requests WHERE id = ${id}`
 }
