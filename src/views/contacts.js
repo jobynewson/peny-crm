@@ -284,10 +284,21 @@ export class ContactsView {
       el.addEventListener('click', () => this.app.openBudget(el.dataset.openBudget))
     })
     dp.querySelectorAll('[data-new-project]').forEach(el => {
-      el.addEventListener('click', () => this.app.projectsView.openNewModal(el.dataset.newProject))
+      el.addEventListener('click', () => {
+        const clientId = el.dataset.newProject
+        this.app.navigate('projects')
+        setTimeout(() => {
+          const mc = document.getElementById('main-content')
+          this.app.projectsView.openNewModal(clientId, null, mc)
+        }, 50)
+      })
     })
     dp.querySelectorAll('[data-new-budget]').forEach(el => {
-      el.addEventListener('click', () => this.app.budgetsView.openNewModal(el.dataset.newBudget))
+      el.addEventListener('click', () => {
+        const clientId = el.dataset.newBudget
+        this.app.navigate('budgets')
+        setTimeout(() => this.app.budgetsView.openNewModal(clientId), 50)
+      })
     })
     dp.querySelectorAll('[data-note]').forEach(btn => {
       btn.addEventListener('click', () => this.openNoteModal(btn.dataset.note, document.getElementById('main-content')))

@@ -625,8 +625,8 @@ export class App {
                 return ls + (l.useDays ? Math.round(d*q*8) : Math.round(q*8))
               }, 0), 0)
           }, 0)
-          return `<div class="kanban-card" data-pid="${p.id}">
-            <div class="kanban-card-title" style="cursor:pointer" data-open-pid="${p.id}">${p.name}</div>
+          return `<div class="kanban-card" data-open-pid="${p.id}" style="cursor:pointer">
+            <div class="kanban-card-title">${p.name}</div>
             <div class="kanban-card-client">${cl ? cl.first_name+' '+cl.last_name : 'No client'}</div>
             ${allocHours > 0 ? `<div style="margin-top:6px;display:flex;align-items:center;gap:6px">
               <div style="flex:1;height:4px;background:var(--bg-secondary);border-radius:2px;overflow:hidden">
@@ -670,6 +670,7 @@ export class App {
     })
     // Deliverable tick without opening the project
     mc.querySelectorAll('[data-deliv-pid]').forEach(el => {
+      el.addEventListener('click', e => e.stopPropagation())
       el.addEventListener('change', async () => {
         const p = this.projects.find(x => x.id === el.dataset.delivPid)
         if (!p) return
@@ -1250,7 +1251,7 @@ export class App {
       .bl-table th.r{text-align:right}.bl-table td{padding:4px 4px;vertical-align:middle;border-bottom:0.5px solid var(--border-light)}
       .bl-table tr:last-child td{border-bottom:none}.bl-table tr.sub td{background:var(--bg-secondary);font-size:12px;font-weight:500}
       .bl-in{font-size:13px;padding:6px 8px;border:0.5px solid var(--border-light);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;transition:border 0.12s;min-height:32px}
-      .bl-in:focus{border-color:var(--border-strong)}.bl-in.w{width:100%}.bl-in.n{width:60px;text-align:right;font-variant-numeric:tabular-nums}
+      .bl-in:focus{border-color:var(--border-strong)}.bl-in.w{width:100%}.bl-in.n{width:80px;text-align:right;font-variant-numeric:tabular-nums}
       .bl-tot{font-size:12px;font-variant-numeric:tabular-nums;color:var(--text-tertiary);text-align:right;white-space:nowrap}.bl-tot.nz{color:var(--text-primary);font-weight:500}
       .add-line{display:flex;align-items:center;gap:6px;padding:8px 10px;font-size:12px;color:var(--text-tertiary);cursor:pointer;border:none;border-top:0.5px solid var(--border-light);background:transparent;width:100%;text-align:left;font-family:var(--font);transition:background 0.1s,color 0.1s}
       .add-line:hover{background:var(--bg-secondary);color:var(--text-secondary)}

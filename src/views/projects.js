@@ -101,22 +101,51 @@ export class ProjectsView {
       m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open') })
     })
     mc.querySelector('#proj-save-btn')?.addEventListener('click', () => this.saveNew(mc))
+    mc.querySelector('#pf-new-contact-toggle')?.addEventListener('click', () => {
+      const panel  = mc.querySelector('#pf-new-contact-panel')
+      const client = mc.querySelector('#pf-client')
+      const toggle = mc.querySelector('#pf-new-contact-toggle span')
+      const isOpen = panel.style.display !== 'none'
+      panel.style.display = isOpen ? 'none' : 'block'
+      if (client) { client.disabled = !isOpen; client.style.opacity = isOpen ? '' : '0.4' }
+      if (toggle) toggle.textContent = isOpen ? '+ Add new contact instead' : '− Use existing contact instead'
+    })
   }
 
   newModalHTML() {
     const { contacts } = this.app
     return `
       <div class="modal-backdrop" id="proj-new-modal">
-        <div class="modal" style="width:420px">
+        <div class="modal" style="width:460px">
           <div class="modal-header"><span class="modal-title">New project</span><button class="modal-close" data-close="proj-new-modal">×</button></div>
           <div class="modal-body">
             <div class="field"><div class="field-label">Project title</div><input id="pf-name" type="text" placeholder="e.g. Brand Film — Kinetic Q2" /></div>
-            <div class="field"><div class="field-label">Client</div>
+
+            <div class="field">
+              <div class="field-label">Client</div>
               <select id="pf-client">
                 <option value="">— no client —</option>
                 ${contacts.map(c=>`<option value="${c.id}">${esc(c.first_name)} ${esc(c.last_name)} — ${esc(c.company)}</option>`).join('')}
               </select>
             </div>
+
+            <div id="pf-new-contact-toggle" style="margin:-4px 0 10px;cursor:pointer;width:fit-content">
+              <span style="font-size:11px;color:var(--accent)">+ Add new contact instead</span>
+            </div>
+
+            <div id="pf-new-contact-panel" style="display:none;border:0.5px solid var(--border-med);border-radius:var(--radius-md);padding:14px;background:var(--bg-secondary);margin-bottom:4px">
+              <div style="font-size:11px;font-weight:500;color:var(--text-secondary);margin-bottom:12px;text-transform:uppercase;letter-spacing:0.4px">New contact details</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+                <div class="field" style="margin:0"><div class="field-label">First name</div><input type="text" id="pf-nc-first" placeholder="First name" /></div>
+                <div class="field" style="margin:0"><div class="field-label">Last name</div><input type="text" id="pf-nc-last" placeholder="Last name" /></div>
+              </div>
+              <div class="field" style="margin-bottom:8px"><div class="field-label">Company</div><input type="text" id="pf-nc-company" placeholder="Company name" /></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                <div class="field" style="margin:0"><div class="field-label">Email</div><input type="email" id="pf-nc-email" placeholder="email@example.com" /></div>
+                <div class="field" style="margin:0"><div class="field-label">Phone</div><input type="text" id="pf-nc-phone" placeholder="+44..." /></div>
+              </div>
+            </div>
+
             <div class="field"><div class="field-label">Status</div>
               <select id="pf-status">
                 ${STAGES.map(s=>`<option value="${s}">${s}</option>`).join('')}
@@ -136,6 +165,16 @@ export class ProjectsView {
     el.querySelector('#pf-name').value   = ''
     el.querySelector('#pf-status').value = stage || 'Enquiry'
     if (clientId) el.querySelector('#pf-client').value = clientId
+    // Reset accordion
+    const panel = el.querySelector('#pf-new-contact-panel')
+    const client = el.querySelector('#pf-client')
+    const toggle = el.querySelector('#pf-new-contact-toggle span')
+    if (panel)  panel.style.display = 'none'
+    if (client) { client.disabled = false; client.style.opacity = '' }
+    if (toggle) toggle.textContent = '+ Add new contact instead'
+    ;['#pf-nc-first','#pf-nc-last','#pf-nc-company','#pf-nc-email','#pf-nc-phone'].forEach(id => {
+      const inp = el.querySelector(id); if (inp) inp.value = ''
+    })
     // Store retainer flag on the modal for saveNew to read
     const modal = el.querySelector('#proj-new-modal')
     if (modal) modal.dataset.isRetainer = isRetainer ? '1' : ''
@@ -147,9 +186,35 @@ export class ProjectsView {
     if (!name) { this.app.toast('Please enter a project title'); return }
     const isRetainer = mc.querySelector('#proj-new-modal')?.dataset.isRetainer === '1'
     const today = new Date().toISOString().split('T')[0]
+
+    // If new contact accordion is open, create the contact first
+    let clientId = mc.querySelector('#pf-client')?.value || null
+    const contactPanel = mc.querySelector('#pf-new-contact-panel')
+    if (contactPanel?.style.display !== 'none') {
+      const firstName = mc.querySelector('#pf-nc-first')?.value.trim()
+      const lastName  = mc.querySelector('#pf-nc-last')?.value.trim()
+      const company   = mc.querySelector('#pf-nc-company')?.value.trim()
+      const email     = mc.querySelector('#pf-nc-email')?.value.trim()
+      const phone     = mc.querySelector('#pf-nc-phone')?.value.trim()
+      if (!firstName && !lastName && !company) {
+        this.app.toast('Please enter at least a name or company for the new contact')
+        return
+      }
+      try {
+        const { createContact } = await import('../db/client.js')
+        const [newContact] = await createContact(this.app.userId, {
+          first_name: firstName || '', last_name: lastName || '',
+          company: company || '', email: email || null, phone: phone || null,
+          type: 'Client', status: 'Active', role: '', notes: [],
+        })
+        this.app.contacts.unshift(newContact)
+        clientId = newContact.id
+      } catch(e) { console.error(e); this.app.toast('Error creating contact'); return }
+    }
+
     const data = {
       name,
-      client_id:    mc.querySelector('#pf-client')?.value  || null,
+      client_id:    clientId,
       status:       mc.querySelector('#pf-status')?.value  || 'Enquiry',
       brief:        '',
       location:     '',
@@ -214,7 +279,7 @@ export class ProjectsView {
     mc.innerHTML = `
       <div class="bh-row">
         <button class="btn-secondary" id="back-to-kanban">← All projects</button>
-        <h2 style="flex:1;font-size:15px;font-weight:500">${esc(p.name)}</h2>
+        <input id="pv-name" value="${esc(p.name)}" style="flex:1;font-size:15px;font-weight:500;background:transparent;border:none;outline:none;border-bottom:1.5px solid transparent;padding:2px 4px;color:var(--text-primary);font-family:var(--font);transition:border-color 0.15s;min-width:0" onfocus="this.style.borderBottomColor='var(--border-strong)'" onblur="this.style.borderBottomColor='transparent'" placeholder="Project name" />
         <select id="pv-status" class="status-select" style="font-size:12px">
           ${STAGES.map(s => `<option value="${s}" ${p.status===s?'selected':''}>${s}</option>`).join('')}
           ${p.is_retainer ? `<option value="Retainer" ${p.status==='Retainer'?'selected':''}>Retainer</option>` : ''}
@@ -243,7 +308,10 @@ export class ProjectsView {
 
           ${p.is_retainer ? `
           <div class="proj-panel">
-            <div class="proj-panel-head">Retainer</div>
+            <div class="proj-panel-head">
+              Retainer
+              ${this.app.permissions?.budgets_edit ? `<button class="btn-secondary" id="pv-create-budget" style="margin-left:auto;font-size:11px;padding:4px 10px">Create budget</button>` : ''}
+            </div>
             <div class="proj-panel-body">
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
                 ${p.retainer_fee    ? `<div><div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Monthly fee</div><div style="font-size:15px;font-weight:600">£${Number(p.retainer_fee).toLocaleString('en-GB')}</div></div>` : ''}
@@ -389,11 +457,28 @@ export class ProjectsView {
     mc.querySelector('#back-to-kanban')?.addEventListener('click', () => {
       this.currentId = null; this.editingId = null; this.render(mc); this.app.updateTitle()
     })
+    mc.querySelector('#pv-name')?.addEventListener('change', async e => {
+      const val = e.target.value.trim()
+      if (!val) { e.target.value = p.name; return }
+      const prev = p.name
+      p.name = val
+      const idx = this.app.projects.findIndex(x => x.id === p.id)
+      if (idx >= 0) this.app.projects[idx].name = val
+      this.app.updateTitle()
+      try {
+        await updateProject(this.app.userId, p.id, { name: val })
+        logActivity(this.app.userId, 'project', p.id, val, `Renamed from "${prev}"`).catch(console.error)
+        this.app.toast(`Renamed to "${val}"`)
+      } catch(e) { console.error(e) }
+    })
+
     mc.querySelector('#pv-status')?.addEventListener('change', async e => {
       p.status = e.target.value
       try { await updateProject(this.app.userId, p.id, { status: p.status }); this.app.toast(`Status → ${p.status}`) }
       catch(err) { console.error(err) }
     })
+
+    mc.querySelector('#pv-create-budget')?.addEventListener('click', () => this._createBudgetFromRetainer(p, mc))
 
     mc.querySelector('#enter-edit')?.addEventListener('click', () => {
       this.editingId = this.currentId; this.render(mc)
@@ -976,6 +1061,83 @@ export class ProjectsView {
   }
 
   // Check if the retainer period has rolled over and reset monthly deliverable done states
+  async _createBudgetFromRetainer(p, mc) {
+    const overlay = document.createElement('div')
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:9999'
+    const defaultName = `${p.name} — ${new Date().toLocaleDateString('en-GB',{month:'short',year:'numeric'})}`
+    overlay.innerHTML = `
+      <div style="background:var(--bg-primary);border:0.5px solid var(--border-med);border-radius:var(--radius-lg);padding:24px;width:400px" onclick="event.stopPropagation()">
+        <div style="font-size:14px;font-weight:600;margin-bottom:4px">Create budget from retainer</div>
+        <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:16px">Retainer items will be mapped to budget line items.</div>
+        <div class="field" style="margin-bottom:12px">
+          <div class="field-label">Budget name</div>
+          <input id="rb-name" type="text" value="${esc(defaultName)}" style="width:100%" />
+        </div>
+        <div id="rb-msg" style="font-size:12px;color:#e07070;margin-bottom:8px;display:none"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn-cancel" id="rb-cancel">Cancel</button>
+          <button class="btn-primary" id="rb-create">Create budget</button>
+        </div>
+      </div>`
+    overlay.addEventListener('click', () => overlay.remove())
+    document.body.appendChild(overlay)
+    setTimeout(() => overlay.querySelector('#rb-name')?.select(), 50)
+
+    overlay.querySelector('#rb-cancel')?.addEventListener('click', () => overlay.remove())
+    overlay.querySelector('#rb-create')?.addEventListener('click', async () => {
+      const name = overlay.querySelector('#rb-name')?.value.trim()
+      const msgEl = overlay.querySelector('#rb-msg')
+      if (!name) { msgEl.style.display='block'; msgEl.textContent='Please enter a budget name'; return }
+
+      // Map retainer items to sections: shoot→D, edit→I, custom→J
+      const sectionMap  = { shoot:'D', edit:'I', custom:'J' }
+      const sectionLabels = { D:'Production Crew', I:'Post-production', J:'Sundries' }
+      const grouped = {}
+      for (const item of (p.retainer_items||[])) {
+        const code = sectionMap[item.type] || 'J'
+        if (!grouped[code]) grouped[code] = []
+        const isDay = item.unit === 'days'
+        grouped[code].push({
+          item: item.label, days: isDay ? (parseFloat(item.qty)||0) : 0,
+          qty: isDay ? 1 : (parseFloat(item.qty)||0), rate: parseFloat(item.rate)||null,
+          notes: '', discount: 0, days: isDay ? (parseFloat(item.qty)||0) : 0,
+          travelDays: 0, track_time: false,
+        })
+      }
+      const sections = Object.entries(grouped).map(([code, lines]) => ({
+        code, label: sectionLabels[code]||'Other', enabled: true, open: true,
+        crew: code==='D', lines,
+      }))
+      if (!sections.length) {
+        sections.push({ code:'J', label:'Sundries', enabled: true, open: true, crew: false,
+          lines: [{ item:'Retainer work', days:0, qty:1, rate:parseFloat(p.retainer_fee)||null, notes:'', discount:0, travelDays:0, track_time:false }] })
+      }
+
+      try {
+        const btn = overlay.querySelector('#rb-create')
+        btn.disabled = true; btn.textContent = 'Creating…'
+        const { createBudget, linkBudgetToProject } = await import('../db/client.js')
+        const [budget] = await createBudget(this.app.userId, {
+          name, client_id: p.client_id ?? null,
+          markup: 0, custom_pct: 0, travel_rate: 50, discount: 0,
+          vat: false, insurance: false,
+          signed_off: false, signed_off_at: null, signed_off_by: null,
+          invoiced: false, invoiced_at: null, invoiced_by: null,
+          sections, prepared_by: this.app.settings?.prepared_by || null,
+          quote_email: null, notes: `Created from retainer: ${p.name}`,
+          include_in_pipeline: false,
+        })
+        this.app.budgets.unshift(budget)
+        await linkBudgetToProject(this.app.userId, p.id, budget.id)
+        if (!Array.isArray(p.budget_ids)) p.budget_ids = []
+        p.budget_ids.push(budget.id)
+        overlay.remove()
+        this.app.toast('Budget created and linked to project')
+        this.app.openBudget(budget.id)
+      } catch(e) { console.error(e); msgEl.style.display='block'; msgEl.textContent='Error creating budget' }
+    })
+  }
+
   _checkRetainerReset(p) {
     if (!p.retainer_start || !p.monthly_deliverables?.length) return
     const anchor = new Date(p.retainer_start)
