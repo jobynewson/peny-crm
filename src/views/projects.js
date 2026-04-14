@@ -1014,6 +1014,7 @@ export class ProjectsView {
                     <select class="proj-input" data-ri-unit="${i}" style="font-size:12px;padding:5px 6px">
                       <option value="days"  ${item.unit==='days'?'selected':''}>days</option>
                       <option value="hours" ${item.unit==='hours'?'selected':''}>hours</option>
+                      <option value="unit"  ${item.unit==='unit'?'selected':''}>unit</option>
                     </select>
                     <input type="number" class="proj-input" value="${item.rate??''}" placeholder="—" min="0" step="50" data-ri-rate="${i}" style="font-size:12px;padding:5px 8px;text-align:right" />
                     <select class="proj-input" data-ri-period="${i}" style="font-size:12px;padding:5px 6px">
@@ -1174,30 +1175,25 @@ export class ProjectsView {
       const msgEl = overlay.querySelector('#rb-msg')
       if (!name) { msgEl.style.display='block'; msgEl.textContent='Please enter a budget name'; return }
 
-      // Map retainer items to sections: shoot→D, edit→I, custom→J
-      const sectionMap  = { shoot:'D', edit:'I', custom:'J' }
-      const sectionLabels = { D:'Production Crew', I:'Post-production', J:'Sundries' }
-      const grouped = {}
-      for (const item of (p.retainer_items||[])) {
-        const type = item.label?.toLowerCase().includes('shoot') ? 'shoot' : item.label?.toLowerCase().includes('edit') ? 'edit' : 'custom'
-        const code = sectionMap[type] || 'J'
-        if (!grouped[code]) grouped[code] = []
-        const isDay = item.unit === 'days'
-        grouped[code].push({
-          item: item.label, days: isDay ? (parseFloat(item.qty)||0) : 0,
-          qty: isDay ? 1 : (parseFloat(item.qty)||0), rate: parseFloat(item.rate)||null,
-          notes: item.period && item.period !== 'month' ? 'Per ' + item.period : '', discount: 0,
-          travelDays: 0, track_time: false,
-        })
+      // Build a single Retainer section with all items — simpler and more reliable
+      // than mapping to existing sections which may not match the workspace template
+      const retainerLines = (p.retainer_items||[]).map(item => {
+        const isDay = item.unit === 'days' || item.unit === 'unit'
+        const periodNote = item.period && item.period !== 'month' ? ` (per ${item.period})` : ''
+        return {
+          item: item.label + periodNote,
+          days: isDay ? (parseFloat(item.qty)||0) : 0,
+          qty: isDay ? 1 : (parseFloat(item.qty)||0),
+          rate: parseFloat(item.rate)||null,
+          notes: '', discount: 0, travelDays: 0, track_time: false,
+        }
+      })
+      if (!retainerLines.length) {
+        retainerLines.push({ item:'Retainer work', days:0, qty:1, rate:parseFloat(p.retainer_fee)||null, notes:'', discount:0, travelDays:0, track_time:false })
       }
-      const sections = Object.entries(grouped).map(([code, lines]) => ({
-        code, label: sectionLabels[code]||'Other', enabled: true, open: true,
-        crew: code==='D', lines,
-      }))
-      if (!sections.length) {
-        sections.push({ code:'J', label:'Sundries', enabled: true, open: true, crew: false,
-          lines: [{ item:'Retainer work', days:0, qty:1, rate:parseFloat(p.retainer_fee)||null, notes:'', discount:0, travelDays:0, track_time:false }] })
-      }
+      const sections = [
+        { code:'R', label:'Retainer', enabled: true, open: true, crew: false, lines: retainerLines }
+      ]
 
       try {
         const btn = overlay.querySelector('#rb-create')
@@ -1206,9 +1202,8 @@ export class ProjectsView {
         const [budget] = await createBudget(this.app.userId, {
           name, client_id: p.client_id ?? null,
           markup: 0, custom_pct: 0, travel_rate: 50, discount: 0,
-          vat: false, insurance: false,
-          signed_off: false, signed_off_at: null, signed_off_by: null,
-          invoiced: false, invoiced_at: null, invoiced_by: null,
+          vat: false,
+          signed_off: false,
           sections, prepared_by: this.app.settings?.prepared_by || null,
           quote_email: null, notes: `Created from retainer: ${p.name}`,
           include_in_pipeline: false,

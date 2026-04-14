@@ -354,6 +354,16 @@ export class BudgetsView {
           : `<button id="bv-signedoff-toggle" style="display:flex;align-items:center;gap:6px;padding:5px 12px;background:var(--bg-secondary);border:0.5px solid var(--border-med);border-radius:20px;color:var(--text-tertiary);font-size:12px;cursor:pointer;font-family:var(--font)">
                Mark as signed off
              </button>`}
+        ${b.signed_off
+          ? b.invoiced
+            ? `<button id="bv-invoiced-toggle" style="display:flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(74,144,217,0.12);border:0.5px solid rgba(74,144,217,0.3);border-radius:20px;color:#4a90d9;font-size:12px;font-weight:500;cursor:pointer;font-family:var(--font)">
+                 ✓ Invoiced${b.invoiced_at ? ' · '+new Date(b.invoiced_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : ''}
+                 <span style="font-size:10px;opacity:0.6">✕</span>
+               </button>`
+            : `<button id="bv-invoiced-toggle" style="display:flex;align-items:center;gap:6px;padding:5px 12px;background:var(--bg-secondary);border:0.5px solid var(--border-med);border-radius:20px;color:var(--text-tertiary);font-size:12px;cursor:pointer;font-family:var(--font)">
+                 Mark as invoiced
+               </button>`
+          : ''}
       </div>
       <div class="budget-layout">
         <div class="budget-main">
@@ -412,16 +422,33 @@ export class BudgetsView {
       b.signed_off = !b.signed_off
       b.signed_off_at = b.signed_off ? new Date().toISOString() : null
       b.signed_off_by = b.signed_off ? (this.app.appUser?.name || this.app.user?.primaryEmailAddress?.emailAddress || '') : null
+      if (!b.signed_off) { b.invoiced = false; b.invoiced_at = null; b.invoiced_by = null }
       try {
         await updateBudget(this.app.userId, b.id, {
           signed_off: b.signed_off, signed_off_at: b.signed_off_at, signed_off_by: b.signed_off_by,
+          invoiced: b.invoiced, invoiced_at: b.invoiced_at, invoiced_by: b.invoiced_by,
           include_in_pipeline: b.signed_off,
         })
         const idx = this.app.budgets.findIndex(x => x.id === b.id)
-        if (idx >= 0) Object.assign(this.app.budgets[idx], { signed_off: b.signed_off, signed_off_at: b.signed_off_at, signed_off_by: b.signed_off_by })
+        if (idx >= 0) Object.assign(this.app.budgets[idx], { signed_off: b.signed_off, signed_off_at: b.signed_off_at, signed_off_by: b.signed_off_by, invoiced: b.invoiced, invoiced_at: b.invoiced_at, invoiced_by: b.invoiced_by })
         this.app.toast(b.signed_off ? '✓ Budget signed off' : 'Sign-off removed')
         this.renderViewer(mc)
       } catch(e) { console.error(e); this.app.toast('Error updating sign-off') }
+    })
+
+    mc.querySelector('#bv-invoiced-toggle')?.addEventListener('click', async () => {
+      b.invoiced = !b.invoiced
+      b.invoiced_at = b.invoiced ? new Date().toISOString() : null
+      b.invoiced_by = b.invoiced ? (this.app.appUser?.name || this.app.user?.primaryEmailAddress?.emailAddress || '') : null
+      try {
+        await updateBudget(this.app.userId, b.id, {
+          invoiced: b.invoiced, invoiced_at: b.invoiced_at, invoiced_by: b.invoiced_by,
+        })
+        const idx = this.app.budgets.findIndex(x => x.id === b.id)
+        if (idx >= 0) Object.assign(this.app.budgets[idx], { invoiced: b.invoiced, invoiced_at: b.invoiced_at, invoiced_by: b.invoiced_by })
+        this.app.toast(b.invoiced ? '✓ Marked as invoiced' : 'Invoice status removed')
+        this.renderViewer(mc)
+      } catch(e) { console.error(e); this.app.toast('Error updating invoice status') }
     })
 
     mc.querySelector('#bv-back')?.addEventListener('click', () => {

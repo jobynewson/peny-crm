@@ -538,24 +538,70 @@ export class App {
     }
 
     // Compute financial summary
-    const signedOffValue = this.budgets
-      .filter(b => b.signed_off)
-      .reduce((s, b) => {
-        const n = budTotal(b); return s + (isNaN(n) ? 0 : n)
-      }, 0)
-    const retainerMRR = retainers.reduce((s, p) => s + (parseFloat(p.retainer_fee)||0), 0)
+    const now = new Date()
+    const fyStart = parseInt(this.settings?.financial_year_start ?? 4)  // 1=Jan, 4=Apr
+
+    // Period helpers
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
+
+    // Quarter: current calendar quarter start
+    const qMo = Math.floor(now.getMonth() / 3) * 3
+    const quarterStart = new Date(now.getFullYear(), qMo, 1)
+    const quarterEnd   = new Date(now.getFullYear(), qMo + 3, 0, 23, 59, 59)
+
+    // Financial year: starts fyStart month (1-indexed), may cross Jan
+    let fyYear = now.getFullYear()
+    if (now.getMonth() + 1 < fyStart) fyYear--   // we're before the FY start month, so FY started last year
+    const fyStartDate = new Date(fyYear, fyStart - 1, 1)
+    const fyEndDate   = new Date(fyYear + 1, fyStart - 1, 0, 23, 59, 59)
+
+    const inRange = (dateStr, start, end) => {
+      if (!dateStr) return false
+      const d = new Date(dateStr)
+      return d >= start && d <= end
+    }
+
+    const invoicedBudgets   = this.budgets.filter(b => b.invoiced)
+    const awaitingInvoice   = this.budgets.filter(b => b.signed_off && !b.invoiced)
+    const invoicedThisMonth = invoicedBudgets.filter(b => inRange(b.invoiced_at, monthStart, monthEnd))
+    const invoicedThisQtr   = invoicedBudgets.filter(b => inRange(b.invoiced_at, quarterStart, quarterEnd))
+    const invoicedThisFY    = invoicedBudgets.filter(b => inRange(b.invoiced_at, fyStartDate, fyEndDate))
+
+    const sumBudgets = arr => arr.reduce((s, b) => { const n = budTotal(b); return s + (isNaN(n) ? 0 : n) }, 0)
+
+    const awaitingVal      = sumBudgets(awaitingInvoice)
+    const invoicedMonthVal = sumBudgets(invoicedThisMonth)
+    const invoicedQtrVal   = sumBudgets(invoicedThisQtr)
+    const invoicedFYVal    = sumBudgets(invoicedThisFY)
+
+    const retainerMRR = retainers.reduce((s, p) => {
+      if (p.retainer_fee_mode === 'calculated') {
+        return s + (p.retainer_items||[]).reduce((rs,i) => {
+          const mult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}[i.period||'month']||1
+          return rs + (parseFloat(i.rate)||0)*(parseFloat(i.qty)||0)*mult
+        }, 0)
+      }
+      return s + (parseFloat(p.retainer_fee)||0)
+    }, 0)
+
     const pipelineValue = regularProjects.reduce((sum, p) => {
       const pBudgets = (p.budget_ids||[]).map(id => this.budgets.find(b => b.id === id)).filter(Boolean)
       return sum + pBudgets.reduce((s, b) => s + (budTotal(b)||0), 0)
     }, 0)
+
     const gbp = n => '£' + Math.round(n).toLocaleString('en-GB')
+    const fyMonths = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+    const fyLabel = `${fyMonths[fyStart-1]} ${fyYear}–${fyMonths[fyStart-1]} ${fyYear+1}`
 
     mc.innerHTML = `
       <div class="stats-row" style="margin-bottom:20px">
-        <div class="stat-card"><div class="stat-label">Signed-off budgets</div><div class="stat-value" style="color:#6ec96e">${gbp(signedOffValue)}</div><div class="stat-sub">total value</div></div>
-        <div class="stat-card"><div class="stat-label">Retainer MRR</div><div class="stat-value" style="color:#a78bfa">${gbp(retainerMRR)}</div><div class="stat-sub">per month</div></div>
         <div class="stat-card"><div class="stat-label">Pipeline</div><div class="stat-value">${gbp(pipelineValue)}</div><div class="stat-sub">${regularProjects.length} project${regularProjects.length!==1?'s':''}</div></div>
-        <div class="stat-card"><div class="stat-label">Active projects</div><div class="stat-value">${regularProjects.filter(p=>p.status==='In Production').length}</div><div class="stat-sub">in production</div></div>
+        <div class="stat-card"><div class="stat-label">Awaiting invoice</div><div class="stat-value" style="color:#6ec96e">${gbp(awaitingVal)}</div><div class="stat-sub">${awaitingInvoice.length} budget${awaitingInvoice.length!==1?'s':''}</div></div>
+        <div class="stat-card"><div class="stat-label">Invoiced this month</div><div class="stat-value" style="color:#4a90d9">${gbp(invoicedMonthVal)}</div><div class="stat-sub">${invoicedThisMonth.length} budget${invoicedThisMonth.length!==1?'s':''}</div></div>
+        <div class="stat-card"><div class="stat-label">Invoiced this quarter</div><div class="stat-value" style="color:#4a90d9">${gbp(invoicedQtrVal)}</div><div class="stat-sub">${invoicedThisQtr.length} budget${invoicedThisQtr.length!==1?'s':''}</div></div>
+        <div class="stat-card"><div class="stat-label">Invoiced this FY</div><div class="stat-value" style="color:#4a90d9">${gbp(invoicedFYVal)}</div><div class="stat-sub">${fyLabel}</div></div>
+        <div class="stat-card"><div class="stat-label">Retainer MRR</div><div class="stat-value" style="color:#a78bfa">${gbp(retainerMRR)}</div><div class="stat-sub">per month</div></div>
       </div>
       ${retainers.length ? `
       <div style="margin-bottom:24px">
@@ -782,6 +828,13 @@ export class App {
             <div class="field-row">
               <div class="field"><div class="field-label">VAT number</div><input type="text" id="s-vat" value="${s.vat_number??''}" placeholder="GB 000 0000 00" /></div>
               <div class="field"><div class="field-label">Default prepared by</div><input type="text" id="s-preparedby" value="${s.prepared_by??''}" placeholder="e.g. Robbie Meade" /></div>
+              ${isAdmin ? `<div class="field"><div class="field-label">Financial year start month</div>
+                <select id="s-fy-start">
+                  ${['January','February','March','April','May','June','July','August','September','October','November','December'].map((m,i) =>
+                    `<option value="${i+1}" ${(s.financial_year_start??4)===(i+1)?'selected':''}>${m}</option>`
+                  ).join('')}
+                </select>
+              </div>` : ''}
             </div>
             <div><button class="btn-primary" id="settings-save-btn">Save settings</button></div>
           </div>
@@ -1125,10 +1178,10 @@ export class App {
       phone:        mc.querySelector('#s-phone')?.value.trim()||null,
       website:      mc.querySelector('#s-website')?.value.trim()||null,
       address:      mc.querySelector('#s-address')?.value.trim()||null,
-      vat_number:   mc.querySelector('#s-vat')?.value.trim()||null,
-      prepared_by:  mc.querySelector('#s-preparedby')?.value.trim()||null,
-      // Preserve budget_template — it's saved separately via _saveBudgetTemplate
-      budget_template: this.settings?.budget_template ?? null,
+      vat_number:          mc.querySelector('#s-vat')?.value.trim()||null,
+      prepared_by:         mc.querySelector('#s-preparedby')?.value.trim()||null,
+      financial_year_start: parseInt(mc.querySelector('#s-fy-start')?.value||'4'),
+      budget_template:     this.settings?.budget_template ?? null,
     }
     try { const [updated] = await upsertSettings(this.userId, data); this.settings = updated; this.toast('Settings saved') }
     catch (e) { console.error(e); this.toast('Error saving settings') }

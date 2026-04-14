@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, boolean, numeric, jsonb, date, timestamp } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, boolean, numeric, jsonb, date, timestamp, integer } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 
 const timestamps = {
@@ -25,7 +25,8 @@ export const settings = pgTable('settings', {
   address:         text('address'),
   vat_number:      text('vat_number'),
   prepared_by:     text('prepared_by'),
-  budget_template: jsonb('budget_template'),
+  budget_template:      jsonb('budget_template'),
+  financial_year_start: integer('financial_year_start').notNull().default(4),
   ...timestamps,
 })
 
@@ -92,6 +93,9 @@ export const budgets = pgTable('budgets', {
   signed_off:    boolean('signed_off').notNull().default(false),
   signed_off_at: timestamp('signed_off_at', { withTimezone: true }),
   signed_off_by: text('signed_off_by'),
+  invoiced:      boolean('invoiced').notNull().default(false),
+  invoiced_at:   timestamp('invoiced_at', { withTimezone: true }),
+  invoiced_by:   text('invoiced_by'),
   travel_rate: numeric('travel_rate', { precision: 5, scale: 2 }).notNull().default('50'),
   discount:    numeric('discount', { precision: 5, scale: 2 }).notNull().default('0'),
   sections:    jsonb('sections').notNull().default([]),
