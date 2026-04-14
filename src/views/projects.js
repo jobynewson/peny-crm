@@ -236,6 +236,11 @@ export class ProjectsView {
       retainer_hours: null,
       retainer_alert: 80,
       retainer_start: isRetainer ? today : null,
+      retainer_fee_mode: 'fixed',
+      retainer_items: isRetainer ? [
+        { label:'Shoot days', qty:1, unit:'days', rate:null, period:'month' },
+        { label:'Edit days',  qty:1, unit:'days', rate:null, period:'month' },
+      ] : [],
     }
     try {
       const [created] = await createProject(this.app.userId, data)
@@ -313,11 +318,53 @@ export class ProjectsView {
               ${this.app.permissions?.budgets_edit ? `<button class="btn-secondary" id="pv-create-budget" style="margin-left:auto;font-size:11px;padding:4px 10px">Create budget</button>` : ''}
             </div>
             <div class="proj-panel-body">
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-                ${p.retainer_fee    ? `<div><div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Monthly fee</div><div style="font-size:15px;font-weight:600">£${Number(p.retainer_fee).toLocaleString('en-GB')}</div></div>` : ''}
-                ${p.retainer_hours  ? `<div><div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Hours / month</div><div style="font-size:15px;font-weight:600">${p.retainer_hours}h</div></div>` : ''}
-              </div>
-              ${p.retainer_start ? `<div style="font-size:12px;color:var(--text-tertiary)">Resets on day ${new Date(p.retainer_start).getUTCDate()} each month · Alert at ${p.retainer_alert??80}%</div>` : ''}
+              ${(() => {
+                const items = p.retainer_items||[]
+                const calcFee = items.reduce((s,i)=>{
+                  const r=parseFloat(i.rate)||0, q=parseFloat(i.qty)||0
+                  const mult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}[i.period||'month']||1
+                  return s + r*q*mult
+                }, 0)
+                const displayFee = p.retainer_fee_mode==='calculated' ? calcFee : (parseFloat(p.retainer_fee)||0)
+                const periodLabel = {week:'week',month:'month',quarter:'quarter',half:'half year',year:'year'}
+                return `
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+                  <div>
+                    <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Monthly fee</div>
+                    <div style="font-size:16px;font-weight:600">£${Math.round(displayFee).toLocaleString('en-GB')}</div>
+                    ${p.retainer_fee_mode==='calculated'?'<div style="font-size:10px;color:var(--text-tertiary)">calculated from items</div>':''}
+                  </div>
+                  ${p.retainer_start ? `<div><div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Period</div><div style="font-size:13px">Resets day ${new Date(p.retainer_start).getUTCDate()} · Alert ${p.retainer_alert??80}%</div></div>` : ''}
+                </div>
+                ${items.length ? `
+                <table style="width:100%;border-collapse:collapse;font-size:12px">
+                  <thead><tr style="border-bottom:0.5px solid var(--border-light)">
+                    <th style="text-align:left;font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;font-weight:400;padding:4px 0">Item</th>
+                    <th style="text-align:right;font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;font-weight:400;padding:4px 8px">Qty</th>
+                    <th style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;font-weight:400;padding:4px 0">Unit</th>
+                    <th style="text-align:right;font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;font-weight:400;padding:4px 0">Rate</th>
+                    <th style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;font-weight:400;padding:4px 0">Per</th>
+                    <th style="text-align:right;font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;font-weight:400;padding:4px 0">/mo equiv</th>
+                  </tr></thead>
+                  <tbody>
+                  ${items.map(item => {
+                    const r=parseFloat(item.rate)||0, q=parseFloat(item.qty)||0
+                    const mult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}[item.period||'month']||1
+                    const monthly = r*q*mult
+                    const pl = periodLabel[item.period||'month']
+                    return `<tr style="border-bottom:0.5px solid var(--border-light)">
+                      <td style="padding:6px 0;font-weight:500">${esc(item.label)}</td>
+                      <td style="padding:6px 8px;text-align:right;color:var(--text-secondary)">${q}</td>
+                      <td style="padding:6px 0;color:var(--text-secondary)">${item.unit||'days'}</td>
+                      <td style="padding:6px 0;text-align:right;color:var(--text-secondary)">${r?'£'+r.toLocaleString('en-GB'):'—'}</td>
+                      <td style="padding:6px 0;color:var(--text-secondary)">per ${pl}</td>
+                      <td style="padding:6px 0;text-align:right;font-weight:500">${monthly?'£'+Math.round(monthly).toLocaleString('en-GB'):'—'}</td>
+                    </tr>`
+                  }).join('')}
+                  </tbody>
+                </table>` : '<div style="font-size:12px;color:var(--text-tertiary)">No items — click Edit project to add.</div>'}
+                `
+              })()}
             </div>
           </div>` : ''}
 
@@ -934,17 +981,55 @@ export class ProjectsView {
               ${p.is_retainer ? `<span style="font-size:11px;color:var(--text-tertiary);font-weight:400;text-transform:none;letter-spacing:0;margin-left:4px">— recurring monthly engagement</span>` : ''}
             </div>
             ${p.is_retainer ? `<div class="proj-panel-body">
-              <div class="proj-date-row">
-                <div>
-                  <div class="proj-field-label">Monthly fee £</div>
-                  <input type="number" class="proj-input" id="pe-ret-fee" value="${p.retainer_fee??''}" placeholder="0" min="0" step="100" />
-                </div>
-                <div>
-                  <div class="proj-field-label">Hours per month</div>
-                  <input type="number" class="proj-input" id="pe-ret-hours" value="${p.retainer_hours??''}" placeholder="0" min="0" step="0.5" />
-                </div>
+
+              <div style="display:flex;gap:8px;margin-bottom:14px;background:var(--bg-secondary);border-radius:var(--radius-md);padding:4px">
+                <button id="pe-ret-mode-fixed" class="${(p.retainer_fee_mode??'fixed')==='fixed'?'btn-primary':'btn-cancel'}" style="flex:1;font-size:12px;padding:6px">Fixed amount</button>
+                <button id="pe-ret-mode-calc"  class="${p.retainer_fee_mode==='calculated'?'btn-primary':'btn-cancel'}" style="flex:1;font-size:12px;padding:6px">Total from items</button>
               </div>
-              <div class="proj-date-row">
+
+              ${(p.retainer_fee_mode??'fixed')==='fixed' ? `
+              <div style="margin-bottom:14px">
+                <div class="proj-field-label">Monthly fee £</div>
+                <input type="number" class="proj-input" id="pe-ret-fee" value="${p.retainer_fee??''}" placeholder="0" min="0" step="100" />
+              </div>` : `
+              <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:14px;padding:8px 10px;background:var(--bg-secondary);border-radius:var(--radius-md)">
+                Monthly fee calculated from items below
+                ${(() => { const items = p.retainer_items||[]; const total = items.reduce((s,i)=>s+(parseFloat(i.rate)||0)*(parseFloat(i.qty)||0),0); return total>0?` — <strong style="color:var(--text-primary)">£${total.toLocaleString('en-GB')}/mo</strong>`:''; })()}
+              </div>`}
+
+              <div style="margin-bottom:10px">
+                <div style="display:grid;grid-template-columns:1fr 60px 80px 90px 110px 28px;gap:6px;padding:5px 0;border-bottom:0.5px solid var(--border-light);margin-bottom:4px">
+                  <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px">Item</div>
+                  <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;text-align:right">Qty</div>
+                  <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px">Unit</div>
+                  <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;text-align:right">Rate £</div>
+                  <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px">Per</div>
+                  <div></div>
+                </div>
+                <div id="pe-ret-items">
+                  ${(p.retainer_items||[]).map((item, i) => `
+                  <div style="display:grid;grid-template-columns:1fr 60px 80px 90px 110px 28px;gap:6px;align-items:center;padding:3px 0">
+                    <input type="text" class="proj-input" value="${esc(item.label)}" placeholder="Item name" data-ri-label="${i}" style="font-size:12px;padding:5px 8px" />
+                    <input type="number" class="proj-input" value="${item.qty??''}" placeholder="0" min="0" step="0.5" data-ri-qty="${i}" style="font-size:12px;padding:5px 8px;text-align:right" />
+                    <select class="proj-input" data-ri-unit="${i}" style="font-size:12px;padding:5px 6px">
+                      <option value="days"  ${item.unit==='days'?'selected':''}>days</option>
+                      <option value="hours" ${item.unit==='hours'?'selected':''}>hours</option>
+                    </select>
+                    <input type="number" class="proj-input" value="${item.rate??''}" placeholder="—" min="0" step="50" data-ri-rate="${i}" style="font-size:12px;padding:5px 8px;text-align:right" />
+                    <select class="proj-input" data-ri-period="${i}" style="font-size:12px;padding:5px 6px">
+                      <option value="month"   ${(item.period??'month')==='month'?'selected':''}>Per month</option>
+                      <option value="week"    ${item.period==='week'?'selected':''}>Per week</option>
+                      <option value="quarter" ${item.period==='quarter'?'selected':''}>Per quarter</option>
+                      <option value="half"    ${item.period==='half'?'selected':''}>Per half year</option>
+                      <option value="year"    ${item.period==='year'?'selected':''}>Per year</option>
+                    </select>
+                    <button class="row-btn" data-ri-rem="${i}" style="color:#b03020;font-size:14px;padding:0;text-align:center">×</button>
+                  </div>`).join('')}
+                </div>
+                <button class="add-line" id="pe-add-ret-item" style="margin-top:4px">+ add retainer item</button>
+              </div>
+
+              <div class="proj-date-row" style="margin-top:4px">
                 <div>
                   <div class="proj-field-label">Period start date</div>
                   <input type="date" class="proj-input" id="pe-ret-start" value="${p.retainer_start??''}" title="Day-of-month used for period reset" />
@@ -954,9 +1039,9 @@ export class ProjectsView {
                   <input type="number" class="proj-input" id="pe-ret-alert" value="${p.retainer_alert??80}" min="1" max="100" step="5" />
                 </div>
               </div>
-              <div style="font-size:11px;color:var(--text-tertiary);line-height:1.5">
+              <div style="font-size:11px;color:var(--text-tertiary);line-height:1.5;margin-top:8px">
                 Period resets on day <strong>${p.retainer_start ? new Date(p.retainer_start).getUTCDate() : '—'}</strong> of each month.
-                Alert fires when hours logged reach <strong>${p.retainer_alert??80}%</strong> of the monthly allocation.
+                Alert fires at <strong>${p.retainer_alert??80}%</strong> of monthly hours.
               </div>
             </div>` : ''}
           </div>
@@ -1094,13 +1179,14 @@ export class ProjectsView {
       const sectionLabels = { D:'Production Crew', I:'Post-production', J:'Sundries' }
       const grouped = {}
       for (const item of (p.retainer_items||[])) {
-        const code = sectionMap[item.type] || 'J'
+        const type = item.label?.toLowerCase().includes('shoot') ? 'shoot' : item.label?.toLowerCase().includes('edit') ? 'edit' : 'custom'
+        const code = sectionMap[type] || 'J'
         if (!grouped[code]) grouped[code] = []
         const isDay = item.unit === 'days'
         grouped[code].push({
           item: item.label, days: isDay ? (parseFloat(item.qty)||0) : 0,
           qty: isDay ? 1 : (parseFloat(item.qty)||0), rate: parseFloat(item.rate)||null,
-          notes: '', discount: 0, days: isDay ? (parseFloat(item.qty)||0) : 0,
+          notes: item.period && item.period !== 'month' ? 'Per ' + item.period : '', discount: 0,
           travelDays: 0, track_time: false,
         })
       }
@@ -1239,14 +1325,56 @@ export class ProjectsView {
     // Retainer fields
     mc.querySelector('#pe-is-retainer')?.addEventListener('change', e => {
       p.is_retainer = e.target.checked
-      if (e.target.checked && !p.retainer_start) p.retainer_start = new Date().toISOString().split('T')[0]
-      if (e.target.checked && !p.retainer_alert) p.retainer_alert = 80
+      if (e.target.checked) {
+        if (!p.retainer_start) p.retainer_start = new Date().toISOString().split('T')[0]
+        if (!p.retainer_alert) p.retainer_alert = 80
+        if (!p.retainer_fee_mode) p.retainer_fee_mode = 'fixed'
+        if (!Array.isArray(p.retainer_items) || p.retainer_items.length === 0) {
+          p.retainer_items = [
+            { label:'Shoot days', qty:1, unit:'days', rate:null, period:'month' },
+            { label:'Edit days',  qty:1, unit:'days', rate:null, period:'month' },
+          ]
+        }
+      }
       save(); this.renderEditor(mc)
     })
+
+    // Fee mode toggle
+    mc.querySelector('#pe-ret-mode-fixed')?.addEventListener('click', () => {
+      p.retainer_fee_mode = 'fixed'; save(); this.renderEditor(mc)
+    })
+    mc.querySelector('#pe-ret-mode-calc')?.addEventListener('click', () => {
+      p.retainer_fee_mode = 'calculated'; save(); this.renderEditor(mc)
+    })
+
     mc.querySelector('#pe-ret-fee')?.addEventListener('change',   e => { p.retainer_fee   = parseFloat(e.target.value)||null; save() })
-    mc.querySelector('#pe-ret-hours')?.addEventListener('change', e => { p.retainer_hours = parseFloat(e.target.value)||null; save() })
     mc.querySelector('#pe-ret-start')?.addEventListener('change', e => { p.retainer_start = e.target.value||null; save(); this.renderEditor(mc) })
     mc.querySelector('#pe-ret-alert')?.addEventListener('change', e => { p.retainer_alert = parseFloat(e.target.value)||80; save() })
+
+    // Retainer items
+    if (!Array.isArray(p.retainer_items)) p.retainer_items = []
+    mc.querySelectorAll('[data-ri-label]').forEach(el => {
+      el.addEventListener('change', () => { p.retainer_items[+el.dataset.riLabel].label = el.value; save() })
+    })
+    mc.querySelectorAll('[data-ri-qty]').forEach(el => {
+      el.addEventListener('change', () => { p.retainer_items[+el.dataset.riQty].qty = parseFloat(el.value)||0; save(); if (p.retainer_fee_mode==='calculated') this.renderEditor(mc) })
+    })
+    mc.querySelectorAll('[data-ri-unit]').forEach(el => {
+      el.addEventListener('change', () => { p.retainer_items[+el.dataset.riUnit].unit = el.value; save() })
+    })
+    mc.querySelectorAll('[data-ri-rate]').forEach(el => {
+      el.addEventListener('change', () => { p.retainer_items[+el.dataset.riRate].rate = parseFloat(el.value)||null; save(); if (p.retainer_fee_mode==='calculated') this.renderEditor(mc) })
+    })
+    mc.querySelectorAll('[data-ri-period]').forEach(el => {
+      el.addEventListener('change', () => { p.retainer_items[+el.dataset.riPeriod].period = el.value; save() })
+    })
+    mc.querySelectorAll('[data-ri-rem]').forEach(el => {
+      el.addEventListener('click', () => { p.retainer_items.splice(+el.dataset.riRem, 1); save(); this.renderEditor(mc) })
+    })
+    mc.querySelector('#pe-add-ret-item')?.addEventListener('click', () => {
+      p.retainer_items.push({ label:'', qty:1, unit:'days', rate:null, period:'month' })
+      save(); this.renderEditor(mc)
+    })
 
     mc.querySelector('#pe-delivs-all')?.addEventListener('click', () => {
       p.deliverables.forEach(d => { if (d.text) d.done = true }); save(); this.renderEditor(mc)
@@ -1390,10 +1518,12 @@ export class ProjectsView {
         deliverables: p.deliverables, crew: p.crew, shots: p.shots,
         approvals: p.approvals, notes: p.notes,
         is_retainer:    p.is_retainer    ?? false,
-        retainer_fee:   p.retainer_fee   ?? null,
-        retainer_hours: p.retainer_hours ?? null,
-        retainer_alert: p.retainer_alert ?? 80,
-        retainer_start: p.retainer_start || null,
+        retainer_fee:      p.retainer_fee   ?? null,
+        retainer_hours:    p.retainer_hours ?? null,
+        retainer_alert:    p.retainer_alert ?? 80,
+        retainer_start:    p.retainer_start || null,
+        retainer_items:    p.retainer_items    ?? [],
+        retainer_fee_mode: p.retainer_fee_mode ?? 'fixed',
         monthly_deliverables: p.monthly_deliverables ?? [],
       }
       const [updated] = await updateProject(this.app.userId, p.id, data)
