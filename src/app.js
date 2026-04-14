@@ -575,7 +575,18 @@ export class App {
     const invoicedQtrVal   = sumBudgets(invoicedThisQtr)
     const invoicedFYVal    = sumBudgets(invoicedThisFY)
 
-    const retainerMRR = retainers.reduce((s, p) => {
+    const retainerMRR = retainers.filter(p => p.status !== 'Enquiry').reduce((s, p) => {
+      if (p.retainer_fee_mode === 'calculated') {
+        return s + (p.retainer_items||[]).reduce((rs,i) => {
+          const mult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}[i.period||'month']||1
+          return rs + (parseFloat(i.rate)||0)*(parseFloat(i.qty)||0)*mult
+        }, 0)
+      }
+      return s + (parseFloat(p.retainer_fee)||0)
+    }, 0)
+
+    // Enquiry retainers count toward pipeline
+    const retainerPipelineVal = retainers.filter(p => p.status === 'Enquiry').reduce((s, p) => {
       if (p.retainer_fee_mode === 'calculated') {
         return s + (p.retainer_items||[]).reduce((rs,i) => {
           const mult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}[i.period||'month']||1
@@ -596,7 +607,7 @@ export class App {
 
     mc.innerHTML = `
       <div class="stats-row" style="margin-bottom:20px">
-        <div class="stat-card"><div class="stat-label">Pipeline</div><div class="stat-value">${gbp(pipelineValue)}</div><div class="stat-sub">${regularProjects.length} project${regularProjects.length!==1?'s':''}</div></div>
+        <div class="stat-card"><div class="stat-label">Pipeline</div><div class="stat-value">${gbp(pipelineValue + retainerPipelineVal)}</div><div class="stat-sub">${regularProjects.length} project${regularProjects.length!==1?'s':''}${retainerPipelineVal>0?' + '+retainers.filter(p=>p.status==='Enquiry').length+' retainer enquir'+(retainers.filter(p=>p.status==='Enquiry').length===1?'y':'ies'):''}</div></div>
         <div class="stat-card"><div class="stat-label">Awaiting invoice</div><div class="stat-value" style="color:#6ec96e">${gbp(awaitingVal)}</div><div class="stat-sub">${awaitingInvoice.length} budget${awaitingInvoice.length!==1?'s':''}</div></div>
         <div class="stat-card"><div class="stat-label">Invoiced this month</div><div class="stat-value" style="color:#4a90d9">${gbp(invoicedMonthVal)}</div><div class="stat-sub">${invoicedThisMonth.length} budget${invoicedThisMonth.length!==1?'s':''}</div></div>
         <div class="stat-card"><div class="stat-label">Invoiced this quarter</div><div class="stat-value" style="color:#4a90d9">${gbp(invoicedQtrVal)}</div><div class="stat-sub">${invoicedThisQtr.length} budget${invoicedThisQtr.length!==1?'s':''}</div></div>
