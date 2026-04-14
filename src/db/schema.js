@@ -157,3 +157,13 @@ export const activity_log = pgTable('activity_log', {
   summary:     text('summary').notNull(),
   created_at:  timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
+
+// ── Dev requests ──────────────────────────────────────────────────────────────
+export const dev_requests = pgTable('dev_requests', {
+  id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id:    text('user_id').notNull(),
+  user_name:  text('user_name').notNull().default(''),
+  message:    text('message').notNull(),
+  done:       boolean('done').notNull().default(false),
+  created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})

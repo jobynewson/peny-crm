@@ -1209,7 +1209,7 @@ export class ProjectsView {
           include_in_pipeline: false,
         })
         this.app.budgets.unshift(budget)
-        await linkBudgetToProject(this.app.userId, p.id, budget.id)
+        await linkBudgetToProject(p.id, budget.id)
         if (!Array.isArray(p.budget_ids)) p.budget_ids = []
         p.budget_ids.push(budget.id)
         overlay.remove()
