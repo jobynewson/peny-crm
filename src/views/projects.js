@@ -207,9 +207,14 @@ export class ProjectsView {
       try {
         const { createContact } = await import('../db/client.js')
         const [newContact] = await createContact(this.app.userId, {
-          first_name: firstName || '', last_name: lastName || '',
-          company: company || '', email: email || null, phone: phone || null,
-          type: 'Client', status: 'Active', role: '', notes: [],
+          first_name: firstName || 'Unknown',
+          last_name:  lastName  || '',
+          company:    company   || null,
+          email:      email     || null,
+          phone:      phone     || null,
+          location:   null,
+          type:       'brand',
+          status:     'Active',
         })
         this.app.contacts.unshift(newContact)
         clientId = newContact.id
