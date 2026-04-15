@@ -1190,7 +1190,7 @@ export class ProjectsView {
     }).join('')
 
     const html = `
-      <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#1a1a18">
+      <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#1a1a18;background:#fff">
 
         <!-- Cover -->
         <div style="background:#1a1a18;min-height:100vh;padding:60px;display:flex;flex-direction:column;page-break-after:always;box-sizing:border-box">
@@ -1222,7 +1222,7 @@ export class ProjectsView {
         </div>
 
         <!-- Detail page -->
-        <div style="padding:60px;min-height:100vh;box-sizing:border-box">
+        <div style="padding:60px;min-height:100vh;box-sizing:border-box;background:#fff;color:#1a1a18">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:40px;padding-bottom:20px;border-bottom:1px solid #1a1a18">
             <div>
               <div style="font-size:10px;color:#a8a8a0;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Retainer — Scope of work</div>
