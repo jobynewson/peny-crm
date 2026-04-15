@@ -600,19 +600,18 @@ export class BudgetsView {
       <div class="bsec-body ${s.open?'open':''}">
         <table class="bl-table" style="table-layout:fixed"><colgroup>
           ${s.crew
-            ? `<col style="width:26%" />
-               <col style="width:7%" />`
-            : `<col style="width:70px" />
+            ? `<col style="width:22%" />
+               <col style="width:8%" />`
+            : `<col style="width:60px" />
                <col style="width:18%" />`}
           <col style="width:9%" />
-          <col style="width:58px" />
-          <col style="width:58px" />
-          <col style="width:58px" />
-          <col style="width:58px" />
-          <col style="width:62px" />
-          <col style="width:52px" />
+          <col style="width:66px" />
+          <col style="width:66px" />
+          <col style="width:66px" />
+          <col style="width:80px" />
+          <col style="width:60px" />
           <col style="width:36px" />
-          <col style="width:68px" />
+          <col style="width:76px" />
           <col />
         </colgroup><thead><tr>
           <th>Item</th>
