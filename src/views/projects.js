@@ -667,21 +667,33 @@ export class ProjectsView {
     const el = mc.querySelector('#pv-time')
     if (!el) return
 
-    // Gather trackable lines from linked budgets
+    // Gather trackable lines — for retainers use retainer_items, otherwise linked budgets
     const budgets = this.app.budgets
     const budgetIds = Array.isArray(p.budget_ids) ? p.budget_ids : []
     const trackableLines = []
-    for (const bid of budgetIds) {
-      const b = budgets.find(x => x.id === bid)
-      if (!b) continue
-      for (const s of (b.sections || [])) {
-        if (!s.enabled) continue
-        for (const l of (s.lines || [])) {
-          if (!l.track_time || !l.item) continue
-          const days = parseFloat(l.days) || 0
-          const qty = isNaN(parseFloat(l.qty)) ? 1 : parseFloat(l.qty)
-          const allocHours = l.useDays ? Math.round(days * qty * 8) : Math.round(qty * 8)
-          trackableLines.push({ label: l.item, allocHours })
+    if (p.is_retainer && (p.retainer_items||[]).length) {
+      const periodMult = { week:4.33, month:1, quarter:1/3, half:1/6, year:1/12 }
+      for (const item of p.retainer_items) {
+        const qty  = parseFloat(item.qty) || 0
+        const mult = periodMult[item.period||'month'] || 1
+        const allocHours = item.unit === 'hours'
+          ? Math.round(qty * mult)
+          : Math.round(qty * 8 * mult)  // days → hours
+        trackableLines.push({ label: item.label, allocHours })
+      }
+    } else {
+      for (const bid of budgetIds) {
+        const b = budgets.find(x => x.id === bid)
+        if (!b) continue
+        for (const s of (b.sections || [])) {
+          if (!s.enabled) continue
+          for (const l of (s.lines || [])) {
+            if (!l.track_time || !l.item) continue
+            const days = parseFloat(l.days) || 0
+            const qty = isNaN(parseFloat(l.qty)) ? 1 : parseFloat(l.qty)
+            const allocHours = days > 0 ? Math.round(days * qty * 8) : Math.round(qty * 8)
+            trackableLines.push({ label: l.item, allocHours })
+          }
         }
       }
     }
@@ -709,9 +721,9 @@ export class ProjectsView {
         }
       }
 
-      const allocHours = p.is_retainer
-        ? (parseFloat(p.retainer_hours) || 0)
-        : trackableLines.reduce((s, l) => s + l.allocHours, 0)
+      const allocHours = trackableLines.length
+        ? trackableLines.reduce((s, l) => s + l.allocHours, 0)
+        : (parseFloat(p.retainer_hours) || 0)
       const totalLogged = entries.reduce((s, e) => s + parseFloat(e.hours), 0)
       const pct = allocHours > 0 ? Math.min(100, Math.round(totalLogged / allocHours * 100)) : 0
       const alertPct = p.is_retainer ? (parseFloat(p.retainer_alert)||80) : 100
@@ -790,14 +802,20 @@ export class ProjectsView {
     const budgets = this.app.budgets
     const budgetIds = Array.isArray(p.budget_ids) ? p.budget_ids : []
     const trackableLines = []
-    for (const bid of budgetIds) {
-      const b = budgets.find(x => x.id === bid)
-      if (!b) continue
-      for (const s of (b.sections||[])) {
-        if (!s.enabled) continue
-        for (const l of (s.lines||[])) {
-          if (!l.track_time || !l.item) continue
-          trackableLines.push({ label: l.item, budgetId: bid, budgetName: b.name })
+    if (p.is_retainer && (p.retainer_items||[]).length) {
+      for (const item of p.retainer_items) {
+        trackableLines.push({ label: item.label, budgetId: null })
+      }
+    } else {
+      for (const bid of budgetIds) {
+        const b = budgets.find(x => x.id === bid)
+        if (!b) continue
+        for (const s of (b.sections||[])) {
+          if (!s.enabled) continue
+          for (const l of (s.lines||[])) {
+            if (!l.track_time || !l.item) continue
+            trackableLines.push({ label: l.item, budgetId: bid, budgetName: b.name })
+          }
         }
       }
     }
@@ -806,8 +824,11 @@ export class ProjectsView {
 
     // Find the current user in crew to pre-select
     const myName = this.app.appUser?.name || ''
-    const crewOptions = crew.length
-      ? crew.map(c => `<option value="${c.name}" ${c.name===myName?'selected':''}>${c.name}</option>`).join('')
+    const subbies = (this.app.contacts||[]).filter(c => c.type === 'subcontractor' && c.status !== 'Retired')
+    const subNames = subbies.map(c => (c.first_name+' '+c.last_name).trim()).filter(n => n && !crew.some(cr => cr.name === n))
+    const allCrew = [...crew.map(c => c.name), ...subNames]
+    const crewOptions = allCrew.length
+      ? allCrew.map(name => `<option value="${name}" ${name===myName?'selected':''}>${name}</option>`).join('')
       : `<option value="${myName||'Me'}">${myName||'Me'}</option>`
 
     linkDiv.innerHTML = `
@@ -1108,6 +1129,20 @@ export class ProjectsView {
                   ).join('')}
                 </select>
               </div>` : ''}
+              ${(() => {
+                const subbies = (this.app.contacts||[]).filter(c => c.type === 'subcontractor' && c.status !== 'Retired' && !crew.some(cr => cr.name === (c.first_name+' '+c.last_name).trim()))
+                return subbies.length ? `
+                <div style="padding:10px 0;border-bottom:0.5px solid var(--border-light);display:flex;gap:8px;align-items:center">
+                  <select id="pe-add-sub-select" style="flex:1;font-size:12px;padding:5px 8px;border:0.5px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none">
+                    <option value="">+ Add subcontractor…</option>
+                    ${subbies.map(c => {
+                      const name = (c.first_name+' '+c.last_name).trim()
+                      const role = c.role || ''
+                      return `<option value="${esc(name)}" data-role="${esc(role)}">${esc(name)}${role?' — '+esc(role):''}</option>`
+                    }).join('')}
+                  </select>
+                </div>` : ''
+              })()}
               <div style="display:grid;grid-template-columns:1fr 1fr 40px;gap:8px;padding:6px 0;border-bottom:0.5px solid var(--border-light)">
                 <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Name</div>
                 <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Role</div>
@@ -1593,6 +1628,16 @@ export class ProjectsView {
       const opt = e.target.selectedOptions[0]
       if (!opt?.value) return
       const name = opt.dataset.name || opt.text
+      const role = opt.dataset.role || ''
+      if (!p.crew.some(c => c.name === name)) {
+        p.crew.push({ name, role }); save(); this.renderEditor(mc)
+      }
+      e.target.value = ''
+    })
+    mc.querySelector('#pe-add-sub-select')?.addEventListener('change', e => {
+      const opt = e.target.selectedOptions[0]
+      if (!opt?.value) return
+      const name = opt.value
       const role = opt.dataset.role || ''
       if (!p.crew.some(c => c.name === name)) {
         p.crew.push({ name, role }); save(); this.renderEditor(mc)

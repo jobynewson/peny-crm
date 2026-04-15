@@ -1299,7 +1299,7 @@ export class App {
       .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(8px);background:var(--text-primary);color:var(--bg-primary);padding:10px 18px;border-radius:var(--radius-md);font-size:13px;opacity:0;transition:opacity 0.2s,transform 0.2s;pointer-events:none;z-index:200;white-space:nowrap}
       .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
       .av-blue{background:#d4e8fa;color:#0d4a8a}.av-teal{background:#c2eada;color:#0a5038}.av-coral{background:#fad3c4;color:#6b2a16}.av-purple{background:#dddaf7;color:#3a2f9e}.av-amber{background:#fce2b0;color:#5a3206}.av-green{background:#d0e8b0;color:#2a5008}.av-pink{background:#f5d0df;color:#6e2040}
-      .tag-brand{background:#daeeff;color:#0d4a8a}.tag-agency{background:#dddaf7;color:#3a2f9e}.tag-ngo{background:#d8efc4;color:#2a5008}.tag-sport{background:#fce2b0;color:#5a3206}.tag-corp{background:#ebebeb;color:#4a4a46}
+      .tag-brand{background:#daeeff;color:#0d4a8a}.tag-agency{background:#dddaf7;color:#3a2f9e}.tag-ngo{background:#d8efc4;color:#2a5008}.tag-sport{background:#fce2b0;color:#5a3206}.tag-corp{background:#ebebeb;color:#4a4a46}.tag-sub{background:#fde8d0;color:#7a3210}
       .budget-layout{display:flex;gap:20px;align-items:flex-start}.budget-main{flex:1;min-width:0}.budget-sidebar-panel{width:210px;flex-shrink:0}
       .bsum-card{background:var(--bg-primary);border:0.5px solid var(--border-light);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:12px}
       .bsum-head{padding:11px 15px;border-bottom:0.5px solid var(--border-light);font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary)}

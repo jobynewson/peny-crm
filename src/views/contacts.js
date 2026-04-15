@@ -5,8 +5,8 @@ import {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const AVC = ['av-blue','av-teal','av-coral','av-purple','av-amber','av-green','av-pink']
-const TL  = { brand:'Brand', agency:'Agency', ngo:'NGO', sport:'Sports', corp:'Corporate' }
-const TC  = { brand:'tag-brand', agency:'tag-agency', ngo:'tag-ngo', sport:'tag-sport', corp:'tag-corp' }
+const TL  = { brand:'Brand', agency:'Agency', ngo:'NGO', sport:'Sports', corp:'Corporate', subcontractor:'Subcontractor' }
+const TC  = { brand:'tag-brand', agency:'tag-agency', ngo:'tag-ngo', sport:'tag-sport', corp:'tag-corp', subcontractor:'tag-sub' }
 
 const ini = c => ((c.first_name?.[0] ?? '') + (c.last_name?.[0] ?? '')).toUpperCase()
 const avc = c => AVC[Math.abs(hashCode(c.id)) % AVC.length]
@@ -80,7 +80,7 @@ export class ContactsView {
         <div style="font-size:13px;color:var(--text-secondary)">${esc(c.company)}</div>
         <div><span class="tag ${TC[c.type]??'tag-corp'}">${TL[c.type]??c.type}</span></div>
         <div class="status-cell">
-          <span class="dot dot-${c.status==='Active'?'active':c.status==='Warm'?'warm':'cold'}"></span>${c.status}
+          <span class="dot dot-${c.status==='Active'?'active':c.status==='Warm'?'warm':c.status==='Retired'?'cold':'cold'}"></span>${c.status}
         </div>
         <div class="actions-cell">
           <button class="row-btn" data-edit="${c.id}">Edit</button>
@@ -118,7 +118,7 @@ export class ContactsView {
             </div>
             <div class="field"><div class="field-label">Status</div>
               <select id="cf-status">
-                ${['Active','Warm','Cold'].map(s=>`<option value="${s}" ${c?.status===s?'selected':''}>${s==='Warm'?'Warm lead':s}</option>`).join('')}
+                ${['Active','Warm','Cold','Retired'].map(s=>`<option value="${s}" ${c?.status===s?'selected':''}>${s==='Warm'?'Warm lead':s}</option>`).join('')}
               </select>
             </div>
           </div>

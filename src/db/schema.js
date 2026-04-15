@@ -97,6 +97,7 @@ export const budgets = pgTable('budgets', {
   invoiced_at:   timestamp('invoiced_at', { withTimezone: true }),
   invoiced_by:   text('invoiced_by'),
   travel_rate: numeric('travel_rate', { precision: 5, scale: 2 }).notNull().default('50'),
+  prep_rate:   numeric('prep_rate',   { precision: 5, scale: 2 }).notNull().default('100'),
   discount:    numeric('discount', { precision: 5, scale: 2 }).notNull().default('0'),
   sections:    jsonb('sections').notNull().default([]),
   ...timestamps,

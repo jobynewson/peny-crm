@@ -1,51 +1,56 @@
 import { createBudget, updateBudget, deleteBudget, saveBudgetVersion, getBudgetVersions, deleteBudgetVersion } from '../db/client.js'
 
 export const SECTIONS = [
-  {code:'A1',label:'Pre-production — Scouting',lines:[{item:'Location Scout (Director)',days:0,qty:0,rate:501},{item:'Assistant Location Scout',days:0,qty:0,rate:369},{item:'Location Scout car / mileage',days:0,qty:0,rate:null},{item:'Congestion Charge',days:0,qty:0,rate:13},{item:'Unit Driver / Bus Hire',days:0,qty:0,rate:450},{item:'Subsistence',days:0,qty:0,rate:null},{item:'Flights',days:0,qty:0,rate:null},{item:'Accommodation',days:0,qty:0,rate:null}]},
-  {code:'A2',label:'Pre-production — Expenses',lines:[{item:'Researcher',days:0,qty:0,rate:350},{item:'References / Materials / PPM Prep',days:0,qty:0,rate:150},{item:'Taxis',days:0,qty:0,rate:null},{item:'Couriers',days:0,qty:0,rate:null},{item:'Tel / Comms',days:0,qty:0,rate:null}]},
-  {code:'C',label:'Cast',crew:true,lines:[{item:'Presenter / Talent',days:0,qty:0,rate:null,travelDays:0},{item:'Supporting Artists',days:0,qty:0,rate:null,travelDays:0},{item:'Stunt Performers',days:0,qty:0,rate:null,travelDays:0}]},
-  {code:'D',label:'Production Crew',crew:true,lines:[{item:'Director',days:0,qty:0,rate:850,travelDays:0},{item:'Producer',days:0,qty:0,rate:650,travelDays:0},{item:'Production Manager',days:0,qty:0,rate:450,travelDays:0},{item:'Production Assistant',days:0,qty:0,rate:250,travelDays:0},{item:'Camera Operator',days:0,qty:0,rate:600,travelDays:0},{item:'1st AC / Focus Puller',days:0,qty:0,rate:450,travelDays:0},{item:'DIT',days:0,qty:0,rate:400,travelDays:0},{item:'Drone Pilot',days:0,qty:0,rate:550,travelDays:0},{item:'Sound Recordist',days:0,qty:0,rate:450,travelDays:0},{item:'Gaffer / Spark',days:0,qty:0,rate:400,travelDays:0},{item:'Grip',days:0,qty:0,rate:380,travelDays:0},{item:'Make-up / Hair',days:0,qty:0,rate:350,travelDays:0},{item:'Stylist',days:0,qty:0,rate:350,travelDays:0},{item:'Runner',days:0,qty:0,rate:150,travelDays:0}]},
-  {code:'E',label:'Equipment',lines:[{item:'Camera Package',days:0,qty:0,rate:null},{item:'Lens Package',days:0,qty:0,rate:null},{item:'Lighting Package',days:0,qty:0,rate:null},{item:'Grip Package',days:0,qty:0,rate:null},{item:'Sound Package',days:0,qty:0,rate:null},{item:'Drone Package',days:0,qty:0,rate:null},{item:'Generator',days:0,qty:0,rate:null},{item:'Data / Media',days:0,qty:0,rate:null}]},
-  {code:'F',label:'Art Department',lines:[{item:'Art Director',days:0,qty:0,rate:500},{item:'Props',days:0,qty:0,rate:null},{item:'Set Dressing / Hire',days:0,qty:0,rate:null},{item:'Wardrobe',days:0,qty:0,rate:null}]},
-  {code:'G',label:'Studio / Location',lines:[{item:'Studio Hire (per day)',days:0,qty:0,rate:null},{item:'Location Fees / Permits',days:0,qty:0,rate:null},{item:'Security',days:0,qty:0,rate:null},{item:'Facilities / Portaloos',days:0,qty:0,rate:null}]},
-  {code:'H',label:'Travel & Accommodation',lines:[{item:'Unit Vehicles / Transport',days:0,qty:0,rate:null},{item:'Flights',days:0,qty:0,rate:null},{item:'Accommodation',days:0,qty:0,rate:null},{item:'Subsistence / Catering',days:0,qty:0,rate:null},{item:'Mileage',days:0,qty:0,rate:0.45},{item:'Congestion / Parking',days:0,qty:0,rate:null}]},
-  {code:'I',label:'Post-production',lines:[{item:'Editor (pre-production)',days:0,qty:0,rate:350},{item:'Assembly Editor',days:0,qty:0,rate:450},{item:'Assistant Editor',days:0,qty:0,rate:400},{item:'Finishing Editor (incl. suite)',days:0,qty:0,rate:500},{item:'Grade (all assets + suite)',days:0,qty:0,rate:650},{item:'Sound Design',days:0,qty:0,rate:750},{item:'Graphics / Motion',days:0,qty:0,rate:450},{item:'Versioning',days:0,qty:0,rate:null},{item:'Stock Track Licences',days:0,qty:0,rate:10},{item:'Composition',days:0,qty:0,rate:null},{item:'Hard Drives / Media',days:0,qty:0,rate:250},{item:'Library Footage / SFX',days:0,qty:0,rate:null}]},
-  {code:'J',label:'Sundries',lines:[{item:'Legal Fees / Visas / Work Permits',days:0,qty:0,rate:null},{item:'Contingency',days:0,qty:0,rate:null},{item:'Miscellaneous',days:0,qty:0,rate:null}]},
-  {code:'K',label:'Insurance',lines:[{item:'General Production Insurance',days:0,qty:0,rate:null},{item:'Specialist Travel Insurance',days:0,qty:0,rate:null},{item:'Equipment Insurance',days:0,qty:0,rate:null}]},
+  {code:'A1',label:'Pre-production — Scouting',lines:[{item:'Location Scout (Director)',prepDays:0,days:0,qty:0,rate:501},{item:'Assistant Location Scout',prepDays:0,days:0,qty:0,rate:369},{item:'Location Scout car / mileage',prepDays:0,days:0,qty:0,rate:null},{item:'Congestion Charge',prepDays:0,days:0,qty:0,rate:13},{item:'Unit Driver / Bus Hire',prepDays:0,days:0,qty:0,rate:450},{item:'Subsistence',prepDays:0,days:0,qty:0,rate:null},{item:'Flights',prepDays:0,days:0,qty:0,rate:null},{item:'Accommodation',prepDays:0,days:0,qty:0,rate:null}]},
+  {code:'A2',label:'Pre-production — Expenses',lines:[{item:'Researcher',prepDays:0,days:0,qty:0,rate:350},{item:'References / Materials / PPM Prep',prepDays:0,days:0,qty:0,rate:150},{item:'Taxis',prepDays:0,days:0,qty:0,rate:null},{item:'Couriers',prepDays:0,days:0,qty:0,rate:null},{item:'Tel / Comms',prepDays:0,days:0,qty:0,rate:null}]},
+  {code:'C',label:'Cast',crew:true,lines:[{item:'Presenter / Talent',prepDays:0,days:0,qty:0,rate:null,travelDays:0},{item:'Supporting Artists',prepDays:0,days:0,qty:0,rate:null,travelDays:0},{item:'Stunt Performers',prepDays:0,days:0,qty:0,rate:null,travelDays:0}]},
+  {code:'D',label:'Production Crew',crew:true,lines:[{item:'Director',prepDays:0,days:0,qty:0,rate:850,travelDays:0},{item:'Producer',prepDays:0,days:0,qty:0,rate:650,travelDays:0},{item:'Production Manager',prepDays:0,days:0,qty:0,rate:450,travelDays:0},{item:'Production Assistant',prepDays:0,days:0,qty:0,rate:250,travelDays:0},{item:'Camera Operator',prepDays:0,days:0,qty:0,rate:600,travelDays:0},{item:'1st AC / Focus Puller',prepDays:0,days:0,qty:0,rate:450,travelDays:0},{item:'DIT',prepDays:0,days:0,qty:0,rate:400,travelDays:0},{item:'Drone Pilot',prepDays:0,days:0,qty:0,rate:550,travelDays:0},{item:'Sound Recordist',prepDays:0,days:0,qty:0,rate:450,travelDays:0},{item:'Gaffer / Spark',prepDays:0,days:0,qty:0,rate:400,travelDays:0},{item:'Grip',prepDays:0,days:0,qty:0,rate:380,travelDays:0},{item:'Make-up / Hair',prepDays:0,days:0,qty:0,rate:350,travelDays:0},{item:'Stylist',prepDays:0,days:0,qty:0,rate:350,travelDays:0},{item:'Runner',prepDays:0,days:0,qty:0,rate:150,travelDays:0}]},
+  {code:'E',label:'Equipment',lines:[{item:'Camera Package',prepDays:0,days:0,qty:0,rate:null},{item:'Lens Package',prepDays:0,days:0,qty:0,rate:null},{item:'Lighting Package',prepDays:0,days:0,qty:0,rate:null},{item:'Grip Package',prepDays:0,days:0,qty:0,rate:null},{item:'Sound Package',prepDays:0,days:0,qty:0,rate:null},{item:'Drone Package',prepDays:0,days:0,qty:0,rate:null},{item:'Generator',prepDays:0,days:0,qty:0,rate:null},{item:'Data / Media',prepDays:0,days:0,qty:0,rate:null}]},
+  {code:'F',label:'Art Department',lines:[{item:'Art Director',prepDays:0,days:0,qty:0,rate:500},{item:'Props',prepDays:0,days:0,qty:0,rate:null},{item:'Set Dressing / Hire',prepDays:0,days:0,qty:0,rate:null},{item:'Wardrobe',prepDays:0,days:0,qty:0,rate:null}]},
+  {code:'G',label:'Studio / Location',lines:[{item:'Studio Hire (per day)',prepDays:0,days:0,qty:0,rate:null},{item:'Location Fees / Permits',prepDays:0,days:0,qty:0,rate:null},{item:'Security',prepDays:0,days:0,qty:0,rate:null},{item:'Facilities / Portaloos',prepDays:0,days:0,qty:0,rate:null}]},
+  {code:'H',label:'Travel & Accommodation',lines:[{item:'Unit Vehicles / Transport',prepDays:0,days:0,qty:0,rate:null},{item:'Flights',prepDays:0,days:0,qty:0,rate:null},{item:'Accommodation',prepDays:0,days:0,qty:0,rate:null},{item:'Subsistence / Catering',prepDays:0,days:0,qty:0,rate:null},{item:'Mileage',prepDays:0,days:0,qty:0,rate:0.45},{item:'Congestion / Parking',prepDays:0,days:0,qty:0,rate:null}]},
+  {code:'I',label:'Post-production',lines:[{item:'Editor (pre-production)',prepDays:0,days:0,qty:0,rate:350},{item:'Assembly Editor',prepDays:0,days:0,qty:0,rate:450},{item:'Assistant Editor',prepDays:0,days:0,qty:0,rate:400},{item:'Finishing Editor (incl. suite)',prepDays:0,days:0,qty:0,rate:500},{item:'Grade (all assets + suite)',prepDays:0,days:0,qty:0,rate:650},{item:'Sound Design',prepDays:0,days:0,qty:0,rate:750},{item:'Graphics / Motion',prepDays:0,days:0,qty:0,rate:450},{item:'Versioning',prepDays:0,days:0,qty:0,rate:null},{item:'Stock Track Licences',prepDays:0,days:0,qty:0,rate:10},{item:'Composition',prepDays:0,days:0,qty:0,rate:null},{item:'Hard Drives / Media',prepDays:0,days:0,qty:0,rate:250},{item:'Library Footage / SFX',prepDays:0,days:0,qty:0,rate:null}]},
+  {code:'J',label:'Sundries',lines:[{item:'Legal Fees / Visas / Work Permits',prepDays:0,days:0,qty:0,rate:null},{item:'Contingency',prepDays:0,days:0,qty:0,rate:null},{item:'Miscellaneous',prepDays:0,days:0,qty:0,rate:null}]},
+  {code:'K',label:'Insurance',lines:[{item:'General Production Insurance',prepDays:0,days:0,qty:0,rate:null},{item:'Specialist Travel Insurance',prepDays:0,days:0,qty:0,rate:null},{item:'Equipment Insurance',prepDays:0,days:0,qty:0,rate:null}]},
 ]
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')
 const gbpA = n => '£' + Math.round(n).toLocaleString('en-GB')
 const moy = () => { const d = new Date(); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] + ' ' + d.getFullYear() }
 
-function lineTotal(l, travelRate) {
-  const d = parseFloat(l.days)||0
-  const useDays = d > 0
-  const q = parseFloat(l.qty)
+function lineTotal(l, travelRate, prepRate) {
+  const prep  = parseFloat(l.prepDays)  || 0
+  const shoot = parseFloat(l.days)      || 0
+  const td    = parseFloat(l.travelDays)|| 0
+  const useDays = prep > 0 || shoot > 0 || td > 0
+  const q   = parseFloat(l.qty)
   const qty = isNaN(q) ? 0 : q
-  const r = parseFloat(l.rate)||0
-  const td = parseFloat(l.travelDays)||0
-  const tr = parseFloat(travelRate)||50
+  const r   = parseFloat(l.rate)  || 0
+  const tr  = parseFloat(travelRate) || 50
+  const pr  = parseFloat(prepRate)   || 100
   const disc = Math.min(Math.max(parseFloat(l.discount)||0, 0), 100)
-  const gross = useDays ? d*qty*r + td*(tr/100)*r : qty*r
+  const gross = useDays
+    ? prep*qty*r*(pr/100) + shoot*qty*r + td*(tr/100)*r
+    : qty*r
   return gross * (1 - disc/100)
 }
-function secNet(s, travelRate)  { return (s.lines||[]).reduce((t,l) => t + lineTotal(l, travelRate), 0) }
+function secNet(s, travelRate, prepRate) { return (s.lines||[]).reduce((t,l) => t + lineTotal(l, travelRate, prepRate), 0) }
 function budNet(b)  {
   const tr = parseFloat(b.travel_rate)||50
-  return (b.sections||[]).filter(s=>s.enabled).reduce((t,s) => t + secNet(s, tr), 0)
+  const pr = parseFloat(b.prep_rate)??100
+  return (b.sections||[]).filter(s=>s.enabled).reduce((t,s) => t + secNet(s, tr, pr), 0)
 }
 function budTotal(b) {
   const n = budNet(b)
-  const afterFee      = n + n * ((parseFloat(b.markup)||0)/100)
-  const afterCustom   = afterFee + afterFee * ((parseFloat(b.custom_pct)||0)/100)
-  const afterInsurance = b.insurance ? afterCustom + afterCustom * 0.025 : afterCustom
-  return afterInsurance + (b.vat ? afterInsurance*0.2 : 0)
+  const insVal      = b.insurance ? n * 0.025 : 0
+  const afterFee    = n + insVal + n * ((parseFloat(b.markup)||0)/100)
+  const afterCustom = afterFee + afterFee * ((parseFloat(b.custom_pct)||0)/100)
+  return afterCustom + (b.vat ? afterCustom*0.2 : 0)
 }
 const hasValue = l => {
-  const useDays = (parseFloat(l.days)||0) > 0
+  const useDays = (parseFloat(l.prepDays)||0) > 0 || (parseFloat(l.days)||0) > 0 || (parseFloat(l.travelDays)||0) > 0
   return useDays
-    ? ((parseFloat(l.days)||0) > 0 || (parseFloat(l.travelDays)||0) > 0)
+    ? true
     : ((parseFloat(l.qty)||0) > 0 && (parseFloat(l.rate)||0) > 0)
 }
 
@@ -221,6 +226,7 @@ export class BudgetsView {
       crew: !!def.crew,
       lines: (def.lines || []).map(l => ({
         ...l,
+        prepDays: 0,
         days: 0,
         qty: l.qty ?? 0,
         notes: '',
@@ -287,7 +293,7 @@ export class BudgetsView {
         name: b.name + ' (copy)',
         client_id: b.client_id,
         markup: b.markup, custom_pct: b.custom_pct, vat: b.vat,
-        travel_rate: b.travel_rate ?? 50, discount: b.discount ?? 0,
+        travel_rate: b.travel_rate ?? 50, prep_rate: b.prep_rate ?? 100, discount: b.discount ?? 0,
         sections: JSON.parse(JSON.stringify(b.sections || [])),
         prepared_by: b.prepared_by, quote_email: b.quote_email,
         notes: b.notes,
@@ -323,11 +329,12 @@ export class BudgetsView {
     const cl = contacts.find(c => c.id === b.client_id)
     const proj = projects.find(p => Array.isArray(p.budget_ids) && p.budget_ids.includes(b.id))
     const edTr = parseFloat(b.travel_rate)||50
-    const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100), afterFee = net+mu
+    const edPr = parseFloat(b.prep_rate)??100
+    const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100)
+    const insVal = b.insurance ? net*0.025 : 0, afterFee = net+insVal+mu
     const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
-    const insVal = b.insurance ? afterCustom*0.025 : 0, afterInsurance = afterCustom+insVal
-    const vatVal = b.vat ? afterInsurance*0.2 : 0, tot = afterInsurance+vatVal
-    const activeSecs = (b.sections||[]).filter(s => s.enabled && secNet(s, edTr) > 0)
+    const vatVal = b.vat ? afterCustom*0.2 : 0, tot = afterCustom+vatVal
+    const activeSecs = (b.sections||[]).filter(s => s.enabled && secNet(s, edTr, edPr) > 0)
     const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 
     mc.innerHTML = `
@@ -383,10 +390,11 @@ export class BudgetsView {
                   <th>Item</th><th>Notes</th><th class="r">Days/Qty</th><th class="r">Rate</th><th class="r">Disc%</th><th class="r">Total</th><th></th>
                 </tr></thead><tbody>
                   ${activeLines.map(l => {
-                    const d = parseFloat(l.days)||0, q = isNaN(parseFloat(l.qty))?0:parseFloat(l.qty), r = parseFloat(l.rate)||0
-                    const useDays = d > 0
-                    const t = lineTotal(l, edTr)
-                    const dqStr = useDays ? `${d}d × ${q}` : `×${q}`
+                    const prep = parseFloat(l.prepDays)||0, d = parseFloat(l.days)||0, q = isNaN(parseFloat(l.qty))?0:parseFloat(l.qty), r = parseFloat(l.rate)||0
+                    const useDays = prep > 0 || d > 0 || (parseFloat(l.travelDays)||0) > 0
+                    const t = lineTotal(l, edTr, edPr)
+                    const dayParts = [prep>0?`${prep}p`:'', d>0?`${d}s`:'', (parseFloat(l.travelDays)||0)>0?`${parseFloat(l.travelDays)}t`:''].filter(Boolean)
+                    const dqStr = useDays ? `${q} × ${dayParts.join('+')||'0d'}` : `×${q}`
                     return `<tr>
                       <td style="font-size:12px;padding:6px 8px">${esc(l.item)}${l.notes?`<div style="font-size:10px;color:var(--text-tertiary)">${esc(l.notes)}</div>`:''}</td>
                       <td style="font-size:12px;padding:6px 8px;color:var(--text-tertiary)"></td>
@@ -425,8 +433,12 @@ export class BudgetsView {
       if (!b.signed_off) { b.invoiced = false; b.invoiced_at = null; b.invoiced_by = null }
       try {
         await updateBudget(this.app.userId, b.id, {
-          signed_off: b.signed_off, signed_off_at: b.signed_off_at, signed_off_by: b.signed_off_by,
-          invoiced: b.invoiced, invoiced_at: b.invoiced_at, invoiced_by: b.invoiced_by,
+          signed_off:    b.signed_off,
+          signed_off_at: b.signed_off_at,
+          signed_off_by: b.signed_off_by,
+          invoiced:      b.invoiced    ?? false,
+          invoiced_at:   b.invoiced_at ?? null,
+          invoiced_by:   b.invoiced_by ?? null,
           include_in_pipeline: b.signed_off,
         })
         const idx = this.app.budgets.findIndex(x => x.id === b.id)
@@ -442,7 +454,9 @@ export class BudgetsView {
       b.invoiced_by = b.invoiced ? (this.app.appUser?.name || this.app.user?.primaryEmailAddress?.emailAddress || '') : null
       try {
         await updateBudget(this.app.userId, b.id, {
-          invoiced: b.invoiced, invoiced_at: b.invoiced_at, invoiced_by: b.invoiced_by,
+          invoiced:    b.invoiced    ?? false,
+          invoiced_at: b.invoiced_at ?? null,
+          invoiced_by: b.invoiced_by ?? null,
         })
         const idx = this.app.budgets.findIndex(x => x.id === b.id)
         if (idx >= 0) Object.assign(this.app.budgets[idx], { invoiced: b.invoiced, invoiced_at: b.invoiced_at, invoiced_by: b.invoiced_by })
@@ -492,12 +506,13 @@ export class BudgetsView {
     const b = this.app.budgets.find(x => x.id === this.currentId)
     if (!b) { this.currentId = null; this.renderList(mc); return }
     const sections = Array.isArray(b.sections) ? b.sections : []
-    const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100), afterFee = net+mu
+    const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100)
+    const insVal = b.insurance ? net*0.025 : 0, afterFee = net+insVal+mu
     const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
-    const insVal = b.insurance ? afterCustom*0.025 : 0, afterInsurance = afterCustom+insVal
-    const vatVal = b.vat ? afterInsurance*0.2 : 0, tot = afterInsurance+vatVal
+    const vatVal = b.vat ? afterCustom*0.2 : 0, tot = afterCustom+vatVal
     const edTr = parseFloat(b.travel_rate)||50
-    const activeSecs = sections.filter(s => s.enabled && secNet(s, edTr) > 0)
+    const edPr = parseFloat(b.prep_rate)??100
+    const activeSecs = sections.filter(s => s.enabled && secNet(s, edTr, edPr) > 0)
 
     mc.innerHTML = `
       <div class="bh-row">
@@ -513,6 +528,7 @@ export class BudgetsView {
           <div class="mu-row">
             <div class="mu-field">Production fee <input type="number" id="be-markup" value="${b.markup}" min="0" max="100"> %</div>
             <div class="mu-field">Custom add-on <input type="number" id="be-custom" value="${b.custom_pct||0}" min="0"> %</div>
+            <div class="mu-field">Prep rate <input type="number" id="be-preprate" value="${b.prep_rate??100}" min="0" max="100"> %</div>
             <div class="mu-field">Travel rate <input type="number" id="be-travelrate" value="${b.travel_rate??50}" min="0" max="100"> %</div>
             <div class="mu-field">Discount <input type="number" id="be-discount" value="${b.discount||0}" min="0" max="100" placeholder="0"> %</div>
             <div class="mu-field"><label style="display:flex;align-items:center;gap:7px;cursor:pointer"><input type="checkbox" id="be-vat" ${b.vat?'checked':''} style="cursor:pointer" /> VAT (20%)</label></div>
@@ -568,7 +584,8 @@ export class BudgetsView {
 
   sectionHTML(b, s, si) {
     const tr = parseFloat(b.travel_rate) || 50
-    const sn = secNet(s, tr)
+    const pr = parseFloat(b.prep_rate)??100
+    const sn = secNet(s, tr, pr)
     // All sections now use the same column layout:
     // ☐ | Item | Notes | Days | Qty | Travel | Rate | Total | ×
     // The Days and Travel cells are shown/hidden per line via the checkbox
@@ -582,32 +599,37 @@ export class BudgetsView {
       </div>
       <div class="bsec-body ${s.open?'open':''}">
         <table class="bl-table" style="table-layout:fixed"><colgroup>
-          <col style="width:80px" />
-          <col style="width:22%" />
-          <col style="width:10%" />
-          <col style="width:68px" />
+          ${s.crew
+            ? `<col style="width:26%" />
+               <col style="width:7%" />`
+            : `<col style="width:70px" />
+               <col style="width:18%" />`}
+          <col style="width:9%" />
+          <col style="width:58px" />
+          <col style="width:58px" />
+          <col style="width:58px" />
+          <col style="width:58px" />
           <col style="width:62px" />
-          <col style="width:68px" />
-          <col style="width:76px" />
-          <col style="width:62px" />
+          <col style="width:52px" />
           <col style="width:36px" />
-          <col style="width:72px" />
+          <col style="width:68px" />
           <col />
         </colgroup><thead><tr>
           <th>Item</th>
           <th>Notes</th>
-          <th class="r" title="Days — enter a value to use day-rate mode">Days</th>
           <th class="r">Qty</th>
-          <th class="r">Travel</th>
+          <th class="r" title="Prep days">Prep</th>
+          <th class="r" title="Shoot days">Shoot</th>
+          <th class="r" title="Travel days">Travel</th>
           <th class="r">Rate £</th>
           <th class="r">Disc %</th>
           <th class="r" title="Track time">⏱</th>
           <th class="r">Total</th>
           <th></th>
         </tr></thead><tbody>
-          ${(s.lines||[]).map((l,li) => this.lineHTML(si, li, l, tr)).join('')}
+          ${(s.lines||[]).map((l,li) => this.lineHTML(si, li, l, tr, pr)).join('')}
           <tr class="sub">
-            <td colspan="8" style="text-align:right;color:var(--text-secondary);font-size:11px;padding-right:8px">Section total</td>
+            <td colspan="9" style="text-align:right;color:var(--text-secondary);font-size:11px;padding-right:8px">Section total</td>
             <td style="text-align:right" id="bst-${si}">${gbpA(sn)}</td><td></td>
           </tr>
         </tbody></table>
@@ -616,15 +638,16 @@ export class BudgetsView {
     </div>`
   }
 
-  lineHTML(si, li, l, travelRate) {
-    const t = lineTotal(l, travelRate)
+  lineHTML(si, li, l, travelRate, prepRate) {
+    const t = lineTotal(l, travelRate, prepRate)
     const disc = l.discount != null ? l.discount : ''
     return `<tr id="bl-${si}-${li}">
       <td><input class="bl-in w" value="${esc(l.item)}" placeholder="Item" data-field="${si},${li},item" /></td>
       <td><input class="bl-in w" value="${esc(l.notes||'')}" placeholder="Notes" data-field="${si},${li},notes" /></td>
-      <td><input class="bl-in w" type="number" value="${l.days||''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},days" style="text-align:right" title="Days — enter any value to use day-rate mode" /></td>
       <td><input class="bl-in w" type="number" value="${l.qty??0}" placeholder="0" min="0" data-num="${si},${li},qty" style="text-align:right" /></td>
-      <td><input class="bl-in w" type="number" value="${l.travelDays??''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},travelDays" style="text-align:right" title="Travel days" /></td>
+      <td><input class="bl-in w" type="number" value="${l.prepDays||''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},prepDays" style="text-align:right" title="Prep days" /></td>
+      <td><input class="bl-in w" type="number" value="${l.days||''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},days" style="text-align:right" title="Shoot days" /></td>
+      <td><input class="bl-in w" type="number" value="${l.travelDays||''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},travelDays" style="text-align:right" title="Travel days" /></td>
       <td><input class="bl-in w" type="number" value="${l.rate||''}" placeholder="0" min="0" data-num="${si},${li},rate" style="text-align:right" /></td>
       <td><input class="bl-in w" type="number" value="${disc}" placeholder="0" min="0" max="100" step="0.5" data-num="${si},${li},discount" style="text-align:right" title="Discount %" /></td>
       <td style="text-align:center;padding:4px 6px">
@@ -640,13 +663,14 @@ export class BudgetsView {
     const save = () => this.saveField(b)
     const refreshSummary = () => {
       const rsTr = parseFloat(b.travel_rate)||50
-      const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100), afterFee = net+mu
+      const rsPr = parseFloat(b.prep_rate)??100
+      const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100)
+      const insVal = b.insurance ? net*0.025 : 0, afterFee = net+insVal+mu
       const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
-      const insVal = b.insurance ? afterCustom*0.025 : 0, afterInsurance = afterCustom+insVal
-    const vatVal = b.vat ? afterInsurance*0.2 : 0, tot = afterInsurance+vatVal
+    const vatVal = b.vat ? afterCustom*0.2 : 0, tot = afterCustom+vatVal
       const card = mc.querySelector('.bsum-card')
       if (!card) return
-      const activeSecs = sections.filter(s => s.enabled && secNet(s, rsTr) > 0)
+      const activeSecs = sections.filter(s => s.enabled && secNet(s, rsTr, rsPr) > 0)
       card.innerHTML = `
         <div class="bsum-head">Summary</div>
         ${activeSecs.length ? activeSecs.map(s=>`<div class="bsum-row"><span class="sk">${s.code} ${s.label.split('—')[0].split(' ').slice(0,3).join(' ').trim()}</span><span class="sv">${gbpA(secNet(s,rsTr))}</span></div>`).join('') : '<div style="padding:10px 15px;font-size:12px;color:var(--text-tertiary)">No sections active</div>'}
@@ -668,7 +692,8 @@ export class BudgetsView {
     })
     mc.querySelector('#be-markup')?.addEventListener('change', e => { b.markup = parseFloat(e.target.value)||0; save(); refreshSummary() })
     mc.querySelector('#be-custom')?.addEventListener('change', e => { b.custom_pct = parseFloat(e.target.value)||0; save(); refreshSummary() })
-    mc.querySelector('#be-travelrate')?.addEventListener('change', e => { b.travel_rate = parseFloat(e.target.value)??50; save(); refreshSummary() })
+    mc.querySelector('#be-travelrate')?.addEventListener('change', e => { b.travel_rate = parseFloat(e.target.value)??50; save(); this.renderEditor(mc) })
+    mc.querySelector('#be-preprate')?.addEventListener('change',  e => { b.prep_rate  = parseFloat(e.target.value)??100; save(); this.renderEditor(mc) })
     mc.querySelector('#be-discount')?.addEventListener('change', e => {
       const pct = Math.min(Math.max(parseFloat(e.target.value)||0, 0), 100)
       b.discount = pct
@@ -769,7 +794,8 @@ export class BudgetsView {
       if (isNaN(val)) return  // don't update mid-typing (e.g. "-" or ".")
       l[field] = val || 0
       const tr = parseFloat(b.travel_rate)||50
-      const t = lineTotal(l, tr)
+      const pr = parseFloat(b.prep_rate)??100
+      const t = lineTotal(l, tr, pr)
       const ltEl = mc.querySelector(`#blt-${si}-${li}`)
       if (ltEl) { ltEl.textContent = t>0?gbpA(t):'—'; ltEl.className = 'bl-tot'+(t>0?' nz':'') }
       const stEl = mc.querySelector(`#bst-${si}`)
@@ -799,7 +825,8 @@ export class BudgetsView {
           }
         }
         const tr = parseFloat(b.travel_rate)||50
-        const t = lineTotal(l, tr)
+        const pr = parseFloat(b.prep_rate)??100
+        const t = lineTotal(l, tr, pr)
         const ltEl = mc.querySelector(`#blt-${si}-${li}`)
         if (ltEl) { ltEl.textContent = t>0?gbpA(t):'—'; ltEl.className = 'bl-tot'+(t>0?' nz':'') }
         const stEl = mc.querySelector(`#bst-${si}`)
@@ -816,7 +843,7 @@ export class BudgetsView {
       btn.addEventListener('click', () => {
         const si = +btn.dataset.addLine
         const defaultDays = !!sections[si].crew
-        sections[si].lines.push({ item:'', notes:'', qty:0, rate:null, days:0, travelDays:0, track_time:false })
+        sections[si].lines.push({ item:'', notes:'', qty:0, rate:null, prepDays:0, days:0, travelDays:0, track_time:false })
         save(); this.renderEditor(mc)
       })
     })
@@ -895,7 +922,7 @@ export class BudgetsView {
       const data = {
         name: b.name,
         markup: b.markup, custom_pct: b.custom_pct, vat: b.vat,
-        travel_rate: b.travel_rate ?? 50, discount: b.discount ?? 0,
+        travel_rate: b.travel_rate ?? 50, prep_rate: b.prep_rate ?? 100, discount: b.discount ?? 0,
         signed_off: b.signed_off ?? false,
         signed_off_at: b.signed_off_at ?? null,
         signed_off_by: b.signed_off_by ?? null,
@@ -918,24 +945,26 @@ export class BudgetsView {
 
   exportCSV(b) {
     const cl = this.app.contacts.find(c => c.id === b.client_id)
-    const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100), afterFee = net+mu
+    const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100)
+    const insVal = b.insurance ? net*0.025 : 0, afterFee = net+insVal+mu
     const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
-    const insVal = b.insurance ? afterCustom*0.025 : 0, afterInsurance = afterCustom+insVal
-    const vatVal = b.vat ? afterInsurance*0.2 : 0
+    const vatVal = b.vat ? afterCustom*0.2 : 0
+    const pr = parseFloat(b.prep_rate)??100
     let rows = [
       ['Budget',b.name],['Client',cl?cl.first_name+' '+cl.last_name:''],
       ['Production fee %',b.markup],['Custom add-on %',b.custom_pct||0],['Travel rate %',b.travel_rate??50],['Master discount %',b.discount||0],['VAT',b.vat?'Yes':'No'],[''],
-      ['Section','Item','Notes','Days','Qty','Travel Days','Rate (£)','Discount %','Total (£)']
+      ['Section','Item','Notes','Prep Days','Shoot Days','Qty','Travel Days','Rate (£)','Discount %','Total (£)']
     ]
     const tr = parseFloat(b.travel_rate)||50
     ;(b.sections||[]).filter(s=>s.enabled).forEach(s => {
       const al = (s.lines||[]).filter(l => hasValue(l))
       if (!al.length) return
       al.forEach(l => {
-        const useDays = (parseFloat(l.days)||0) > 0
-        rows.push([s.code+' — '+s.label, l.item, l.notes||'', useDays?l.days||0:'N/A', l.qty??0, useDays&&l.travelDays!=null?l.travelDays||0:'N/A', l.rate||0, l.discount||0, Math.round(lineTotal(l,tr))])
+        const pDays = parseFloat(l.prepDays)||0, sDays = parseFloat(l.days)||0, tDays = parseFloat(l.travelDays)||0
+        const useDays = pDays > 0 || sDays > 0 || tDays > 0
+        rows.push([s.code+' — '+s.label, l.item, l.notes||'', useDays?pDays:'N/A', useDays?sDays:'N/A', l.qty??0, useDays?tDays:'N/A', l.rate||0, l.discount||0, Math.round(lineTotal(l,tr,pr))])
       })
-      rows.push([s.code+' SUBTOTAL','','','','','','','',Math.round(secNet(s,tr))]); rows.push([])
+      rows.push([s.code+' SUBTOTAL','','','','','','','','',Math.round(secNet(s,tr,pr))]); rows.push([])
     })
     rows.push(['NET TOTAL','','','','','','','',Math.round(net)])
     if ((parseFloat(b.markup)||0)>0)     rows.push(['PRODUCTION FEE ('+b.markup+'%)','','','','','','','',Math.round(mu)])
@@ -957,16 +986,17 @@ export class BudgetsView {
     const cl = this.app.contacts.find(c => c.id === b.client_id)
     const s  = this.app.settings || {}
     const pdfTr = parseFloat(b.travel_rate)||50
-    const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100), afterFee = net+mu
+    const pdfPr = parseFloat(b.prep_rate)??100
+    const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100)
+    const insVal = b.insurance ? net*0.025 : 0, afterFee = net+insVal+mu
     const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
-    const insVal = b.insurance ? afterCustom*0.025 : 0, afterInsurance = afterCustom+insVal
-    const vatVal = b.vat ? afterInsurance*0.2 : 0, tot = afterInsurance+vatVal
+    const vatVal = b.vat ? afterCustom*0.2 : 0, tot = afterCustom+vatVal
     const today = new Date()
     const months = ['January','February','March','April','May','June','July','August','September','October','November','December']
     const dateStr = today.getDate()+' '+months[today.getMonth()]+' '+today.getFullYear()
     const validDate = new Date(today); validDate.setDate(validDate.getDate()+30)
     const validStr = validDate.getDate()+' '+months[validDate.getMonth()]+' '+validDate.getFullYear()
-    const activeSecs = (b.sections||[]).filter(s => s.enabled && secNet(s, pdfTr) > 0)
+    const activeSecs = (b.sections||[]).filter(s => s.enabled && secNet(s, pdfTr, pdfPr) > 0)
     const LOGO_WHITE = '/peny-logo-white.png'
     const LOGO_BLACK = '/peny-logo.png'
 
@@ -980,7 +1010,7 @@ export class BudgetsView {
           ${b.notes?`<div style="font-size:13px;color:rgba(255,255,255,0.55);margin-bottom:28px;line-height:1.6">${esc(b.notes).replace(/\n/g,'<br>')}</div>`:''}
           <hr class="pdf-cover-divider" />
           <table class="pdf-cover-summary"><tbody>
-            ${activeSecs.map(sec=>`<tr><td class="sec-code">${sec.code}</td><td class="sec-name">${sec.label}</td><td class="sec-total">${gbpA(secNet(sec,pdfTr))}</td></tr>`).join('')}
+            ${activeSecs.map(sec=>`<tr><td class="sec-code">${sec.code}</td><td class="sec-name">${sec.label}</td><td class="sec-total">${gbpA(secNet(sec,pdfTr,pdfPr))}</td></tr>`).join('')}
           </tbody></table>
           <div class="pdf-cover-totals">
             <div class="pdf-cover-total-row"><span class="tk">Net total</span><span class="tv">${gbpA(net)}</span></div>
@@ -1014,7 +1044,7 @@ export class BudgetsView {
           <div class="pdf-section-header">
             <span class="pdf-section-code">${sec.code}</span>
             <span class="pdf-section-name">${sec.label}</span>
-            <span class="pdf-section-total">${gbpA(secNet(sec,pdfTr))}</span>
+            <span class="pdf-section-total">${gbpA(secNet(sec,pdfTr,pdfPr))}</span>
           </div>
           <div class="pdf-col-heads">
             <div class="pdf-col-head" style="text-align:left">Item</div>
@@ -1024,13 +1054,15 @@ export class BudgetsView {
           </div>
           ${al.map(l => {
             const useDays = (parseFloat(l.days)||0) > 0
-            const t=lineTotal(l,pdfTr),d=parseFloat(l.days)||0,q=parseFloat(l.qty)||0,r=parseFloat(l.rate)||0,td=parseFloat(l.travelDays)||0
+            const prep=parseFloat(l.prepDays)||0,d=parseFloat(l.days)||0,q=parseFloat(l.qty)||0,r=parseFloat(l.rate)||0,td=parseFloat(l.travelDays)||0
+            const useDaysPDF = prep>0||d>0||td>0
+            const t=lineTotal(l,pdfTr,pdfPr)
             const disc = parseFloat(l.discount)||0
             return `<div class="pdf-line">
-              <div class="pdf-line-item">${esc(l.item)}${l.notes?`<div class="pdf-line-sub">${esc(l.notes)}</div>`:''}${useDays&&td>0?`<div class="pdf-line-sub">+${td} travel day${td!==1?'s':''} @ ${pdfTr}%</div>`:''}${disc>0?`<div class="pdf-line-sub">Discount: ${disc}%</div>`:''}</div>
-              <div class="pdf-line-num">${useDays&&d>0?d:''}</div>
-              <div class="pdf-line-num">${useDays?(d>0&&q!==1?q:''):q}</div>
-              <div class="pdf-line-num">${useDays?(td>0?gbpA(r*td*(pdfTr/100)):''):(r>0?gbpA(r):'')}</div>
+              <div class="pdf-line-item">${esc(l.item)}${l.notes?`<div class="pdf-line-sub">${esc(l.notes)}</div>`:''}${useDaysPDF&&prep>0?`<div class="pdf-line-sub">Prep: ${prep}d @ ${pdfPr}%</div>`:''}${useDaysPDF&&td>0?`<div class="pdf-line-sub">Travel: ${td}d @ ${pdfTr}%</div>`:''}${disc>0?`<div class="pdf-line-sub">Discount: ${disc}%</div>`:''}</div>
+              <div class="pdf-line-num">${useDaysPDF&&prep>0?prep+'p ':''}${useDaysPDF&&d>0?d+'s':''}</div>
+              <div class="pdf-line-num">${useDaysPDF?(q!==1?q:''):q}</div>
+              <div class="pdf-line-num">${useDaysPDF&&prep>0?gbpA(r*prep*q*(pdfPr/100)):''} ${useDaysPDF&&td>0?gbpA(r*td*(pdfTr/100)):(r>0?gbpA(r):'')}</div>
               <div class="pdf-line-total">${gbpA(t)}</div>
             </div>`
           }).join('')}
