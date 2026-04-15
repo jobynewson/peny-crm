@@ -387,7 +387,6 @@ export class ContactsView {
         if (changes.length) logActivity(this.app.userId, 'contact', this.editingId, `${first} ${last}`, changes.join(' · ')).catch(console.error)
       } else {
         data.since = moy()
-        data.notes = []
         const [created] = await createContact(this.app.userId, data)
         this.app.contacts.unshift(created)
         this.app.toast('Contact added')
