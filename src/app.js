@@ -43,9 +43,16 @@ export class App {
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
 
     const { getDevRequests, addDevRequest, toggleDevRequest, deleteDevRequest } = await import('./db/client.js')
+    const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 
     const renderModal = async () => {
-      const requests = isAdmin ? await getDevRequests() : []
+      let requests = []
+      try {
+        requests = isAdmin ? await getDevRequests() : []
+      } catch(e) {
+        console.error('Dev requests table may not exist yet:', e)
+        // Continue with empty requests rather than crashing
+      }
       const pending  = requests.filter(r => !r.done)
       const done     = requests.filter(r => r.done)
 
@@ -103,8 +110,6 @@ export class App {
           </div>` : ''}
         </div>`
 
-      const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
-
       // Close
       overlay.querySelector('#dev-req-close')?.addEventListener('click', () => overlay.remove())
       overlay.querySelector('#dev-req-cancel')?.addEventListener('click', () => overlay.remove())
@@ -160,7 +165,7 @@ export class App {
 
     overlay.addEventListener('click', () => overlay.remove())
     document.body.appendChild(overlay)
-    renderModal()
+    try { await renderModal() } catch(e) { console.error(e); overlay.remove() }
   }
 
   _openSearch() {
