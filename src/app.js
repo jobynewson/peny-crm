@@ -628,8 +628,17 @@ export class App {
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px" id="retainer-cards">
           ${retainers.map(p => {
             const cl = this.contacts.find(c => c.id === p.client_id)
-            const hours = parseFloat(p.retainer_hours)||0
-            const fee   = parseFloat(p.retainer_fee)||0
+            const periodMult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}
+            const calcHours = (p.retainer_items||[]).reduce((s,i) => {
+              const mult = periodMult[i.period||'month']||1
+              return s + (i.unit==='hours' ? (parseFloat(i.qty)||0)*mult : (parseFloat(i.qty)||0)*8*mult)
+            }, 0)
+            const hours = calcHours || (parseFloat(p.retainer_hours)||0)
+            const calcFee = (p.retainer_items||[]).reduce((s,i) => {
+              const mult = periodMult[i.period||'month']||1
+              return s + (parseFloat(i.rate)||0)*(parseFloat(i.qty)||0)*mult
+            }, 0)
+            const fee = p.retainer_fee_mode==='calculated' ? calcFee : (parseFloat(p.retainer_fee)||0)
             return `<div class="kanban-card" style="border-left:3px solid #a78bfa;cursor:default" data-retainer="${p.id}">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
                 <div class="kanban-card-title" style="cursor:pointer" data-open-pid="${p.id}">${p.name}</div>
@@ -779,7 +788,13 @@ export class App {
     if (retainers.length > 0) {
       const { getTimeEntries } = await import('./db/client.js')
       for (const p of retainers) {
-        if (!p.retainer_hours) continue
+        const periodMult2 = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}
+        const calcH = (p.retainer_items||[]).reduce((s,i) => {
+          const mult = periodMult2[i.period||'month']||1
+          return s + (i.unit==='hours' ? (parseFloat(i.qty)||0)*mult : (parseFloat(i.qty)||0)*8*mult)
+        }, 0)
+        const allocH = calcH || (parseFloat(p.retainer_hours)||0)
+        if (!allocH) continue
         try {
           const [periodStart, periodEnd] = this._retainerPeriod(p.retainer_start)
           const allEntries = await getTimeEntries(p.id)
@@ -790,7 +805,7 @@ export class App {
               })
             : allEntries
           const logged = entries.reduce((s, e) => s + parseFloat(e.hours), 0)
-          const hours = parseFloat(p.retainer_hours)
+          const hours = allocH
           const pct = Math.min(100, Math.round(logged / hours * 100))
           const alertPct = parseFloat(p.retainer_alert) || 80
 
