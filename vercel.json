@@ -2,6 +2,7 @@
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/track/(.*)", "destination": "/track.html" },
+    { "source": "/portal/(.*)", "destination": "/portal.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

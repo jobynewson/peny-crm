@@ -64,7 +64,9 @@ export const projects = pgTable('projects', {
   shots:       jsonb('shots').notNull().default([]),
   approvals:   jsonb('approvals').notNull().default([]),
   notes:       text('notes'),
-  track_token: text('track_token'),
+  track_token:  text('track_token'),
+  portal_token: text('portal_token'),
+  frame_io_link: text('frame_io_link'),
   is_retainer:      boolean('is_retainer').notNull().default(false),
   retainer_fee:     numeric('retainer_fee',   { precision: 10, scale: 2 }),
   retainer_hours:   numeric('retainer_hours', { precision: 6,  scale: 2 }),
@@ -166,5 +168,15 @@ export const dev_requests = pgTable('dev_requests', {
   user_name:  text('user_name').notNull().default(''),
   message:    text('message').notNull(),
   done:       boolean('done').notNull().default(false),
+  created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// ── Work log ──────────────────────────────────────────────────────────────────
+export const work_log = pgTable('work_log', {
+  id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  project_id: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  note:       text('note').notNull(),
+  entry_date: date('entry_date').notNull(),
+  created_by: text('created_by').notNull().default(''),
   created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })

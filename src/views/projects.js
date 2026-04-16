@@ -1,4 +1,4 @@
-import { createProject, updateProject, deleteProject, linkBudgetToProject, unlinkBudgetFromProject, logActivity, getActivityLog, getTimeEntries, setTrackToken, deleteTimeEntry } from '../db/client.js'
+import { createProject, updateProject, deleteProject, linkBudgetToProject, unlinkBudgetFromProject, logActivity, getActivityLog, getTimeEntries, setTrackToken, deleteTimeEntry, getWorkLog, addWorkLogEntry, deleteWorkLogEntry } from '../db/client.js'
 
 const STAGES = ['Enquiry','Pre-production','In Production','Post','Delivered']
 const RETAINER_STAGE = 'Retainer'
@@ -523,6 +523,25 @@ export class ProjectsView {
             </div>
           </div>
 
+          <div class="proj-panel">
+            <div class="proj-panel-head">
+              Work log
+              ${p.portal_token ? `<a href="/portal/${p.portal_token}" target="_blank" style="margin-left:auto;font-size:11px;color:var(--accent);text-decoration:none">View portal ↗</a>` : ''}
+            </div>
+            <div id="pv-worklog" style="padding:0 14px">
+              <div style="font-size:11px;color:var(--text-tertiary);padding:10px 0">Loading…</div>
+            </div>
+            <div style="padding:10px 14px;border-top:0.5px solid var(--border-light)">
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <textarea id="wl-note" placeholder="What did you work on today?" style="width:100%;min-height:72px;padding:8px 10px;font-size:12px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.5"></textarea>
+                <div style="display:flex;gap:6px">
+                  <input type="date" id="wl-date" value="${new Date().toISOString().split('T')[0]}" style="flex:1;padding:7px 10px;font-size:12px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);outline:none" />
+                  <button class="btn-primary" id="wl-submit" style="font-size:12px;padding:7px 14px;white-space:nowrap">Add entry</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>`
 
@@ -691,6 +710,7 @@ export class ProjectsView {
 
     // Load activity log
     this._loadProjectActivity(mc, p.id)
+    this._loadWorkLog(mc, p)
     // Load time tracking panel
     this._loadTimePanel(mc, p)
   }
@@ -951,6 +971,66 @@ export class ProjectsView {
       this.app.toast('Tracking link generated')
       this._loadTimePanel(mc, p)
     })
+  }
+
+  async _loadWorkLog(mc, p) {
+    const el = mc.querySelector('#pv-worklog')
+    if (!el) return
+    const fmtDate = s => new Date(s).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})
+    const renderEntries = (entries) => {
+      if (!entries.length) {
+        el.innerHTML = '<div style="font-size:11px;color:var(--text-tertiary);padding:8px 0">No entries yet</div>'
+        return
+      }
+      el.innerHTML = entries.map(e => `
+        <div style="padding:10px 0;border-bottom:0.5px solid var(--border-light)">
+          <div style="font-size:13px;line-height:1.6;white-space:pre-line;color:var(--text-primary)">${esc(e.note)}</div>
+          <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px;display:flex;justify-content:space-between">
+            <span>${fmtDate(e.entry_date)}${e.created_by?' · '+esc(e.created_by):''}</span>
+            <button data-del-wl="${e.id}" style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:12px;padding:0" title="Delete">×</button>
+          </div>
+        </div>`).join('')
+      el.querySelectorAll('[data-del-wl]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Delete this work log entry?')) return
+          try {
+            const { deleteWorkLogEntry } = await import('../db/client.js')
+            await deleteWorkLogEntry(btn.dataset.delWl)
+            this._loadWorkLog(mc, p)
+          } catch(err) { console.error(err); this.app.toast('Error deleting entry') }
+        })
+      })
+    }
+
+    try {
+      const { getWorkLog } = await import('../db/client.js')
+      const entries = await getWorkLog(p.id)
+      renderEntries(entries)
+    } catch(e) {
+      el.innerHTML = '<div style="font-size:11px;color:var(--text-tertiary);padding:8px 0">Could not load work log</div>'
+    }
+
+    // Wire submit button
+    const submitBtn = mc.querySelector('#wl-submit')
+    if (submitBtn && !submitBtn.dataset.bound) {
+      submitBtn.dataset.bound = '1'
+      submitBtn.addEventListener('click', async () => {
+        const note = mc.querySelector('#wl-note')?.value.trim()
+        const date = mc.querySelector('#wl-date')?.value
+        if (!note) { this.app.toast('Please enter a note'); return }
+        submitBtn.disabled = true; submitBtn.textContent = 'Adding…'
+        try {
+          const { addWorkLogEntry, getWorkLog } = await import('../db/client.js')
+          const createdBy = this.app.appUser?.name || ''
+          await addWorkLogEntry(p.id, note, date, createdBy)
+          mc.querySelector('#wl-note').value = ''
+          const entries = await getWorkLog(p.id)
+          renderEntries(entries)
+          this.app.toast('Work log entry added')
+        } catch(err) { console.error(err); this.app.toast('Error adding entry') }
+        finally { submitBtn.disabled = false; submitBtn.textContent = 'Add entry' }
+      })
+    }
   }
 
   async _loadProjectActivity(mc, projectId) {
@@ -1218,6 +1298,27 @@ export class ProjectsView {
             <div class="proj-panel-head">Notes</div>
             <div style="padding:12px 14px">
               <textarea class="proj-textarea" id="pe-notes" style="min-height:90px" placeholder="Internal notes...">${esc(p.notes)}</textarea>
+            </div>
+          </div>
+
+          <div class="proj-panel">
+            <div class="proj-panel-head">Client portal</div>
+            <div style="padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+              <div>
+                <div class="proj-field-label">Frame.io review link</div>
+                <input type="url" class="proj-input" id="pe-frameio" value="${esc(p.frame_io_link||'')}" placeholder="https://app.frame.io/..." />
+              </div>
+              <div>
+                ${p.portal_token
+                  ? `<div class="proj-field-label">Portal link</div>
+                     <div style="display:flex;gap:6px;align-items:center">
+                       <input type="text" class="proj-input" readonly value="${location.origin}/portal/${p.portal_token}" style="font-size:11px;color:var(--text-secondary)" />
+                       <button class="btn-secondary" id="pe-copy-portal" style="white-space:nowrap;font-size:11px">Copy</button>
+                     </div>
+                     <button class="btn-cancel" id="pe-regen-portal" style="font-size:11px;margin-top:6px;width:100%">Regenerate link</button>`
+                  : `<button class="btn-primary" id="pe-gen-portal" style="font-size:12px;width:100%">Generate portal link</button>
+                     <div style="font-size:11px;color:var(--text-tertiary);margin-top:6px">Share with your client to give them a read-only view of deliverables and work log.</div>`}
+              </div>
             </div>
           </div>
 
@@ -1540,6 +1641,31 @@ export class ProjectsView {
     mc.querySelector('#pe-start')?.addEventListener('change',   e => { p.shoot_start = e.target.value || null; save() })
     mc.querySelector('#pe-end')?.addEventListener('change',     e => { p.shoot_end   = e.target.value || null; save() })
     mc.querySelector('#pe-notes')?.addEventListener('change',   e => { p.notes   = e.target.value; save() })
+    mc.querySelector('#pe-frameio')?.addEventListener('change', e => { p.frame_io_link = e.target.value.trim() || null; save() })
+
+    // Portal token generation
+    mc.querySelector('#pe-gen-portal')?.addEventListener('click', async () => {
+      const token = crypto.randomUUID().replace(/-/g,'').slice(0,24)
+      p.portal_token = token
+      const idx = this.app.projects.findIndex(x => x.id === p.id)
+      if (idx >= 0) this.app.projects[idx].portal_token = token
+      try { await updateProject(this.app.userId, p.id, { portal_token: token }) } catch(e) { console.error(e) }
+      this.renderEditor(mc)
+    })
+    mc.querySelector('#pe-regen-portal')?.addEventListener('click', async () => {
+      if (!confirm('Regenerate portal link? The old link will stop working.')) return
+      const token = crypto.randomUUID().replace(/-/g,'').slice(0,24)
+      p.portal_token = token
+      const idx = this.app.projects.findIndex(x => x.id === p.id)
+      if (idx >= 0) this.app.projects[idx].portal_token = token
+      try { await updateProject(this.app.userId, p.id, { portal_token: token }) } catch(e) { console.error(e) }
+      this.renderEditor(mc)
+    })
+    mc.querySelector('#pe-copy-portal')?.addEventListener('click', async e => {
+      const url = `${location.origin}/portal/${p.portal_token}`
+      await navigator.clipboard.writeText(url)
+      const btn = e.target; btn.textContent = '✓ Copied'; setTimeout(() => btn.textContent = 'Copy', 1500)
+    })
 
     // Retainer fields
     mc.querySelector('#pe-is-retainer')?.addEventListener('change', e => {
@@ -1746,7 +1872,7 @@ export class ProjectsView {
         shoot_start: p.shoot_start || null, shoot_end: p.shoot_end || null,
         deliverables: p.deliverables, crew: p.crew, shots: p.shots,
         approvals: p.approvals, notes: p.notes,
-        is_retainer:    p.is_retainer    ?? false,
+        is_retainer:      p.is_retainer    ?? false,
         retainer_fee:      p.retainer_fee   ?? null,
         retainer_hours:    p.retainer_hours ?? null,
         retainer_alert:    p.retainer_alert ?? 80,
@@ -1754,6 +1880,8 @@ export class ProjectsView {
         retainer_items:    p.retainer_items    ?? [],
         retainer_fee_mode: p.retainer_fee_mode ?? 'fixed',
         monthly_deliverables: p.monthly_deliverables ?? [],
+        portal_token:  p.portal_token  || null,
+        frame_io_link: p.frame_io_link || null,
       }
       const [updated] = await updateProject(this.app.userId, p.id, data)
       const idx = this.app.projects.findIndex(x => x.id === p.id)

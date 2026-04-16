@@ -276,3 +276,24 @@ export async function deleteDevRequest(id) {
     DELETE FROM dev_requests WHERE id = ${id}
   `)
 }
+
+// ── Work log ──────────────────────────────────────────────────────────────────
+export async function getWorkLog(projectId) {
+  const { sql } = await import('drizzle-orm')
+  return db.execute(sql`
+    SELECT * FROM work_log WHERE project_id = ${projectId}
+    ORDER BY entry_date DESC, created_at DESC
+  `).then(r => r.rows ?? r)
+}
+export async function addWorkLogEntry(projectId, note, entryDate, createdBy) {
+  const { sql } = await import('drizzle-orm')
+  return db.execute(sql`
+    INSERT INTO work_log (project_id, note, entry_date, created_by)
+    VALUES (${projectId}, ${note}, ${entryDate}, ${createdBy})
+    RETURNING *
+  `).then(r => (r.rows ?? r)[0])
+}
+export async function deleteWorkLogEntry(id) {
+  const { sql } = await import('drizzle-orm')
+  return db.execute(sql`DELETE FROM work_log WHERE id = ${id}`)
+}

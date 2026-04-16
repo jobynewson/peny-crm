@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Project Portal — Peny</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+    :root {
+      --bg: #0f0f0f; --surface: #1a1a1a; --surface2: #222;
+      --border: #2a2a2a; --text: #e8e8e4; --text-sec: #9a9a90; --text-ter: #5a5a54;
+      --accent: #4a90d9; --green: #6ec96e; --amber: #f59e0b; --purple: #a78bfa;
+      --radius: 10px; --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    body { background:var(--bg); color:var(--text); font-family:var(--font); min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:32px 16px 80px }
+    .logo { height:32px; margin-bottom:32px; opacity:0.9 }
+    .wrap { width:100%; max-width:560px; display:flex; flex-direction:column; gap:14px }
+    .card { background:var(--surface); border:0.5px solid var(--border); border-radius:var(--radius); padding:24px }
+    .project-name { font-size:22px; font-weight:600; margin-bottom:4px }
+    .project-sub { font-size:13px; color:var(--text-sec); margin-bottom:16px }
+    .status-badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:500; background:rgba(74,144,217,0.15); color:var(--accent); margin-bottom:16px }
+    .brief { font-size:13px; color:var(--text-sec); line-height:1.7; white-space:pre-line }
+    .dates { display:flex; gap:24px; margin-top:16px }
+    .date-item { }
+    .date-label { font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-ter); margin-bottom:3px }
+    .date-val { font-size:14px; font-weight:500 }
+
+    .section-title { font-size:11px; text-transform:uppercase; letter-spacing:0.6px; color:var(--text-ter); margin-bottom:14px; font-weight:400 }
+
+    .deliv-row { display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:0.5px solid var(--border); font-size:14px }
+    .deliv-row:last-child { border-bottom:none }
+    .deliv-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0 }
+    .deliv-dot.done { background:var(--green) }
+    .deliv-dot.pending { background:var(--border) }
+    .deliv-text.done { text-decoration:line-through; color:var(--text-ter) }
+
+    .log-entry { padding:12px 0; border-bottom:0.5px solid var(--border) }
+    .log-entry:last-child { border-bottom:none }
+    .log-note { font-size:13px; line-height:1.6; white-space:pre-line }
+    .log-meta { font-size:11px; color:var(--text-ter); margin-top:4px }
+
+    .frameio-btn { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; padding:12px; background:rgba(167,139,250,0.12); border:0.5px solid rgba(167,139,250,0.3); border-radius:8px; color:var(--purple); font-size:14px; font-weight:500; cursor:pointer; text-decoration:none; font-family:var(--font); transition:opacity 0.15s }
+    .frameio-btn:hover { opacity:0.8 }
+    .frameio-icon { width:18px; height:18px; opacity:0.8 }
+
+    .empty { font-size:13px; color:var(--text-ter); text-align:center; padding:20px 0 }
+    .loading { color:var(--text-ter); font-size:14px; text-align:center; padding:60px }
+    .error-state { text-align:center; padding:60px 20px }
+    .error-state h2 { font-size:18px; margin-bottom:8px }
+    .error-state p { color:var(--text-sec); font-size:14px }
+    .footer { margin-top:32px; font-size:11px; color:var(--text-ter); text-align:center }
+  </style>
+</head>
+<body>
+  <img src="/peny-logo-white.png" alt="Peny" class="logo" onerror="this.style.display='none'" />
+  <div id="root"><div class="loading">Loading…</div></div>
+
+  <script type="module">
+    const token = location.pathname.split('/portal/')[1]?.split('/')[0]
+    if (!token) {
+      document.getElementById('root').innerHTML = `<div class="error-state"><h2>Invalid link</h2><p>This portal link is not valid.</p></div>`
+      throw new Error('No token')
+    }
+
+    const res = await fetch(`/api/portal?token=${encodeURIComponent(token)}`)
+    if (!res.ok) {
+      document.getElementById('root').innerHTML = `<div class="error-state"><h2>Not found</h2><p>This portal link has expired or doesn't exist.</p></div>`
+      throw new Error('Not found')
+    }
+
+    const { project, client, studio, deliverables, workLog } = await res.json()
+
+    const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+
+    const fmtDate = s => {
+      if (!s) return ''
+      const d = new Date(s)
+      return d.toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })
+    }
+
+    // Update page title
+    document.title = `${project.name} — Portal`
+
+    const delivHTML = deliverables.length
+      ? deliverables.map(d => `
+        <div class="deliv-row">
+          <div class="deliv-dot ${d.done?'done':'pending'}"></div>
+          <div class="deliv-text ${d.done?'done':''}">${esc(d.text)}</div>
+        </div>`).join('')
+      : `<div class="empty">No deliverables listed</div>`
+
+    const logHTML = workLog.length
+      ? workLog.map(e => `
+        <div class="log-entry">
+          <div class="log-note">${esc(e.note)}</div>
+          <div class="log-meta">${fmtDate(e.entry_date)}${e.created_by ? ' · ' + esc(e.created_by) : ''}</div>
+        </div>`).join('')
+      : `<div class="empty">No updates yet</div>`
+
+    document.getElementById('root').innerHTML = `
+      <div class="wrap">
+        <div class="card">
+          <div class="project-name">${esc(project.name)}</div>
+          <div class="project-sub">${client ? esc(client.company || client.name) : studio?.name ? esc(studio.name) : ''}</div>
+          <div class="status-badge">${esc(project.status)}</div>
+          ${project.brief ? `<div class="brief">${esc(project.brief)}</div>` : ''}
+          ${project.shoot_start ? `
+          <div class="dates">
+            <div class="date-item">
+              <div class="date-label">Shoot start</div>
+              <div class="date-val">${fmtDate(project.shoot_start)}</div>
+            </div>
+            ${project.shoot_end && project.shoot_end !== project.shoot_start ? `
+            <div class="date-item">
+              <div class="date-label">Shoot end</div>
+              <div class="date-val">${fmtDate(project.shoot_end)}</div>
+            </div>` : ''}
+          </div>` : ''}
+        </div>
+
+        ${project.frame_io_link ? `
+        <div class="card">
+          <div class="section-title">Review &amp; Feedback</div>
+          <a href="${esc(project.frame_io_link)}" target="_blank" rel="noopener" class="frameio-btn">
+            <svg class="frameio-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h16v2H4zm0 7h10v2H4zm0 7h7v2H4z"/></svg>
+            Open in Frame.io
+          </a>
+        </div>` : ''}
+
+        <div class="card">
+          <div class="section-title">Deliverables</div>
+          ${delivHTML}
+        </div>
+
+        <div class="card">
+          <div class="section-title">Work log</div>
+          ${logHTML}
+        </div>
+
+        <div class="footer">Powered by Peny${studio?.website ? ` · <a href="${esc(studio.website)}" style="color:inherit">${esc(studio.website)}</a>` : ''}</div>
+      </div>`
+  </script>
+</body>
+</html>
