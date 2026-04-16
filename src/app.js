@@ -1330,7 +1330,7 @@ export class App {
       .bsec-tog.on{background:var(--text-primary);color:var(--bg-primary);border-color:var(--text-primary)}
       .bsec-chev{color:var(--text-tertiary);font-size:9px;transition:transform 0.18s;flex-shrink:0}.bsec-chev.open{transform:rotate(90deg)}
       .bsec-body{display:none;border-top:0.5px solid var(--border-light)}.bsec-body.open{display:block;overflow-x:auto}
-      .bl-table{width:100%;border-collapse:collapse;min-width:820px}
+      .bl-table{width:100%;border-collapse:collapse;min-width:880px}
       .bl-table th{font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;padding:8px 6px;text-align:left;border-bottom:0.5px solid var(--border-light);font-weight:400}
       .bl-table th.r{text-align:right}.bl-table td{padding:4px 4px;vertical-align:middle;border-bottom:0.5px solid var(--border-light)}
       .bl-table tr:last-child td{border-bottom:none}.bl-table tr.sub td{background:var(--bg-secondary);font-size:12px;font-weight:500}
