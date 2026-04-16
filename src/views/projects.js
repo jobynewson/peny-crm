@@ -129,7 +129,7 @@ export class ProjectsView {
               <div class="field-label">Client</div>
               <select id="pf-client">
                 <option value="">— no client —</option>
-                ${contacts.map(c=>`<option value="${c.id}">${esc(c.first_name)} ${esc(c.last_name)} — ${esc(c.company)}</option>`).join('')}
+                ${contacts.filter(c=>c.type!=='subcontractor').map(c=>`<option value="${c.id}">${esc(c.first_name)} ${esc(c.last_name)} — ${esc(c.company)}</option>`).join('')}
               </select>
             </div>
 
@@ -445,10 +445,24 @@ export class ProjectsView {
             </div>
           </div>` : ''}
 
-          ${crew.length ? `
+          ${crew.length || (this.app.contacts||[]).some(c => c.type==='subcontractor' && c.status!=='Retired') ? `
           <div class="proj-panel">
             <div class="proj-panel-head">Crew &amp; team</div>
             <div style="padding:0 16px">
+              ${(() => {
+                const subbies = (this.app.contacts||[]).filter(c => c.type==='subcontractor' && c.status!=='Retired' && !crew.some(cr => cr.name===(c.first_name+' '+c.last_name).trim()))
+                return subbies.length ? `
+                <div style="padding:8px 0;border-bottom:0.5px solid var(--border-light);display:flex;gap:8px;align-items:center">
+                  <select id="pv-add-sub-select" style="flex:1;font-size:12px;padding:5px 8px;border:0.5px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none">
+                    <option value="">+ Add subcontractor…</option>
+                    ${subbies.map(c => {
+                      const name = (c.first_name+' '+c.last_name).trim()
+                      return `<option value="${esc(name)}" data-role="${esc(c.role||'')}">${esc(name)}${c.role?' — '+esc(c.role):''}</option>`
+                    }).join('')}
+                  </select>
+                </div>` : ''
+              })()}
+              ${crew.length ? `
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:6px 0;border-bottom:0.5px solid var(--border-light)">
                 <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Name</div>
                 <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Role</div>
@@ -457,7 +471,7 @@ export class ProjectsView {
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:7px 0;border-bottom:0.5px solid var(--border-light);font-size:13px">
                   <div>${esc(c.name)}</div>
                   <div style="color:var(--text-secondary)">${esc(c.role)}</div>
-                </div>`).join('')}
+                </div>`).join('')}` : ''}
             </div>
           </div>` : ''}
 
@@ -562,6 +576,24 @@ export class ProjectsView {
         this.app.toast('Project duplicated — now editing copy')
       } catch(e) { console.error(e); this.app.toast('Error duplicating project') }
     })
+    mc.querySelector('#pv-add-sub-select')?.addEventListener('change', async e => {
+      const opt = e.target.selectedOptions[0]
+      if (!opt?.value) return
+      const name = opt.value, role = opt.dataset.role || ''
+      if (!p.crew) p.crew = []
+      if (!p.crew.some(c => c.name === name)) {
+        p.crew.push({ name, role })
+        const idx = this.app.projects.findIndex(x => x.id === p.id)
+        if (idx >= 0) this.app.projects[idx].crew = p.crew
+        try {
+          const { updateProject } = await import('../db/client.js')
+          await updateProject(this.app.userId, p.id, { crew: p.crew })
+          this.renderViewer(mc)
+        } catch(err) { console.error(err); this.app.toast('Error adding subcontractor') }
+      }
+      e.target.value = ''
+    })
+
     mc.querySelector('#pv-delete')?.addEventListener('click', () => this.deleteProject(p.id, mc))
 
     // Clickable client link
@@ -989,7 +1021,7 @@ export class ProjectsView {
                 <div class="proj-field-label">Client</div>
                 <select class="proj-input" id="pe-client">
                   <option value="">— no client —</option>
-                  ${contacts.map(c=>`<option value="${c.id}" ${p.client_id===c.id?'selected':''}>${esc(c.first_name)} ${esc(c.last_name)} — ${esc(c.company)}</option>`).join('')}
+                  ${contacts.filter(c=>c.type!=='subcontractor').map(c=>`<option value="${c.id}" ${p.client_id===c.id?'selected':''}>${esc(c.first_name)} ${esc(c.last_name)} — ${esc(c.company)}</option>`).join('')}
                 </select>
               </div>
               <div>

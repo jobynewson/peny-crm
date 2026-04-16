@@ -25,6 +25,7 @@ export class ContactsView {
   constructor(app) {
     this.app = app
     this.filter = 'all'
+    this.view   = 'clients'  // 'clients' | 'subbies'
     this.search = ''
     this.selectedId = null
     this.editingId = null
@@ -40,18 +41,23 @@ export class ContactsView {
     const { contacts } = this.app
     return `
       <div class="stats-row">
-        <div class="stat-card"><div class="stat-label">Total contacts</div><div class="stat-value">${contacts.length}</div><div class="stat-sub">in database</div></div>
-        <div class="stat-card"><div class="stat-label">Active clients</div><div class="stat-value">${contacts.filter(c=>c.status==='Active').length}</div><div class="stat-sub">in live projects</div></div>
-        <div class="stat-card"><div class="stat-label">Warm leads</div><div class="stat-value">${contacts.filter(c=>c.status==='Warm').length}</div><div class="stat-sub">needs follow-up</div></div>
-        <div class="stat-card"><div class="stat-label">Budgets created</div><div class="stat-value">${this.app.budgets.length}</div><div class="stat-sub">total</div></div>
+        <div class="stat-card"><div class="stat-label">Total contacts</div><div class="stat-value">${contacts.filter(c=>c.type!=='subcontractor').length}</div><div class="stat-sub">clients</div></div>
+        <div class="stat-card"><div class="stat-label">Active clients</div><div class="stat-value">${contacts.filter(c=>c.type!=='subcontractor'&&c.status==='Active').length}</div><div class="stat-sub">in live projects</div></div>
+        <div class="stat-card"><div class="stat-label">Subcontractors</div><div class="stat-value">${contacts.filter(c=>c.type==='subcontractor'&&c.status!=='Retired').length}</div><div class="stat-sub">active</div></div>
+        <div class="stat-card"><div class="stat-label">Warm leads</div><div class="stat-value">${contacts.filter(c=>c.type!=='subcontractor'&&c.status==='Warm').length}</div><div class="stat-sub">needs follow-up</div></div>
       </div>
       <div class="panel">
         <div class="panel-header">
-          <span class="panel-title">All contacts</span>
+          <span class="panel-title">${this.view==='subbies'?'Subcontractors':'Clients'}</span>
+          <div style="display:flex;gap:4px;margin-right:8px;background:var(--bg-secondary);border-radius:20px;padding:3px">
+            <button class="filter-pill ${this.view==='clients'?'active':''}" data-view="clients" style="border-radius:16px">Clients</button>
+            <button class="filter-pill ${this.view==='subbies'?'active':''}" data-view="subbies" style="border-radius:16px">Subbies</button>
+          </div>
           <button class="filter-pill ${this.filter==='all'?'active':''}" data-filter="all">All</button>
           <button class="filter-pill ${this.filter==='Active'?'active':''}" data-filter="Active">Active</button>
-          <button class="filter-pill ${this.filter==='Warm'?'active':''}" data-filter="Warm">Warm leads</button>
-          <button class="filter-pill ${this.filter==='Cold'?'active':''}" data-filter="Cold">Cold</button>
+          ${this.view==='clients' ? `<button class="filter-pill ${this.filter==='Warm'?'active':''}" data-filter="Warm">Warm leads</button>
+          <button class="filter-pill ${this.filter==='Cold'?'active':''}" data-filter="Cold">Cold</button>` :
+          `<button class="filter-pill ${this.filter==='Retired'?'active':''}" data-filter="Retired">Retired</button>`}
         </div>
         <div class="col-header" style="grid-template-columns:2fr 1.4fr 1fr 1fr 90px">
           <div>Name</div><div>Company</div><div>Type</div><div>Status</div><div></div>
@@ -68,7 +74,8 @@ export class ContactsView {
       const q = this.search.toLowerCase()
       const matchQ = !q || (c.first_name+' '+c.last_name).toLowerCase().includes(q) || (c.company??'').toLowerCase().includes(q)
       const matchF = this.filter === 'all' || c.status === this.filter
-      return matchQ && matchF
+      const matchV = this.view === 'subbies' ? c.type === 'subcontractor' : c.type !== 'subcontractor'
+      return matchQ && matchF && matchV
     })
     if (!filtered.length) return '<div class="empty-state">No contacts found</div>'
     return filtered.map(c => `
@@ -212,6 +219,9 @@ export class ContactsView {
     }
 
     // Filter pills
+    mc.querySelectorAll('.filter-pill[data-view]').forEach(btn => {
+      btn.addEventListener('click', () => { this.view = btn.dataset.view; this.filter = 'all'; this.render(mc) })
+    })
     mc.querySelectorAll('.filter-pill[data-filter]').forEach(btn => {
       btn.addEventListener('click', () => { this.filter = btn.dataset.filter; this.render(mc) })
     })
