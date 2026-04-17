@@ -645,7 +645,24 @@ export class App {
                 ${fee ? `<div style="font-size:12px;font-weight:600;color:#a78bfa;white-space:nowrap;margin-left:8px">£${fee.toLocaleString('en-GB')}/mo</div>` : ''}
               </div>
               <div class="kanban-card-client">${cl ? cl.first_name+' '+cl.last_name : 'No client'}</div>
-              ${hours ? `
+              ${(p.retainer_items||[]).length ? `
+                <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px" data-ret-items="${p.id}">
+                  ${(p.retainer_items||[]).map((item,ii) => {
+                    const mult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}[item.period||'month']||1
+                    const allocH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
+                    return allocH ? `
+                    <div>
+                      <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px">
+                        <span style="color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">${esc(item.label)}</span>
+                        <span data-ret-item-label="${p.id}-${ii}" style="color:var(--text-secondary);white-space:nowrap">— / ${allocH}h</span>
+                      </div>
+                      <div style="height:4px;background:var(--bg-secondary);border-radius:2px;overflow:hidden">
+                        <div style="height:100%;width:0%;border-radius:2px;transition:width 0.3s" data-ret-item-bar="${p.id}-${ii}"></div>
+                      </div>
+                    </div>` : ''
+                  }).join('')}
+                  <div data-ret-alert="${p.id}" style="font-size:10px;margin-top:2px;display:none"></div>
+                </div>` : hours ? `
                 <div style="margin-top:8px">
                   <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px">
                     <span style="color:var(--text-tertiary)">This month</span>
@@ -809,25 +826,50 @@ export class App {
           const pct = Math.min(100, Math.round(logged / hours * 100))
           const alertPct = parseFloat(p.retainer_alert) || 80
 
-          const bar = mc.querySelector(`[data-ret-bar="${p.id}"]`)
-          const label = mc.querySelector(`[data-ret-label="${p.id}"]`)
           const alertEl = mc.querySelector(`[data-ret-alert="${p.id}"]`)
+          const alertPctVal = parseFloat(p.retainer_alert) || 80
 
-          const colour = pct >= 100 ? '#ef4444' : pct >= alertPct ? '#f59e0b' : '#a78bfa'
-          if (bar) { bar.style.width = pct + '%'; bar.style.background = colour }
-          if (label) {
-            label.textContent = `${logged.toFixed(1)} / ${hours}h`
-            label.style.color = pct >= alertPct ? colour : ''
-          }
-          if (alertEl && pct >= alertPct && pct < 100) {
-            alertEl.style.display = 'block'
-            alertEl.style.color = colour
-            alertEl.textContent = `⚠ ${pct}% used — ${(hours - logged).toFixed(1)}h remaining`
-          }
-          if (alertEl && pct >= 100) {
-            alertEl.style.display = 'block'
-            alertEl.style.color = colour
-            alertEl.textContent = `⚠ Over allocation by ${(logged - hours).toFixed(1)}h`
+          // Per-item bars
+          const items = p.retainer_items || []
+          if (items.length) {
+            const periodMult3 = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}
+            items.forEach((item, ii) => {
+              const mult = periodMult3[item.period||'month'] || 1
+              const allocH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
+              if (!allocH) return
+              const itemLogged = entries.filter(e => e.line_label === item.label).reduce((s,e) => s + parseFloat(e.hours), 0)
+              const iPct = Math.min(100, Math.round(itemLogged / allocH * 100))
+              const iColour = iPct >= 100 ? '#ef4444' : iPct >= alertPctVal ? '#f59e0b' : '#a78bfa'
+              const bar = mc.querySelector(`[data-ret-item-bar="${p.id}-${ii}"]`)
+              const lbl = mc.querySelector(`[data-ret-item-label="${p.id}-${ii}"]`)
+              if (bar) { bar.style.width = iPct + '%'; bar.style.background = iColour }
+              if (lbl) { lbl.textContent = `${itemLogged.toFixed(1)} / ${allocH}h`; lbl.style.color = iPct >= alertPctVal ? iColour : '' }
+            })
+            // Overall alert
+            const colour = pct >= 100 ? '#ef4444' : pct >= alertPctVal ? '#f59e0b' : '#a78bfa'
+            if (alertEl && pct >= alertPctVal && pct < 100) {
+              alertEl.style.display = 'block'; alertEl.style.color = colour
+              alertEl.textContent = `⚠ ${pct}% used overall`
+            }
+            if (alertEl && pct >= 100) {
+              alertEl.style.display = 'block'; alertEl.style.color = colour
+              alertEl.textContent = `⚠ Over allocation by ${(logged - hours).toFixed(1)}h`
+            }
+          } else {
+            // Fallback: single bar
+            const bar = mc.querySelector(`[data-ret-bar="${p.id}"]`)
+            const label = mc.querySelector(`[data-ret-label="${p.id}"]`)
+            const colour = pct >= 100 ? '#ef4444' : pct >= alertPctVal ? '#f59e0b' : '#a78bfa'
+            if (bar) { bar.style.width = pct + '%'; bar.style.background = colour }
+            if (label) { label.textContent = `${logged.toFixed(1)} / ${hours}h`; label.style.color = pct >= alertPctVal ? colour : '' }
+            if (alertEl && pct >= alertPctVal && pct < 100) {
+              alertEl.style.display = 'block'; alertEl.style.color = colour
+              alertEl.textContent = `⚠ ${pct}% used — ${(hours - logged).toFixed(1)}h remaining`
+            }
+            if (alertEl && pct >= 100) {
+              alertEl.style.display = 'block'; alertEl.style.color = colour
+              alertEl.textContent = `⚠ Over allocation by ${(logged - hours).toFixed(1)}h`
+            }
           }
         } catch(e) { /* silent */ }
       }
