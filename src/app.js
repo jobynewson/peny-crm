@@ -526,6 +526,7 @@ export class App {
     const stages = ['Enquiry','Pre-production','In Production','Post','Delivered']
     const retainers = this.projects.filter(p => p.is_retainer)
     const regularProjects = this.projects.filter(p => !p.is_retainer)
+    const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 
     if (!this.projects.length) {
       mc.innerHTML = `
