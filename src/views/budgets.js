@@ -37,7 +37,7 @@ function lineTotal(l, travelRate, prepRate) {
 function secNet(s, travelRate, prepRate) { return (s.lines||[]).reduce((t,l) => t + lineTotal(l, travelRate, prepRate), 0) }
 function budNet(b)  {
   const tr = parseFloat(b.travel_rate)||50
-  const pr = parseFloat(b.prep_rate)??100
+  const pr = parseFloat(b.prep_rate)||100   // || catches NaN unlike ??
   return (b.sections||[]).filter(s=>s.enabled).reduce((t,s) => t + secNet(s, tr, pr), 0)
 }
 function budTotal(b) {
@@ -329,7 +329,7 @@ export class BudgetsView {
     const cl = contacts.find(c => c.id === b.client_id)
     const proj = projects.find(p => Array.isArray(p.budget_ids) && p.budget_ids.includes(b.id))
     const edTr = parseFloat(b.travel_rate)||50
-    const edPr = parseFloat(b.prep_rate)??100
+    const edPr = parseFloat(b.prep_rate)||100
     const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100)
     const insVal = b.insurance ? net*0.025 : 0, afterFee = net+insVal+mu
     const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
@@ -511,7 +511,7 @@ export class BudgetsView {
     const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
     const vatVal = b.vat ? afterCustom*0.2 : 0, tot = afterCustom+vatVal
     const edTr = parseFloat(b.travel_rate)||50
-    const edPr = parseFloat(b.prep_rate)??100
+    const edPr = parseFloat(b.prep_rate)||100
     const activeSecs = sections.filter(s => s.enabled && secNet(s, edTr, edPr) > 0)
 
     mc.innerHTML = `
@@ -584,7 +584,7 @@ export class BudgetsView {
 
   sectionHTML(b, s, si) {
     const tr = parseFloat(b.travel_rate) || 50
-    const pr = parseFloat(b.prep_rate)??100
+    const pr = parseFloat(b.prep_rate)||100
     const sn = secNet(s, tr, pr)
     // All sections now use the same column layout:
     // ☐ | Item | Notes | Days | Qty | Travel | Rate | Total | ×
@@ -662,7 +662,7 @@ export class BudgetsView {
     const save = () => this.saveField(b)
     const refreshSummary = () => {
       const rsTr = parseFloat(b.travel_rate)||50
-      const rsPr = parseFloat(b.prep_rate)??100
+      const rsPr = parseFloat(b.prep_rate)||100
       const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100)
       const insVal = b.insurance ? net*0.025 : 0, afterFee = net+insVal+mu
       const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
@@ -793,7 +793,7 @@ export class BudgetsView {
       if (isNaN(val)) return  // don't update mid-typing (e.g. "-" or ".")
       l[field] = val || 0
       const tr = parseFloat(b.travel_rate)||50
-      const pr = parseFloat(b.prep_rate)??100
+      const pr = parseFloat(b.prep_rate)||100
       const t = lineTotal(l, tr, pr)
       const ltEl = mc.querySelector(`#blt-${si}-${li}`)
       if (ltEl) { ltEl.textContent = t>0?gbpA(t):'—'; ltEl.className = 'bl-tot'+(t>0?' nz':'') }
@@ -824,7 +824,7 @@ export class BudgetsView {
           }
         }
         const tr = parseFloat(b.travel_rate)||50
-        const pr = parseFloat(b.prep_rate)??100
+        const pr = parseFloat(b.prep_rate)||100
         const t = lineTotal(l, tr, pr)
         const ltEl = mc.querySelector(`#blt-${si}-${li}`)
         if (ltEl) { ltEl.textContent = t>0?gbpA(t):'—'; ltEl.className = 'bl-tot'+(t>0?' nz':'') }
@@ -948,7 +948,7 @@ export class BudgetsView {
     const insVal = b.insurance ? net*0.025 : 0, afterFee = net+insVal+mu
     const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
     const vatVal = b.vat ? afterCustom*0.2 : 0
-    const pr = parseFloat(b.prep_rate)??100
+    const pr = parseFloat(b.prep_rate)||100
     let rows = [
       ['Budget',b.name],['Client',cl?cl.first_name+' '+cl.last_name:''],
       ['Production fee %',b.markup],['Custom add-on %',b.custom_pct||0],['Travel rate %',b.travel_rate??50],['Master discount %',b.discount||0],['VAT',b.vat?'Yes':'No'],[''],
@@ -985,7 +985,7 @@ export class BudgetsView {
     const cl = this.app.contacts.find(c => c.id === b.client_id)
     const s  = this.app.settings || {}
     const pdfTr = parseFloat(b.travel_rate)||50
-    const pdfPr = parseFloat(b.prep_rate)??100
+    const pdfPr = parseFloat(b.prep_rate)||100
     const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100)
     const insVal = b.insurance ? net*0.025 : 0, afterFee = net+insVal+mu
     const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal

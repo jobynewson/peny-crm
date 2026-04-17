@@ -565,6 +565,8 @@ export class ProjectsView {
 
     mc.querySelector('#pv-status')?.addEventListener('change', async e => {
       p.status = e.target.value
+      const idx = this.app.projects.findIndex(x => x.id === p.id)
+      if (idx >= 0) this.app.projects[idx].status = p.status
       try { await updateProject(this.app.userId, p.id, { status: p.status }); this.app.toast(`Status → ${p.status}`) }
       catch(err) { console.error(err) }
     })
