@@ -95,6 +95,7 @@ export class CallSheetsView {
       <div class="bh-row" style="flex-wrap:wrap;gap:8px">
         <button class="btn-secondary" id="cs-back-list">← All call sheets</button>
         <h2 style="flex:1;font-size:15px;font-weight:500;min-width:200px">${fmtDate(s.sheet_date)||'New call sheet'}</h2>
+        <span id="cs-save-indicator" style="font-size:11px;color:var(--text-tertiary)">—</span>
         <span id="cs-status-badge" style="font-size:11px;padding:4px 12px;border-radius:20px;cursor:pointer;background:${s.status==='sent'?'rgba(110,201,110,0.15)':'var(--bg-secondary)'};color:${s.status==='sent'?'#6ec96e':'var(--text-tertiary)'};border:0.5px solid ${s.status==='sent'?'rgba(110,201,110,0.3)':'var(--border-med)'}">
           ${s.status==='sent'?'✓ Sent':'Draft'} — click to toggle
         </span>
@@ -104,7 +105,7 @@ export class CallSheetsView {
         <button class="row-btn" id="cs-delete" style="color:#b03020;border-color:rgba(180,50,30,0.2)">Delete</button>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 340px;gap:20px;margin-top:16px;align-items:flex-start">
+      <div style="display:grid;grid-template-columns:1fr 280px;gap:16px;margin-top:16px;align-items:flex-start;min-height:0">
 
         <!-- Main column -->
         <div style="display:flex;flex-direction:column;gap:16px">
@@ -182,10 +183,11 @@ export class CallSheetsView {
         </div>
 
         <!-- Sidebar: crew -->
-        <div>
+        <div style="position:sticky;top:0;max-height:100vh;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
           <div class="proj-panel">
-            <div class="proj-panel-head">
+            <div class="proj-panel-head" style="display:flex;align-items:center;gap:6px">
               Crew call times
+              <button id="cs-fill-general" class="btn-cancel" style="margin-left:auto;font-size:10px;padding:3px 8px;white-space:nowrap">Fill general call</button>
             </div>
             <div id="cs-crew" style="padding:0 14px">
               ${s.crew.length ? s.crew.map((c,i) => this.crewRowHTML(c,i)).join('') :
@@ -195,7 +197,7 @@ export class CallSheetsView {
           </div>
 
           <!-- Portal links -->
-          <div class="proj-panel" style="margin-top:12px">
+          <div class="proj-panel">
             <div class="proj-panel-head">Share links</div>
             <div style="padding:12px 14px;display:flex;flex-direction:column;gap:8px">
               <div>
@@ -222,11 +224,15 @@ export class CallSheetsView {
   }
 
   crewRowHTML(c, i) {
-    return `<div class="crew-row-cs" data-crew-idx="${i}" style="display:grid;grid-template-columns:1fr 1fr 1fr 80px 28px;gap:6px;padding:6px 0;border-bottom:0.5px solid var(--border-light);align-items:center">
-      <input type="text" class="bl-in" value="${esc(c.name)}" placeholder="Name" data-cs-crew-name="${i}" style="font-size:12px;padding:5px 8px" />
-      <input type="text" class="bl-in" value="${esc(c.role||'')}" placeholder="Role" data-cs-crew-role="${i}" style="font-size:12px;padding:5px 8px" />
-      <input type="text" class="bl-in" value="${esc(c.department||'')}" placeholder="Dept e.g. Camera" data-cs-crew-dept="${i}" style="font-size:12px;padding:5px 8px" />
-      <input type="time" class="bl-in" value="${esc(c.call_time||'')}" data-cs-crew-time="${i}" style="font-size:12px;padding:5px 6px" />
+    return `<div class="crew-row-cs" data-crew-idx="${i}" style="display:grid;grid-template-columns:1fr 70px 28px;gap:4px;padding:6px 0;border-bottom:0.5px solid var(--border-light);align-items:center">
+      <div>
+        <input type="text" class="bl-in w" value="${esc(c.name)}" placeholder="Name" data-cs-crew-name="${i}" style="font-size:12px;padding:4px 7px;margin-bottom:2px" />
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px">
+          <input type="text" class="bl-in" value="${esc(c.role||'')}" placeholder="Role" data-cs-crew-role="${i}" style="font-size:11px;padding:3px 6px;color:var(--text-secondary)" />
+          <input type="text" class="bl-in" value="${esc(c.department||'')}" placeholder="Dept" data-cs-crew-dept="${i}" style="font-size:11px;padding:3px 6px;color:var(--text-secondary)" />
+        </div>
+      </div>
+      <input type="time" class="bl-in" value="${esc(c.call_time||'')}" data-cs-crew-time="${i}" style="font-size:12px;padding:4px 5px" />
       <button class="row-btn" data-cs-rem-crew="${i}" style="color:#b03020">×</button>
     </div>`
   }
@@ -252,7 +258,16 @@ export class CallSheetsView {
   }
 
   bindEditor(mc, s) {
+    const indicator = mc.querySelector('#cs-save-indicator')
+    const showSaved = () => {
+      if (!indicator) return
+      indicator.textContent = '✓ Saved'; indicator.style.color = 'var(--text-tertiary)'
+      setTimeout(() => { if (indicator) indicator.textContent = '' }, 2000)
+    }
+    const showSaving = () => { if (indicator) { indicator.textContent = 'Saving…'; indicator.style.color = 'var(--accent)' } }
+
     const save = async () => {
+      showSaving()
       const data = {
         sheet_date:        mc.querySelector('#cs-date')?.value || s.sheet_date,
         general_call:      mc.querySelector('#cs-general-call')?.value || null,
@@ -267,10 +282,12 @@ export class CallSheetsView {
       try {
         const updated = await updateCallSheet(s.id, data)
         Object.assign(s, updated)
-      } catch(e) { console.error(e) }
+        showSaved()
+      } catch(e) { console.error(e); if (indicator) { indicator.textContent = '⚠ Save failed'; indicator.style.color = '#e07070' } }
     }
 
     const saveCrew = async () => {
+      showSaving()
       const rows = [...mc.querySelectorAll('[data-cs-crew-name]')].map((el, i) => ({
         name:       el.value,
         role:       mc.querySelector(`[data-cs-crew-role="${i}"]`)?.value || '',
@@ -278,7 +295,7 @@ export class CallSheetsView {
         call_time:  mc.querySelector(`[data-cs-crew-time="${i}"]`)?.value || null,
         crew_token: s.crew[i]?.crew_token || null,
       }))
-      try { s.crew = await saveCallSheetCrew(s.id, rows) } catch(e) { console.error(e) }
+      try { s.crew = await saveCallSheetCrew(s.id, rows); showSaved() } catch(e) { console.error(e) }
     }
 
     const saveSched = async () => {
@@ -339,6 +356,17 @@ export class CallSheetsView {
       this.bindLocRemove(mc, s, saveLocs)
     })
     this.bindLocRemove(mc, s, saveLocs)
+
+    // Fill all blank crew call times with general call
+    mc.querySelector('#cs-fill-general')?.addEventListener('click', () => {
+      const generalCall = mc.querySelector('#cs-general-call')?.value
+      if (!generalCall) { this.app.toast('Set a general call time first'); return }
+      mc.querySelectorAll('[data-cs-crew-time]').forEach(el => {
+        if (!el.value) el.value = generalCall
+      })
+      saveCrew()
+      this.app.toast('Blank call times filled')
+    })
 
     // Status toggle
     mc.querySelector('#cs-status-badge')?.addEventListener('click', async () => {
