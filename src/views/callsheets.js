@@ -173,6 +173,22 @@ export class CallSheetsView {
             <button class="add-line" id="cs-add-sched">+ add schedule item</button>
           </div>
 
+
+          <!-- Crew — in main column -->
+          <div class="proj-panel">
+            <div class="proj-panel-head" style="display:flex;align-items:center;gap:6px">
+              Crew call times
+              <button id="cs-fill-general" class="btn-cancel" style="margin-left:auto;font-size:10px;padding:3px 8px;white-space:nowrap">Fill general call</button>
+            </div>
+            <div style="padding:0 14px">
+              <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:0" id="cs-crew">
+                ${s.crew.length ? s.crew.map((c,i) => this.crewRowHTML(c,i)).join('') :
+                  '<div style="padding:10px 0;font-size:12px;color:var(--text-tertiary)">No crew added yet</div>'}
+              </div>
+            </div>
+            <button class="add-line" id="cs-add-crew">+ add crew member</button>
+          </div>
+
           <!-- Notes -->
           <div class="proj-panel">
             <div class="proj-panel-head">Notes</div>
@@ -182,21 +198,8 @@ export class CallSheetsView {
           </div>
         </div>
 
-        <!-- Sidebar: crew -->
-        <div style="position:sticky;top:0;max-height:100vh;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
-          <div class="proj-panel">
-            <div class="proj-panel-head" style="display:flex;align-items:center;gap:6px">
-              Crew call times
-              <button id="cs-fill-general" class="btn-cancel" style="margin-left:auto;font-size:10px;padding:3px 8px;white-space:nowrap">Fill general call</button>
-            </div>
-            <div id="cs-crew" style="padding:0 14px">
-              ${s.crew.length ? s.crew.map((c,i) => this.crewRowHTML(c,i)).join('') :
-                '<div style="padding:10px 0;font-size:12px;color:var(--text-tertiary)">No crew added yet</div>'}
-            </div>
-            <button class="add-line" id="cs-add-crew">+ add crew member</button>
-          </div>
-
-          <!-- Portal links -->
+        <!-- Sidebar: share links only -->
+        <div style="position:sticky;top:16px">
           <div class="proj-panel">
             <div class="proj-panel-head">Share links</div>
             <div style="padding:12px 14px;display:flex;flex-direction:column;gap:8px">
@@ -225,14 +228,14 @@ export class CallSheetsView {
 
   crewRowHTML(c, i) {
     return `<div class="crew-row-cs" data-crew-idx="${i}" style="padding:8px 0;border-bottom:0.5px solid var(--border-light)">
-      <div style="display:grid;grid-template-columns:1fr 72px 28px;gap:4px;align-items:center;margin-bottom:4px">
-        <input type="text" class="bl-in w" value="${esc(c.name)}" placeholder="Name" data-cs-crew-name="${i}" style="font-size:13px;padding:4px 7px;font-weight:500" />
-        <input type="time" class="bl-in" value="${esc(c.call_time||'')}" data-cs-crew-time="${i}" style="font-size:12px;padding:4px 5px" />
+      <div style="display:grid;grid-template-columns:1fr 80px 28px;gap:6px;align-items:center;margin-bottom:4px">
+        <input type="text" class="bl-in w" value="${esc(c.name)}" placeholder="Name" data-cs-crew-name="${i}" style="font-size:13px;padding:5px 8px;font-weight:500" />
+        <input type="time" class="bl-in" value="${esc(c.call_time||'')}" data-cs-crew-time="${i}" style="font-size:12px;padding:5px 6px" />
         <button class="row-btn" data-cs-rem-crew="${i}" style="color:#b03020">×</button>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px">
-        <input type="text" class="bl-in" value="${esc(c.role||'')}" placeholder="Role" data-cs-crew-role="${i}" style="font-size:11px;padding:3px 6px;color:var(--text-secondary)" />
-        <input type="text" class="bl-in" value="${esc(c.department||'')}" placeholder="Dept" data-cs-crew-dept="${i}" style="font-size:11px;padding:3px 6px;color:var(--text-secondary)" />
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
+        <input type="text" class="bl-in" value="${esc(c.role||'')}" placeholder="Role" data-cs-crew-role="${i}" style="font-size:11px;padding:3px 7px;color:var(--text-secondary)" />
+        <input type="text" class="bl-in" value="${esc(c.department||'')}" placeholder="Department" data-cs-crew-dept="${i}" style="font-size:11px;padding:3px 7px;color:var(--text-secondary)" />
       </div>
     </div>`
   }
