@@ -181,7 +181,7 @@ export class CallSheetsView {
               <button id="cs-fill-general" class="btn-cancel" style="margin-left:auto;font-size:10px;padding:3px 8px;white-space:nowrap">Fill general call</button>
             </div>
             <div style="padding:0 14px">
-              <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:0" id="cs-crew">
+              <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:0;padding:6px 8px" id="cs-crew">
                 ${s.crew.length ? s.crew.map((c,i) => this.crewRowHTML(c,i)).join('') :
                   '<div style="padding:10px 0;font-size:12px;color:var(--text-tertiary)">No crew added yet</div>'}
               </div>
@@ -227,15 +227,15 @@ export class CallSheetsView {
   }
 
   crewRowHTML(c, i) {
-    return `<div class="crew-row-cs" data-crew-idx="${i}" style="padding:8px 0;border-bottom:0.5px solid var(--border-light)">
-      <div style="display:grid;grid-template-columns:1fr 80px 28px;gap:6px;align-items:center;margin-bottom:4px">
-        <input type="text" class="bl-in w" value="${esc(c.name)}" placeholder="Name" data-cs-crew-name="${i}" style="font-size:13px;padding:5px 8px;font-weight:500" />
-        <input type="time" class="bl-in" value="${esc(c.call_time||'')}" data-cs-crew-time="${i}" style="font-size:12px;padding:5px 6px" />
-        <button class="row-btn" data-cs-rem-crew="${i}" style="color:#b03020">×</button>
+    return `<div class="crew-row-cs" data-crew-idx="${i}" style="background:var(--bg-secondary);border:0.5px solid var(--border-med);border-radius:var(--radius-md);padding:10px;margin:4px">
+      <div style="display:grid;grid-template-columns:1fr 80px 24px;gap:6px;align-items:center;margin-bottom:6px">
+        <input type="text" class="bl-in w" value="${esc(c.name)}" placeholder="Name" data-cs-crew-name="${i}" style="font-size:13px;padding:5px 8px;font-weight:500;background:var(--bg-primary)" />
+        <input type="time" class="bl-in" value="${esc(c.call_time||'')}" data-cs-crew-time="${i}" style="font-size:12px;padding:5px 4px;background:var(--bg-primary)" />
+        <button class="row-btn" data-cs-rem-crew="${i}" style="color:#b03020;padding:2px">×</button>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
-        <input type="text" class="bl-in" value="${esc(c.role||'')}" placeholder="Role" data-cs-crew-role="${i}" style="font-size:11px;padding:3px 7px;color:var(--text-secondary)" />
-        <input type="text" class="bl-in" value="${esc(c.department||'')}" placeholder="Department" data-cs-crew-dept="${i}" style="font-size:11px;padding:3px 7px;color:var(--text-secondary)" />
+        <input type="text" class="bl-in" value="${esc(c.role||'')}" placeholder="Role" data-cs-crew-role="${i}" style="font-size:11px;padding:3px 7px;color:var(--text-secondary);background:var(--bg-primary)" />
+        <input type="text" class="bl-in" value="${esc(c.department||'')}" placeholder="Department" data-cs-crew-dept="${i}" style="font-size:11px;padding:3px 7px;color:var(--text-secondary);background:var(--bg-primary)" />
       </div>
     </div>`
   }
