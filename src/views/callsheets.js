@@ -407,15 +407,18 @@ export class CallSheetsView {
       const btn = mc.querySelector('#cs-fetch-weather')
       btn.disabled = true; btn.textContent = 'Fetching…'
       try {
-        // Open-Meteo geocoding only works with place/town names, not full addresses
-        // Build search terms from simplest to most specific
+        // Open-Meteo geocoding works with town/place names only, not full addresses
+        // Build search terms: try every comma-separated part, stripping postcodes
+        const stripPostcode = s => s.replace(/\b[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2}\b/gi, '').trim()
         const searchTerms = []
-        if (locName) searchTerms.push(locName)
         if (locAddr) {
-          const parts = locAddr.split(',').map(s => s.trim()).filter(Boolean)
-          // Try last 2 parts (e.g. "Ledbury, HR8 1RN"), then just last part
-          if (parts.length >= 2) searchTerms.push(parts.slice(-2).join(', '))
-          if (parts.length >= 1) searchTerms.push(parts[parts.length - 1])
+          const parts = locAddr.split(',').map(s => stripPostcode(s.trim())).filter(s => s.length > 1)
+          // Try each part individually — most likely to get a hit on town names
+          searchTerms.push(...parts.reverse()) // reversed so town comes before street name
+        }
+        if (locName) {
+          const nameParts = locName.split(',').map(s => s.trim()).filter(Boolean)
+          searchTerms.push(...nameParts.reverse())
         }
 
         let loc = null
