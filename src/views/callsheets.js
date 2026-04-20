@@ -224,16 +224,16 @@ export class CallSheetsView {
   }
 
   crewRowHTML(c, i) {
-    return `<div class="crew-row-cs" data-crew-idx="${i}" style="display:grid;grid-template-columns:1fr 70px 28px;gap:4px;padding:6px 0;border-bottom:0.5px solid var(--border-light);align-items:center">
-      <div>
-        <input type="text" class="bl-in w" value="${esc(c.name)}" placeholder="Name" data-cs-crew-name="${i}" style="font-size:12px;padding:4px 7px;margin-bottom:2px" />
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px">
-          <input type="text" class="bl-in" value="${esc(c.role||'')}" placeholder="Role" data-cs-crew-role="${i}" style="font-size:11px;padding:3px 6px;color:var(--text-secondary)" />
-          <input type="text" class="bl-in" value="${esc(c.department||'')}" placeholder="Dept" data-cs-crew-dept="${i}" style="font-size:11px;padding:3px 6px;color:var(--text-secondary)" />
-        </div>
+    return `<div class="crew-row-cs" data-crew-idx="${i}" style="padding:8px 0;border-bottom:0.5px solid var(--border-light)">
+      <div style="display:grid;grid-template-columns:1fr 72px 28px;gap:4px;align-items:center;margin-bottom:4px">
+        <input type="text" class="bl-in w" value="${esc(c.name)}" placeholder="Name" data-cs-crew-name="${i}" style="font-size:13px;padding:4px 7px;font-weight:500" />
+        <input type="time" class="bl-in" value="${esc(c.call_time||'')}" data-cs-crew-time="${i}" style="font-size:12px;padding:4px 5px" />
+        <button class="row-btn" data-cs-rem-crew="${i}" style="color:#b03020">×</button>
       </div>
-      <input type="time" class="bl-in" value="${esc(c.call_time||'')}" data-cs-crew-time="${i}" style="font-size:12px;padding:4px 5px" />
-      <button class="row-btn" data-cs-rem-crew="${i}" style="color:#b03020">×</button>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px">
+        <input type="text" class="bl-in" value="${esc(c.role||'')}" placeholder="Role" data-cs-crew-role="${i}" style="font-size:11px;padding:3px 6px;color:var(--text-secondary)" />
+        <input type="text" class="bl-in" value="${esc(c.department||'')}" placeholder="Dept" data-cs-crew-dept="${i}" style="font-size:11px;padding:3px 6px;color:var(--text-secondary)" />
+      </div>
     </div>`
   }
 
