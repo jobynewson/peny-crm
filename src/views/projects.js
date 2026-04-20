@@ -301,6 +301,7 @@ export class ProjectsView {
             : STAGES.map(s => `<option value="${s}" ${p.status===s?'selected':''}>${s}</option>`).join('')}
         </select>
         ${this.app.permissions?.projects_edit ? `<button class="btn-secondary" id="pv-duplicate">Duplicate</button>` : ''}
+        <button class="btn-secondary" id="pv-callsheets">Call sheets</button>
         ${this.app.permissions?.projects_edit ? `<button class="btn-primary" id="enter-edit">Edit project</button>` : ''}
         <button class="row-btn" id="pv-delete" style="color:#b03020;border-color:rgba(180,50,30,0.2)">Delete</button>
       </div>
@@ -572,6 +573,12 @@ export class ProjectsView {
     })
 
     mc.querySelector('#pv-ret-pdf')?.addEventListener('click', () => this._exportRetainerPDF(p))
+
+    mc.querySelector('#pv-callsheets')?.addEventListener('click', () => {
+      this.app.callSheetsView.currentProjectId = p.id
+      this.app.currentView = 'callsheets'
+      this.app.render()
+    })
 
     mc.querySelector('#enter-edit')?.addEventListener('click', () => {
       this.editingId = this.currentId; this.render(mc)

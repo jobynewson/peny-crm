@@ -180,3 +180,52 @@ export const work_log = pgTable('work_log', {
   created_by: text('created_by').notNull().default(''),
   created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
+
+// ── Call sheets ───────────────────────────────────────────────────────────────
+export const call_sheets = pgTable('call_sheets', {
+  id:                uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  project_id:        uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  user_id:           text('user_id').notNull(),
+  sheet_date:        date('sheet_date').notNull(),
+  status:            text('status').notNull().default('draft'),
+  general_call:      text('general_call'),
+  location_name:     text('location_name'),
+  location_address:  text('location_address'),
+  location_map_link: text('location_map_link'),
+  weather_text:      text('weather_text'),
+  weather_fetched_at: timestamp('weather_fetched_at', { withTimezone: true }),
+  notes:             text('notes'),
+  sheet_token:       text('sheet_token'),
+  created_at:        timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updated_at:        timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+export const call_sheet_locations = pgTable('call_sheet_locations', {
+  id:            uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  call_sheet_id: uuid('call_sheet_id').notNull().references(() => call_sheets.id, { onDelete: 'cascade' }),
+  name:          text('name').notNull().default(''),
+  address:       text('address'),
+  map_link:      text('map_link'),
+  move_time:     text('move_time'),
+  notes:         text('notes'),
+  sort_order:    integer('sort_order').notNull().default(0),
+})
+
+export const call_sheet_crew = pgTable('call_sheet_crew', {
+  id:            uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  call_sheet_id: uuid('call_sheet_id').notNull().references(() => call_sheets.id, { onDelete: 'cascade' }),
+  name:          text('name').notNull().default(''),
+  role:          text('role'),
+  phone:         text('phone'),
+  call_time:     text('call_time'),
+  crew_token:    text('crew_token'),
+  sort_order:    integer('sort_order').notNull().default(0),
+})
+
+export const call_sheet_schedule = pgTable('call_sheet_schedule', {
+  id:            uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  call_sheet_id: uuid('call_sheet_id').notNull().references(() => call_sheets.id, { onDelete: 'cascade' }),
+  time:          text('time').notNull().default(''),
+  description:   text('description').notNull().default(''),
+  sort_order:    integer('sort_order').notNull().default(0),
+})

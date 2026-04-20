@@ -297,3 +297,90 @@ export async function deleteWorkLogEntry(id) {
   const { sql } = await import('drizzle-orm')
   return db.execute(sql`DELETE FROM work_log WHERE id = ${id}`)
 }
+
+// ── Call sheets ───────────────────────────────────────────────────────────────
+export async function getCallSheetsForProject(projectId) {
+  const { sql } = await import('drizzle-orm')
+  return db.execute(sql`
+    SELECT * FROM call_sheets WHERE project_id = ${projectId}
+    ORDER BY sheet_date ASC, created_at ASC
+  `).then(r => r.rows ?? r)
+}
+export async function getCallSheet(id) {
+  const { sql } = await import('drizzle-orm')
+  const [sheet] = await db.execute(sql`SELECT * FROM call_sheets WHERE id = ${id}`).then(r => r.rows ?? r)
+  if (!sheet) return null
+  const [crew, schedule, locations] = await Promise.all([
+    db.execute(sql`SELECT * FROM call_sheet_crew WHERE call_sheet_id = ${id} ORDER BY sort_order, id`).then(r => r.rows ?? r),
+    db.execute(sql`SELECT * FROM call_sheet_schedule WHERE call_sheet_id = ${id} ORDER BY sort_order, id`).then(r => r.rows ?? r),
+    db.execute(sql`SELECT * FROM call_sheet_locations WHERE call_sheet_id = ${id} ORDER BY sort_order, id`).then(r => r.rows ?? r),
+  ])
+  return { ...sheet, crew, schedule, locations }
+}
+export async function createCallSheet(userId, projectId, data) {
+  const { sql } = await import('drizzle-orm')
+  const token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
+  const [sheet] = await db.execute(sql`
+    INSERT INTO call_sheets (project_id, user_id, sheet_date, status, general_call,
+      location_name, location_address, location_map_link, weather_text, notes, sheet_token)
+    VALUES (${projectId}, ${userId}, ${data.sheet_date}, 'draft', ${data.general_call||null},
+      ${data.location_name||null}, ${data.location_address||null}, ${data.location_map_link||null},
+      ${data.weather_text||null}, ${data.notes||null}, ${token})
+    RETURNING *
+  `).then(r => r.rows ?? r)
+  return sheet
+}
+export async function updateCallSheet(id, data) {
+  const { sql } = await import('drizzle-orm')
+  const [sheet] = await db.execute(sql`
+    UPDATE call_sheets SET
+      sheet_date = ${data.sheet_date}, status = ${data.status||'draft'},
+      general_call = ${data.general_call||null},
+      location_name = ${data.location_name||null}, location_address = ${data.location_address||null},
+      location_map_link = ${data.location_map_link||null},
+      weather_text = ${data.weather_text||null},
+      weather_fetched_at = ${data.weather_fetched_at||null},
+      notes = ${data.notes||null}, updated_at = NOW()
+    WHERE id = ${id} RETURNING *
+  `).then(r => r.rows ?? r)
+  return sheet
+}
+export async function deleteCallSheet(id) {
+  const { sql } = await import('drizzle-orm')
+  return db.execute(sql`DELETE FROM call_sheets WHERE id = ${id}`)
+}
+export async function saveCallSheetCrew(callSheetId, crewRows) {
+  const { sql } = await import('drizzle-orm')
+  await db.execute(sql`DELETE FROM call_sheet_crew WHERE call_sheet_id = ${callSheetId}`)
+  for (let i = 0; i < crewRows.length; i++) {
+    const c = crewRows[i]
+    const token = c.crew_token || (Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2))
+    await db.execute(sql`
+      INSERT INTO call_sheet_crew (call_sheet_id, name, role, phone, call_time, crew_token, sort_order)
+      VALUES (${callSheetId}, ${c.name||''}, ${c.role||null}, ${c.phone||null}, ${c.call_time||null}, ${token}, ${i})
+    `)
+  }
+  return db.execute(sql`SELECT * FROM call_sheet_crew WHERE call_sheet_id = ${callSheetId} ORDER BY sort_order`).then(r => r.rows ?? r)
+}
+export async function saveCallSheetSchedule(callSheetId, rows) {
+  const { sql } = await import('drizzle-orm')
+  await db.execute(sql`DELETE FROM call_sheet_schedule WHERE call_sheet_id = ${callSheetId}`)
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i]
+    await db.execute(sql`
+      INSERT INTO call_sheet_schedule (call_sheet_id, time, description, sort_order)
+      VALUES (${callSheetId}, ${r.time||''}, ${r.description||''}, ${i})
+    `)
+  }
+}
+export async function saveCallSheetLocations(callSheetId, rows) {
+  const { sql } = await import('drizzle-orm')
+  await db.execute(sql`DELETE FROM call_sheet_locations WHERE call_sheet_id = ${callSheetId}`)
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i]
+    await db.execute(sql`
+      INSERT INTO call_sheet_locations (call_sheet_id, name, address, map_link, move_time, notes, sort_order)
+      VALUES (${callSheetId}, ${r.name||''}, ${r.address||null}, ${r.map_link||null}, ${r.move_time||null}, ${r.notes||null}, ${i})
+    `)
+  }
+}
