@@ -400,17 +400,32 @@ export class CallSheetsView {
 
     // Fetch weather
     mc.querySelector('#cs-fetch-weather')?.addEventListener('click', async () => {
-      const addr = mc.querySelector('#cs-loc-addr')?.value || mc.querySelector('#cs-loc-name')?.value
+      const locName = mc.querySelector('#cs-loc-name')?.value.trim()
+      const locAddr = mc.querySelector('#cs-loc-addr')?.value.trim()
       const date = mc.querySelector('#cs-date')?.value || s.sheet_date
-      if (!addr) { this.app.toast('Enter a location address first'); return }
+      if (!locName && !locAddr) { this.app.toast('Enter a location name or address first'); return }
       const btn = mc.querySelector('#cs-fetch-weather')
       btn.disabled = true; btn.textContent = 'Fetching…'
       try {
-        // Geocode via Open-Meteo
-        const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(addr)}&count=1&language=en&format=json`)
-        const geoData = await geoRes.json()
-        const loc = geoData.results?.[0]
-        if (!loc) { this.app.toast('Location not found — try a simpler address'); return }
+        // Open-Meteo geocoding only works with place/town names, not full addresses
+        // Build search terms from simplest to most specific
+        const searchTerms = []
+        if (locName) searchTerms.push(locName)
+        if (locAddr) {
+          const parts = locAddr.split(',').map(s => s.trim()).filter(Boolean)
+          // Try last 2 parts (e.g. "Ledbury, HR8 1RN"), then just last part
+          if (parts.length >= 2) searchTerms.push(parts.slice(-2).join(', '))
+          if (parts.length >= 1) searchTerms.push(parts[parts.length - 1])
+        }
+
+        let loc = null
+        for (const term of searchTerms) {
+          const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(term)}&count=1&language=en&format=json`)
+          const geoData = await geoRes.json()
+          if (geoData.results?.[0]) { loc = geoData.results[0]; break }
+        }
+        if (!loc) { this.app.toast('Location not found — put the nearest town in the Location Name field and try again'); return }
+
         // Fetch forecast
         const wxRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max,weathercode,sunrise,sunset&timezone=Europe%2FLondon&start_date=${date}&end_date=${date}`)
         const wx = await wxRes.json()
@@ -429,7 +444,7 @@ export class CallSheetsView {
         s.weather_text = text
         s.weather_fetched_at = new Date().toISOString()
         await updateCallSheet(s.id, { ...s, weather_text: text, weather_fetched_at: s.weather_fetched_at })
-        this.app.toast('Weather fetched')
+        this.app.toast(`Weather fetched for ${loc.name}`)
       } catch(e) { console.error(e); this.app.toast('Error fetching weather') }
       finally { btn.disabled = false; btn.textContent = '🌤 Fetch' }
     })
