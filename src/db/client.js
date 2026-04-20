@@ -356,8 +356,8 @@ export async function saveCallSheetCrew(callSheetId, crewRows) {
     const c = crewRows[i]
     const token = c.crew_token || (Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2))
     await db.execute(sql`
-      INSERT INTO call_sheet_crew (call_sheet_id, name, role, phone, call_time, crew_token, sort_order)
-      VALUES (${callSheetId}, ${c.name||''}, ${c.role||null}, ${c.phone||null}, ${c.call_time||null}, ${token}, ${i})
+      INSERT INTO call_sheet_crew (call_sheet_id, name, role, department, phone, call_time, crew_token, sort_order)
+      VALUES (${callSheetId}, ${c.name||''}, ${c.role||null}, ${c.department||null}, ${c.phone||null}, ${c.call_time||null}, ${token}, ${i})
     `)
   }
   return db.execute(sql`SELECT * FROM call_sheet_crew WHERE call_sheet_id = ${callSheetId} ORDER BY sort_order`).then(r => r.rows ?? r)

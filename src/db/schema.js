@@ -216,6 +216,7 @@ export const call_sheet_crew = pgTable('call_sheet_crew', {
   call_sheet_id: uuid('call_sheet_id').notNull().references(() => call_sheets.id, { onDelete: 'cascade' }),
   name:          text('name').notNull().default(''),
   role:          text('role'),
+  department:    text('department'),
   phone:         text('phone'),
   call_time:     text('call_time'),
   crew_token:    text('crew_token'),
