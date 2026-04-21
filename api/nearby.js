@@ -11,14 +11,17 @@ export default async function handler(req, res) {
   const { lat, lng } = req.query
   if (!lat || !lng) return res.status(400).json({ error: 'lat and lng required' })
 
-  const radius = 20000
-  const query = `[out:json][timeout:20];(
-    node["amenity"="hospital"](around:${radius},${lat},${lng});
-    way["amenity"="hospital"](around:${radius},${lat},${lng});
+  const radius = 30000  // 30km — wider for rural areas
+  const query = `[out:json][timeout:25];(
+    node["amenity"="hospital"]["emergency"="yes"](around:${radius},${lat},${lng});
+    way["amenity"="hospital"]["emergency"="yes"](around:${radius},${lat},${lng});
+    relation["amenity"="hospital"]["emergency"="yes"](around:${radius},${lat},${lng});
     node["amenity"="police"](around:${radius},${lat},${lng});
     way["amenity"="police"](around:${radius},${lat},${lng});
+    relation["amenity"="police"](around:${radius},${lat},${lng});
     node["amenity"="fire_station"](around:${radius},${lat},${lng});
     way["amenity"="fire_station"](around:${radius},${lat},${lng});
+    relation["amenity"="fire_station"](around:${radius},${lat},${lng});
     node["railway"="station"](around:${radius},${lat},${lng});
   );out center;`
 
@@ -40,7 +43,7 @@ export default async function handler(req, res) {
         method: 'POST',
         headers,
         body,
-        signal: AbortSignal.timeout(22000),
+        signal: AbortSignal.timeout(25000),
       })
       if (!response.ok) continue
       const data = await response.json()
