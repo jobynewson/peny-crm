@@ -397,3 +397,24 @@ export async function saveCallSheetLocations(callSheetId, rows) {
     `)
   }
 }
+
+// ── Quote (client budget link) ────────────────────────────────────────────────
+export async function getBudgetByQuoteToken(token) {
+  const { sql } = await import('drizzle-orm')
+  const rows = await db.execute(sql`
+    SELECT b.*, c.first_name, c.last_name, c.company,
+           s.company_name, s.address, s.email, s.phone, s.website, s.vat_number
+    FROM budgets b
+    LEFT JOIN contacts c ON c.id = b.client_id
+    LEFT JOIN settings s ON s.user_id = b.user_id
+    WHERE b.quote_token = ${token}
+    LIMIT 1
+  `).then(r => r.rows ?? r)
+  return rows[0] || null
+}
+export async function setQuoteToken(userId, budgetId, token) {
+  const { sql } = await import('drizzle-orm')
+  return db.execute(sql`
+    UPDATE budgets SET quote_token = ${token} WHERE id = ${budgetId} AND user_id = ${userId} RETURNING *
+  `).then(r => (r.rows ?? r)[0])
+}

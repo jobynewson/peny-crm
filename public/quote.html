@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quote</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+    :root { --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif }
+    body { background:#f7f7f5; color:#1a1a18; font-family:var(--font); min-height:100vh; padding:40px 16px 80px }
+    .wrap { max-width:780px; margin:0 auto }
+
+    /* Header */
+    .q-header { background:#1a1a18; color:#e8e8e4; border-radius:10px; padding:36px 40px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:flex-start; gap:24px }
+    .q-logo { height:28px; object-fit:contain; object-position:left; filter:brightness(0) invert(1); opacity:0.85 }
+    .q-studio { font-size:12px; line-height:1.7; color:rgba(255,255,255,0.5) }
+    .q-studio strong { color:rgba(255,255,255,0.85); font-size:14px; display:block; margin-bottom:2px }
+    .q-title { margin-top:28px; font-size:24px; font-weight:700; letter-spacing:-0.3px }
+    .q-meta { font-size:12px; color:rgba(255,255,255,0.4); margin-top:6px }
+
+    /* Sections */
+    .q-section { background:#fff; border:0.5px solid #e8e8e4; border-radius:10px; margin-bottom:12px; overflow:hidden }
+    .q-sec-head { display:flex; justify-content:space-between; align-items:center; padding:12px 20px; background:#f7f7f5; border-bottom:0.5px solid #e8e8e4 }
+    .q-sec-code { font-size:11px; font-weight:600; color:#999; text-transform:uppercase; letter-spacing:0.6px; margin-right:10px }
+    .q-sec-name { font-size:13px; font-weight:500; flex:1 }
+    .q-sec-total { font-size:13px; font-weight:600 }
+    table.q-lines { width:100%; border-collapse:collapse }
+    .q-lines th { font-size:10px; text-transform:uppercase; letter-spacing:0.4px; color:#aaa; font-weight:400; padding:8px 20px; text-align:left; border-bottom:0.5px solid #f0efe9 }
+    .q-lines th.r { text-align:right }
+    .q-lines td { font-size:13px; padding:10px 20px; border-bottom:0.5px solid #f5f5f3; color:#3a3a34 }
+    .q-lines td.r { text-align:right; font-variant-numeric:tabular-nums }
+    .q-lines tr:last-child td { border-bottom:none }
+    .q-line-note { font-size:11px; color:#aaa; margin-top:2px }
+    .q-disc { font-size:11px; color:#e07060 }
+
+    /* Totals */
+    .q-totals { background:#fff; border:0.5px solid #e8e8e4; border-radius:10px; padding:20px 24px; margin-bottom:16px }
+    .q-tot-row { display:flex; justify-content:space-between; padding:7px 0; border-bottom:0.5px solid #f5f5f3; font-size:13px }
+    .q-tot-row:last-child { border-bottom:none; font-size:15px; font-weight:700; padding-top:12px }
+    .q-tot-label { color:#555 }
+    .q-tot-val { font-variant-numeric:tabular-nums }
+
+    /* Notes */
+    .q-notes { background:#fff; border:0.5px solid #e8e8e4; border-radius:10px; padding:20px 24px; font-size:13px; line-height:1.7; color:#555; white-space:pre-line }
+
+    /* Footer */
+    .q-footer { text-align:center; font-size:11px; color:#bbb; margin-top:32px }
+    .q-badge { display:inline-block; background:rgba(110,201,110,0.15); color:#3a8a3a; border:0.5px solid rgba(110,201,110,0.3); border-radius:20px; padding:4px 12px; font-size:11px; font-weight:500; margin-bottom:16px }
+
+    .loading { text-align:center; padding:80px; color:#aaa }
+    .error { text-align:center; padding:80px; color:#888 }
+    .error h2 { font-size:20px; margin-bottom:8px; color:#444 }
+  </style>
+</head>
+<body>
+<div class="wrap" id="root"><div class="loading">Loading quote…</div></div>
+<script type="module">
+const token = location.pathname.split('/quote/')[1]?.split('/')[0]
+if (!token) { document.getElementById('root').innerHTML = '<div class="error"><h2>Invalid link</h2><p>This quote link is not valid.</p></div>'; throw new Error() }
+
+const res = await fetch(`/api/quote?token=${encodeURIComponent(token)}`)
+if (!res.ok) { document.getElementById('root').innerHTML = '<div class="error"><h2>Not found</h2><p>This quote link has expired or doesn\'t exist.</p></div>'; throw new Error() }
+
+const { budget, sections, client, studio } = await res.json()
+
+const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+const gbp = n => '£' + (Math.round(n)||0).toLocaleString('en-GB')
+
+const fmtDate = s => s ? new Date(s).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}) : ''
+
+// Compute totals (same logic as budgets.js)
+const tr = parseFloat(budget.travel_rate)||50
+const pr = parseFloat(budget.prep_rate)||100
+
+const lineTotal = l => {
+  const prep = parseFloat(l.prepDays)||0, shoot = parseFloat(l.days)||0
+  const td = parseFloat(l.travelDays)||0, qty = parseFloat(l.qty)||0
+  const rate = parseFloat(l.rate)||0, disc = parseFloat(l.discount)||0
+  const useDays = l.useDays || prep > 0 || shoot > 0 || td > 0
+  const gross = useDays
+    ? prep*qty*rate*(pr/100) + shoot*qty*rate + td*(tr/100)*rate
+    : qty * rate
+  return gross * (1 - disc/100)
+}
+
+const hasVisibleValue = l => {
+  const disc = parseFloat(l.discount)||0
+  const useDays = l.useDays || (parseFloat(l.prepDays)||0)>0 || (parseFloat(l.days)||0)>0 || (parseFloat(l.travelDays)||0)>0
+  const hasQty = (parseFloat(l.qty)||0)>0 && (parseFloat(l.rate)||0)>0
+  return useDays ? true : hasQty || (disc>=100 && (parseFloat(l.rate)||0)>0)
+}
+
+const net = sections.reduce((s,sec) => s + (sec.lines||[]).reduce((t,l) => t+lineTotal(l), 0), 0)
+const mu = net*((parseFloat(budget.markup)||0)/100)
+const ins = budget.insurance ? net*0.025 : 0
+const afterFee = net + ins + mu
+const custom = afterFee*((parseFloat(budget.custom_pct)||0)/100)
+const afterCustom = afterFee + custom
+const vat = budget.vat ? afterCustom*0.2 : 0
+const grand = afterCustom + vat
+
+document.title = `Quote — ${budget.name}`
+
+const sectionsHTML = sections.map(sec => {
+  const lines = (sec.lines||[]).filter(l => hasVisibleValue(l))
+  if (!lines.length) return ''
+  const secTotal = lines.reduce((t,l) => t+lineTotal(l), 0)
+  return `<div class="q-section">
+    <div class="q-sec-head">
+      <span class="q-sec-code">${esc(sec.code)}</span>
+      <span class="q-sec-name">${esc(sec.label)}</span>
+      <span class="q-sec-total">${gbp(secTotal)}</span>
+    </div>
+    <table class="q-lines">
+      <thead><tr><th>Item</th><th class="r">Total</th></tr></thead>
+      <tbody>
+        ${lines.map(l => {
+          const t = lineTotal(l)
+          const disc = parseFloat(l.discount)||0
+          return `<tr>
+            <td>
+              ${esc(l.item)}
+              ${l.notes?`<div class="q-line-note">${esc(l.notes)}</div>`:''}
+              ${disc>0?`<div class="q-disc">${disc}% discount applied</div>`:''}
+            </td>
+            <td class="r">${disc>=100?gbp(0):t>0?gbp(t):''}</td>
+          </tr>`
+        }).join('')}
+      </tbody>
+    </table>
+  </div>`
+}).join('')
+
+const totalsHTML = `<div class="q-totals">
+  <div class="q-tot-row"><span class="q-tot-label">Net total</span><span class="q-tot-val">${gbp(net)}</span></div>
+  ${(parseFloat(budget.markup)||0)>0 ? `<div class="q-tot-row"><span class="q-tot-label">Production fee (${budget.markup}%)</span><span class="q-tot-val">${gbp(mu)}</span></div>` : ''}
+  ${ins>0 ? `<div class="q-tot-row"><span class="q-tot-label">Insurance (2.5%)</span><span class="q-tot-val">${gbp(ins)}</span></div>` : ''}
+  ${custom>0 ? `<div class="q-tot-row"><span class="q-tot-label">Additional (${budget.custom_pct}%)</span><span class="q-tot-val">${gbp(custom)}</span></div>` : ''}
+  ${budget.vat ? `<div class="q-tot-row"><span class="q-tot-label">VAT (20%)</span><span class="q-tot-val">${gbp(vat)}</span></div>` : ''}
+  <div class="q-tot-row"><span>Grand total${budget.vat?' (inc. VAT)':''}</span><span class="q-tot-val">${gbp(grand)}</span></div>
+</div>`
+
+document.getElementById('root').innerHTML = `
+  <div class="q-header">
+    <div>
+      <img src="/peny-logo-white.png" alt="${esc(studio?.name||'')}" class="q-logo" onerror="this.style.display='none'" />
+      <div class="q-title">${esc(budget.name)}</div>
+      <div class="q-meta">Prepared${budget.prepared_by?' by '+esc(budget.prepared_by):''} · ${fmtDate(budget.created_at)}${client?' · For '+esc(client.company||client.name):''}</div>
+    </div>
+    <div class="q-studio" style="text-align:right">
+      <strong>${esc(studio?.name||'')}</strong>
+      ${esc(studio?.email||'')}${studio?.phone?'<br>'+esc(studio.phone):''}
+      ${studio?.vat_number?'<br>VAT: '+esc(studio.vat_number):''}
+    </div>
+  </div>
+  ${budget.signed_off ? '<div style="text-align:center"><span class="q-badge">✓ Quote approved</span></div>' : ''}
+  ${sectionsHTML}
+  ${totalsHTML}
+  ${budget.notes ? `<div class="q-notes">${esc(budget.notes)}</div>` : ''}
+  <div class="q-footer">Powered by Peny${studio?.website?' · '+esc(studio.website):''}</div>`
+</script>
+</body>
+</html>

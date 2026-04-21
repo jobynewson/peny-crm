@@ -4,6 +4,7 @@
     { "source": "/track/(.*)", "destination": "/track.html" },
     { "source": "/portal/(.*)", "destination": "/portal.html" },
     { "source": "/call/(.*)", "destination": "/callsheet.html" },
+    { "source": "/quote/(.*)", "destination": "/quote.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

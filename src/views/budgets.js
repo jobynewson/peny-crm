@@ -1,4 +1,4 @@
-import { createBudget, updateBudget, deleteBudget, saveBudgetVersion, getBudgetVersions, deleteBudgetVersion } from '../db/client.js'
+import { createBudget, updateBudget, deleteBudget, saveBudgetVersion, getBudgetVersions, deleteBudgetVersion, setQuoteToken } from '../db/client.js'
 
 export const SECTIONS = [
   {code:'A1',label:'Pre-production — Scouting',lines:[{item:'Location Scout (Director)',prepDays:0,days:0,qty:0,rate:501},{item:'Assistant Location Scout',prepDays:0,days:0,qty:0,rate:369},{item:'Location Scout car / mileage',prepDays:0,days:0,qty:0,rate:null},{item:'Congestion Charge',prepDays:0,days:0,qty:0,rate:13},{item:'Unit Driver / Bus Hire',prepDays:0,days:0,qty:0,rate:450},{item:'Subsistence',prepDays:0,days:0,qty:0,rate:null},{item:'Flights',prepDays:0,days:0,qty:0,rate:null},{item:'Accommodation',prepDays:0,days:0,qty:0,rate:null}]},
@@ -576,6 +576,20 @@ export class BudgetsView {
               </div>
             </div>
           </div>
+
+          <div class="bsum-card" style="margin-top:12px">
+            <div class="bsum-head">Client quote link</div>
+            <div style="padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+              ${b.quote_token
+                ? `<div style="display:flex;gap:6px">
+                     <input type="text" class="bl-in w" readonly value="${location.origin}/quote/${b.quote_token}" style="font-size:11px;color:var(--text-secondary);flex:1" />
+                     <button class="btn-secondary" id="be-copy-quote" style="font-size:11px;padding:4px 8px;white-space:nowrap">Copy</button>
+                   </div>
+                   <button class="btn-cancel" id="be-regen-quote" style="font-size:11px;width:100%">Regenerate link</button>`
+                : `<button class="btn-primary" id="be-gen-quote" style="font-size:12px;width:100%">Generate client link</button>
+                   <div style="font-size:11px;color:var(--text-tertiary);line-height:1.5">Share a read-only view of this quote with your client.</div>`}
+            </div>
+          </div>
         </div>
       </div>`
 
@@ -742,6 +756,26 @@ export class BudgetsView {
     })
     mc.querySelector('#be-csv')?.addEventListener('click', () => this.exportCSV(b))
     mc.querySelector('#be-pdf')?.addEventListener('click', () => this.exportPDF(b))
+
+    // Quote link
+    const genQuote = async () => {
+      const token = crypto.randomUUID().replace(/-/g,'').slice(0,24)
+      const { setQuoteToken } = await import('../db/client.js')
+      await setQuoteToken(this.app.userId, b.id, token)
+      b.quote_token = token
+      const idx = this.app.budgets.findIndex(x => x.id === b.id)
+      if (idx >= 0) this.app.budgets[idx].quote_token = token
+      this.renderEditor(mc)
+    }
+    mc.querySelector('#be-gen-quote')?.addEventListener('click', genQuote)
+    mc.querySelector('#be-regen-quote')?.addEventListener('click', async () => {
+      if (!confirm('Regenerate quote link? The old link will stop working.')) return
+      await genQuote()
+    })
+    mc.querySelector('#be-copy-quote')?.addEventListener('click', async e => {
+      await navigator.clipboard.writeText(`${location.origin}/quote/${b.quote_token}`)
+      const btn = e.target; btn.textContent = '✓'; setTimeout(() => btn.textContent = 'Copy', 1500)
+    })
     mc.querySelector('#be-add-section')?.addEventListener('click', () => {
       const label = prompt('Section name:')
       if (!label) return
@@ -1013,7 +1047,7 @@ export class BudgetsView {
     const dateStr = today.getDate()+' '+months[today.getMonth()]+' '+today.getFullYear()
     const validDate = new Date(today); validDate.setDate(validDate.getDate()+30)
     const validStr = validDate.getDate()+' '+months[validDate.getMonth()]+' '+validDate.getFullYear()
-    const activeSecs = (b.sections||[]).filter(s => s.enabled && secNet(s, pdfTr, pdfPr) > 0)
+    const activeSecs = (b.sections||[]).filter(s => s.enabled && (s.lines||[]).some(l => hasVisibleValue(l)))
     const LOGO_WHITE = '/peny-logo-white.png'
     const LOGO_BLACK = '/peny-logo.png'
 
@@ -1070,9 +1104,8 @@ export class BudgetsView {
             <div class="pdf-col-head">Total</div>
           </div>
           ${al.map(l => {
-            const useDays = (parseFloat(l.days)||0) > 0
             const prep=parseFloat(l.prepDays)||0,d=parseFloat(l.days)||0,q=parseFloat(l.qty)||0,r=parseFloat(l.rate)||0,td=parseFloat(l.travelDays)||0
-            const useDaysPDF = prep>0||d>0||td>0
+            const useDaysPDF = l.useDays || prep>0||d>0||td>0
             const t=lineTotal(l,pdfTr,pdfPr)
             const disc = parseFloat(l.discount)||0
             return `<div class="pdf-line">
@@ -1080,7 +1113,7 @@ export class BudgetsView {
               <div class="pdf-line-num">${useDaysPDF&&(prep>0||d>0)?(prep+d)+'d':''}</div>
               <div class="pdf-line-num">${useDaysPDF?(q!==1?q:''):q}</div>
               <div class="pdf-line-num">${useDaysPDF&&prep>0?gbpA(r*prep*q*(pdfPr/100)):''} ${useDaysPDF&&td>0?gbpA(r*td*(pdfTr/100)):(r>0?gbpA(r):'')}</div>
-              <div class="pdf-line-total">${gbpA(t)}</div>
+              <div class="pdf-line-total">${disc>=100?gbpA(0):t>0?gbpA(t):''}</div>
             </div>`
           }).join('')}
         </div>`
