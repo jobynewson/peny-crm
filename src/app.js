@@ -1381,6 +1381,9 @@ export class App {
       .bsec-tog{font-size:11px;color:var(--text-secondary);padding:2px 9px;border:0.5px solid var(--border-light);border-radius:20px;background:transparent;cursor:pointer;font-family:var(--font);flex-shrink:0}
       .bsec-tog.on{background:var(--text-primary);color:var(--bg-primary);border-color:var(--text-primary)}
       .bsec-chev{color:var(--text-tertiary);font-size:9px;transition:transform 0.18s;flex-shrink:0}.bsec-chev.open{transform:rotate(90deg)}
+      .cs-panel-head{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);padding:11px 16px;border-bottom:0.5px solid var(--border-light);display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+      .cs-panel-head:hover{background:var(--bg-secondary)}
+      .cs-panel-body{}.cs-panel-body.cs-collapsed{display:none}
       .bsec-body{display:none;border-top:0.5px solid var(--border-light)}.bsec-body.open{display:block;overflow-x:auto}
       .bl-table{width:100%;border-collapse:collapse;min-width:880px}
       .bl-table th{font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;padding:8px 6px;text-align:left;border-bottom:0.5px solid var(--border-light);font-weight:400}

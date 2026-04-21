@@ -68,10 +68,24 @@ export class CallSheetsView {
     try {
       const sheet = await createCallSheet(this.app.userId, projectId, { sheet_date: defaultDate })
       // Pre-populate crew from project
+      // Pull crew with their types from the project
       const crew = (project?.crew||[]).filter(c => c.name).map((c, i) => ({
-        name: c.name, role: c.role||'', phone: '', call_time: '', crew_type: 'crew', department: '', sort_order: i
+        name: c.name, role: c.role||'', phone: '', call_time: '',
+        crew_type: c.crew_type||'crew', sort_order: i
       }))
       if (crew.length) await saveCallSheetCrew(sheet.id, crew)
+      // Pull location data from project
+      if (project?.location || project?.location_address) {
+        await updateCallSheet(sheet.id, {
+          sheet_date: sheet.sheet_date, status: 'draft',
+          general_call: null,
+          location_name: project.location || null,
+          location_address: project.location_address || null,
+          location_map_link: project.location_map_link || null,
+          parking_notes: project.parking_notes || null,
+          nearest_transport: project.nearest_transport || null,
+        })
+      }
       await this.openEditor(mc, sheet.id)
     } catch(e) { console.error(e); this.app.toast('Error creating call sheet') }
   }
@@ -112,8 +126,8 @@ export class CallSheetsView {
 
           <!-- Header info -->
           <div class="proj-panel">
-            <div class="proj-panel-head">Sheet details</div>
-            <div class="proj-panel-body" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="cs-panel-head"><span class="bsec-chev open">▶</span> Sheet details</div>
+            <div class="cs-panel-body proj-panel-body" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
               <div>
                 <div class="proj-field-label">Shoot date</div>
                 <input type="date" class="proj-input" id="cs-date" value="${s.sheet_date||''}" />
@@ -127,8 +141,8 @@ export class CallSheetsView {
 
           <!-- Location -->
           <div class="proj-panel">
-            <div class="proj-panel-head">Primary location</div>
-            <div class="proj-panel-body" style="display:flex;flex-direction:column;gap:10px">
+            <div class="cs-panel-head"><span class="bsec-chev open">▶</span> Primary location</div>
+            <div class="cs-panel-body proj-panel-body" style="display:flex;flex-direction:column;gap:10px">
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
                 <div>
                   <div class="proj-field-label">Location name</div>
@@ -165,8 +179,8 @@ export class CallSheetsView {
 
           <!-- Emergency services -->
           <div class="proj-panel">
-            <div class="proj-panel-head">Emergency services</div>
-            <div class="proj-panel-body" style="display:flex;flex-direction:column;gap:12px">
+            <div class="cs-panel-head"><span class="bsec-chev open">▶</span> Emergency services</div>
+            <div class="cs-panel-body proj-panel-body" style="display:flex;flex-direction:column;gap:12px">
               ${[
                 ['Hospital','cs-hosp','nearest_hospital'],
                 ['Police','cs-police','nearest_police'],
@@ -185,8 +199,8 @@ export class CallSheetsView {
 
           <!-- Additional locations -->
           <div class="proj-panel">
-            <div class="proj-panel-head">Additional locations</div>
-            <div id="cs-extra-locs" style="padding:0 14px">
+            <div class="cs-panel-head"><span class="bsec-chev open">▶</span> Additional locations</div>
+            <div class="cs-panel-body" id="cs-extra-locs" style="padding:0 14px">
               ${s.locations.length ? s.locations.map((l,i) => this.locationRowHTML(l,i)).join('') :
                 '<div style="padding:10px 0;font-size:12px;color:var(--text-tertiary)">No additional locations</div>'}
             </div>
@@ -195,8 +209,8 @@ export class CallSheetsView {
 
           <!-- Schedule -->
           <div class="proj-panel">
-            <div class="proj-panel-head">Schedule</div>
-            <div id="cs-schedule" style="padding:0 14px">
+            <div class="cs-panel-head"><span class="bsec-chev open">▶</span> Schedule</div>
+            <div class="cs-panel-body" id="cs-schedule" style="padding:0 14px">
               ${s.schedule.length ? s.schedule.map((r,i) => this.scheduleRowHTML(r,i)).join('') :
                 '<div style="padding:10px 0;font-size:12px;color:var(--text-tertiary)">No schedule items yet</div>'}
             </div>
@@ -205,8 +219,8 @@ export class CallSheetsView {
 
           <!-- People — tabbed by type -->
           <div class="proj-panel">
-            <div class="proj-panel-head" style="display:flex;align-items:center;gap:0">
-              <div style="display:flex;gap:0;background:var(--bg-secondary);border-radius:20px;padding:3px;margin-right:auto">
+            <div class="cs-panel-head"><span class="bsec-chev open">▶</span> </div>
+              <div class="cs-panel-body" style="display:flex;gap:0;background:var(--bg-secondary);border-radius:20px;padding:3px;margin-right:auto">
                 ${[['crew','Crew'],['on_camera','On Camera'],['client','Client']].map(([type,label]) =>
                   `<button class="filter-pill ${(s._crewTab||'crew')===type?'active':''}" data-crew-tab="${type}" style="border-radius:16px;font-size:11px">${label}</button>`
                 ).join('')}
@@ -225,15 +239,15 @@ export class CallSheetsView {
 
           <!-- Notes -->
           <div class="proj-panel">
-            <div class="proj-panel-head">Notes</div>
-            <div style="padding:12px 14px">
+            <div class="cs-panel-head"><span class="bsec-chev open">▶</span> Notes</div>
+            <div class="cs-panel-body" style="padding:12px 14px">
               <textarea class="proj-textarea" id="cs-notes" style="min-height:80px" placeholder="Any additional info for crew…">${esc(s.notes||'')}</textarea>
             </div>
           </div>
 
           <!-- H&S -->
           <div class="proj-panel">
-            <div class="proj-panel-head" style="display:flex;align-items:center">
+            <div class="cs-panel-head"><span class="bsec-chev open">▶</span> </div>
               Health &amp; Safety
               ${this.app.settings?.hs_boilerplate ? `<button id="cs-load-hs" class="btn-cancel" style="margin-left:auto;font-size:10px;padding:3px 8px">Load boilerplate</button>` : ''}
             </div>
@@ -246,23 +260,34 @@ export class CallSheetsView {
         <!-- Sidebar: share links only -->
         <div style="position:sticky;top:16px">
           <div class="proj-panel">
-            <div class="proj-panel-head">Share links</div>
-            <div style="padding:12px 14px;display:flex;flex-direction:column;gap:8px">
-              <div>
-                <div class="proj-field-label">Full call sheet</div>
+            <div class="cs-panel-head"><span class="bsec-chev open">▶</span> Share links</div>
+            <div class="cs-panel-body" style="padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+              <!-- Full call sheet — visually distinct -->
+              <div style="background:rgba(74,144,217,0.08);border:0.5px solid rgba(74,144,217,0.25);border-radius:var(--radius-md);padding:10px">
+                <div class="proj-field-label" style="color:var(--accent);margin-bottom:6px">📋 Full call sheet</div>
                 <div style="display:flex;gap:6px">
                   <input type="text" class="proj-input" readonly value="${origin}/call/${s.sheet_token}" style="font-size:11px;color:var(--text-secondary)" />
                   <button class="btn-secondary" data-copy="${origin}/call/${s.sheet_token}" style="white-space:nowrap;font-size:11px">Copy</button>
                 </div>
               </div>
-              ${s.crew.filter(c=>c.crew_token).map(c => `
-              <div>
-                <div class="proj-field-label">${esc(c.name)}</div>
-                <div style="display:flex;gap:6px">
-                  <input type="text" class="proj-input" readonly value="${origin}/call/${s.sheet_token}/${c.crew_token}" style="font-size:11px;color:var(--text-secondary)" />
-                  <button class="btn-secondary" data-copy="${origin}/call/${s.sheet_token}/${c.crew_token}" style="white-space:nowrap;font-size:11px">Copy</button>
-                </div>
-              </div>`).join('')}
+              ${(() => {
+                const types = [['crew','Crew'],['on_camera','On Camera'],['client','Client']]
+                return types.map(([type, label]) => {
+                  const group = s.crew.filter(c => (c.crew_type||'crew')===type && c.crew_token)
+                  if (!group.length) return ''
+                  return `<div>
+                    <div style="font-size:9px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-tertiary);padding:4px 0 6px;border-top:0.5px solid var(--border-light)">${label}</div>
+                    ${group.map(c => `
+                    <div style="margin-bottom:6px">
+                      <div class="proj-field-label">${esc(c.name)}</div>
+                      <div style="display:flex;gap:6px">
+                        <input type="text" class="proj-input" readonly value="${origin}/call/${s.sheet_token}/${c.crew_token}" style="font-size:11px;color:var(--text-secondary)" />
+                        <button class="btn-secondary" data-copy="${origin}/call/${s.sheet_token}/${c.crew_token}" style="white-space:nowrap;font-size:11px">Copy</button>
+                      </div>
+                    </div>`).join('')}
+                  </div>`
+                }).join('')
+              })()}
             </div>
           </div>
         </div>
@@ -338,6 +363,19 @@ export class CallSheetsView {
   }
 
   bindEditor(mc, s) {
+    // Accordion panels — toggle cs-panel-body visibility on head click
+    mc.querySelectorAll('.cs-panel-head').forEach(head => {
+      head.addEventListener('click', e => {
+        // Don't toggle if clicking a button/input/select inside the head
+        if (e.target.closest('button,input,select,a')) return
+        const body = head.nextElementSibling
+        if (!body) return
+        const isOpen = !body.classList.contains('cs-collapsed')
+        body.classList.toggle('cs-collapsed', isOpen)
+        head.querySelector('.bsec-chev')?.classList.toggle('open', !isOpen)
+      })
+    })
+
     const indicator = mc.querySelector('#cs-save-indicator')
     const showSaved = () => {
       if (!indicator) return

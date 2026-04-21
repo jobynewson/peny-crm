@@ -595,7 +595,11 @@ export class ProjectsView {
     mc.querySelector('#pv-duplicate')?.addEventListener('click', async () => {
       const copy = {
         name: p.name + ' (copy)', status: 'Enquiry', client_id: p.client_id,
-        brief: p.brief, location: p.location, shoot_start: null, shoot_end: null,
+        brief: p.brief, location: p.location,
+        location_address: p.location_address||null,
+        location_map_link: p.location_map_link||null,
+        parking_notes: p.parking_notes||null,
+        nearest_transport: p.nearest_transport||null, shoot_start: null, shoot_end: null,
         deliverables: JSON.parse(JSON.stringify(p.deliverables||[])).map(d=>({...d,done:false})),
         crew: JSON.parse(JSON.stringify(p.crew||[])),
         shots: JSON.parse(JSON.stringify(p.shots||[])),
@@ -1131,8 +1135,26 @@ export class ProjectsView {
                 <textarea class="proj-textarea" id="pe-brief" style="min-height:120px" placeholder="Objectives, audience, tone, key messages...">${esc(p.brief)}</textarea>
               </div>
               <div>
-                <div class="proj-field-label">Location</div>
-                <input type="text" class="proj-input" id="pe-location" value="${esc(p.location)}" placeholder="e.g. Snowdonia, North Wales" />
+                <div class="proj-field-label">Location name</div>
+                <input type="text" class="proj-input" id="pe-location" value="${esc(p.location||'')}" placeholder="e.g. Eastnor Castle, Snowdonia" />
+              </div>
+              <div>
+                <div class="proj-field-label">Address</div>
+                <input type="text" class="proj-input" id="pe-location-addr" value="${esc(p.location_address||'')}" placeholder="Full address or paste a Google Maps link" />
+              </div>
+              <div>
+                <div class="proj-field-label">Maps link <span style="font-weight:400;color:var(--text-tertiary)">(optional — paste a dropped pin URL)</span></div>
+                <input type="url" class="proj-input" id="pe-location-map" value="${esc(p.location_map_link||'')}" placeholder="https://maps.google.com/..." />
+              </div>
+              <div class="proj-date-row">
+                <div>
+                  <div class="proj-field-label">Parking</div>
+                  <input type="text" class="proj-input" id="pe-parking" value="${esc(p.parking_notes||'')}" placeholder="e.g. On-site car park" />
+                </div>
+                <div>
+                  <div class="proj-field-label">Nearest transport</div>
+                  <input type="text" class="proj-input" id="pe-transport" value="${esc(p.nearest_transport||'')}" placeholder="e.g. Ledbury station, 2 miles" />
+                </div>
               </div>
               <div class="proj-date-row">
                 <div><div class="proj-field-label">Shoot start</div><input type="date" class="proj-input" id="pe-start" value="${p.shoot_start??''}" /></div>
@@ -1666,6 +1688,10 @@ export class ProjectsView {
     mc.querySelector('#pe-client')?.addEventListener('change', e => { p.client_id = e.target.value || null; save() })
     mc.querySelector('#pe-brief')?.addEventListener('change',   e => { p.brief    = e.target.value; save() })
     mc.querySelector('#pe-location')?.addEventListener('change',e => { p.location = e.target.value; save() })
+    mc.querySelector('#pe-location-addr')?.addEventListener('change',e => { p.location_address = e.target.value.trim()||null; save() })
+    mc.querySelector('#pe-location-map')?.addEventListener('change',e => { p.location_map_link = e.target.value.trim()||null; save() })
+    mc.querySelector('#pe-parking')?.addEventListener('change',e => { p.parking_notes = e.target.value.trim()||null; save() })
+    mc.querySelector('#pe-transport')?.addEventListener('change',e => { p.nearest_transport = e.target.value.trim()||null; save() })
     mc.querySelector('#pe-start')?.addEventListener('change',   e => { p.shoot_start = e.target.value || null; save() })
     mc.querySelector('#pe-end')?.addEventListener('change',     e => { p.shoot_end   = e.target.value || null; save() })
     mc.querySelector('#pe-notes')?.addEventListener('change',   e => { p.notes   = e.target.value; save() })
@@ -1901,6 +1927,10 @@ export class ProjectsView {
       const data = {
         name: p.name, status: p.status, client_id: p.client_id,
         brief: p.brief, location: p.location,
+        location_address: p.location_address||null,
+        location_map_link: p.location_map_link||null,
+        parking_notes: p.parking_notes||null,
+        nearest_transport: p.nearest_transport||null,
         shoot_start: p.shoot_start || null, shoot_end: p.shoot_end || null,
         deliverables: p.deliverables, crew: p.crew, shots: p.shots,
         approvals: p.approvals, notes: p.notes,
