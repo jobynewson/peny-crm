@@ -247,11 +247,12 @@ export class CallSheetsView {
 
           <!-- H&S -->
           <div class="proj-panel">
-            <div class="cs-panel-head"><span class="bsec-chev open">▶</span> </div>
+            <div class="cs-panel-head" style="display:flex;align-items:center">
+              <span class="bsec-chev open">▶</span>
               Health &amp; Safety
               ${this.app.settings?.hs_boilerplate ? `<button id="cs-load-hs" class="btn-cancel" style="margin-left:auto;font-size:10px;padding:3px 8px">Load boilerplate</button>` : ''}
             </div>
-            <div style="padding:12px 14px">
+            <div class="cs-panel-body" style="padding:12px 14px">
               <textarea class="proj-textarea" id="cs-hs" style="min-height:100px" placeholder="Health and safety instructions for this shoot…">${esc(s.hs_notes||'')}</textarea>
             </div>
           </div>
@@ -261,14 +262,11 @@ export class CallSheetsView {
         <div style="position:sticky;top:16px">
           <div class="proj-panel">
             <div class="cs-panel-head"><span class="bsec-chev open">▶</span> Share links</div>
-            <div class="cs-panel-body" style="padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+            <div class="cs-panel-body" style="padding:10px 12px;display:flex;flex-direction:column;gap:6px">
               <!-- Full call sheet — visually distinct -->
-              <div style="background:rgba(74,144,217,0.08);border:0.5px solid rgba(74,144,217,0.25);border-radius:var(--radius-md);padding:10px">
-                <div class="proj-field-label" style="color:var(--accent);margin-bottom:6px">📋 Full call sheet</div>
-                <div style="display:flex;gap:6px">
-                  <input type="text" class="proj-input" readonly value="${origin}/call/${s.sheet_token}" style="font-size:11px;color:var(--text-secondary)" />
-                  <button class="btn-secondary" data-copy="${origin}/call/${s.sheet_token}" style="white-space:nowrap;font-size:11px">Copy</button>
-                </div>
+              <div style="background:rgba(74,144,217,0.08);border:0.5px solid rgba(74,144,217,0.25);border-radius:var(--radius-md);padding:8px 10px;display:flex;justify-content:space-between;align-items:center">
+                <div style="font-size:11px;font-weight:500;color:var(--accent)">📋 Full call sheet</div>
+                <button class="btn-secondary" data-copy="${origin}/call/${s.sheet_token}" style="font-size:11px;padding:4px 10px">Copy</button>
               </div>
               ${(() => {
                 const types = [['crew','Crew'],['on_camera','On Camera'],['client','Client']]
@@ -276,14 +274,11 @@ export class CallSheetsView {
                   const group = s.crew.filter(c => (c.crew_type||'crew')===type && c.crew_token)
                   if (!group.length) return ''
                   return `<div>
-                    <div style="font-size:9px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-tertiary);padding:4px 0 6px;border-top:0.5px solid var(--border-light)">${label}</div>
+                    <div style="font-size:9px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-tertiary);padding:6px 0 4px;border-top:0.5px solid var(--border-light)">${label}</div>
                     ${group.map(c => `
-                    <div style="margin-bottom:6px">
-                      <div class="proj-field-label">${esc(c.name)}</div>
-                      <div style="display:flex;gap:6px">
-                        <input type="text" class="proj-input" readonly value="${origin}/call/${s.sheet_token}/${c.crew_token}" style="font-size:11px;color:var(--text-secondary)" />
-                        <button class="btn-secondary" data-copy="${origin}/call/${s.sheet_token}/${c.crew_token}" style="white-space:nowrap;font-size:11px">Copy</button>
-                      </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0">
+                      <div style="font-size:12px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:8px">${esc(c.name)}</div>
+                      <button class="btn-secondary" data-copy="${origin}/call/${s.sheet_token}/${c.crew_token}" style="font-size:11px;padding:3px 8px;white-space:nowrap;flex-shrink:0">Copy</button>
                     </div>`).join('')}
                   </div>`
                 }).join('')

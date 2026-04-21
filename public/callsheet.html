@@ -80,6 +80,25 @@
 
     document.title = `${project.name} — ${fmtDate(sheet.date)}`
 
+    // Countdown to call time
+    const countdownHTML = (callTime, date) => {
+      if (!callTime || !date) return ''
+      const [h, m] = callTime.split(':').map(Number)
+      const target = new Date(`${date}T${String(h).padStart(2,'0')}:${String(m||0).padStart(2,'0')}:00`)
+      const now = new Date()
+      const diff = target - now
+      if (isNaN(diff)) return ''
+      if (diff < 0 && diff > -8*3600*1000) return '<div style="font-size:12px;color:var(--amber);margin-top:6px;font-weight:500">🎬 Shoot is live</div>'
+      if (diff < 0) return ''
+      const days  = Math.floor(diff / 86400000)
+      const hrs   = Math.floor((diff % 86400000) / 3600000)
+      const mins  = Math.floor((diff % 3600000) / 60000)
+      if (days > 14) return `<div style="font-size:12px;color:var(--text-ter);margin-top:6px">in ${days} days</div>`
+      if (days >= 1) return `<div style="font-size:12px;color:var(--text-sec);margin-top:6px">in ${days}d ${hrs}h</div>`
+      if (hrs >= 1)  return `<div style="font-size:12px;color:var(--amber);margin-top:6px;font-weight:500">in ${hrs}h ${mins}m</div>`
+      return `<div style="font-size:13px;color:#ef4444;margin-top:6px;font-weight:600">in ${mins} mins ⚡</div>`
+    }
+
     // Build Google Calendar add link
     const calDate = (sheet.date||'').replace(/-/g,'')
     const myCallTime = thisCrew?.call_time || sheet.general_call || ''
@@ -101,6 +120,7 @@
         <div class="call-name">${esc(thisCrew.name)}</div>
         <div class="call-time">${esc(thisCrew.call_time||'TBC')}</div>
         ${thisCrew.role ? `<div class="call-role">${esc(thisCrew.role)}</div>` : ''}
+        ${countdownHTML(thisCrew.call_time, sheet.date)}
       </div>
       ${sheet.general_call ? `<div class="general-call">General call: ${esc(sheet.general_call)}</div>` : ''}
       ${calBtnHTML}
@@ -108,6 +128,7 @@
       <div class="call-block">
         <div class="call-label">General call time</div>
         <div class="call-time">${esc(sheet.general_call||'TBC')}</div>
+        ${countdownHTML(sheet.general_call, sheet.date)}
       </div>
       ${calBtnHTML}
     `
