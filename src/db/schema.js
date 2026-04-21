@@ -57,6 +57,7 @@ export const projects = pgTable('projects', {
   status:      text('status').notNull().default('Enquiry'),
   brief:       text('brief'),
   location:    text('location'),
+  project_type: text('project_type').notNull().default('full_service'),
   shoot_start: date('shoot_start'),
   shoot_end:   date('shoot_end'),
   deliverables: jsonb('deliverables').notNull().default([]),

@@ -596,10 +596,18 @@ export class ProjectsView {
       const copy = {
         name: p.name + ' (copy)', status: 'Enquiry', client_id: p.client_id,
         brief: p.brief, location: p.location,
+        project_type: p.project_type || 'full_service',
         location_address: p.location_address||null,
         location_map_link: p.location_map_link||null,
         parking_notes: p.parking_notes||null,
-        nearest_transport: p.nearest_transport||null, shoot_start: null, shoot_end: null,
+        nearest_transport: p.nearest_transport||null,
+        nearest_hospital_name: p.nearest_hospital_name||null,
+        nearest_hospital_address: p.nearest_hospital_address||null,
+        nearest_police_name: p.nearest_police_name||null,
+        nearest_police_address: p.nearest_police_address||null,
+        nearest_fire_name: p.nearest_fire_name||null,
+        nearest_fire_address: p.nearest_fire_address||null,
+        shoot_start: null, shoot_end: null,
         deliverables: JSON.parse(JSON.stringify(p.deliverables||[])).map(d=>({...d,done:false})),
         crew: JSON.parse(JSON.stringify(p.crew||[])),
         shots: JSON.parse(JSON.stringify(p.shots||[])),
@@ -1108,6 +1116,10 @@ export class ProjectsView {
       <div class="bh-row">
         <button class="btn-secondary" id="back-to-kanban">← All projects</button>
         <h2 style="flex:1;font-size:15px;font-weight:500">${esc(p.name)}</h2>
+        <div style="display:flex;gap:4px;background:var(--bg-secondary);border-radius:20px;padding:3px">
+          <button class="filter-pill ${(p.project_type||'full_service')==='full_service'?'active':''}" data-proj-type="full_service" style="border-radius:16px;font-size:11px">Full service</button>
+          <button class="filter-pill ${(p.project_type||'full_service')==='post_production'?'active':''}" data-proj-type="post_production" style="border-radius:16px;font-size:11px">Post production</button>
+        </div>
         <select class="status-select" id="pe-status">
           ${p.is_retainer
             ? `<option value="Enquiry" ${p.status==='Enquiry'?'selected':''}>Enquiry</option>
@@ -1134,18 +1146,29 @@ export class ProjectsView {
                 <div class="proj-field-label">Creative brief</div>
                 <textarea class="proj-textarea" id="pe-brief" style="min-height:120px" placeholder="Objectives, audience, tone, key messages...">${esc(p.brief)}</textarea>
               </div>
+            </div>
+          </div>
+
+          ${(p.project_type||'full_service') === 'full_service' ? `
+          <div class="proj-panel" id="pe-shoot-specifics">
+            <div class="proj-panel-head">Shoot specifics</div>
+            <div class="proj-panel-body">
+              <div class="proj-date-row">
+                <div><div class="proj-field-label">Shoot start</div><input type="date" class="proj-input" id="pe-start" value="${p.shoot_start??''}" /></div>
+                <div><div class="proj-field-label">Shoot end</div><input type="date" class="proj-input" id="pe-end" value="${p.shoot_end??''}" /></div>
+              </div>
               <div>
                 <div class="proj-field-label">Location name</div>
                 <input type="text" class="proj-input" id="pe-location" value="${esc(p.location||'')}" placeholder="e.g. Eastnor Castle, Snowdonia" />
               </div>
               <div>
-                <div class="proj-field-label">Address or Maps link <span style="font-weight:400;color:var(--text-tertiary)">— paste a full address, or a Google Maps / dropped pin URL</span></div>
+                <div class="proj-field-label">Address or Maps link <span style="font-weight:400;color:var(--text-tertiary)">— paste a full address or a Google Maps URL</span></div>
                 <input type="text" class="proj-input" id="pe-location-addr" value="${esc(p.location_address||p.location_map_link||'')}" placeholder="Full address or paste a Google Maps URL" />
               </div>
               <div class="proj-date-row">
                 <div>
                   <div class="proj-field-label">Parking</div>
-                  <input type="text" class="proj-input" id="pe-parking" value="${esc(p.parking_notes||'')}" placeholder="e.g. On-site car park" />
+                  <input type="text" class="proj-input" id="pe-parking" value="${esc(p.parking_notes||'')}" placeholder="e.g. On-site car park, enter via main gate" />
                 </div>
                 <div>
                   <div class="proj-field-label">Nearest transport</div>
@@ -1156,7 +1179,7 @@ export class ProjectsView {
                 <button class="btn-secondary" id="pe-find-nearby" style="font-size:12px">📍 Find nearby services</button>
               </div>
               ${[['Hospital','pe-hosp','nearest_hospital'],['Police station','pe-police','nearest_police'],['Fire station','pe-fire','nearest_fire']].map(([label,id,key]) => `
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:flex-end">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
                 <div>
                   <div class="proj-field-label">${label} name</div>
                   <input type="text" class="proj-input" id="${id}-name" value="${esc(p[key+'_name']||'')}" placeholder="${label} name" />
@@ -1166,12 +1189,8 @@ export class ProjectsView {
                   <input type="text" class="proj-input" id="${id}-addr" value="${esc(p[key+'_address']||'')}" placeholder="Address" />
                 </div>
               </div>`).join('')}
-              <div class="proj-date-row">
-                <div><div class="proj-field-label">Shoot start</div><input type="date" class="proj-input" id="pe-start" value="${p.shoot_start??''}" /></div>
-                <div><div class="proj-field-label">Shoot end</div><input type="date" class="proj-input" id="pe-end" value="${p.shoot_end??''}" /></div>
-              </div>
             </div>
-          </div>
+          </div>` : ''}
 
           <div class="proj-panel">
             <div class="proj-panel-head">
@@ -1273,14 +1292,16 @@ export class ProjectsView {
             <button class="add-line" id="pe-add-monthly-deliv">+ add this month's deliverable</button>
           </div>` : ''}
 
+          ${(p.project_type||'full_service') === 'full_service' ? `
           <div class="proj-panel">
             <div class="proj-panel-head">Shot list / run of show</div>
             <div style="padding:0 16px" id="pe-shots">
               ${shots.map((s,i) => this.shotHTML(p.id, s, i)).join('')}
             </div>
             <button class="add-line" id="pe-add-shot">+ add shot</button>
-          </div>
+          </div>` : ''}
 
+          ${(p.project_type||'full_service') === 'full_service' ? `
           <div class="proj-panel">
             <div class="proj-panel-head" style="display:flex;align-items:center;gap:6px">
               <div style="display:flex;gap:0;background:var(--bg-secondary);border-radius:20px;padding:3px">
@@ -1323,7 +1344,7 @@ export class ProjectsView {
               <div id="pe-crew">${crew.filter(c=>(c.crew_type||'crew')===(this._peCrewTab||'crew')).map((c,i) => this.crewHTML(p.id, c, crew.indexOf(c))).join('')}</div>
             </div>
             <button class="add-line" id="pe-add-crew">+ add ${(this._peCrewTab||'crew')==='on_camera'?'on camera person':(this._peCrewTab||'crew')==='client'?'client':'crew member'}</button>
-          </div>
+          </div>` : ''}
 
         </div>
         <div class="proj-sidebar">
@@ -1756,6 +1777,14 @@ export class ProjectsView {
       const btn = e.target; btn.textContent = '✓ Copied'; setTimeout(() => btn.textContent = 'Copy', 1500)
     })
 
+    // Project type toggle
+    mc.querySelectorAll('[data-proj-type]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        p.project_type = btn.dataset.projType
+        save(); this.renderEditor(mc)
+      })
+    })
+
     // Retainer fields
     mc.querySelector('#pe-is-retainer')?.addEventListener('change', e => {
       p.is_retainer = e.target.checked
@@ -2032,6 +2061,7 @@ export class ProjectsView {
       const data = {
         name: p.name, status: p.status, client_id: p.client_id,
         brief: p.brief, location: p.location,
+        project_type: p.project_type || 'full_service',
         location_address: p.location_address||null,
         location_map_link: p.location_map_link||null,
         parking_notes: p.parking_notes||null,

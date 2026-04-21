@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   if (!lat || !lng) return res.status(400).json({ error: 'lat and lng required' })
 
   const radius = 20000
-  const query = `[out:json][timeout:15];(
+  const query = `[out:json][timeout:20];(
     node["amenity"="hospital"](around:${radius},${lat},${lng});
     way["amenity"="hospital"](around:${radius},${lat},${lng});
     node["amenity"="police"](around:${radius},${lat},${lng});
@@ -22,17 +22,34 @@ export default async function handler(req, res) {
     node["railway"="station"](around:${radius},${lat},${lng});
   );out center;`
 
-  try {
-    const response = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: 'data=' + encodeURIComponent(query),
-    })
-    if (!response.ok) throw new Error(`Overpass error: ${response.status}`)
-    const data = await response.json()
-    res.status(200).json(data)
-  } catch (err) {
-    console.error('Overpass error:', err)
-    res.status(502).json({ error: 'Failed to reach Overpass API' })
+  const endpoints = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  ]
+
+  const headers = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'User-Agent': 'PenyCRM/1.0 (production tool; contact@wearepeny.com)',
   }
+  const body = 'data=' + encodeURIComponent(query)
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body,
+        signal: AbortSignal.timeout(22000),
+      })
+      if (!response.ok) continue
+      const data = await response.json()
+      return res.status(200).json(data)
+    } catch (err) {
+      console.warn(`Overpass endpoint failed: ${endpoint}`, err.message)
+      continue
+    }
+  }
+
+  res.status(502).json({ error: 'All Overpass endpoints failed — try again shortly' })
 }
