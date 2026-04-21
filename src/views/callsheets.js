@@ -143,19 +143,13 @@ export class CallSheetsView {
           <div class="proj-panel">
             <div class="cs-panel-head"><span class="bsec-chev open">▶</span> Primary location</div>
             <div class="cs-panel-body proj-panel-body" style="display:flex;flex-direction:column;gap:10px">
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-                <div>
-                  <div class="proj-field-label">Location name</div>
-                  <input type="text" class="proj-input" id="cs-loc-name" value="${esc(s.location_name||'')}" placeholder="e.g. Bwlch Farm" />
-                </div>
-                <div>
-                  <div class="proj-field-label">Maps link <span style="font-weight:400;color:var(--text-tertiary)">(optional — paste a Google Maps link or dropped pin URL)</span></div>
-                  <input type="url" class="proj-input" id="cs-loc-map" value="${esc(s.location_map_link||'')}" placeholder="https://maps.google.com/... or maps.app.goo.gl/..." />
-                </div>
+              <div>
+                <div class="proj-field-label">Location name</div>
+                <input type="text" class="proj-input" id="cs-loc-name" value="${esc(s.location_name||'')}" placeholder="e.g. Bwlch Farm, Eastnor Castle" />
               </div>
               <div>
-                <div class="proj-field-label">Address <span style="font-weight:400;color:var(--text-tertiary)">(or paste a full Google Maps link here — coordinates will be extracted for weather)</span></div>
-                <input type="text" class="proj-input" id="cs-loc-addr" value="${esc(s.location_address||'')}" placeholder="Full address, or paste a Google Maps URL" />
+                <div class="proj-field-label">Address or Maps link <span style="font-weight:400;color:var(--text-tertiary)">— paste a full address, or a Google Maps / dropped pin URL</span></div>
+                <input type="text" class="proj-input" id="cs-loc-addr" value="${esc(s.location_address||s.location_map_link||'')}" placeholder="Full address or paste a Google Maps URL" />
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
                 <div>
@@ -388,8 +382,8 @@ export class CallSheetsView {
         sheet_date:        mc.querySelector('#cs-date')?.value || s.sheet_date,
         general_call:      mc.querySelector('#cs-general-call')?.value || null,
         location_name:     mc.querySelector('#cs-loc-name')?.value.trim() || null,
-        location_address:  mc.querySelector('#cs-loc-addr')?.value.trim() || null,
-        location_map_link: mc.querySelector('#cs-loc-map')?.value.trim() || null,
+        location_address:  (() => { const v = mc.querySelector('#cs-loc-addr')?.value.trim(); return v && !v.startsWith('http') ? v : null })(),
+        location_map_link: (() => { const v = mc.querySelector('#cs-loc-addr')?.value.trim(); return v && v.startsWith('http') ? v : null })(),
         weather_text:      mc.querySelector('#cs-weather')?.value.trim() || null,
         weather_fetched_at: s.weather_fetched_at || null,
         notes:             mc.querySelector('#cs-notes')?.value.trim() || null,
@@ -449,7 +443,7 @@ export class CallSheetsView {
     }
 
     // Auto-save on field changes — includes new fields
-    mc.querySelectorAll('#cs-date,#cs-loc-name,#cs-loc-addr,#cs-loc-map,#cs-weather,#cs-notes,#cs-hs,#cs-parking,#cs-transport,#cs-hosp-name,#cs-hosp-addr,#cs-hosp-phone,#cs-police-name,#cs-police-addr,#cs-police-phone,#cs-fire-name,#cs-fire-addr,#cs-fire-phone').forEach(el => {
+    mc.querySelectorAll('#cs-date,#cs-loc-name,#cs-loc-addr,#cs-weather,#cs-notes,#cs-hs,#cs-parking,#cs-transport,#cs-hosp-name,#cs-hosp-addr,#cs-hosp-phone,#cs-police-name,#cs-police-addr,#cs-police-phone,#cs-fire-name,#cs-fire-addr,#cs-fire-phone').forEach(el => {
       el.addEventListener('change', save)
     })
 
@@ -565,19 +559,20 @@ export class CallSheetsView {
     mc.querySelector('#cs-fetch-weather')?.addEventListener('click', async () => {
       const locName = mc.querySelector('#cs-loc-name')?.value.trim()
       const locAddr = mc.querySelector('#cs-loc-addr')?.value.trim()
-      const mapLink = mc.querySelector('#cs-loc-map')?.value.trim()
+      const mapLink = locAddr?.startsWith('http') ? locAddr : null
+      const textAddr = !locAddr?.startsWith('http') ? locAddr : null
       const date = mc.querySelector('#cs-date')?.value || s.sheet_date
-      if (!locName && !locAddr && !mapLink) { this.app.toast('Enter a location first'); return }
+      if (!locName && !locAddr) { this.app.toast('Enter a location first'); return }
       const btn = mc.querySelector('#cs-fetch-weather')
       btn.disabled = true; btn.textContent = 'Fetching…'
       try {
-        // First try to extract lat/lng directly from a Google Maps URL
+        // If the address field contains a URL, extract coords directly
         let lat = null, lng = null
-        for (const url of [mapLink, locAddr].filter(Boolean)) {
-          const m = url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) ||
-                    url.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) ||
-                    url.match(/ll=(-?\d+\.\d+),(-?\d+\.\d+)/)
-          if (m) { lat = parseFloat(m[1]); lng = parseFloat(m[2]); break }
+        if (mapLink) {
+          const m = mapLink.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) ||
+                    mapLink.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) ||
+                    mapLink.match(/ll=(-?\d+\.\d+),(-?\d+\.\d+)/)
+          if (m) { lat = parseFloat(m[1]); lng = parseFloat(m[2]) }
         }
 
         if (!lat) {
@@ -596,7 +591,7 @@ export class CallSheetsView {
             const geoData = await geoRes.json()
             if (geoData.results?.[0]) { loc = geoData.results[0]; break }
           }
-          if (!loc) { this.app.toast('Location not found — paste a Google Maps URL into the Maps Link field for best results'); btn.disabled = false; btn.textContent = '🌤 Fetch'; return }
+          if (!loc) { this.app.toast('Location not found — try pasting a Google Maps URL into the address field'); btn.disabled = false; btn.textContent = '🌤 Fetch'; return }
           lat = loc.latitude; lng = loc.longitude
           this.app.toast(`Fetching weather for ${loc.name}…`)
         }

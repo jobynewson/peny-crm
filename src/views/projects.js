@@ -1139,12 +1139,8 @@ export class ProjectsView {
                 <input type="text" class="proj-input" id="pe-location" value="${esc(p.location||'')}" placeholder="e.g. Eastnor Castle, Snowdonia" />
               </div>
               <div>
-                <div class="proj-field-label">Address</div>
-                <input type="text" class="proj-input" id="pe-location-addr" value="${esc(p.location_address||'')}" placeholder="Full address or paste a Google Maps link" />
-              </div>
-              <div>
-                <div class="proj-field-label">Maps link <span style="font-weight:400;color:var(--text-tertiary)">(optional — paste a dropped pin URL)</span></div>
-                <input type="url" class="proj-input" id="pe-location-map" value="${esc(p.location_map_link||'')}" placeholder="https://maps.google.com/..." />
+                <div class="proj-field-label">Address or Maps link <span style="font-weight:400;color:var(--text-tertiary)">— paste a full address, or a Google Maps / dropped pin URL</span></div>
+                <input type="text" class="proj-input" id="pe-location-addr" value="${esc(p.location_address||p.location_map_link||'')}" placeholder="Full address or paste a Google Maps URL" />
               </div>
               <div class="proj-date-row">
                 <div>
@@ -1688,8 +1684,12 @@ export class ProjectsView {
     mc.querySelector('#pe-client')?.addEventListener('change', e => { p.client_id = e.target.value || null; save() })
     mc.querySelector('#pe-brief')?.addEventListener('change',   e => { p.brief    = e.target.value; save() })
     mc.querySelector('#pe-location')?.addEventListener('change',e => { p.location = e.target.value; save() })
-    mc.querySelector('#pe-location-addr')?.addEventListener('change',e => { p.location_address = e.target.value.trim()||null; save() })
-    mc.querySelector('#pe-location-map')?.addEventListener('change',e => { p.location_map_link = e.target.value.trim()||null; save() })
+    mc.querySelector('#pe-location-addr')?.addEventListener('change',e => {
+      const v = e.target.value.trim()
+      p.location_address = v && !v.startsWith('http') ? v : null
+      p.location_map_link = v && v.startsWith('http') ? v : null
+      save()
+    })
     mc.querySelector('#pe-parking')?.addEventListener('change',e => { p.parking_notes = e.target.value.trim()||null; save() })
     mc.querySelector('#pe-transport')?.addEventListener('change',e => { p.nearest_transport = e.target.value.trim()||null; save() })
     mc.querySelector('#pe-start')?.addEventListener('change',   e => { p.shoot_start = e.target.value || null; save() })
