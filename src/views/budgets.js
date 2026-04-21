@@ -606,13 +606,14 @@ export class BudgetsView {
             : `<col style="width:24%" />
                <col style="width:10%" />`}
           <col style="width:7%" />
-          <col style="width:64px" />
-          <col style="width:64px" />
-          <col style="width:64px" />
-          <col style="width:74px" />
-          <col style="width:58px" />
-          <col style="width:34px" />
+          <col style="width:60px" />
+          <col style="width:60px" />
+          <col style="width:60px" />
           <col style="width:70px" />
+          <col style="width:54px" />
+          <col style="width:32px" />
+          <col style="width:32px" />
+          <col style="width:68px" />
           <col style="width:28px" />
         </colgroup><thead><tr>
           <th>Item</th>
