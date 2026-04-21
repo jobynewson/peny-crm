@@ -448,11 +448,19 @@ export class ProjectsView {
 
           ${crew.length || (this.app.contacts||[]).some(c => c.type==='subcontractor' && c.status!=='Retired') ? `
           <div class="proj-panel">
-            <div class="proj-panel-head">Crew &amp; team</div>
+            <div class="proj-panel-head" style="display:flex;align-items:center;gap:0">
+              <div style="display:flex;gap:0;background:var(--bg-secondary);border-radius:20px;padding:3px">
+                ${[['crew','Crew'],['on_camera','On Camera'],['client','Client']].map(([type,label]) =>
+                  `<button class="filter-pill ${(this._pvCrewTab||'crew')===type?'active':''}" data-pv-crew-tab="${type}" style="border-radius:16px;font-size:11px">${label}</button>`
+                ).join('')}
+              </div>
+            </div>
             <div style="padding:0 16px">
               ${(() => {
+                const tab = this._pvCrewTab||'crew'
                 const subbies = (this.app.contacts||[]).filter(c => c.type==='subcontractor' && c.status!=='Retired' && !crew.some(cr => cr.name===(c.first_name+' '+c.last_name).trim()))
-                return subbies.length ? `
+                const tabCrew = crew.filter(c => (c.crew_type||'crew') === tab)
+                return (tab==='crew' && subbies.length ? `
                 <div style="padding:8px 0;border-bottom:0.5px solid var(--border-light);display:flex;gap:8px;align-items:center">
                   <select id="pv-add-sub-select" style="flex:1;font-size:12px;padding:5px 8px;border:0.5px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none">
                     <option value="">+ Add subcontractor…</option>
@@ -461,18 +469,19 @@ export class ProjectsView {
                       return `<option value="${esc(name)}" data-role="${esc(c.role||'')}">${esc(name)}${c.role?' — '+esc(c.role):''}</option>`
                     }).join('')}
                   </select>
-                </div>` : ''
+                </div>` : '') +
+                (tabCrew.length ? `
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:6px 0;border-bottom:0.5px solid var(--border-light)">
+                  <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Name</div>
+                  <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Role</div>
+                </div>
+                ${tabCrew.map(c => `
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:7px 0;border-bottom:0.5px solid var(--border-light);font-size:13px">
+                    <div>${esc(c.name)}</div>
+                    <div style="color:var(--text-secondary)">${esc(c.role)}</div>
+                  </div>`).join('')}` :
+                `<div style="padding:10px 0;font-size:12px;color:var(--text-tertiary)">No ${tab==='on_camera'?'on camera people':tab==='client'?'clients':'crew'} added yet</div>`)
               })()}
-              ${crew.length ? `
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:6px 0;border-bottom:0.5px solid var(--border-light)">
-                <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Name</div>
-                <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Role</div>
-              </div>
-              ${crew.map(c => `
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:7px 0;border-bottom:0.5px solid var(--border-light);font-size:13px">
-                  <div>${esc(c.name)}</div>
-                  <div style="color:var(--text-secondary)">${esc(c.role)}</div>
-                </div>`).join('')}` : ''}
             </div>
           </div>` : ''}
 
@@ -604,6 +613,10 @@ export class ProjectsView {
         this.app.toast('Project duplicated — now editing copy')
       } catch(e) { console.error(e); this.app.toast('Error duplicating project') }
     })
+    mc.querySelectorAll('[data-pv-crew-tab]').forEach(btn => {
+      btn.addEventListener('click', () => { this._pvCrewTab = btn.dataset.pvCrewTab; this.renderViewer(mc) })
+    })
+
     mc.querySelector('#pv-add-sub-select')?.addEventListener('change', async e => {
       const opt = e.target.selectedOptions[0]
       if (!opt?.value) return
@@ -1237,9 +1250,15 @@ export class ProjectsView {
           </div>
 
           <div class="proj-panel">
-            <div class="proj-panel-head">Crew &amp; team</div>
+            <div class="proj-panel-head" style="display:flex;align-items:center;gap:6px">
+              <div style="display:flex;gap:0;background:var(--bg-secondary);border-radius:20px;padding:3px">
+                ${[['crew','Crew'],['on_camera','On Camera'],['client','Client']].map(([type,label]) =>
+                  `<button class="filter-pill ${(this._peCrewTab||'crew')===type?'active':''}" data-pe-crew-tab="${type}" style="border-radius:16px;font-size:11px">${label}</button>`
+                ).join('')}
+              </div>
+            </div>
             <div style="padding:0 16px">
-              ${this.app.allUsers?.length > 0 ? `
+              ${(this._peCrewTab||'crew')==='crew' && this.app.allUsers?.length > 0 ? `
               <div style="padding:10px 0;border-bottom:0.5px solid var(--border-light);display:flex;gap:8px;align-items:center">
                 <select id="pe-add-user-select" style="flex:1;font-size:12px;padding:5px 8px;border:0.5px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none">
                   <option value="">+ Add team member…</option>
@@ -1250,7 +1269,7 @@ export class ProjectsView {
                   ).join('')}
                 </select>
               </div>` : ''}
-              ${(() => {
+              ${(this._peCrewTab||'crew')==='crew' ? (() => {
                 const subbies = (this.app.contacts||[]).filter(c => c.type === 'subcontractor' && c.status !== 'Retired' && !crew.some(cr => cr.name === (c.first_name+' '+c.last_name).trim()))
                 return subbies.length ? `
                 <div style="padding:10px 0;border-bottom:0.5px solid var(--border-light);display:flex;gap:8px;align-items:center">
@@ -1263,15 +1282,15 @@ export class ProjectsView {
                     }).join('')}
                   </select>
                 </div>` : ''
-              })()}
+              })() : ''}
               <div style="display:grid;grid-template-columns:1fr 1fr 40px;gap:8px;padding:6px 0;border-bottom:0.5px solid var(--border-light)">
                 <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Name</div>
                 <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Role</div>
                 <div></div>
               </div>
-              <div id="pe-crew">${crew.map((c,i) => this.crewHTML(p.id, c, i)).join('')}</div>
+              <div id="pe-crew">${crew.filter(c=>(c.crew_type||'crew')===(this._peCrewTab||'crew')).map((c,i) => this.crewHTML(p.id, c, crew.indexOf(c))).join('')}</div>
             </div>
-            <button class="add-line" id="pe-add-crew">+ add crew member manually</button>
+            <button class="add-line" id="pe-add-crew">+ add ${(this._peCrewTab||'crew')==='on_camera'?'on camera person':(this._peCrewTab||'crew')==='client'?'client':'crew member'}</button>
           </div>
 
         </div>
@@ -1609,7 +1628,7 @@ export class ProjectsView {
   }
 
   crewHTML(pid, c, i) {
-    return `<div class="crew-row" data-ci="${i}">
+    return `<div class="crew-row" data-ci="${i}" data-crew-type="${esc(c.crew_type||'crew')}">
       <input type="text" class="bl-in w" value="${esc(c.name)}" placeholder="Name" data-crew-name="${i}" style="font-size:12px" />
       <input type="text" class="bl-in w" value="${esc(c.role)}" placeholder="Role" data-crew-role="${i}" style="font-size:12px" />
       <button class="row-btn" style="color:#b03020" data-crew-rem="${i}">×</button>
@@ -1823,8 +1842,12 @@ export class ProjectsView {
         p.crew.splice(+el.dataset.crewRem, 1); save(); this.renderEditor(mc)
       })
     })
+    mc.querySelectorAll('[data-pe-crew-tab]').forEach(btn => {
+      btn.addEventListener('click', () => { this._peCrewTab = btn.dataset.peCsCrewTab || btn.dataset.peCrewTab; this.renderEditor(mc) })
+    })
+
     mc.querySelector('#pe-add-crew')?.addEventListener('click', () => {
-      p.crew.push({ name: '', role: '' }); save(); this.renderEditor(mc)
+      p.crew.push({ name: '', role: '', crew_type: this._peCrewTab||'crew' }); save(); this.renderEditor(mc)
     })
 
     // Approvals

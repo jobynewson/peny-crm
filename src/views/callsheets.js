@@ -278,7 +278,6 @@ export class CallSheetsView {
       if (!s.crew[i]) return
       s.crew[i].name       = card.querySelector(`[data-cs-crew-name="${i}"]`)?.value ?? s.crew[i].name
       s.crew[i].role       = card.querySelector(`[data-cs-crew-role="${i}"]`)?.value ?? s.crew[i].role
-      s.crew[i].department = card.querySelector(`[data-cs-crew-dept="${i}"]`)?.value ?? s.crew[i].department
       s.crew[i].call_time  = card.querySelector(`[data-cs-crew-time="${i}"]`)?.value || s.crew[i].call_time
     })
   }
@@ -314,10 +313,7 @@ export class CallSheetsView {
         <input type="time" class="bl-in" value="${esc(c.call_time||'')}" data-cs-crew-time="${i}" style="font-size:12px;padding:5px 4px;background:var(--bg-primary)" />
         <button class="row-btn" data-cs-rem-crew="${i}" style="color:#b03020;padding:2px">×</button>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
-        <input type="text" class="bl-in" value="${esc(c.role||'')}" placeholder="Role" data-cs-crew-role="${i}" style="font-size:11px;padding:3px 7px;color:var(--text-secondary);background:var(--bg-primary)" />
-        <input type="text" class="bl-in" value="${esc(c.department||'')}" placeholder="Department" data-cs-crew-dept="${i}" style="font-size:11px;padding:3px 7px;color:var(--text-secondary);background:var(--bg-primary)" />
-      </div>
+      <input type="text" class="bl-in" value="${esc(c.role||'')}" placeholder="Role" data-cs-crew-role="${i}" style="font-size:11px;padding:3px 7px;color:var(--text-secondary);background:var(--bg-primary);width:100%;display:block" />
     </div>`
   }
 
@@ -390,8 +386,7 @@ export class CallSheetsView {
         return {
           name:       card.querySelector(`[data-cs-crew-name="${i}"]`)?.value || '',
           role:       card.querySelector(`[data-cs-crew-role="${i}"]`)?.value || '',
-          department: card.querySelector(`[data-cs-crew-dept="${i}"]`)?.value || '',
-          call_time:  card.querySelector(`[data-cs-crew-time="${i}"]`)?.value || null,
+            call_time:  card.querySelector(`[data-cs-crew-time="${i}"]`)?.value || null,
           crew_token: s.crew[i]?.crew_token || null,
           crew_type:  card.dataset.crewType || s.crew[i]?.crew_type || 'crew',
         }
@@ -425,7 +420,7 @@ export class CallSheetsView {
 
     // Crew changes — listen on the panel not the grid (grid re-renders on tab switch)
     mc.querySelector('.proj-panel')?.addEventListener('change', e => {
-      if (e.target.matches('[data-cs-crew-name],[data-cs-crew-role],[data-cs-crew-dept],[data-cs-crew-time]')) saveCrew()
+      if (e.target.matches('[data-cs-crew-name],[data-cs-crew-role],[data-cs-crew-time]')) saveCrew()
     })
     // Crew type tabs — read DOM first, switch tab, refresh only crew panel
     mc.querySelectorAll('[data-crew-tab]').forEach(btn => {
@@ -816,11 +811,13 @@ export class CallSheetsView {
         ${footer}
       </div>`
 
-    let ts = document.getElementById('pdf-topsheet')
-    if (!ts) { ts = document.createElement('div'); ts.id = 'pdf-topsheet'; document.body.appendChild(ts) }
-    ts.innerHTML = html
-    setTimeout(() => window.print(), 150)
-    this.app.toast('Opening print dialog…')
+    const win = window.open('', '_blank', 'width=900,height=700')
+    if (!win) { this.app.toast('Allow pop-ups to export PDF'); return }
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${esc(project?.name||'Call Sheet')} — ${fmtDateLong(s.sheet_date)}</title></head><body style="margin:0;padding:0">${html}</body></html>`)
+    win.document.close()
+    win.focus()
+    setTimeout(() => { win.print() }, 600)
+    this.app.toast('PDF opening in new window…')
   }
 }
 

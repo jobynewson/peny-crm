@@ -103,6 +103,7 @@
         ${thisCrew.role ? `<div class="call-role">${esc(thisCrew.role)}</div>` : ''}
       </div>
       ${sheet.general_call ? `<div class="general-call">General call: ${esc(sheet.general_call)}</div>` : ''}
+      ${calBtnHTML}
     ` : `
       <div class="call-block">
         <div class="call-label">General call time</div>
@@ -127,17 +128,15 @@
         <div class="loc-body">
           ${sheet.location_name ? `<div class="loc-name">${esc(sheet.location_name)}</div>` : ''}
           ${sheet.location_address ? `<div class="loc-addr">${esc(sheet.location_address)}</div>` : ''}
-          ${sheet.location_map_link
-            ? `<a href="${esc(sheet.location_map_link)}" target="_blank" class="maps-btn">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-                Open in Maps
-               </a>`
-            : (sheet.location_address
-                ? `<a href="https://maps.google.com/?q=${encodeURIComponent(sheet.location_address)}" target="_blank" class="maps-btn">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-                    Open in Maps
-                   </a>`
-                : '')}
+          ${(() => {
+            const mapPin = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`
+            // Use map link directly if set (don't run through esc() — it breaks & in URLs)
+            if (sheet.location_map_link) return `<a href="${sheet.location_map_link}" target="_blank" class="maps-btn">${mapPin} Open in Maps</a>`
+            // Fall back to Google Maps search using address or location name
+            const q = sheet.location_address || sheet.location_name
+            if (q) return `<a href="https://maps.google.com/?q=${encodeURIComponent(q)}" target="_blank" class="maps-btn">${mapPin} Open in Maps</a>`
+            return ''
+          })()}
           ${sheet.weather_text ? `<div style="margin-top:12px;padding:10px;background:var(--surface2);border-radius:8px;font-size:12px;color:var(--text-sec)">🌤 ${esc(sheet.weather_text)}</div>` : ''}
         </div>
       </div>` : ''
