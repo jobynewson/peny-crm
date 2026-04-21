@@ -611,13 +611,29 @@ export class CallSheetsView {
         const mapLink = resolvedAddr?.startsWith('http') ? resolvedAddr : null
         const textAddr = !resolvedAddr?.startsWith('http') ? resolvedAddr : null
 
-        // If the address field contains a URL, extract coords directly
+
+      // Extract coordinates from a Google Maps URL (handles all common formats)
+      const extractCoords = url => {
+        if (!url) return null
+        const patterns = [
+          /@(-?\d+\.\d+),(-?\d+\.\d+)/,           // @lat,lng
+          /\/search\/(-?\d+\.\d+),\+?(-?\d+\.\d+)/, // /search/lat,+lng
+          /[?&]q=(-?\d+\.\d+),\+?(-?\d+\.\d+)/,  // ?q=lat,lng
+          /ll=(-?\d+\.\d+),(-?\d+\.\d+)/,          // ll=lat,lng
+          /3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/,         // 3d...!4d... (embedded)
+        ]
+        for (const p of patterns) {
+          const m = url.match(p)
+          if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) }
+        }
+        return null
+      }
+
+        // Extract coordinates from the resolved URL
         let lat = null, lng = null
         if (mapLink) {
-          const m = mapLink.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) ||
-                    mapLink.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) ||
-                    mapLink.match(/ll=(-?\d+\.\d+),(-?\d+\.\d+)/)
-          if (m) { lat = parseFloat(m[1]); lng = parseFloat(m[2]) }
+          const coords = extractCoords(mapLink)
+          if (coords) { lat = coords.lat; lng = coords.lng }
         }
 
         if (!lat) {

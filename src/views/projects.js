@@ -2001,11 +2001,29 @@ export class ProjectsView {
         } catch(e) { /* fall through with original */ }
       }
 
+
+      // Extract coordinates from a Google Maps URL (handles all common formats)
+      const extractCoords = url => {
+        if (!url) return null
+        const patterns = [
+          /@(-?\d+\.\d+),(-?\d+\.\d+)/,           // @lat,lng
+          /\/search\/(-?\d+\.\d+),\+?(-?\d+\.\d+)/, // /search/lat,+lng
+          /[?&]q=(-?\d+\.\d+),\+?(-?\d+\.\d+)/,  // ?q=lat,lng
+          /ll=(-?\d+\.\d+),(-?\d+\.\d+)/,          // ll=lat,lng
+          /3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/,         // 3d...!4d... (embedded)
+        ]
+        for (const p of patterns) {
+          const m = url.match(p)
+          if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) }
+        }
+        return null
+      }
+
       // Get coordinates — from URL or geocoding
       let lat = null, lng = null
       if (resolvedAddr?.startsWith('http')) {
-        const m = resolvedAddr.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || resolvedAddr.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/)
-        if (m) { lat = parseFloat(m[1]); lng = parseFloat(m[2]) }
+        const coords = extractCoords(resolvedAddr)
+        if (coords) { lat = coords.lat; lng = coords.lng }
       }
       if (!lat) {
         const stripPostcode = s => s.replace(/\b[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2}\b/gi,'').trim()
