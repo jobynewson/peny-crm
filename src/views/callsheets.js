@@ -84,6 +84,12 @@ export class CallSheetsView {
           location_map_link: project.location_map_link || null,
           parking_notes: project.parking_notes || null,
           nearest_transport: project.nearest_transport || null,
+          nearest_hospital_name:    project.nearest_hospital_name || null,
+          nearest_hospital_address: project.nearest_hospital_address || null,
+          nearest_police_name:      project.nearest_police_name || null,
+          nearest_police_address:   project.nearest_police_address || null,
+          nearest_fire_name:        project.nearest_fire_name || null,
+          nearest_fire_address:     project.nearest_fire_address || null,
         })
       }
       await this.openEditor(mc, sheet.id)
@@ -173,7 +179,9 @@ export class CallSheetsView {
 
           <!-- Emergency services -->
           <div class="proj-panel">
-            <div class="cs-panel-head"><span class="bsec-chev open">▶</span> Emergency services</div>
+            <div class="cs-panel-head"><span class="bsec-chev open">▶</span> Emergency services
+              <button id="cs-find-nearby" class="btn-secondary" style="margin-left:auto;font-size:11px;padding:4px 10px">📍 Find nearby</button>
+            </div>
             <div class="cs-panel-body proj-panel-body" style="display:flex;flex-direction:column;gap:12px">
               ${[
                 ['Hospital','cs-hosp','nearest_hospital'],
@@ -475,6 +483,31 @@ export class CallSheetsView {
         s._crewTab = btn.dataset.crewTab
         this._refreshCrewPanel(mc, s, saveCrew)
       })
+    })
+
+    // Find nearby services
+    mc.querySelector('#cs-find-nearby')?.addEventListener('click', async () => {
+      const addrVal = mc.querySelector('#cs-loc-addr')?.value.trim()
+      const locName = mc.querySelector('#cs-loc-name')?.value.trim()
+      const btn = mc.querySelector('#cs-find-nearby')
+      const result = await this.app.projectsView._findNearbyServices(addrVal, locName, btn)
+      if (!result) return
+      const setField = (id, val) => { const el = mc.querySelector(id); if (el && val) { el.value = val } }
+      if (result.transport) { setField('#cs-transport', result.transport.name); s.nearest_transport = result.transport.name }
+      if (result.hospital) {
+        setField('#cs-hosp-name', result.hospital.name); setField('#cs-hosp-addr', result.hospital.address)
+        s.nearest_hospital_name = result.hospital.name; s.nearest_hospital_address = result.hospital.address
+      }
+      if (result.police) {
+        setField('#cs-police-name', result.police.name); setField('#cs-police-addr', result.police.address)
+        s.nearest_police_name = result.police.name; s.nearest_police_address = result.police.address
+      }
+      if (result.fire) {
+        setField('#cs-fire-name', result.fire.name); setField('#cs-fire-addr', result.fire.address)
+        s.nearest_fire_name = result.fire.name; s.nearest_fire_address = result.fire.address
+      }
+      save()
+      this.app.toast('Nearby services found ✓')
     })
 
     // H&S boilerplate

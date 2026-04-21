@@ -79,6 +79,12 @@ export const projects = pgTable('projects', {
   location_map_link: text('location_map_link'),
   parking_notes:     text('parking_notes'),
   nearest_transport: text('nearest_transport'),
+  nearest_hospital_name:    text('nearest_hospital_name'),
+  nearest_hospital_address: text('nearest_hospital_address'),
+  nearest_police_name:      text('nearest_police_name'),
+  nearest_police_address:   text('nearest_police_address'),
+  nearest_fire_name:        text('nearest_fire_name'),
+  nearest_fire_address:     text('nearest_fire_address'),
   ...timestamps,
 })
 

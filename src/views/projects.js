@@ -1152,6 +1152,20 @@ export class ProjectsView {
                   <input type="text" class="proj-input" id="pe-transport" value="${esc(p.nearest_transport||'')}" placeholder="e.g. Ledbury station, 2 miles" />
                 </div>
               </div>
+              <div style="display:flex;justify-content:flex-end">
+                <button class="btn-secondary" id="pe-find-nearby" style="font-size:12px">📍 Find nearby services</button>
+              </div>
+              ${[['Hospital','pe-hosp','nearest_hospital'],['Police station','pe-police','nearest_police'],['Fire station','pe-fire','nearest_fire']].map(([label,id,key]) => `
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:flex-end">
+                <div>
+                  <div class="proj-field-label">${label} name</div>
+                  <input type="text" class="proj-input" id="${id}-name" value="${esc(p[key+'_name']||'')}" placeholder="${label} name" />
+                </div>
+                <div>
+                  <div class="proj-field-label">${label} address</div>
+                  <input type="text" class="proj-input" id="${id}-addr" value="${esc(p[key+'_address']||'')}" placeholder="Address" />
+                </div>
+              </div>`).join('')}
               <div class="proj-date-row">
                 <div><div class="proj-field-label">Shoot start</div><input type="date" class="proj-input" id="pe-start" value="${p.shoot_start??''}" /></div>
                 <div><div class="proj-field-label">Shoot end</div><input type="date" class="proj-input" id="pe-end" value="${p.shoot_end??''}" /></div>
@@ -1692,6 +1706,27 @@ export class ProjectsView {
     })
     mc.querySelector('#pe-parking')?.addEventListener('change',e => { p.parking_notes = e.target.value.trim()||null; save() })
     mc.querySelector('#pe-transport')?.addEventListener('change',e => { p.nearest_transport = e.target.value.trim()||null; save() })
+    mc.querySelector('#pe-hosp-name')?.addEventListener('change',e => { p.nearest_hospital_name = e.target.value.trim()||null; save() })
+    mc.querySelector('#pe-hosp-addr')?.addEventListener('change',e => { p.nearest_hospital_address = e.target.value.trim()||null; save() })
+    mc.querySelector('#pe-police-name')?.addEventListener('change',e => { p.nearest_police_name = e.target.value.trim()||null; save() })
+    mc.querySelector('#pe-police-addr')?.addEventListener('change',e => { p.nearest_police_address = e.target.value.trim()||null; save() })
+    mc.querySelector('#pe-fire-name')?.addEventListener('change',e => { p.nearest_fire_name = e.target.value.trim()||null; save() })
+    mc.querySelector('#pe-fire-addr')?.addEventListener('change',e => { p.nearest_fire_address = e.target.value.trim()||null; save() })
+
+    mc.querySelector('#pe-find-nearby')?.addEventListener('click', async () => {
+      const addrVal = mc.querySelector('#pe-location-addr')?.value.trim()
+      const locName = mc.querySelector('#pe-location')?.value.trim()
+      const btn = mc.querySelector('#pe-find-nearby')
+      const result = await this._findNearbyServices(addrVal, locName, btn)
+      if (!result) return
+      const setField = (id, val) => { const el = mc.querySelector(id); if (el && val) el.value = val }
+      if (result.transport) { setField('#pe-transport', result.transport.name); p.nearest_transport = result.transport.name }
+      if (result.hospital) { setField('#pe-hosp-name', result.hospital.name); setField('#pe-hosp-addr', result.hospital.address); p.nearest_hospital_name = result.hospital.name; p.nearest_hospital_address = result.hospital.address }
+      if (result.police) { setField('#pe-police-name', result.police.name); setField('#pe-police-addr', result.police.address); p.nearest_police_name = result.police.name; p.nearest_police_address = result.police.address }
+      if (result.fire) { setField('#pe-fire-name', result.fire.name); setField('#pe-fire-addr', result.fire.address); p.nearest_fire_name = result.fire.name; p.nearest_fire_address = result.fire.address }
+      save()
+      this.app.toast('Nearby services found ✓')
+    })
     mc.querySelector('#pe-start')?.addEventListener('change',   e => { p.shoot_start = e.target.value || null; save() })
     mc.querySelector('#pe-end')?.addEventListener('change',     e => { p.shoot_end   = e.target.value || null; save() })
     mc.querySelector('#pe-notes')?.addEventListener('change',   e => { p.notes   = e.target.value; save() })
@@ -1922,6 +1957,78 @@ export class ProjectsView {
     })
   }
 
+  async _findNearbyServices(addrVal, locName, btn) {
+    if (!addrVal && !locName) { this.app.toast('Enter a location first'); return null }
+    const orig = btn.textContent
+    btn.disabled = true; btn.textContent = 'Searching…'
+    try {
+      // Get coordinates — from URL or geocoding
+      let lat = null, lng = null
+      if (addrVal?.startsWith('http')) {
+        const m = addrVal.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || addrVal.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/)
+        if (m) { lat = parseFloat(m[1]); lng = parseFloat(m[2]) }
+      }
+      if (!lat) {
+        const stripPostcode = s => s.replace(/\b[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2}\b/gi,'').trim()
+        const terms = []
+        if (addrVal && !addrVal.startsWith('http')) addrVal.split(',').map(s=>stripPostcode(s.trim())).filter(s=>s.length>1).reverse().forEach(t=>terms.push(t))
+        if (locName) locName.split(',').map(s=>s.trim()).filter(Boolean).reverse().forEach(t=>terms.push(t))
+        for (const term of terms) {
+          const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(term)}&count=1&language=en&format=json`)
+          const d = await r.json()
+          if (d.results?.[0]) { lat = d.results[0].latitude; lng = d.results[0].longitude; break }
+        }
+      }
+      if (!lat) { this.app.toast('Could not find location — try pasting a Google Maps URL'); return null }
+
+      // Overpass query — find nearest hospital, police, fire station, and railway/bus station
+      const radius = 20000  // 20km
+      const q = `[out:json][timeout:15];(
+        node["amenity"="hospital"](around:${radius},${lat},${lng});
+        way["amenity"="hospital"](around:${radius},${lat},${lng});
+        node["amenity"="police"](around:${radius},${lat},${lng});
+        way["amenity"="police"](around:${radius},${lat},${lng});
+        node["amenity"="fire_station"](around:${radius},${lat},${lng});
+        way["amenity"="fire_station"](around:${radius},${lat},${lng});
+        node["railway"="station"](around:${radius},${lat},${lng});
+        node["highway"="bus_stop"](around:5000,${lat},${lng});
+      );out center;`
+      const res = await fetch('https://overpass-api.de/api/interpreter', { method:'POST', body:'data='+encodeURIComponent(q) })
+      const data = await res.json()
+
+      const dist = (a, b, c, d) => Math.sqrt((a-c)**2+(b-d)**2)
+      const nearest = (type, subtype) => data.elements
+        .filter(e => e.tags?.[type] === subtype)
+        .sort((a,b) => dist(lat,lng,a.lat??a.center?.lat,a.lon??a.center?.lon) - dist(lat,lng,b.lat??b.center?.lat,b.lon??b.center?.lon))[0]
+
+      const toResult = el => {
+        if (!el) return null
+        const name = el.tags?.name || el.tags?.['name:en'] || ''
+        const road = el.tags?.['addr:street'] || ''
+        const city = el.tags?.['addr:city'] || el.tags?.['addr:town'] || ''
+        const postcode = el.tags?.['addr:postcode'] || ''
+        const address = [road, city, postcode].filter(Boolean).join(', ')
+        return { name, address: address || null }
+      }
+
+      const hospital  = toResult(nearest('amenity','hospital'))
+      const police    = toResult(nearest('amenity','police'))
+      const fire      = toResult(nearest('amenity','fire_station'))
+      const railEl    = nearest('railway','station')
+      const busEl     = data.elements.filter(e=>e.tags?.highway==='bus_stop').sort((a,b)=>dist(lat,lng,a.lat,a.lon)-dist(lat,lng,b.lat,b.lon))[0]
+      const transport = railEl ? { name: railEl.tags?.name || 'Railway station' } : busEl ? { name: busEl.tags?.name || 'Bus stop' } : null
+
+      if (!hospital && !police && !fire && !transport) {
+        this.app.toast('No results found — try a more specific location'); return null
+      }
+      return { hospital, police, fire, transport }
+    } catch(e) {
+      console.error(e); this.app.toast('Error fetching nearby services'); return null
+    } finally {
+      btn.disabled = false; btn.textContent = orig
+    }
+  }
+
   async saveField(p, prevSnapshot) {
     try {
       const data = {
@@ -1931,6 +2038,12 @@ export class ProjectsView {
         location_map_link: p.location_map_link||null,
         parking_notes: p.parking_notes||null,
         nearest_transport: p.nearest_transport||null,
+        nearest_hospital_name:    p.nearest_hospital_name||null,
+        nearest_hospital_address: p.nearest_hospital_address||null,
+        nearest_police_name:      p.nearest_police_name||null,
+        nearest_police_address:   p.nearest_police_address||null,
+        nearest_fire_name:        p.nearest_fire_name||null,
+        nearest_fire_address:     p.nearest_fire_address||null,
         shoot_start: p.shoot_start || null, shoot_end: p.shoot_end || null,
         deliverables: p.deliverables, crew: p.crew, shots: p.shots,
         approvals: p.approvals, notes: p.notes,
