@@ -69,7 +69,7 @@ export class CallSheetsView {
       const sheet = await createCallSheet(this.app.userId, projectId, { sheet_date: defaultDate })
       // Pre-populate crew from project
       const crew = (project?.crew||[]).filter(c => c.name).map((c, i) => ({
-        name: c.name, role: c.role||'', phone: '', call_time: project?.general_call||'', sort_order: i
+        name: c.name, role: c.role||'', phone: '', call_time: '', crew_type: 'crew', department: '', sort_order: i
       }))
       if (crew.length) await saveCallSheetCrew(sheet.id, crew)
       await this.openEditor(mc, sheet.id)
@@ -271,6 +271,38 @@ export class CallSheetsView {
     this.bindEditor(mc, s)
   }
 
+  _readCrewFromDOM(mc, s) {
+    // Read current DOM values back into s.crew before any re-render
+    mc.querySelectorAll('.crew-row-cs').forEach(card => {
+      const i = +card.dataset.crewIdx
+      if (!s.crew[i]) return
+      s.crew[i].name       = card.querySelector(`[data-cs-crew-name="${i}"]`)?.value ?? s.crew[i].name
+      s.crew[i].role       = card.querySelector(`[data-cs-crew-role="${i}"]`)?.value ?? s.crew[i].role
+      s.crew[i].department = card.querySelector(`[data-cs-crew-dept="${i}"]`)?.value ?? s.crew[i].department
+      s.crew[i].call_time  = card.querySelector(`[data-cs-crew-time="${i}"]`)?.value || s.crew[i].call_time
+    })
+  }
+
+  _refreshCrewPanel(mc, s, saveCrew) {
+    // Update tab button styles
+    mc.querySelectorAll('[data-crew-tab]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.crewTab === (s._crewTab||'crew'))
+    })
+    // Update add button label
+    const tab = s._crewTab || 'crew'
+    const addBtn = mc.querySelector('#cs-add-crew')
+    if (addBtn) addBtn.textContent = '+ add ' + (tab==='on_camera'?'on camera person':tab==='client'?'client':'crew member')
+    // Re-render just the crew grid
+    const container = mc.querySelector('#cs-crew')
+    if (!container) return
+    const filtered = this._crewForTab(s, tab)
+    container.innerHTML = filtered.length
+      ? filtered.map(c => this.crewRowHTML(c, s.crew.indexOf(c))).join('')
+      : `<div style="padding:10px 0;font-size:12px;color:var(--text-tertiary)">No ${tab==='on_camera'?'on camera people':tab==='client'?'clients':'crew'} added yet</div>`
+    // Re-bind remove buttons for newly rendered rows
+    if (saveCrew) this.bindCrewRemove(mc, s, saveCrew)
+  }
+
   _crewForTab(s, tab) {
     return s.crew.filter(c => (c.crew_type||'crew') === tab)
   }
@@ -395,11 +427,12 @@ export class CallSheetsView {
     mc.querySelector('.proj-panel')?.addEventListener('change', e => {
       if (e.target.matches('[data-cs-crew-name],[data-cs-crew-role],[data-cs-crew-dept],[data-cs-crew-time]')) saveCrew()
     })
-    // Crew type tabs
+    // Crew type tabs — read DOM first, switch tab, refresh only crew panel
     mc.querySelectorAll('[data-crew-tab]').forEach(btn => {
       btn.addEventListener('click', () => {
+        this._readCrewFromDOM(mc, s)
         s._crewTab = btn.dataset.crewTab
-        this.renderEditor(mc)
+        this._refreshCrewPanel(mc, s, saveCrew)
       })
     })
 
@@ -409,11 +442,14 @@ export class CallSheetsView {
       if (el) { el.value = this.app.settings?.hs_boilerplate || ''; save() }
     })
 
-    // Add crew member with current tab type
+    // Add crew member — read current values first, then refresh only crew panel
     mc.querySelector('#cs-add-crew')?.addEventListener('click', () => {
+      this._readCrewFromDOM(mc, s)
       const type = s._crewTab || 'crew'
       s.crew.push({ name:'', role:'', department:'', phone:'', call_time: s.general_call||'', crew_token: null, sort_order: s.crew.length, crew_type: type })
-      this.renderEditor(mc)
+      this._refreshCrewPanel(mc, s, saveCrew)
+      // Focus the new name field
+      mc.querySelector(`[data-cs-crew-name="${s.crew.length-1}"]`)?.focus()
     })
     this.bindCrewRemove(mc, s, saveCrew)
 
@@ -579,10 +615,11 @@ export class CallSheetsView {
   bindCrewRemove(mc, s, saveCrew) {
     mc.querySelectorAll('[data-cs-rem-crew]').forEach(btn => {
       btn.onclick = () => {
+        this._readCrewFromDOM(mc, s)
         const i = +btn.dataset.csRemCrew
         s.crew.splice(i, 1)
         saveCrew()
-        this.renderEditor(mc)
+        this._refreshCrewPanel(mc, s, saveCrew)
       }
     })
   }
