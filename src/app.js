@@ -913,6 +913,10 @@ export class App {
                   ).join('')}
                 </select>
               </div>` : ''}
+              <div class="field">
+                <div class="field-label">Default H&amp;S boilerplate (used on call sheets)</div>
+                <textarea id="s-hs" style="width:100%;min-height:100px;padding:8px 11px;font-size:12px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.6" placeholder="e.g. No alcohol or non-prescription drugs during the working day. Only qualified personnel to handle hazardous equipment…">${s.hs_boilerplate??''}</textarea>
+              </div>
             </div>
             <div><button class="btn-primary" id="settings-save-btn">Save settings</button></div>
           </div>
@@ -1258,6 +1262,7 @@ export class App {
       address:      mc.querySelector('#s-address')?.value.trim()||null,
       vat_number:          mc.querySelector('#s-vat')?.value.trim()||null,
       prepared_by:         mc.querySelector('#s-preparedby')?.value.trim()||null,
+      hs_boilerplate:      mc.querySelector('#s-hs')?.value.trim()||null,
       financial_year_start: parseInt(mc.querySelector('#s-fy-start')?.value||'4'),
       budget_template:     this.settings?.budget_template ?? null,
     }

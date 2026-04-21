@@ -135,13 +135,23 @@ export class CallSheetsView {
                   <input type="text" class="proj-input" id="cs-loc-name" value="${esc(s.location_name||'')}" placeholder="e.g. Bwlch Farm" />
                 </div>
                 <div>
-                  <div class="proj-field-label">Maps link (optional)</div>
-                  <input type="url" class="proj-input" id="cs-loc-map" value="${esc(s.location_map_link||'')}" placeholder="https://maps.google.com/..." />
+                  <div class="proj-field-label">Maps link <span style="font-weight:400;color:var(--text-tertiary)">(optional — paste a Google Maps link or dropped pin URL)</span></div>
+                  <input type="url" class="proj-input" id="cs-loc-map" value="${esc(s.location_map_link||'')}" placeholder="https://maps.google.com/... or maps.app.goo.gl/..." />
                 </div>
               </div>
               <div>
-                <div class="proj-field-label">Address</div>
-                <input type="text" class="proj-input" id="cs-loc-addr" value="${esc(s.location_address||'')}" placeholder="Full address for maps / crew" />
+                <div class="proj-field-label">Address <span style="font-weight:400;color:var(--text-tertiary)">(or paste a full Google Maps link here — coordinates will be extracted for weather)</span></div>
+                <input type="text" class="proj-input" id="cs-loc-addr" value="${esc(s.location_address||'')}" placeholder="Full address, or paste a Google Maps URL" />
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                <div>
+                  <div class="proj-field-label">Parking</div>
+                  <input type="text" class="proj-input" id="cs-parking" value="${esc(s.parking_notes||'')}" placeholder="e.g. On-site car park, enter via main gate" />
+                </div>
+                <div>
+                  <div class="proj-field-label">Nearest public transport</div>
+                  <input type="text" class="proj-input" id="cs-transport" value="${esc(s.nearest_transport||'')}" placeholder="e.g. Ledbury station, 2 miles" />
+                </div>
               </div>
               <div style="display:flex;gap:8px;align-items:flex-end">
                 <div style="flex:1">
@@ -150,6 +160,26 @@ export class CallSheetsView {
                 </div>
                 <button class="btn-secondary" id="cs-fetch-weather" style="white-space:nowrap;font-size:12px" title="Fetch forecast for this date and location">🌤 Fetch</button>
               </div>
+            </div>
+          </div>
+
+          <!-- Emergency services -->
+          <div class="proj-panel">
+            <div class="proj-panel-head">Emergency services</div>
+            <div class="proj-panel-body" style="display:flex;flex-direction:column;gap:12px">
+              ${[
+                ['Hospital','cs-hosp','nearest_hospital'],
+                ['Police','cs-police','nearest_police'],
+                ['Fire station','cs-fire','nearest_fire'],
+              ].map(([label,id,key]) => `
+              <div>
+                <div class="proj-field-label" style="color:var(--text-secondary);margin-bottom:6px">${label}</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+                  <input type="text" class="proj-input" id="${id}-name" value="${esc(s[key+'_name']||'')}" placeholder="Name" />
+                  <input type="text" class="proj-input" id="${id}-addr" value="${esc(s[key+'_address']||'')}" placeholder="Address" />
+                  <input type="text" class="proj-input" id="${id}-phone" value="${esc(s[key+'_phone']||'')}" placeholder="Phone" />
+                </div>
+              </div>`).join('')}
             </div>
           </div>
 
@@ -173,27 +203,42 @@ export class CallSheetsView {
             <button class="add-line" id="cs-add-sched">+ add schedule item</button>
           </div>
 
-
-          <!-- Crew — in main column -->
+          <!-- People — tabbed by type -->
           <div class="proj-panel">
-            <div class="proj-panel-head" style="display:flex;align-items:center;gap:6px">
-              Crew call times
-              <button id="cs-fill-general" class="btn-cancel" style="margin-left:auto;font-size:10px;padding:3px 8px;white-space:nowrap">Fill general call</button>
+            <div class="proj-panel-head" style="display:flex;align-items:center;gap:0">
+              <div style="display:flex;gap:0;background:var(--bg-secondary);border-radius:20px;padding:3px;margin-right:auto">
+                ${[['crew','Crew'],['on_camera','On Camera'],['client','Client']].map(([type,label]) =>
+                  `<button class="filter-pill ${(s._crewTab||'crew')===type?'active':''}" data-crew-tab="${type}" style="border-radius:16px;font-size:11px">${label}</button>`
+                ).join('')}
+              </div>
+              <button id="cs-fill-general" class="btn-cancel" style="font-size:10px;padding:3px 8px;white-space:nowrap">Fill general call</button>
             </div>
             <div style="padding:0 14px">
-              <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:0;padding:6px 8px" id="cs-crew">
-                ${s.crew.length ? s.crew.map((c,i) => this.crewRowHTML(c,i)).join('') :
-                  '<div style="padding:10px 0;font-size:12px;color:var(--text-tertiary)">No crew added yet</div>'}
+              <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));padding:6px 8px" id="cs-crew">
+                ${this._crewForTab(s, s._crewTab||'crew').length
+                  ? this._crewForTab(s, s._crewTab||'crew').map((c,i) => this.crewRowHTML(c, s.crew.indexOf(c))).join('')
+                  : `<div style="padding:10px 0;font-size:12px;color:var(--text-tertiary)">No ${(s._crewTab||'crew')==='on_camera'?'on camera people':(s._crewTab||'crew')==='client'?'clients':'crew'} added yet</div>`}
               </div>
             </div>
-            <button class="add-line" id="cs-add-crew">+ add crew member</button>
+            <button class="add-line" id="cs-add-crew">+ add ${(s._crewTab||'crew')==='on_camera'?'on camera':'(s._crewTab||\'crew\')==="client"?\'client\':\'crew member\''}</button>
           </div>
 
           <!-- Notes -->
           <div class="proj-panel">
             <div class="proj-panel-head">Notes</div>
             <div style="padding:12px 14px">
-              <textarea class="proj-textarea" id="cs-notes" style="min-height:80px" placeholder="Parking info, facilities, important reminders…">${esc(s.notes||'')}</textarea>
+              <textarea class="proj-textarea" id="cs-notes" style="min-height:80px" placeholder="Any additional info for crew…">${esc(s.notes||'')}</textarea>
+            </div>
+          </div>
+
+          <!-- H&S -->
+          <div class="proj-panel">
+            <div class="proj-panel-head" style="display:flex;align-items:center">
+              Health &amp; Safety
+              ${this.app.settings?.hs_boilerplate ? `<button id="cs-load-hs" class="btn-cancel" style="margin-left:auto;font-size:10px;padding:3px 8px">Load boilerplate</button>` : ''}
+            </div>
+            <div style="padding:12px 14px">
+              <textarea class="proj-textarea" id="cs-hs" style="min-height:100px" placeholder="Health and safety instructions for this shoot…">${esc(s.hs_notes||'')}</textarea>
             </div>
           </div>
         </div>
@@ -226,8 +271,12 @@ export class CallSheetsView {
     this.bindEditor(mc, s)
   }
 
+  _crewForTab(s, tab) {
+    return s.crew.filter(c => (c.crew_type||'crew') === tab)
+  }
+
   crewRowHTML(c, i) {
-    return `<div class="crew-row-cs" data-crew-idx="${i}" style="background:var(--bg-secondary);border:0.5px solid var(--border-med);border-radius:var(--radius-md);padding:10px;margin:4px">
+    return `<div class="crew-row-cs" data-crew-idx="${i}" data-crew-type="${esc(c.crew_type||'crew')}" style="background:var(--bg-secondary);border:0.5px solid var(--border-med);border-radius:var(--radius-md);padding:10px;margin:4px">
       <div style="display:grid;grid-template-columns:1fr 80px 24px;gap:6px;align-items:center;margin-bottom:6px">
         <input type="text" class="bl-in w" value="${esc(c.name)}" placeholder="Name" data-cs-crew-name="${i}" style="font-size:13px;padding:5px 8px;font-weight:500;background:var(--bg-primary)" />
         <input type="time" class="bl-in" value="${esc(c.call_time||'')}" data-cs-crew-time="${i}" style="font-size:12px;padding:5px 4px;background:var(--bg-primary)" />
@@ -280,7 +329,19 @@ export class CallSheetsView {
         weather_text:      mc.querySelector('#cs-weather')?.value.trim() || null,
         weather_fetched_at: s.weather_fetched_at || null,
         notes:             mc.querySelector('#cs-notes')?.value.trim() || null,
-        status:            s.status,
+        hs_notes:          mc.querySelector('#cs-hs')?.value.trim() || null,
+        parking_notes:     mc.querySelector('#cs-parking')?.value.trim() || null,
+        nearest_transport: mc.querySelector('#cs-transport')?.value.trim() || null,
+        nearest_hospital_name:    mc.querySelector('#cs-hosp-name')?.value.trim() || null,
+        nearest_hospital_address: mc.querySelector('#cs-hosp-addr')?.value.trim() || null,
+        nearest_hospital_phone:   mc.querySelector('#cs-hosp-phone')?.value.trim() || null,
+        nearest_police_name:    mc.querySelector('#cs-police-name')?.value.trim() || null,
+        nearest_police_address: mc.querySelector('#cs-police-addr')?.value.trim() || null,
+        nearest_police_phone:   mc.querySelector('#cs-police-phone')?.value.trim() || null,
+        nearest_fire_name:    mc.querySelector('#cs-fire-name')?.value.trim() || null,
+        nearest_fire_address: mc.querySelector('#cs-fire-addr')?.value.trim() || null,
+        nearest_fire_phone:   mc.querySelector('#cs-fire-phone')?.value.trim() || null,
+        status: s.status,
       }
       try {
         const updated = await updateCallSheet(s.id, data)
@@ -291,13 +352,18 @@ export class CallSheetsView {
 
     const saveCrew = async () => {
       showSaving()
-      const rows = [...mc.querySelectorAll('[data-cs-crew-name]')].map((el, i) => ({
-        name:       el.value,
-        role:       mc.querySelector(`[data-cs-crew-role="${i}"]`)?.value || '',
-        department: mc.querySelector(`[data-cs-crew-dept="${i}"]`)?.value || '',
-        call_time:  mc.querySelector(`[data-cs-crew-time="${i}"]`)?.value || null,
-        crew_token: s.crew[i]?.crew_token || null,
-      }))
+      const cards = [...mc.querySelectorAll('.crew-row-cs')]
+      const rows = cards.map(card => {
+        const i = +card.dataset.crewIdx
+        return {
+          name:       card.querySelector(`[data-cs-crew-name="${i}"]`)?.value || '',
+          role:       card.querySelector(`[data-cs-crew-role="${i}"]`)?.value || '',
+          department: card.querySelector(`[data-cs-crew-dept="${i}"]`)?.value || '',
+          call_time:  card.querySelector(`[data-cs-crew-time="${i}"]`)?.value || null,
+          crew_token: s.crew[i]?.crew_token || null,
+          crew_type:  card.dataset.crewType || s.crew[i]?.crew_type || 'crew',
+        }
+      })
       try { s.crew = await saveCallSheetCrew(s.id, rows); showSaved() } catch(e) { console.error(e) }
     }
 
@@ -320,20 +386,34 @@ export class CallSheetsView {
       try { await saveCallSheetLocations(s.id, rows); s.locations = rows } catch(e) { console.error(e) }
     }
 
-    // Auto-save on field changes
-    mc.querySelectorAll('#cs-date,#cs-general-call,#cs-loc-name,#cs-loc-addr,#cs-loc-map,#cs-weather,#cs-notes').forEach(el => {
+    // Auto-save on field changes — includes new fields
+    mc.querySelectorAll('#cs-date,#cs-general-call,#cs-loc-name,#cs-loc-addr,#cs-loc-map,#cs-weather,#cs-notes,#cs-hs,#cs-parking,#cs-transport,#cs-hosp-name,#cs-hosp-addr,#cs-hosp-phone,#cs-police-name,#cs-police-addr,#cs-police-phone,#cs-fire-name,#cs-fire-addr,#cs-fire-phone').forEach(el => {
       el.addEventListener('change', save)
     })
 
-    // Crew changes
-    mc.querySelector('#cs-crew')?.addEventListener('change', saveCrew)
+    // Crew changes — listen on the panel not the grid (grid re-renders on tab switch)
+    mc.querySelector('.proj-panel')?.addEventListener('change', e => {
+      if (e.target.matches('[data-cs-crew-name],[data-cs-crew-role],[data-cs-crew-dept],[data-cs-crew-time]')) saveCrew()
+    })
+    // Crew type tabs
+    mc.querySelectorAll('[data-crew-tab]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        s._crewTab = btn.dataset.crewTab
+        this.renderEditor(mc)
+      })
+    })
+
+    // H&S boilerplate
+    mc.querySelector('#cs-load-hs')?.addEventListener('click', () => {
+      const el = mc.querySelector('#cs-hs')
+      if (el) { el.value = this.app.settings?.hs_boilerplate || ''; save() }
+    })
+
+    // Add crew member with current tab type
     mc.querySelector('#cs-add-crew')?.addEventListener('click', () => {
-      s.crew.push({ name:'', role:'', phone:'', call_time: s.general_call||'', crew_token: null, sort_order: s.crew.length })
-      const container = mc.querySelector('#cs-crew')
-      if (!s.crew[s.crew.length-2]) container.innerHTML = ''  // clear empty state
-      container.insertAdjacentHTML('beforeend', this.crewRowHTML(s.crew[s.crew.length-1], s.crew.length-1))
-      this.bindCrewRemove(mc, s, saveCrew)
-      container.querySelector(`[data-cs-crew-name="${s.crew.length-1}"]`)?.focus()
+      const type = s._crewTab || 'crew'
+      s.crew.push({ name:'', role:'', department:'', phone:'', call_time: s.general_call||'', crew_token: null, sort_order: s.crew.length, crew_type: type })
+      this.renderEditor(mc)
     })
     this.bindCrewRemove(mc, s, saveCrew)
 
@@ -402,35 +482,44 @@ export class CallSheetsView {
     mc.querySelector('#cs-fetch-weather')?.addEventListener('click', async () => {
       const locName = mc.querySelector('#cs-loc-name')?.value.trim()
       const locAddr = mc.querySelector('#cs-loc-addr')?.value.trim()
+      const mapLink = mc.querySelector('#cs-loc-map')?.value.trim()
       const date = mc.querySelector('#cs-date')?.value || s.sheet_date
-      if (!locName && !locAddr) { this.app.toast('Enter a location name or address first'); return }
+      if (!locName && !locAddr && !mapLink) { this.app.toast('Enter a location first'); return }
       const btn = mc.querySelector('#cs-fetch-weather')
       btn.disabled = true; btn.textContent = 'Fetching…'
       try {
-        // Open-Meteo geocoding works with town/place names only, not full addresses
-        // Build search terms: try every comma-separated part, stripping postcodes
-        const stripPostcode = s => s.replace(/\b[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2}\b/gi, '').trim()
-        const searchTerms = []
-        if (locAddr) {
-          const parts = locAddr.split(',').map(s => stripPostcode(s.trim())).filter(s => s.length > 1)
-          // Try each part individually — most likely to get a hit on town names
-          searchTerms.push(...parts.reverse()) // reversed so town comes before street name
-        }
-        if (locName) {
-          const nameParts = locName.split(',').map(s => s.trim()).filter(Boolean)
-          searchTerms.push(...nameParts.reverse())
+        // First try to extract lat/lng directly from a Google Maps URL
+        let lat = null, lng = null
+        for (const url of [mapLink, locAddr].filter(Boolean)) {
+          const m = url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) ||
+                    url.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) ||
+                    url.match(/ll=(-?\d+\.\d+),(-?\d+\.\d+)/)
+          if (m) { lat = parseFloat(m[1]); lng = parseFloat(m[2]); break }
         }
 
-        let loc = null
-        for (const term of searchTerms) {
-          const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(term)}&count=1&language=en&format=json`)
-          const geoData = await geoRes.json()
-          if (geoData.results?.[0]) { loc = geoData.results[0]; break }
+        if (!lat) {
+          // Fall back to geocoding — try each comma-separated part, stripping UK postcodes
+          const stripPostcode = str => str.replace(/\b[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2}\b/gi, '').trim()
+          const searchTerms = []
+          if (locAddr && !locAddr.startsWith('http')) {
+            const parts = locAddr.split(',').map(str => stripPostcode(str.trim())).filter(str => str.length > 1)
+            searchTerms.push(...[...parts].reverse())
+          }
+          if (locName) searchTerms.push(...locName.split(',').map(str => str.trim()).filter(Boolean).reverse())
+
+          let loc = null
+          for (const term of searchTerms) {
+            const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(term)}&count=1&language=en&format=json`)
+            const geoData = await geoRes.json()
+            if (geoData.results?.[0]) { loc = geoData.results[0]; break }
+          }
+          if (!loc) { this.app.toast('Location not found — paste a Google Maps URL into the Maps Link field for best results'); btn.disabled = false; btn.textContent = '🌤 Fetch'; return }
+          lat = loc.latitude; lng = loc.longitude
+          this.app.toast(`Fetching weather for ${loc.name}…`)
         }
-        if (!loc) { this.app.toast('Location not found — put the nearest town in the Location Name field and try again'); return }
 
         // Fetch forecast
-        const wxRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max,weathercode,sunrise,sunset&timezone=Europe%2FLondon&start_date=${date}&end_date=${date}`)
+        const wxRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max,weathercode,sunrise,sunset&timezone=Europe%2FLondon&start_date=${date}&end_date=${date}`)
         const wx = await wxRes.json()
         const d = wx.daily
         if (!d) { this.app.toast('Weather data not available for this date'); return }
@@ -447,7 +536,7 @@ export class CallSheetsView {
         s.weather_text = text
         s.weather_fetched_at = new Date().toISOString()
         await updateCallSheet(s.id, { ...s, weather_text: text, weather_fetched_at: s.weather_fetched_at })
-        this.app.toast(`Weather fetched for ${loc.name}`)
+        this.app.toast('Weather fetched ✓')
       } catch(e) { console.error(e); this.app.toast('Error fetching weather') }
       finally { btn.disabled = false; btn.textContent = '🌤 Fetch' }
     })
