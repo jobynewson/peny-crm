@@ -1981,19 +1981,9 @@ export class ProjectsView {
       }
       if (!lat) { this.app.toast('Could not find location — try pasting a Google Maps URL'); return null }
 
-      // Overpass query — find nearest hospital, police, fire station, and railway/bus station
-      const radius = 20000  // 20km
-      const q = `[out:json][timeout:15];(
-        node["amenity"="hospital"](around:${radius},${lat},${lng});
-        way["amenity"="hospital"](around:${radius},${lat},${lng});
-        node["amenity"="police"](around:${radius},${lat},${lng});
-        way["amenity"="police"](around:${radius},${lat},${lng});
-        node["amenity"="fire_station"](around:${radius},${lat},${lng});
-        way["amenity"="fire_station"](around:${radius},${lat},${lng});
-        node["railway"="station"](around:${radius},${lat},${lng});
-        node["highway"="bus_stop"](around:5000,${lat},${lng});
-      );out center;`
-      const res = await fetch('https://overpass-api.de/api/interpreter', { method:'POST', body:'data='+encodeURIComponent(q) })
+      // Query our proxy (avoids CORS issues with direct Overpass requests)
+      const res = await fetch(`/api/nearby?lat=${lat}&lng=${lng}`)
+      if (!res.ok) throw new Error('Nearby API error')
       const data = await res.json()
 
       const dist = (a, b, c, d) => Math.sqrt((a-c)**2+(b-d)**2)
@@ -2011,12 +2001,20 @@ export class ProjectsView {
         return { name, address: address || null }
       }
 
+      const toTransport = el => {
+        if (!el) return null
+        const name = el.tags?.name || 'Railway station'
+        const elLat = el.lat ?? el.center?.lat
+        const elLng = el.lon ?? el.center?.lon
+        // Rough km distance (1 degree ≈ 111km)
+        const km = Math.round(Math.sqrt(((lat-elLat)*111)**2 + ((lng-elLng)*111*Math.cos(lat*Math.PI/180))**2) * 10) / 10
+        return { name: `${name} railway station, ${km}km` }
+      }
+
       const hospital  = toResult(nearest('amenity','hospital'))
       const police    = toResult(nearest('amenity','police'))
       const fire      = toResult(nearest('amenity','fire_station'))
-      const railEl    = nearest('railway','station')
-      const busEl     = data.elements.filter(e=>e.tags?.highway==='bus_stop').sort((a,b)=>dist(lat,lng,a.lat,a.lon)-dist(lat,lng,b.lat,b.lon))[0]
-      const transport = railEl ? { name: railEl.tags?.name || 'Railway station' } : busEl ? { name: busEl.tags?.name || 'Bus stop' } : null
+      const transport = toTransport(nearest('railway','station'))
 
       if (!hospital && !police && !fire && !transport) {
         this.app.toast('No results found — try a more specific location'); return null
