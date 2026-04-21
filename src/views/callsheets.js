@@ -219,22 +219,25 @@ export class CallSheetsView {
 
           <!-- People — tabbed by type -->
           <div class="proj-panel">
-            <div class="cs-panel-head"><span class="bsec-chev open">▶</span> </div>
-              <div class="cs-panel-body" style="display:flex;gap:0;background:var(--bg-secondary);border-radius:20px;padding:3px;margin-right:auto">
-                ${[['crew','Crew'],['on_camera','On Camera'],['client','Client']].map(([type,label]) =>
-                  `<button class="filter-pill ${(s._crewTab||'crew')===type?'active':''}" data-crew-tab="${type}" style="border-radius:16px;font-size:11px">${label}</button>`
-                ).join('')}
+            <div class="cs-panel-head" style="gap:0"><span class="bsec-chev open">▶</span> Crew</div>
+            <div class="cs-panel-body">
+              <div style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-bottom:0.5px solid var(--border-light)">
+                <div style="display:flex;gap:0;background:var(--bg-secondary);border-radius:20px;padding:3px">
+                  ${[['crew','Crew'],['on_camera','On Camera'],['client','Client']].map(([type,label]) =>
+                    `<button class="filter-pill ${(s._crewTab||'crew')===type?'active':''}" data-crew-tab="${type}" style="border-radius:16px;font-size:11px">${label}</button>`
+                  ).join('')}
+                </div>
+                <button id="cs-fill-general" class="btn-cancel" style="margin-left:auto;font-size:10px;padding:3px 8px;white-space:nowrap">Fill general call</button>
               </div>
-              <button id="cs-fill-general" class="btn-cancel" style="font-size:10px;padding:3px 8px;white-space:nowrap">Fill general call</button>
-            </div>
-            <div style="padding:0 14px">
-              <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));padding:6px 8px" id="cs-crew">
-                ${this._crewForTab(s, s._crewTab||'crew').length
-                  ? this._crewForTab(s, s._crewTab||'crew').map((c,i) => this.crewRowHTML(c, s.crew.indexOf(c))).join('')
-                  : `<div style="padding:10px 0;font-size:12px;color:var(--text-tertiary)">No ${(s._crewTab||'crew')==='on_camera'?'on camera people':(s._crewTab||'crew')==='client'?'clients':'crew'} added yet</div>`}
+              <div style="padding:0 14px">
+                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));padding:6px 8px" id="cs-crew">
+                  ${this._crewForTab(s, s._crewTab||'crew').length
+                    ? this._crewForTab(s, s._crewTab||'crew').map((c,i) => this.crewRowHTML(c, s.crew.indexOf(c))).join('')
+                    : `<div style="padding:10px 0;font-size:12px;color:var(--text-tertiary)">No ${(s._crewTab||'crew')==='on_camera'?'on camera people':(s._crewTab||'crew')==='client'?'clients':'crew'} added yet</div>`}
+                </div>
               </div>
+              <button class="add-line" id="cs-add-crew">+ add ${(s._crewTab||'crew')==='on_camera'?'on camera person':(s._crewTab||'crew')==='client'?'client':'crew member'}</button>
             </div>
-            <button class="add-line" id="cs-add-crew">+ add ${(s._crewTab||'crew')==='on_camera'?'on camera':'(s._crewTab||\'crew\')==="client"?\'client\':\'crew member\''}</button>
           </div>
 
           <!-- Notes -->

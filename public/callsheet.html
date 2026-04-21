@@ -74,7 +74,9 @@
     const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     const fmtDate = s => {
       if (!s) return ''
-      const d = new Date(s+'T12:00:00')
+      const dateStr = String(s).split('T')[0]  // strip time if present
+      const d = new Date(dateStr + 'T12:00:00')
+      if (isNaN(d)) return ''
       return d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})
     }
 
@@ -83,8 +85,9 @@
     // Countdown to call time
     const countdownHTML = (callTime, date) => {
       if (!callTime || !date) return ''
+      const dateStr = String(date).split('T')[0]
       const [h, m] = callTime.split(':').map(Number)
-      const target = new Date(`${date}T${String(h).padStart(2,'0')}:${String(m||0).padStart(2,'0')}:00`)
+      const target = new Date(`${dateStr}T${String(h).padStart(2,'0')}:${String(m||0).padStart(2,'0')}:00`)
       const now = new Date()
       const diff = target - now
       if (isNaN(diff)) return ''
@@ -100,7 +103,7 @@
     }
 
     // Build Google Calendar add link
-    const calDate = (sheet.date||'').replace(/-/g,'')
+    const calDate = (sheet.date||'').split('T')[0].replace(/-/g,'')
     const myCallTime = thisCrew?.call_time || sheet.general_call || ''
     const [cH,cM] = myCallTime.split(':').map(Number)
     const calStart = calDate && myCallTime ? calDate+'T'+String(cH||9).padStart(2,'0')+String(cM||0).padStart(2,'0')+'00' : calDate
