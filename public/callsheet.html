@@ -149,14 +149,28 @@
     const locHTML = (sheet.location_name || sheet.location_address) ? `
       <div class="section">
         <div class="section-head">Primary location</div>
+        ${(() => {
+          // Build map embed src — use coords if available, otherwise address/name
+          const q = sheet.location_address || sheet.location_name
+          const mapLink = sheet.location_map_link || ''
+          // Extract coords from stored map link if present
+          let embedSrc = null
+          const coordMatch = mapLink.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) ||
+                             mapLink.match(/\/search\/(-?\d+\.\d+),\+?(-?\d+\.\d+)/) ||
+                             mapLink.match(/3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/)
+          if (coordMatch) {
+            embedSrc = `https://maps.google.com/maps?q=${coordMatch[1]},${coordMatch[2]}&z=15&output=embed`
+          } else if (q) {
+            embedSrc = `https://maps.google.com/maps?q=${encodeURIComponent(q)}&z=15&output=embed`
+          }
+          return embedSrc ? `<div style="border-bottom:0.5px solid var(--border)"><iframe src="${embedSrc}" width="100%" height="220" style="border:none;display:block" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe></div>` : ''
+        })()}
         <div class="loc-body">
           ${sheet.location_name ? `<div class="loc-name">${esc(sheet.location_name)}</div>` : ''}
           ${sheet.location_address ? `<div class="loc-addr">${esc(sheet.location_address)}</div>` : ''}
           ${(() => {
             const mapPin = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`
-            // Use map link directly if set (don't run through esc() — it breaks & in URLs)
             if (sheet.location_map_link) return `<a href="${sheet.location_map_link}" target="_blank" class="maps-btn">${mapPin} Open in Maps</a>`
-            // Fall back to Google Maps search using address or location name
             const q = sheet.location_address || sheet.location_name
             if (q) return `<a href="https://maps.google.com/?q=${encodeURIComponent(q)}" target="_blank" class="maps-btn">${mapPin} Open in Maps</a>`
             return ''
