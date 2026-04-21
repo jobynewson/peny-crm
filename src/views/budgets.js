@@ -1000,6 +1000,7 @@ export class BudgetsView {
     const insVal = b.insurance ? net*0.025 : 0, afterFee = net+insVal+mu
     const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
     const vatVal = b.vat ? afterCustom*0.2 : 0
+    const tot = afterCustom + vatVal
     const pr = parseFloat(b.prep_rate)||100
     let rows = [
       ['Budget',b.name],['Client',cl?cl.first_name+' '+cl.last_name:''],
