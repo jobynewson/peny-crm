@@ -1991,10 +1991,20 @@ export class ProjectsView {
     const orig = btn.textContent
     btn.disabled = true; btn.textContent = 'Searching…'
     try {
+      // Resolve short URLs (maps.app.goo.gl etc) server-side first
+      let resolvedAddr = addrVal
+      if (addrVal?.startsWith('http') && (addrVal.includes('goo.gl') || addrVal.includes('maps.app'))) {
+        try {
+          const r = await fetch(`/api/resolve?url=${encodeURIComponent(addrVal)}`)
+          const d = await r.json()
+          if (d.url) resolvedAddr = d.url
+        } catch(e) { /* fall through with original */ }
+      }
+
       // Get coordinates — from URL or geocoding
       let lat = null, lng = null
-      if (addrVal?.startsWith('http')) {
-        const m = addrVal.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || addrVal.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/)
+      if (resolvedAddr?.startsWith('http')) {
+        const m = resolvedAddr.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || resolvedAddr.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/)
         if (m) { lat = parseFloat(m[1]); lng = parseFloat(m[2]) }
       }
       if (!lat) {

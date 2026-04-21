@@ -599,6 +599,18 @@ export class CallSheetsView {
       const btn = mc.querySelector('#cs-fetch-weather')
       btn.disabled = true; btn.textContent = 'Fetching…'
       try {
+        // Resolve short URLs (maps.app.goo.gl) server-side before extracting coords
+        let resolvedAddr = locAddr
+        if (locAddr?.startsWith('http') && (locAddr.includes('goo.gl') || locAddr.includes('maps.app'))) {
+          try {
+            const r = await fetch(`/api/resolve?url=${encodeURIComponent(locAddr)}`)
+            const d = await r.json()
+            if (d.url) resolvedAddr = d.url
+          } catch(e) { /* fall through */ }
+        }
+        const mapLink = resolvedAddr?.startsWith('http') ? resolvedAddr : null
+        const textAddr = !resolvedAddr?.startsWith('http') ? resolvedAddr : null
+
         // If the address field contains a URL, extract coords directly
         let lat = null, lng = null
         if (mapLink) {
