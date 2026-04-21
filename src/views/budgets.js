@@ -391,17 +391,18 @@ export class BudgetsView {
                 </tr></thead><tbody>
                   ${activeLines.map(l => {
                     const prep = parseFloat(l.prepDays)||0, d = parseFloat(l.days)||0, q = isNaN(parseFloat(l.qty))?0:parseFloat(l.qty), r = parseFloat(l.rate)||0
-                    const useDays = prep > 0 || d > 0 || (parseFloat(l.travelDays)||0) > 0
+                    const useDays = l.useDays || prep > 0 || d > 0 || (parseFloat(l.travelDays)||0) > 0
                     const t = lineTotal(l, edTr, edPr)
-                    const dayParts = [prep>0?`${prep}p`:'', d>0?`${d}s`:'', (parseFloat(l.travelDays)||0)>0?`${parseFloat(l.travelDays)}t`:''].filter(Boolean)
-                    const dqStr = useDays ? `${q} × ${dayParts.join('+')||'0d'}` : `×${q}`
+                    const td = parseFloat(l.travelDays)||0
+                    const totalDays = prep + d
+                    const dqStr = useDays ? `${totalDays}d × ${q}` : `×${q}`
                     return `<tr>
                       <td style="font-size:12px;padding:6px 8px">${esc(l.item)}${l.notes?`<div style="font-size:10px;color:var(--text-tertiary)">${esc(l.notes)}</div>`:''}</td>
                       <td style="font-size:12px;padding:6px 8px;color:var(--text-tertiary)"></td>
                       <td style="font-size:12px;padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums">${dqStr}</td>
                       <td style="font-size:12px;padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums">${r>0?gbpA(r):''}</td>
                       <td style="font-size:12px;padding:6px 8px;text-align:right;color:var(--text-tertiary)">${(parseFloat(l.discount)||0)>0?l.discount+'%':''}</td>
-                      <td class="bl-tot nz" style="padding:6px 8px">${gbpA(t)}</td>
+                      <td class="bl-tot ${t>0||(parseFloat(l.discount)||0)>=100?'nz':''}" style="padding:6px 8px">${t>0||(parseFloat(l.discount)||0)>=100?gbpA(t):'—'}</td>
                       <td></td>
                     </tr>`
                   }).join('')}
@@ -622,6 +623,7 @@ export class BudgetsView {
           <th class="r" title="Travel days">Travel</th>
           <th class="r">Rate £</th>
           <th class="r">Disc %</th>
+          <th class="r" title="Daily rate">D</th>
           <th class="r" title="Track time">⏱</th>
           <th class="r">Total</th>
           <th></th>
@@ -640,26 +642,24 @@ export class BudgetsView {
   lineHTML(si, li, l, travelRate, prepRate) {
     const t = lineTotal(l, travelRate, prepRate)
     const disc = l.discount != null ? l.discount : ''
-    const useDays = (parseFloat(l.prepDays)||0) > 0 || (parseFloat(l.days)||0) > 0 || (parseFloat(l.travelDays)||0) > 0
-    const dayStyle = useDays ? '' : 'opacity:0.25;pointer-events:none'
+    const useDays = l.useDays || (parseFloat(l.prepDays)||0) > 0 || (parseFloat(l.days)||0) > 0 || (parseFloat(l.travelDays)||0) > 0
+    const showTot = t > 0 || (parseFloat(l.discount)||0) >= 100
     return `<tr id="bl-${si}-${li}">
       <td><input class="bl-in w" value="${esc(l.item)}" placeholder="Item" data-field="${si},${li},item" /></td>
       <td><input class="bl-in w" value="${esc(l.notes||'')}" placeholder="Notes" data-field="${si},${li},notes" /></td>
       <td><input class="bl-in w" type="number" value="${l.qty??0}" placeholder="0" min="0" data-num="${si},${li},qty" style="text-align:right" /></td>
-      <td style="${dayStyle}"><input class="bl-in w" type="number" value="${l.prepDays||''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},prepDays" style="text-align:right" title="Prep days" /></td>
-      <td>
-        <div style="display:flex;align-items:center;gap:2px">
-          <input class="bl-in w" type="number" value="${l.days||''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},days" style="text-align:right;flex:1" title="Shoot days" />
-          <button title="${useDays?'Qty only':'Day rate'}" data-toggle-days="${si},${li}" style="background:none;border:0.5px solid ${useDays?'var(--accent)':'var(--border-med)'};border-radius:4px;padding:2px 4px;cursor:pointer;font-size:10px;color:${useDays?'var(--accent)':'var(--text-tertiary)'};white-space:nowrap;flex-shrink:0" title="Toggle day rate">${useDays?'D/R':'Qty'}</button>
-        </div>
-      </td>
-      <td style="${dayStyle}"><input class="bl-in w" type="number" value="${l.travelDays||''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},travelDays" style="text-align:right" title="Travel days" /></td>
+      <td style="${useDays?'':'opacity:0.3;pointer-events:none'}"><input class="bl-in w" type="number" value="${l.prepDays||''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},prepDays" style="text-align:right" title="Prep days" /></td>
+      <td style="${useDays?'':'opacity:0.3;pointer-events:none'}"><input class="bl-in w" type="number" value="${l.days||''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},days" style="text-align:right" title="Shoot days" /></td>
+      <td style="${useDays?'':'opacity:0.3;pointer-events:none'}"><input class="bl-in w" type="number" value="${l.travelDays||''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},travelDays" style="text-align:right" title="Travel days" /></td>
       <td><input class="bl-in w" type="number" value="${l.rate||''}" placeholder="0" min="0" data-num="${si},${li},rate" style="text-align:right" /></td>
       <td><input class="bl-in w" type="number" value="${disc}" placeholder="0" min="0" max="100" step="0.5" data-num="${si},${li},discount" style="text-align:right" title="Discount %" /></td>
-      <td style="text-align:center;padding:4px 6px">
-        <input type="checkbox" title="Track time for this line" ${l.track_time?'checked':''} data-toggle-track="${si},${li}" style="cursor:pointer;width:13px;height:13px" />
+      <td style="text-align:center;padding:4px 6px" title="Daily rate">
+        <input type="checkbox" ${useDays?'checked':''} data-toggle-days="${si},${li}" style="cursor:pointer;width:13px;height:13px" />
       </td>
-      <td class="bl-tot ${(t>0||(parseFloat(l.discount)||0)>=100)?'nz':''}" id="blt-${si}-${li}">${(t>0||(parseFloat(l.discount)||0)>=100)?gbpA(t):'—'}</td>
+      <td style="text-align:center;padding:4px 6px">
+        <input type="checkbox" title="Track time" ${l.track_time?'checked':''} data-toggle-track="${si},${li}" style="cursor:pointer;width:13px;height:13px" />
+      </td>
+      <td class="bl-tot ${showTot?'nz':''}" id="blt-${si}-${li}">${showTot?gbpA(t):'—'}</td>
       <td style="text-align:right"><button class="row-btn" style="color:#c03020" data-rem-line="${si},${li}">×</button></td>
     </tr>`
   }
@@ -764,18 +764,12 @@ export class BudgetsView {
     })
 
     // Per-line track time toggle
-    mc.querySelectorAll('[data-toggle-days]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const [si, li] = btn.dataset.toggleDays.split(',').map(Number)
+    mc.querySelectorAll('[data-toggle-days]').forEach(el => {
+      el.addEventListener('change', () => {
+        const [si, li] = el.dataset.toggleDays.split(',').map(Number)
         const l = sections[si].lines[li]
-        const useDays = (parseFloat(l.prepDays)||0) > 0 || (parseFloat(l.days)||0) > 0 || (parseFloat(l.travelDays)||0) > 0
-        if (useDays) {
-          // Switch to qty-only: zero all day fields
-          l.prepDays = 0; l.days = 0; l.travelDays = 0
-        } else {
-          // Switch to day-rate: set shoot days to 1 as a starting point
-          l.days = 1
-        }
+        l.useDays = el.checked
+        if (!el.checked) { l.prepDays = 0; l.days = 0; l.travelDays = 0 }
         save()
         this.renderEditor(mc)
       })
@@ -866,7 +860,7 @@ export class BudgetsView {
       btn.addEventListener('click', () => {
         const si = +btn.dataset.addLine
         const defaultDays = !!sections[si].crew
-        sections[si].lines.push({ item:'', notes:'', qty:0, rate:null, prepDays:0, days:0, travelDays:0, track_time:false })
+        sections[si].lines.push({ item:'', notes:'', qty:0, rate:null, prepDays:0, days:0, travelDays:0, useDays:false, track_time:false })
         save(); this.renderEditor(mc)
       })
     })
@@ -1083,7 +1077,7 @@ export class BudgetsView {
             const disc = parseFloat(l.discount)||0
             return `<div class="pdf-line">
               <div class="pdf-line-item">${esc(l.item)}${l.notes?`<div class="pdf-line-sub">${esc(l.notes)}</div>`:''}${useDaysPDF&&prep>0?`<div class="pdf-line-sub">Prep: ${prep}d @ ${pdfPr}%</div>`:''}${useDaysPDF&&td>0?`<div class="pdf-line-sub">Travel: ${td}d @ ${pdfTr}%</div>`:''}${disc>0?`<div class="pdf-line-sub">Discount: ${disc}%</div>`:''}</div>
-              <div class="pdf-line-num">${useDaysPDF&&prep>0?prep+'p ':''}${useDaysPDF&&d>0?d+'s':''}</div>
+              <div class="pdf-line-num">${useDaysPDF&&(prep>0||d>0)?(prep+d)+'d':''}</div>
               <div class="pdf-line-num">${useDaysPDF?(q!==1?q:''):q}</div>
               <div class="pdf-line-num">${useDaysPDF&&prep>0?gbpA(r*prep*q*(pdfPr/100)):''} ${useDaysPDF&&td>0?gbpA(r*td*(pdfTr/100)):(r>0?gbpA(r):'')}</div>
               <div class="pdf-line-total">${gbpA(t)}</div>
