@@ -75,6 +75,10 @@ export const projects = pgTable('projects', {
   retainer_items:   jsonb('retainer_items').notNull().default([]),
   retainer_fee_mode: text('retainer_fee_mode').notNull().default('fixed'),
   monthly_deliverables: jsonb('monthly_deliverables').notNull().default([]),
+  location_address:  text('location_address'),
+  location_map_link: text('location_map_link'),
+  parking_notes:     text('parking_notes'),
+  nearest_transport: text('nearest_transport'),
   ...timestamps,
 })
 

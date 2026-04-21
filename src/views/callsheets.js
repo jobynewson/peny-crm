@@ -416,17 +416,16 @@ export class CallSheetsView {
 
     const saveCrew = async () => {
       showSaving()
-      const cards = [...mc.querySelectorAll('.crew-row-cs')]
-      const rows = cards.map(card => {
-        const i = +card.dataset.crewIdx
-        return {
-          name:       card.querySelector(`[data-cs-crew-name="${i}"]`)?.value || '',
-          role:       card.querySelector(`[data-cs-crew-role="${i}"]`)?.value || '',
-            call_time:  card.querySelector(`[data-cs-crew-time="${i}"]`)?.value || null,
-          crew_token: s.crew[i]?.crew_token || null,
-          crew_type:  card.dataset.crewType || s.crew[i]?.crew_type || 'crew',
-        }
-      })
+      // Read visible DOM values into s.crew first
+      this._readCrewFromDOM(mc, s)
+      // Save ALL crew (not just current tab) to avoid losing hidden tab members
+      const rows = s.crew.map(c => ({
+        name:       c.name || '',
+        role:       c.role || '',
+        call_time:  c.call_time || null,
+        crew_token: c.crew_token || null,
+        crew_type:  c.crew_type || 'crew',
+      }))
       try { s.crew = await saveCallSheetCrew(s.id, rows); showSaved() } catch(e) { console.error(e) }
     }
 
@@ -450,12 +449,29 @@ export class CallSheetsView {
     }
 
     // Auto-save on field changes — includes new fields
-    mc.querySelectorAll('#cs-date,#cs-general-call,#cs-loc-name,#cs-loc-addr,#cs-loc-map,#cs-weather,#cs-notes,#cs-hs,#cs-parking,#cs-transport,#cs-hosp-name,#cs-hosp-addr,#cs-hosp-phone,#cs-police-name,#cs-police-addr,#cs-police-phone,#cs-fire-name,#cs-fire-addr,#cs-fire-phone').forEach(el => {
+    mc.querySelectorAll('#cs-date,#cs-loc-name,#cs-loc-addr,#cs-loc-map,#cs-weather,#cs-notes,#cs-hs,#cs-parking,#cs-transport,#cs-hosp-name,#cs-hosp-addr,#cs-hosp-phone,#cs-police-name,#cs-police-addr,#cs-police-phone,#cs-fire-name,#cs-fire-addr,#cs-fire-phone').forEach(el => {
       el.addEventListener('change', save)
     })
 
-    // Crew changes — listen on the panel not the grid (grid re-renders on tab switch)
-    mc.querySelector('.proj-panel')?.addEventListener('change', e => {
+    // General call time — cascade to any crew times matching the OLD value (visible + hidden tabs)
+    mc.querySelector('#cs-general-call')?.addEventListener('change', e => {
+      const newCall = e.target.value
+      const oldCall = s.general_call || ''
+      if (oldCall) {
+        // Update visible DOM crew times that match old value
+        mc.querySelectorAll('[data-cs-crew-time]').forEach(el => {
+          if (el.value === oldCall) el.value = newCall
+        })
+        // Also update hidden crew (other tabs) in s.crew directly
+        s.crew.forEach(c => { if (c.call_time === oldCall) c.call_time = newCall })
+        // Save all crew with updated times
+        saveCrew()
+      }
+      save()
+    })
+
+    // Crew changes — use document-level delegation to catch all tabs
+    mc.addEventListener('change', e => {
       if (e.target.matches('[data-cs-crew-name],[data-cs-crew-role],[data-cs-crew-time]')) saveCrew()
     })
     // Crew type tabs — read DOM first, switch tab, refresh only crew panel
