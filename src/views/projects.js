@@ -627,7 +627,7 @@ export class ProjectsView {
       const name = opt.value, role = opt.dataset.role || ''
       if (!p.crew) p.crew = []
       if (!p.crew.some(c => c.name === name)) {
-        p.crew.push({ name, role })
+        p.crew.push({ name, role, crew_type: 'crew' })
         const idx = this.app.projects.findIndex(x => x.id === p.id)
         if (idx >= 0) this.app.projects[idx].crew = p.crew
         try {
@@ -1842,7 +1842,7 @@ export class ProjectsView {
       const name = opt.dataset.name || opt.text
       const role = opt.dataset.role || ''
       if (!p.crew.some(c => c.name === name)) {
-        p.crew.push({ name, role }); save(); this.renderEditor(mc)
+        p.crew.push({ name, role, crew_type: this._peCrewTab||'crew' }); save(); this.renderEditor(mc)
       }
       e.target.value = ''
     })
@@ -1852,7 +1852,7 @@ export class ProjectsView {
       const name = opt.value
       const role = opt.dataset.role || ''
       if (!p.crew.some(c => c.name === name)) {
-        p.crew.push({ name, role }); save(); this.renderEditor(mc)
+        p.crew.push({ name, role, crew_type: this._peCrewTab||'crew' }); save(); this.renderEditor(mc)
       }
       e.target.value = ''
     })
