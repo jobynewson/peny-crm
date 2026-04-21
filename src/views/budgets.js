@@ -48,11 +48,11 @@ function budTotal(b) {
   return afterCustom + (b.vat ? afterCustom*0.2 : 0)
 }
 const hasValue = l => {
-  const useDays = (parseFloat(l.prepDays)||0) > 0 || (parseFloat(l.days)||0) > 0 || (parseFloat(l.travelDays)||0) > 0
-  return useDays
-    ? true
-    : ((parseFloat(l.qty)||0) > 0 && (parseFloat(l.rate)||0) > 0)
+  const useDays = l.useDays || (parseFloat(l.prepDays)||0) > 0 || (parseFloat(l.days)||0) > 0 || (parseFloat(l.travelDays)||0) > 0
+  const hasQty = (parseFloat(l.qty)||0) > 0 && (parseFloat(l.rate)||0) > 0
+  return useDays ? true : hasQty
 }
+const hasVisibleValue = l => hasValue(l) || ((parseFloat(l.discount)||0) >= 100 && (parseFloat(l.rate)||0) > 0)
 
 export { budTotal, budNet }
 
@@ -334,7 +334,7 @@ export class BudgetsView {
     const insVal = b.insurance ? net*0.025 : 0, afterFee = net+insVal+mu
     const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
     const vatVal = b.vat ? afterCustom*0.2 : 0, tot = afterCustom+vatVal
-    const activeSecs = (b.sections||[]).filter(s => s.enabled && secNet(s, edTr, edPr) > 0)
+    const activeSecs = (b.sections||[]).filter(s => s.enabled && ((s.lines||[]).some(l => hasVisibleValue(l))))
     const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 
     mc.innerHTML = `
@@ -375,7 +375,7 @@ export class BudgetsView {
       <div class="budget-layout">
         <div class="budget-main">
           ${activeSecs.length ? activeSecs.map(s => {
-            const activeLines = (s.lines||[]).filter(l => hasValue(l))
+            const activeLines = (s.lines||[]).filter(l => hasVisibleValue(l))
             const isCrew = !!s.crew
             return `<div class="bsec-wrap" style="margin-bottom:8px">
               <div class="bsec-head enabled" style="cursor:default">
@@ -418,7 +418,6 @@ export class BudgetsView {
             <div class="bsum-row" style="border-top:0.5px solid var(--border-light)"><span class="sk">Net total</span><span class="sv">${gbpA(net)}</span></div>
             ${(parseFloat(b.markup)||0)>0?`<div class="bsum-row"><span class="sk">Production fee (${b.markup}%)</span><span class="sv">${gbpA(mu)}</span></div>`:''}
             ${(parseFloat(b.custom_pct)||0)>0?`<div class="bsum-row"><span class="sk">Add-on (${b.custom_pct}%)</span><span class="sv">${gbpA(customVal)}</span></div>`:''}
-            ${b.insurance&&insVal>0?`<div class="bsum-row"><span class="sk">Insurance (2.5%)</span><span class="sv">${gbpA(insVal)}</span></div>`:""}
             ${b.insurance&&insVal>0?`<div class="bsum-row"><span class="sk">Insurance (2.5%)</span><span class="sv">${gbpA(insVal)}</span></div>`:""}
             ${b.vat?`<div class="bsum-row"><span class="sk">VAT (20%)</span><span class="sv">${gbpA(vatVal)}</span></div>`:''}
             <div class="bsum-row grand"><span class="sk">Grand total</span><span class="sv">${gbpA(tot)}</span></div>
@@ -975,7 +974,7 @@ export class BudgetsView {
     ]
     const tr = parseFloat(b.travel_rate)||50
     ;(b.sections||[]).filter(s=>s.enabled).forEach(s => {
-      const al = (s.lines||[]).filter(l => hasValue(l))
+      const al = (s.lines||[]).filter(l => hasVisibleValue(l))
       if (!al.length) return
       al.forEach(l => {
         const pDays = parseFloat(l.prepDays)||0, sDays = parseFloat(l.days)||0, tDays = parseFloat(l.travelDays)||0
@@ -1055,7 +1054,7 @@ export class BudgetsView {
 
     let detailSecHTML = ''
     activeSecs.forEach(sec => {
-      const al = (sec.lines||[]).filter(l => hasValue(l))
+      const al = (sec.lines||[]).filter(l => hasVisibleValue(l))
       if (!al.length) return
       detailSecHTML += `
         <div class="pdf-section">
