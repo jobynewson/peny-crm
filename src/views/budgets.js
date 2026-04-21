@@ -292,7 +292,7 @@ export class BudgetsView {
       const copy = {
         name: b.name + ' (copy)',
         client_id: b.client_id,
-        markup: b.markup, custom_pct: b.custom_pct, vat: b.vat,
+        markup: b.markup, custom_pct: b.custom_pct, vat: b.vat, insurance: b.insurance ?? false,
         travel_rate: b.travel_rate ?? 50, prep_rate: b.prep_rate ?? 100, discount: b.discount ?? 0,
         sections: JSON.parse(JSON.stringify(b.sections || [])),
         prepared_by: b.prepared_by, quote_email: b.quote_email,
@@ -640,19 +640,26 @@ export class BudgetsView {
   lineHTML(si, li, l, travelRate, prepRate) {
     const t = lineTotal(l, travelRate, prepRate)
     const disc = l.discount != null ? l.discount : ''
+    const useDays = (parseFloat(l.prepDays)||0) > 0 || (parseFloat(l.days)||0) > 0 || (parseFloat(l.travelDays)||0) > 0
+    const dayStyle = useDays ? '' : 'opacity:0.25;pointer-events:none'
     return `<tr id="bl-${si}-${li}">
       <td><input class="bl-in w" value="${esc(l.item)}" placeholder="Item" data-field="${si},${li},item" /></td>
       <td><input class="bl-in w" value="${esc(l.notes||'')}" placeholder="Notes" data-field="${si},${li},notes" /></td>
       <td><input class="bl-in w" type="number" value="${l.qty??0}" placeholder="0" min="0" data-num="${si},${li},qty" style="text-align:right" /></td>
-      <td><input class="bl-in w" type="number" value="${l.prepDays||''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},prepDays" style="text-align:right" title="Prep days" /></td>
-      <td><input class="bl-in w" type="number" value="${l.days||''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},days" style="text-align:right" title="Shoot days" /></td>
-      <td><input class="bl-in w" type="number" value="${l.travelDays||''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},travelDays" style="text-align:right" title="Travel days" /></td>
+      <td style="${dayStyle}"><input class="bl-in w" type="number" value="${l.prepDays||''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},prepDays" style="text-align:right" title="Prep days" /></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:2px">
+          <input class="bl-in w" type="number" value="${l.days||''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},days" style="text-align:right;flex:1" title="Shoot days" />
+          <button title="${useDays?'Qty only':'Day rate'}" data-toggle-days="${si},${li}" style="background:none;border:0.5px solid ${useDays?'var(--accent)':'var(--border-med)'};border-radius:4px;padding:2px 4px;cursor:pointer;font-size:10px;color:${useDays?'var(--accent)':'var(--text-tertiary)'};white-space:nowrap;flex-shrink:0" title="Toggle day rate">${useDays?'D/R':'Qty'}</button>
+        </div>
+      </td>
+      <td style="${dayStyle}"><input class="bl-in w" type="number" value="${l.travelDays||''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},travelDays" style="text-align:right" title="Travel days" /></td>
       <td><input class="bl-in w" type="number" value="${l.rate||''}" placeholder="0" min="0" data-num="${si},${li},rate" style="text-align:right" /></td>
       <td><input class="bl-in w" type="number" value="${disc}" placeholder="0" min="0" max="100" step="0.5" data-num="${si},${li},discount" style="text-align:right" title="Discount %" /></td>
       <td style="text-align:center;padding:4px 6px">
         <input type="checkbox" title="Track time for this line" ${l.track_time?'checked':''} data-toggle-track="${si},${li}" style="cursor:pointer;width:13px;height:13px" />
       </td>
-      <td class="bl-tot ${t>0?'nz':''}" id="blt-${si}-${li}">${t>0?gbpA(t):'—'}</td>
+      <td class="bl-tot ${(t>0||(parseFloat(l.discount)||0)>=100)?'nz':''}" id="blt-${si}-${li}">${(t>0||(parseFloat(l.discount)||0)>=100)?gbpA(t):'—'}</td>
       <td style="text-align:right"><button class="row-btn" style="color:#c03020" data-rem-line="${si},${li}">×</button></td>
     </tr>`
   }
@@ -757,6 +764,23 @@ export class BudgetsView {
     })
 
     // Per-line track time toggle
+    mc.querySelectorAll('[data-toggle-days]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const [si, li] = btn.dataset.toggleDays.split(',').map(Number)
+        const l = sections[si].lines[li]
+        const useDays = (parseFloat(l.prepDays)||0) > 0 || (parseFloat(l.days)||0) > 0 || (parseFloat(l.travelDays)||0) > 0
+        if (useDays) {
+          // Switch to qty-only: zero all day fields
+          l.prepDays = 0; l.days = 0; l.travelDays = 0
+        } else {
+          // Switch to day-rate: set shoot days to 1 as a starting point
+          l.days = 1
+        }
+        save()
+        this.renderEditor(mc)
+      })
+    })
+
     mc.querySelectorAll('[data-toggle-track]').forEach(el => {
       el.addEventListener('change', () => {
         const [si, li] = el.dataset.toggleTrack.split(',').map(Number)
@@ -796,7 +820,7 @@ export class BudgetsView {
       const pr = parseFloat(b.prep_rate)||100
       const t = lineTotal(l, tr, pr)
       const ltEl = mc.querySelector(`#blt-${si}-${li}`)
-      if (ltEl) { ltEl.textContent = t>0?gbpA(t):'—'; ltEl.className = 'bl-tot'+(t>0?' nz':'') }
+      const showZero = t>0||(parseFloat(l.discount)||0)>=100; if (ltEl) { ltEl.textContent = showZero?gbpA(t):'—'; ltEl.className = 'bl-tot'+(showZero?' nz':'') }
       const stEl = mc.querySelector(`#bst-${si}`)
       if (stEl) stEl.textContent = gbpA(secNet(s, tr))
       const amtEl = mc.querySelector(`#bamt-${si}`)
@@ -827,7 +851,7 @@ export class BudgetsView {
         const pr = parseFloat(b.prep_rate)||100
         const t = lineTotal(l, tr, pr)
         const ltEl = mc.querySelector(`#blt-${si}-${li}`)
-        if (ltEl) { ltEl.textContent = t>0?gbpA(t):'—'; ltEl.className = 'bl-tot'+(t>0?' nz':'') }
+        const showZero = t>0||(parseFloat(l.discount)||0)>=100; if (ltEl) { ltEl.textContent = showZero?gbpA(t):'—'; ltEl.className = 'bl-tot'+(showZero?' nz':'') }
         const stEl = mc.querySelector(`#bst-${si}`)
         if (stEl) stEl.textContent = gbpA(secNet(s, tr))
         const amtEl = mc.querySelector(`#bamt-${si}`)
@@ -920,7 +944,7 @@ export class BudgetsView {
     try {
       const data = {
         name: b.name,
-        markup: b.markup, custom_pct: b.custom_pct, vat: b.vat,
+        markup: b.markup, custom_pct: b.custom_pct, vat: b.vat, insurance: b.insurance ?? false,
         travel_rate: b.travel_rate ?? 50, prep_rate: b.prep_rate ?? 100, discount: b.discount ?? 0,
         signed_off: b.signed_off ?? false,
         signed_off_at: b.signed_off_at ?? null,
