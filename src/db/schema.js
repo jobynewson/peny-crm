@@ -256,3 +256,38 @@ export const call_sheet_schedule = pgTable('call_sheet_schedule', {
   description:   text('description').notNull().default(''),
   sort_order:    integer('sort_order').notNull().default(0),
 })
+
+// ── Shoots ────────────────────────────────────────────────────────────────────
+// Replaces call_sheets — everything about a shoot day in one row
+export const shoots = pgTable('shoots', {
+  id:                uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  project_id:        uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  user_id:           text('user_id').notNull(),
+  name:              text('name'),
+  shoot_date:        date('shoot_date'),
+  status:            text('status').notNull().default('draft'),
+  shoot_token:       text('shoot_token'),
+  general_call:      text('general_call'),
+  location_name:     text('location_name'),
+  location_address:  text('location_address'),
+  location_map_link: text('location_map_link'),
+  parking_notes:     text('parking_notes'),
+  nearest_transport: text('nearest_transport'),
+  nearest_hospital_name:    text('nearest_hospital_name'),
+  nearest_hospital_address: text('nearest_hospital_address'),
+  nearest_police_name:      text('nearest_police_name'),
+  nearest_police_address:   text('nearest_police_address'),
+  nearest_fire_name:        text('nearest_fire_name'),
+  nearest_fire_address:     text('nearest_fire_address'),
+  weather_text:      text('weather_text'),
+  weather_fetched_at: timestamp('weather_fetched_at', { withTimezone: true }),
+  hs_notes:          text('hs_notes'),
+  notes:             text('notes'),
+  hotels:            jsonb('hotels').notNull().default([]),
+  crew:              jsonb('crew').notNull().default([]),
+  schedule:          jsonb('schedule').notNull().default([]),
+  locations:         jsonb('locations').notNull().default([]),
+  sort_order:        integer('sort_order').notNull().default(0),
+  created_at:        timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updated_at:        timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})

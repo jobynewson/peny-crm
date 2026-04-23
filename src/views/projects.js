@@ -459,7 +459,6 @@ export class ProjectsView {
             : STAGES.map(s => `<option value="${s}" ${p.status===s?'selected':''}>${s}</option>`).join('')}
         </select>
         ${this.app.permissions?.projects_edit ? `<button class="btn-secondary" id="pv-duplicate">Duplicate</button>` : ''}
-        <button class="btn-secondary" id="pv-callsheets">Call sheets</button>
         ${this.app.permissions?.projects_edit ? `<button class="btn-primary" id="enter-edit">Edit project</button>` : ''}
         <button class="row-btn" id="pv-delete" style="color:#b03020;border-color:rgba(180,50,30,0.2)">Delete</button>
       </div>
@@ -671,6 +670,28 @@ export class ProjectsView {
             </div>
           </div>
 
+          ${(p.project_type||'full_service') === 'full_service' ? `
+          <div class="proj-panel">
+            <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
+              <span>Shoots</span>
+              <button class="btn-primary" id="pv-add-shoot" style="font-size:11px;padding:4px 10px">+ Add shoot</button>
+            </div>
+            <div style="padding:10px 14px;display:flex;flex-direction:column;gap:6px" id="pv-shoots-list">
+              ${(p._shoots||[]).length ? (p._shoots||[]).map(sh => {
+                const d = sh.shoot_date ? new Date(sh.shoot_date).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}) : 'No date'
+                const label = sh.name || sh.location_name || 'Untitled shoot'
+                const statusColor = sh.status === 'sent' ? '#6ec96e' : 'var(--text-tertiary)'
+                return `<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:var(--bg-secondary);border-radius:var(--radius-md);font-size:12px;cursor:pointer" data-open-shoot="${sh.id}">
+                  <div style="flex:1;min-width:0">
+                    <div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(label)}</div>
+                    <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">${esc(d)}${sh.general_call?' · '+esc(sh.general_call):''}</div>
+                  </div>
+                  <span style="font-size:10px;color:${statusColor};text-transform:uppercase;letter-spacing:0.4px">${esc(sh.status||'draft')}</span>
+                </div>`
+              }).join('') : '<div style="font-size:12px;color:var(--text-tertiary);padding:4px 0">No shoots yet</div>'}
+            </div>
+          </div>` : ''}
+
           ${p.notes ? `
           <div class="proj-panel">
             <div class="proj-panel-head">Notes</div>
@@ -740,12 +761,6 @@ export class ProjectsView {
     })
 
     mc.querySelector('#pv-ret-pdf')?.addEventListener('click', () => this._exportRetainerPDF(p))
-
-    mc.querySelector('#pv-callsheets')?.addEventListener('click', () => {
-      this.app.callSheetsView.currentProjectId = p.id
-      this.app.currentView = 'callsheets'
-      this.app.render()
-    })
 
     mc.querySelector('#enter-edit')?.addEventListener('click', () => {
       this.editingId = this.currentId; this.render(mc)
@@ -900,11 +915,680 @@ export class ProjectsView {
       this.app.budgetsView.openNewModalFromProject(p)
     })
 
+    // Shoots
+    mc.querySelector('#pv-add-shoot')?.addEventListener('click', () => this._createShoot(mc, p))
+    mc.querySelectorAll('[data-open-shoot]').forEach(el => {
+      el.addEventListener('click', () => this._openShootEditor(mc, p, el.dataset.openShoot))
+    })
+
     // Load activity log
     this._loadProjectActivity(mc, p.id)
     this._loadWorkLog(mc, p)
     // Load time tracking panel
     this._loadTimePanel(mc, p)
+    // Load shoots list
+    this._loadShoots(mc, p)
+  }
+
+  async _loadShoots(mc, p) {
+    try {
+      const { getShoots } = await import('../db/client.js')
+      p._shoots = await getShoots(this.app.userId, p.id)
+      // Re-render just the shoots list
+      const listEl = mc.querySelector('#pv-shoots-list')
+      if (!listEl) return
+      listEl.innerHTML = (p._shoots||[]).length ? (p._shoots||[]).map(sh => {
+        const d = sh.shoot_date ? new Date(sh.shoot_date).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}) : 'No date'
+        const label = sh.name || sh.location_name || 'Untitled shoot'
+        const statusColor = sh.status === 'sent' ? '#6ec96e' : 'var(--text-tertiary)'
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:var(--bg-secondary);border-radius:var(--radius-md);font-size:12px;cursor:pointer" data-open-shoot="${sh.id}">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(label)}</div>
+            <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">${esc(d)}${sh.general_call?' · '+esc(sh.general_call):''}</div>
+          </div>
+          <span style="font-size:10px;color:${statusColor};text-transform:uppercase;letter-spacing:0.4px">${esc(sh.status||'draft')}</span>
+        </div>`
+      }).join('') : '<div style="font-size:12px;color:var(--text-tertiary);padding:4px 0">No shoots yet</div>'
+      // Rebind
+      listEl.querySelectorAll('[data-open-shoot]').forEach(el => {
+        el.addEventListener('click', () => this._openShootEditor(mc, p, el.dataset.openShoot))
+      })
+    } catch(e) { console.error(e) }
+  }
+
+  async _createShoot(mc, p) {
+    try {
+      const { createShoot } = await import('../db/client.js')
+      // Start with project defaults
+      const crew = (p.crew||[]).filter(c => c.name).map(c => ({
+        name: c.name, role: c.role||'', crew_type: c.crew_type||'crew', call_time: '', crew_token: null
+      }))
+      const shoot = await createShoot(this.app.userId, p.id, {
+        name: '',
+        shoot_date: p.shoot_start || null,
+        location_name: p.location || null,
+        location_address: p.location_address || null,
+        location_map_link: p.location_map_link || null,
+        parking_notes: p.parking_notes || null,
+        nearest_transport: p.nearest_transport || null,
+        nearest_hospital_name: p.nearest_hospital_name || null,
+        nearest_hospital_address: p.nearest_hospital_address || null,
+        nearest_police_name: p.nearest_police_name || null,
+        nearest_police_address: p.nearest_police_address || null,
+        nearest_fire_name: p.nearest_fire_name || null,
+        nearest_fire_address: p.nearest_fire_address || null,
+        hotels: p.hotels || [],
+        crew,
+      })
+      await this._loadShoots(mc, p)
+      this._openShootEditor(mc, p, shoot.id)
+    } catch(e) { console.error(e); this.app.toast('Error creating shoot') }
+  }
+
+  async _openShootEditor(mc, p, shootId) {
+    try {
+      const { getShoot } = await import('../db/client.js')
+      const sh = await getShoot(shootId)
+      if (!sh) return this.app.toast('Shoot not found')
+      // Normalise JSONB arrays
+      sh.crew      = Array.isArray(sh.crew)      ? sh.crew      : []
+      sh.schedule  = Array.isArray(sh.schedule)  ? sh.schedule  : []
+      sh.locations = Array.isArray(sh.locations) ? sh.locations : []
+      sh.hotels    = Array.isArray(sh.hotels)    ? sh.hotels    : []
+      this._renderShootEditor(mc, p, sh)
+    } catch(e) { console.error(e); this.app.toast('Error loading shoot') }
+  }
+
+  _renderShootEditor(mc, p, sh) {
+    const origin = location.origin
+    // Remove any existing overlay
+    document.getElementById('shoot-editor-overlay')?.remove()
+
+    const overlay = document.createElement('div')
+    overlay.id = 'shoot-editor-overlay'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--bg-primary);z-index:1000;overflow-y:auto;display:flex;flex-direction:column'
+
+    const fmtDate = d => d ? new Date(d).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'long',year:'numeric'}) : 'No date'
+    const shareUrl = sh.shoot_token ? `${origin}/call/${sh.shoot_token}` : ''
+
+    overlay.innerHTML = `
+      <div style="position:sticky;top:0;background:var(--bg-primary);border-bottom:0.5px solid var(--border-light);padding:10px 20px;display:flex;align-items:center;gap:12px;z-index:10">
+        <button class="btn-secondary" id="se-close" style="flex-shrink:0">← Back to project</button>
+        <div style="flex:1;min-width:0">
+          <input id="se-name" value="${esc(sh.name||'')}" placeholder="Shoot name — e.g. Day 1 Peak District" style="width:100%;background:transparent;border:none;outline:none;font-size:15px;font-weight:500;color:var(--text-primary);font-family:var(--font);padding:3px 0" />
+          <div style="font-size:11px;color:var(--text-tertiary)">${esc(p.name)}</div>
+        </div>
+        <span id="se-indicator" style="font-size:11px;color:var(--text-tertiary)"></span>
+        <button class="btn-secondary" id="se-gen-pdf" style="flex-shrink:0;font-size:12px">📄 Generate call sheet PDF</button>
+        <button class="row-btn" id="se-delete" style="color:#b03020;border-color:rgba(180,50,30,0.2);flex-shrink:0">Delete</button>
+      </div>
+
+      <div style="flex:1;padding:20px;max-width:1200px;margin:0 auto;width:100%">
+        <div style="display:grid;grid-template-columns:1fr 320px;gap:20px">
+          <div style="display:flex;flex-direction:column;gap:14px">
+
+            <!-- Basics -->
+            <div class="proj-panel">
+              <div class="proj-panel-head">Shoot details</div>
+              <div class="proj-panel-body">
+                <div class="proj-date-row">
+                  <div>
+                    <div class="proj-field-label">Date</div>
+                    <input type="date" class="proj-input" id="se-date" value="${sh.shoot_date?String(sh.shoot_date).split('T')[0]:''}" />
+                  </div>
+                  <div>
+                    <div class="proj-field-label">General call time</div>
+                    <input type="time" class="proj-input" id="se-general-call" value="${esc(sh.general_call||'')}" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Location -->
+            <div class="proj-panel">
+              <div class="proj-panel-head">Primary location</div>
+              <div class="proj-panel-body">
+                <div>
+                  <div class="proj-field-label">Location name</div>
+                  <input type="text" class="proj-input" id="se-loc-name" value="${esc(sh.location_name||'')}" placeholder="e.g. Eastnor Castle" />
+                </div>
+                <div style="margin-top:10px">
+                  <div class="proj-field-label">Address or Maps link</div>
+                  <input type="text" class="proj-input" id="se-loc-addr" value="${esc(sh.location_address||sh.location_map_link||'')}" placeholder="Full address or paste a Google Maps URL" />
+                </div>
+                <div class="proj-date-row" style="margin-top:10px">
+                  <div>
+                    <div class="proj-field-label">Parking</div>
+                    <input type="text" class="proj-input" id="se-parking" value="${esc(sh.parking_notes||'')}" placeholder="e.g. On-site car park" />
+                  </div>
+                  <div>
+                    <div class="proj-field-label">Nearest transport</div>
+                    <input type="text" class="proj-input" id="se-transport" value="${esc(sh.nearest_transport||'')}" placeholder="e.g. Ledbury station, 2 miles" />
+                  </div>
+                </div>
+                <div style="display:flex;gap:8px;align-items:flex-end;margin-top:10px">
+                  <div style="flex:1">
+                    <div class="proj-field-label">Weather</div>
+                    <input type="text" class="proj-input" id="se-weather" value="${esc(sh.weather_text||'')}" placeholder="e.g. 12°C, partly cloudy" />
+                  </div>
+                  <button class="btn-secondary" id="se-fetch-weather" style="font-size:12px;white-space:nowrap">🌤 Fetch</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Emergency services -->
+            <div class="proj-panel">
+              <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
+                <span>Emergency services</span>
+                <button class="btn-secondary" id="se-find-nearby" style="font-size:11px;padding:3px 8px">📍 Find nearby</button>
+              </div>
+              <div class="proj-panel-body">
+                ${[['Hospital','se-hosp','nearest_hospital'],['Police','se-police','nearest_police'],['Fire','se-fire','nearest_fire']].map(([label,id,key]) => `
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+                  <div><div class="proj-field-label">${label} name</div><input type="text" class="proj-input" id="${id}-name" value="${esc(sh[key+'_name']||'')}" placeholder="${label} name" /></div>
+                  <div><div class="proj-field-label">${label} address</div><input type="text" class="proj-input" id="${id}-addr" value="${esc(sh[key+'_address']||'')}" placeholder="Address" /></div>
+                </div>`).join('')}
+              </div>
+            </div>
+
+            <!-- Additional locations -->
+            <div class="proj-panel">
+              <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
+                <span>Additional locations</span>
+                <button class="btn-secondary" id="se-add-loc" style="font-size:11px;padding:3px 8px">+ Add</button>
+              </div>
+              <div class="proj-panel-body" id="se-locs-list">
+                ${sh.locations.map((l,i) => this._shootLocHTML(l, i)).join('')}
+                ${!sh.locations.length ? '<div style="font-size:12px;color:var(--text-tertiary)">No additional locations</div>' : ''}
+              </div>
+            </div>
+
+            <!-- Schedule -->
+            <div class="proj-panel">
+              <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
+                <span>Schedule / run of show</span>
+                <button class="btn-secondary" id="se-add-sched" style="font-size:11px;padding:3px 8px">+ Add row</button>
+              </div>
+              <div class="proj-panel-body" id="se-sched-list">
+                ${sh.schedule.map((r,i) => this._shootSchedHTML(r, i)).join('')}
+                ${!sh.schedule.length ? '<div style="font-size:12px;color:var(--text-tertiary)">No schedule yet</div>' : ''}
+              </div>
+            </div>
+
+            <!-- Crew -->
+            <div class="proj-panel">
+              <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
+                <span>Crew &amp; call times</span>
+                <button class="btn-secondary" id="se-fill-general" style="font-size:11px;padding:3px 8px">Fill blank with general call</button>
+              </div>
+              <div class="proj-panel-body" id="se-crew-list">
+                ${sh.crew.map((c,i) => this._shootCrewHTML(c, i)).join('')}
+                <button class="add-line" id="se-add-crew" style="margin-top:8px">+ add crew member</button>
+              </div>
+            </div>
+
+            <!-- Hotels -->
+            <div class="proj-panel">
+              <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
+                <span>Accommodation</span>
+                <button class="btn-secondary" id="se-add-hotel" style="font-size:11px;padding:3px 8px">+ Add hotel</button>
+              </div>
+              <div class="proj-panel-body" id="se-hotels-list">
+                ${sh.hotels.map((h,i) => this._shootHotelHTML(h, i, sh.crew)).join('')}
+                ${!sh.hotels.length ? '<div style="font-size:12px;color:var(--text-tertiary)">No accommodation added</div>' : ''}
+              </div>
+            </div>
+
+            <!-- H&S + Notes -->
+            <div class="proj-panel">
+              <div class="proj-panel-head">Health &amp; safety notes</div>
+              <div class="proj-panel-body">
+                <textarea class="proj-textarea" id="se-hs" style="min-height:80px" placeholder="H&S notes, risks, PPE, emergency procedures...">${esc(sh.hs_notes||'')}</textarea>
+              </div>
+            </div>
+            <div class="proj-panel">
+              <div class="proj-panel-head">Notes</div>
+              <div class="proj-panel-body">
+                <textarea class="proj-textarea" id="se-notes" style="min-height:60px" placeholder="Any other notes for crew...">${esc(sh.notes||'')}</textarea>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sidebar -->
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <div class="proj-panel">
+              <div class="proj-panel-head">Status &amp; share</div>
+              <div class="proj-panel-body">
+                <div style="margin-bottom:10px">
+                  <div class="proj-field-label">Status</div>
+                  <select class="proj-input" id="se-status">
+                    <option value="draft" ${sh.status==='draft'?'selected':''}>Draft</option>
+                    <option value="sent" ${sh.status==='sent'?'selected':''}>Sent</option>
+                  </select>
+                </div>
+                <div class="proj-field-label">Full call sheet link</div>
+                <div style="display:flex;gap:6px">
+                  <input type="text" class="proj-input" readonly value="${esc(shareUrl)}" style="font-size:11px;flex:1" id="se-share-url" />
+                  <button class="btn-secondary" id="se-copy-share" style="font-size:11px;padding:4px 10px">Copy</button>
+                </div>
+              </div>
+            </div>
+            <div class="proj-panel" id="se-crew-links-panel">
+              <div class="proj-panel-head">Individual crew links</div>
+              <div class="proj-panel-body" id="se-crew-links"></div>
+            </div>
+          </div>
+        </div>
+      </div>`
+
+    document.body.appendChild(overlay)
+    this._bindShootEditor(overlay, mc, p, sh)
+    this._renderShootCrewLinks(overlay, sh)
+  }
+
+  _shootLocHTML(l, i) {
+    return `<div class="se-loc-row" style="border:0.5px solid var(--border-med);border-radius:var(--radius-md);padding:10px;margin-bottom:8px;background:var(--bg-secondary)" data-loc-idx="${i}">
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <input type="text" class="bl-in w" value="${esc(l.name||'')}" placeholder="Location name" data-loc-field="${i},name" style="flex:1;font-size:12px;padding:5px 8px" />
+        <input type="time" class="bl-in w" value="${esc(l.move_time||'')}" placeholder="Move time" data-loc-field="${i},move_time" style="width:90px;font-size:12px;padding:5px 8px" />
+        <button class="row-btn" style="color:#c03020" data-loc-rem="${i}">×</button>
+      </div>
+      <input type="text" class="bl-in w" value="${esc(l.address||'')}" placeholder="Address" data-loc-field="${i},address" style="width:100%;font-size:12px;padding:5px 8px;margin-bottom:6px" />
+      <input type="text" class="bl-in w" value="${esc(l.notes||'')}" placeholder="Notes" data-loc-field="${i},notes" style="width:100%;font-size:12px;padding:5px 8px" />
+    </div>`
+  }
+
+  _shootSchedHTML(r, i) {
+    return `<div style="display:grid;grid-template-columns:90px 1fr 28px;gap:6px;margin-bottom:6px" data-sched-idx="${i}">
+      <input type="time" class="bl-in w" value="${esc(r.time||'')}" data-sched-field="${i},time" style="font-size:12px;padding:5px 8px" />
+      <input type="text" class="bl-in w" value="${esc(r.description||'')}" placeholder="Description" data-sched-field="${i},description" style="font-size:12px;padding:5px 8px" />
+      <button class="row-btn" style="color:#c03020" data-sched-rem="${i}">×</button>
+    </div>`
+  }
+
+  _shootCrewHTML(c, i) {
+    return `<div class="se-crew-row" style="display:grid;grid-template-columns:1fr 1fr 90px 28px;gap:6px;margin-bottom:6px" data-crew-idx="${i}">
+      <input type="text" class="bl-in w" value="${esc(c.name||'')}" placeholder="Name" data-crew-field="${i},name" style="font-size:12px;padding:5px 8px" />
+      <input type="text" class="bl-in w" value="${esc(c.role||'')}" placeholder="Role" data-crew-field="${i},role" style="font-size:12px;padding:5px 8px" />
+      <input type="time" class="bl-in w" value="${esc(c.call_time||'')}" data-crew-field="${i},call_time" style="font-size:12px;padding:5px 8px" />
+      <button class="row-btn" style="color:#c03020" data-crew-rem="${i}">×</button>
+    </div>`
+  }
+
+  _shootHotelHTML(h, i, crew) {
+    return `<div class="se-hotel-card" style="border:0.5px solid var(--border-med);border-radius:var(--radius-md);padding:12px;margin-bottom:8px;background:var(--bg-secondary)" data-hotel-idx="${i}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+        <input type="text" class="proj-input" value="${esc(h.name||'')}" placeholder="Hotel name" data-hotel-field="${i},name" style="flex:1;margin-right:8px" />
+        <button class="row-btn" style="color:#c03020;flex-shrink:0" data-hotel-rem="${i}">×</button>
+      </div>
+      <input type="text" class="proj-input" value="${esc(h.address||'')}" placeholder="Address or Maps URL" data-hotel-field="${i},address" style="margin-bottom:8px" />
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div><div class="proj-field-label">Check-in</div><input type="datetime-local" class="proj-input" value="${h.check_in||''}" data-hotel-field="${i},check_in" /></div>
+        <div><div class="proj-field-label">Check-out</div><input type="datetime-local" class="proj-input" value="${h.check_out||''}" data-hotel-field="${i},check_out" /></div>
+      </div>
+      <input type="text" class="proj-input" value="${esc(h.notes||'')}" placeholder="Notes" data-hotel-field="${i},notes" style="margin-bottom:8px" />
+      <div class="proj-field-label">Crew staying here</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
+        ${(crew||[]).filter(c=>c.name).map(c => {
+          const checked = (h.assigned_crew||[]).includes(c.name)
+          return `<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;background:var(--bg-primary);border:0.5px solid var(--border-med);border-radius:20px;padding:3px 10px">
+            <input type="checkbox" ${checked?'checked':''} data-hotel-crew="${i}" data-crew-name="${esc(c.name)}" style="cursor:pointer;width:12px;height:12px" />
+            ${esc(c.name)}
+          </label>`
+        }).join('')}
+        ${!(crew||[]).filter(c=>c.name).length ? '<span style="font-size:12px;color:var(--text-tertiary)">Add crew first</span>' : ''}
+      </div>
+    </div>`
+  }
+
+  _renderShootCrewLinks(overlay, sh) {
+    const el = overlay.querySelector('#se-crew-links')
+    if (!el) return
+    const origin = location.origin
+    const namedCrew = (sh.crew||[]).filter(c => c.name && c.crew_token)
+    if (!namedCrew.length) {
+      el.innerHTML = '<div style="font-size:12px;color:var(--text-tertiary);padding:6px 0">Crew links appear after saving</div>'
+      return
+    }
+    el.innerHTML = namedCrew.map(c => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:12px">
+        <span>${esc(c.name)}</span>
+        <button class="btn-cancel" style="font-size:10px;padding:2px 7px" data-copy-crew="${origin}/call/${sh.shoot_token}?crew=${c.crew_token}">Copy</button>
+      </div>`).join('')
+    el.querySelectorAll('[data-copy-crew]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await navigator.clipboard.writeText(btn.dataset.copyCrew)
+        btn.textContent = '✓'; setTimeout(() => btn.textContent = 'Copy', 1500)
+      })
+    })
+  }
+
+  _bindShootEditor(overlay, mc, p, sh) {
+    const indicator = overlay.querySelector('#se-indicator')
+    const showSaving = () => { if (indicator) { indicator.textContent = 'Saving…'; indicator.style.color = 'var(--accent)' } }
+    const showSaved  = () => { if (indicator) { indicator.textContent = '✓ Saved'; indicator.style.color = 'var(--text-tertiary)'; setTimeout(() => { if (indicator) indicator.textContent = '' }, 2000) } }
+
+    const save = async () => {
+      showSaving()
+      // Gather location_address split
+      const addrVal = overlay.querySelector('#se-loc-addr')?.value.trim()
+      const isUrl = addrVal?.startsWith('http')
+      const data = {
+        name:              overlay.querySelector('#se-name')?.value.trim() || null,
+        shoot_date:        overlay.querySelector('#se-date')?.value || null,
+        status:            overlay.querySelector('#se-status')?.value || 'draft',
+        general_call:      overlay.querySelector('#se-general-call')?.value || null,
+        location_name:     overlay.querySelector('#se-loc-name')?.value.trim() || null,
+        location_address:  !isUrl ? (addrVal || null) : null,
+        location_map_link: isUrl ? addrVal : null,
+        parking_notes:     overlay.querySelector('#se-parking')?.value.trim() || null,
+        nearest_transport: overlay.querySelector('#se-transport')?.value.trim() || null,
+        nearest_hospital_name:    overlay.querySelector('#se-hosp-name')?.value.trim() || null,
+        nearest_hospital_address: overlay.querySelector('#se-hosp-addr')?.value.trim() || null,
+        nearest_police_name:      overlay.querySelector('#se-police-name')?.value.trim() || null,
+        nearest_police_address:   overlay.querySelector('#se-police-addr')?.value.trim() || null,
+        nearest_fire_name:        overlay.querySelector('#se-fire-name')?.value.trim() || null,
+        nearest_fire_address:     overlay.querySelector('#se-fire-addr')?.value.trim() || null,
+        weather_text:      overlay.querySelector('#se-weather')?.value.trim() || null,
+        weather_fetched_at: sh.weather_fetched_at || null,
+        hs_notes:          overlay.querySelector('#se-hs')?.value.trim() || null,
+        notes:             overlay.querySelector('#se-notes')?.value.trim() || null,
+        hotels:    sh.hotels    || [],
+        crew:      sh.crew      || [],
+        schedule:  sh.schedule  || [],
+        locations: sh.locations || [],
+      }
+      try {
+        const { updateShoot } = await import('../db/client.js')
+        const updated = await updateShoot(sh.id, data)
+        // Merge server state (crew tokens are generated on save)
+        Object.assign(sh, updated)
+        sh.crew      = Array.isArray(sh.crew)      ? sh.crew      : []
+        sh.schedule  = Array.isArray(sh.schedule)  ? sh.schedule  : []
+        sh.locations = Array.isArray(sh.locations) ? sh.locations : []
+        sh.hotels    = Array.isArray(sh.hotels)    ? sh.hotels    : []
+        showSaved()
+        // Refresh crew links sidebar (tokens may have been generated)
+        this._renderShootCrewLinks(overlay, sh)
+      } catch(e) { console.error(e); if (indicator) { indicator.textContent = '⚠ Save failed'; indicator.style.color = '#e07070' } }
+    }
+
+    // Close
+    overlay.querySelector('#se-close')?.addEventListener('click', () => {
+      overlay.remove()
+      this._loadShoots(mc, p)
+    })
+
+    // Delete
+    overlay.querySelector('#se-delete')?.addEventListener('click', async () => {
+      if (!confirm('Delete this shoot? This cannot be undone.')) return
+      try {
+        const { deleteShoot } = await import('../db/client.js')
+        await deleteShoot(sh.id)
+        overlay.remove()
+        await this._loadShoots(mc, p)
+        this.app.toast('Shoot deleted')
+      } catch(e) { console.error(e); this.app.toast('Error deleting shoot') }
+    })
+
+    // Top-level fields — autosave on change
+    overlay.querySelectorAll('#se-name,#se-date,#se-status,#se-general-call,#se-loc-name,#se-loc-addr,#se-parking,#se-transport,#se-weather,#se-hs,#se-notes,#se-hosp-name,#se-hosp-addr,#se-police-name,#se-police-addr,#se-fire-name,#se-fire-addr').forEach(el => {
+      el.addEventListener('change', save)
+    })
+
+    // General call cascade — update matching crew times
+    overlay.querySelector('#se-general-call')?.addEventListener('change', e => {
+      const newCall = e.target.value, oldCall = sh.general_call || ''
+      if (oldCall) sh.crew.forEach(c => { if (c.call_time === oldCall) c.call_time = newCall })
+      this._refreshShootCrew(overlay, sh, save)
+    })
+
+    // Fill blank call times
+    overlay.querySelector('#se-fill-general')?.addEventListener('click', () => {
+      const gc = overlay.querySelector('#se-general-call')?.value
+      if (!gc) { this.app.toast('Set a general call time first'); return }
+      sh.crew.forEach(c => { if (!c.call_time) c.call_time = gc })
+      this._refreshShootCrew(overlay, sh, save)
+      save()
+    })
+
+    // Weather fetch
+    overlay.querySelector('#se-fetch-weather')?.addEventListener('click', async () => {
+      const btn = overlay.querySelector('#se-fetch-weather')
+      const addrVal = overlay.querySelector('#se-loc-addr')?.value.trim()
+      const locName = overlay.querySelector('#se-loc-name')?.value.trim()
+      const date = overlay.querySelector('#se-date')?.value
+      if (!date) { this.app.toast('Set the shoot date first'); return }
+      if (!addrVal && !locName) { this.app.toast('Enter a location first'); return }
+      btn.disabled = true; btn.textContent = 'Fetching…'
+      try {
+        let resolvedAddr = addrVal
+        if (addrVal?.startsWith('http') && (addrVal.includes('goo.gl') || addrVal.includes('maps.app'))) {
+          try {
+            const r = await fetch(`/api/resolve?url=${encodeURIComponent(addrVal)}`)
+            const d = await r.json()
+            if (d.url) resolvedAddr = d.url
+          } catch(e){}
+        }
+        const extractCoords = url => {
+          if (!url) return null
+          const patterns = [/@(-?\d+\.\d+),(-?\d+\.\d+)/, /\/search\/(-?\d+\.\d+),\+?(-?\d+\.\d+)/, /[?&]q=(-?\d+\.\d+),\+?(-?\d+\.\d+)/, /ll=(-?\d+\.\d+),(-?\d+\.\d+)/, /3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/]
+          for (const p of patterns) { const m = url.match(p); if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) } }
+          return null
+        }
+        let lat=null, lng=null
+        if (resolvedAddr?.startsWith('http')) { const c = extractCoords(resolvedAddr); if (c) { lat=c.lat; lng=c.lng } }
+        if (!lat) {
+          const term = (locName || addrVal || '').split(',')[0].trim()
+          const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(term)}&count=1&language=en&format=json`)
+          const d = await r.json()
+          if (d.results?.[0]) { lat=d.results[0].latitude; lng=d.results[0].longitude }
+        }
+        if (!lat) { this.app.toast('Could not find location'); btn.disabled=false; btn.textContent='🌤 Fetch'; return }
+        const wx = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max,weathercode&timezone=Europe%2FLondon&start_date=${date}&end_date=${date}`).then(r=>r.json())
+        const d = wx.daily
+        const codeDesc = { 0:'Clear', 1:'Mainly clear', 2:'Partly cloudy', 3:'Overcast', 45:'Fog', 48:'Fog', 51:'Light drizzle', 53:'Drizzle', 55:'Heavy drizzle', 61:'Light rain', 63:'Rain', 65:'Heavy rain', 71:'Light snow', 73:'Snow', 75:'Heavy snow', 80:'Rain showers', 81:'Rain showers', 82:'Heavy rain showers', 95:'Thunderstorm' }
+        const txt = `${codeDesc[d.weathercode[0]]||'Mixed'} · ${Math.round(d.temperature_2m_min[0])}–${Math.round(d.temperature_2m_max[0])}°C · Wind ${Math.round(d.windspeed_10m_max[0])}km/h · Rain ${d.precipitation_probability_max[0]}%`
+        overlay.querySelector('#se-weather').value = txt
+        sh.weather_fetched_at = new Date().toISOString()
+        save()
+      } catch(e) { console.error(e); this.app.toast('Weather fetch failed') }
+      finally { btn.disabled=false; btn.textContent='🌤 Fetch' }
+    })
+
+    // Find nearby services
+    overlay.querySelector('#se-find-nearby')?.addEventListener('click', async () => {
+      const btn = overlay.querySelector('#se-find-nearby')
+      const addrVal = overlay.querySelector('#se-loc-addr')?.value.trim()
+      const locName = overlay.querySelector('#se-loc-name')?.value.trim()
+      const result = await this._findNearbyServices(addrVal, locName, btn)
+      if (!result) return
+      const setField = (id, val) => { const el = overlay.querySelector(id); if (el && val) el.value = val }
+      if (result.transport) { setField('#se-transport', result.transport.name) }
+      if (result.hospital)  { setField('#se-hosp-name',   result.hospital.name);  setField('#se-hosp-addr',   result.hospital.address) }
+      if (result.police)    { setField('#se-police-name', result.police.name);    setField('#se-police-addr', result.police.address) }
+      if (result.fire)      { setField('#se-fire-name',   result.fire.name);      setField('#se-fire-addr',   result.fire.address) }
+      save()
+      this.app.toast('Nearby services found ✓')
+    })
+
+    // Copy share link
+    overlay.querySelector('#se-copy-share')?.addEventListener('click', async e => {
+      const url = overlay.querySelector('#se-share-url')?.value
+      if (!url) return
+      await navigator.clipboard.writeText(url)
+      e.target.textContent = '✓'; setTimeout(() => e.target.textContent = 'Copy', 1500)
+    })
+
+    // Generate PDF
+    overlay.querySelector('#se-gen-pdf')?.addEventListener('click', () => {
+      this._generateShootPDF(sh, p)
+    })
+
+    // Locations
+    overlay.querySelector('#se-add-loc')?.addEventListener('click', () => {
+      sh.locations.push({ name:'', address:'', move_time:'', notes:'' })
+      this._refreshShootLocs(overlay, sh, save)
+      save()
+    })
+    this._bindShootLocs(overlay, sh, save)
+
+    // Schedule
+    overlay.querySelector('#se-add-sched')?.addEventListener('click', () => {
+      sh.schedule.push({ time:'', description:'' })
+      this._refreshShootSched(overlay, sh, save)
+    })
+    this._bindShootSched(overlay, sh, save)
+
+    // Crew
+    overlay.querySelector('#se-add-crew')?.addEventListener('click', () => {
+      sh.crew.push({ name:'', role:'', call_time: sh.general_call || '', crew_type:'crew' })
+      this._refreshShootCrew(overlay, sh, save)
+    })
+    this._bindShootCrew(overlay, sh, save)
+
+    // Hotels
+    overlay.querySelector('#se-add-hotel')?.addEventListener('click', () => {
+      sh.hotels.push({ name:'', address:'', check_in:'', check_out:'', notes:'', assigned_crew:[] })
+      this._refreshShootHotels(overlay, sh, save)
+    })
+    this._bindShootHotels(overlay, sh, save)
+  }
+
+  _bindShootLocs(overlay, sh, save) {
+    overlay.querySelectorAll('#se-locs-list [data-loc-field]').forEach(el => {
+      el.addEventListener('change', () => {
+        const [i, f] = el.dataset.locField.split(',')
+        sh.locations[+i][f] = el.value
+        save()
+      })
+    })
+    overlay.querySelectorAll('#se-locs-list [data-loc-rem]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        sh.locations.splice(+btn.dataset.locRem, 1)
+        this._refreshShootLocs(overlay, sh, save); save()
+      })
+    })
+  }
+  _refreshShootLocs(overlay, sh, save) {
+    const el = overlay.querySelector('#se-locs-list')
+    el.innerHTML = sh.locations.map((l,i) => this._shootLocHTML(l,i)).join('') || '<div style="font-size:12px;color:var(--text-tertiary)">No additional locations</div>'
+    this._bindShootLocs(overlay, sh, save)
+  }
+
+  _bindShootSched(overlay, sh, save) {
+    overlay.querySelectorAll('#se-sched-list [data-sched-field]').forEach(el => {
+      el.addEventListener('change', () => {
+        const [i, f] = el.dataset.schedField.split(',')
+        sh.schedule[+i][f] = el.value; save()
+      })
+    })
+    overlay.querySelectorAll('#se-sched-list [data-sched-rem]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        sh.schedule.splice(+btn.dataset.schedRem, 1)
+        this._refreshShootSched(overlay, sh, save); save()
+      })
+    })
+  }
+  _refreshShootSched(overlay, sh, save) {
+    const el = overlay.querySelector('#se-sched-list')
+    el.innerHTML = sh.schedule.map((r,i) => this._shootSchedHTML(r,i)).join('') || '<div style="font-size:12px;color:var(--text-tertiary)">No schedule yet</div>'
+    this._bindShootSched(overlay, sh, save)
+  }
+
+  _bindShootCrew(overlay, sh, save) {
+    overlay.querySelectorAll('#se-crew-list [data-crew-field]').forEach(el => {
+      el.addEventListener('change', () => {
+        const [i, f] = el.dataset.crewField.split(',')
+        sh.crew[+i][f] = el.value; save()
+      })
+    })
+    overlay.querySelectorAll('#se-crew-list [data-crew-rem]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        sh.crew.splice(+btn.dataset.crewRem, 1)
+        this._refreshShootCrew(overlay, sh, save); save()
+      })
+    })
+  }
+  _refreshShootCrew(overlay, sh, save) {
+    const el = overlay.querySelector('#se-crew-list')
+    el.innerHTML = sh.crew.map((c,i) => this._shootCrewHTML(c,i)).join('') + '<button class="add-line" id="se-add-crew" style="margin-top:8px">+ add crew member</button>'
+    overlay.querySelector('#se-add-crew')?.addEventListener('click', () => {
+      sh.crew.push({ name:'', role:'', call_time: sh.general_call || '', crew_type:'crew' })
+      this._refreshShootCrew(overlay, sh, save)
+    })
+    this._bindShootCrew(overlay, sh, save)
+  }
+
+  _bindShootHotels(overlay, sh, save) {
+    overlay.querySelectorAll('#se-hotels-list [data-hotel-field]').forEach(el => {
+      el.addEventListener('change', () => {
+        const [i, f] = el.dataset.hotelField.split(',')
+        sh.hotels[+i][f] = el.value; save()
+      })
+    })
+    overlay.querySelectorAll('#se-hotels-list [data-hotel-rem]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        sh.hotels.splice(+btn.dataset.hotelRem, 1)
+        this._refreshShootHotels(overlay, sh, save); save()
+      })
+    })
+    overlay.querySelectorAll('#se-hotels-list [data-hotel-crew]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const i = +cb.dataset.hotelCrew
+        const name = cb.dataset.crewName
+        if (!sh.hotels[i].assigned_crew) sh.hotels[i].assigned_crew = []
+        if (cb.checked) { if (!sh.hotels[i].assigned_crew.includes(name)) sh.hotels[i].assigned_crew.push(name) }
+        else sh.hotels[i].assigned_crew = sh.hotels[i].assigned_crew.filter(n => n !== name)
+        save()
+      })
+    })
+  }
+  _refreshShootHotels(overlay, sh, save) {
+    const el = overlay.querySelector('#se-hotels-list')
+    el.innerHTML = sh.hotels.map((h,i) => this._shootHotelHTML(h,i,sh.crew)).join('') || '<div style="font-size:12px;color:var(--text-tertiary)">No accommodation added</div>'
+    this._bindShootHotels(overlay, sh, save)
+  }
+
+  _generateShootPDF(sh, p) {
+    // Simple print-to-PDF via new window
+    const w = window.open('', '_blank')
+    const fmtDate = d => d ? new Date(d).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) : ''
+    const esc_ = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    w.document.write(`<!DOCTYPE html><html><head><title>Call Sheet - ${esc_(sh.name||p.name)}</title>
+      <style>
+        body{font-family:-apple-system,sans-serif;padding:30px;max-width:800px;margin:0 auto;color:#222;font-size:12px;line-height:1.5}
+        h1{font-size:22px;margin:0 0 4px;border-bottom:2px solid #222;padding-bottom:8px}
+        h2{font-size:14px;background:#222;color:#fff;padding:5px 10px;margin:20px 0 8px;text-transform:uppercase;letter-spacing:1px}
+        .sub{color:#666;margin-bottom:20px}
+        table{width:100%;border-collapse:collapse;margin-bottom:8px}
+        td,th{border:0.5px solid #ccc;padding:6px 8px;text-align:left;font-size:11px;vertical-align:top}
+        th{background:#f5f5f5}
+        .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:8px}
+        .block{border:0.5px solid #ccc;padding:10px;border-radius:4px}
+        .label{font-size:9px;text-transform:uppercase;color:#888;letter-spacing:0.5px;margin-bottom:2px}
+        @media print { body{padding:15px} h2{page-break-after:avoid} table{page-break-inside:avoid} }
+      </style></head><body>
+      <h1>${esc_(p.name)}${sh.name?' — '+esc_(sh.name):''}</h1>
+      <div class="sub">${esc_(fmtDate(sh.shoot_date))}${sh.general_call?' · General call: '+esc_(sh.general_call):''}</div>
+      ${sh.location_name || sh.location_address ? `<div class="grid2">
+        <div class="block"><div class="label">Location</div><strong>${esc_(sh.location_name||'')}</strong>${sh.location_address?'<br>'+esc_(sh.location_address):''}${sh.parking_notes?'<br><span class="label">Parking</span><br>'+esc_(sh.parking_notes):''}</div>
+        <div class="block"><div class="label">Weather / Transport</div>${sh.weather_text?esc_(sh.weather_text)+'<br>':''}${sh.nearest_transport?'<span class="label">Transport</span><br>'+esc_(sh.nearest_transport):''}</div>
+      </div>`:''}
+      ${sh.schedule?.length?`<h2>Schedule</h2><table><thead><tr><th style="width:90px">Time</th><th>Action</th></tr></thead><tbody>${sh.schedule.map(r=>`<tr><td>${esc_(r.time||'')}</td><td>${esc_(r.description||'')}</td></tr>`).join('')}</tbody></table>`:''}
+      ${sh.crew?.length?`<h2>Crew</h2><table><thead><tr><th>Name</th><th>Role</th><th style="width:90px">Call</th></tr></thead><tbody>${sh.crew.filter(c=>c.name).map(c=>`<tr><td>${esc_(c.name)}</td><td>${esc_(c.role||'')}</td><td>${esc_(c.call_time||sh.general_call||'')}</td></tr>`).join('')}</tbody></table>`:''}
+      ${sh.locations?.length?`<h2>Additional locations</h2><table><thead><tr><th>Name</th><th>Address</th><th style="width:80px">Move</th></tr></thead><tbody>${sh.locations.map(l=>`<tr><td>${esc_(l.name||'')}</td><td>${esc_(l.address||'')}</td><td>${esc_(l.move_time||'')}</td></tr>`).join('')}</tbody></table>`:''}
+      ${sh.hotels?.length?`<h2>Accommodation</h2><table><thead><tr><th>Hotel</th><th>Address</th><th>Check-in</th><th>Check-out</th></tr></thead><tbody>${sh.hotels.map(h=>`<tr><td>${esc_(h.name||'')}</td><td>${esc_(h.address||'')}</td><td>${esc_(h.check_in||'')}</td><td>${esc_(h.check_out||'')}</td></tr>`).join('')}</tbody></table>`:''}
+      ${(sh.nearest_hospital_name||sh.nearest_police_name||sh.nearest_fire_name)?`<h2>Emergency Services</h2><table><tbody>
+        ${sh.nearest_hospital_name?`<tr><td style="width:100px">🏥 Hospital</td><td><strong>${esc_(sh.nearest_hospital_name)}</strong>${sh.nearest_hospital_address?'<br>'+esc_(sh.nearest_hospital_address):''}</td></tr>`:''}
+        ${sh.nearest_police_name?`<tr><td>🚔 Police</td><td><strong>${esc_(sh.nearest_police_name)}</strong>${sh.nearest_police_address?'<br>'+esc_(sh.nearest_police_address):''}</td></tr>`:''}
+        ${sh.nearest_fire_name?`<tr><td>🚒 Fire</td><td><strong>${esc_(sh.nearest_fire_name)}</strong>${sh.nearest_fire_address?'<br>'+esc_(sh.nearest_fire_address):''}</td></tr>`:''}
+      </tbody></table>`:''}
+      ${sh.hs_notes?`<h2>Health &amp; Safety</h2><div class="block">${esc_(sh.hs_notes).replace(/\n/g,'<br>')}</div>`:''}
+      ${sh.notes?`<h2>Notes</h2><div class="block">${esc_(sh.notes).replace(/\n/g,'<br>')}</div>`:''}
+      <script>window.onload=()=>window.print()</script>
+      </body></html>`)
+    w.document.close()
   }
 
   async _loadTimePanel(mc, p) {
@@ -1308,87 +1992,15 @@ export class ProjectsView {
           </div>
 
           ${(p.project_type||'full_service') === 'full_service' ? `
-          <div class="proj-panel" id="pe-shoot-specifics">
-            <div class="proj-panel-head">Shoot specifics</div>
+          <div class="proj-panel">
+            <div class="proj-panel-head">Shoot dates</div>
             <div class="proj-panel-body">
               <div class="proj-date-row">
                 <div><div class="proj-field-label">Shoot start</div><input type="date" class="proj-input" id="pe-start" value="${p.shoot_start??''}" /></div>
                 <div><div class="proj-field-label">Shoot end</div><input type="date" class="proj-input" id="pe-end" value="${p.shoot_end??''}" /></div>
               </div>
-              <div>
-                <div class="proj-field-label">Location name</div>
-                <input type="text" class="proj-input" id="pe-location" value="${esc(p.location||'')}" placeholder="e.g. Eastnor Castle, Snowdonia" />
-              </div>
-              <div>
-                <div class="proj-field-label">Address or Maps link <span style="font-weight:400;color:var(--text-tertiary)">— paste a full address or a Google Maps URL</span></div>
-                <input type="text" class="proj-input" id="pe-location-addr" value="${esc(p.location_address||p.location_map_link||'')}" placeholder="Full address or paste a Google Maps URL" />
-              </div>
-              <div class="proj-date-row">
-                <div>
-                  <div class="proj-field-label">Parking</div>
-                  <input type="text" class="proj-input" id="pe-parking" value="${esc(p.parking_notes||'')}" placeholder="e.g. On-site car park, enter via main gate" />
-                </div>
-                <div>
-                  <div class="proj-field-label">Nearest transport</div>
-                  <input type="text" class="proj-input" id="pe-transport" value="${esc(p.nearest_transport||'')}" placeholder="e.g. Ledbury station, 2 miles" />
-                </div>
-              </div>
-              <div style="display:flex;justify-content:flex-end">
-                <button class="btn-secondary" id="pe-find-nearby" style="font-size:12px">📍 Find nearby services</button>
-              </div>
-              ${[['Hospital','pe-hosp','nearest_hospital'],['Police station','pe-police','nearest_police'],['Fire station','pe-fire','nearest_fire']].map(([label,id,key]) => `
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-                <div>
-                  <div class="proj-field-label">${label} name</div>
-                  <input type="text" class="proj-input" id="${id}-name" value="${esc(p[key+'_name']||'')}" placeholder="${label} name" />
-                </div>
-                <div>
-                  <div class="proj-field-label">${label} address</div>
-                  <input type="text" class="proj-input" id="${id}-addr" value="${esc(p[key+'_address']||'')}" placeholder="Address" />
-                </div>
-              </div>`).join('')}
-
-              <!-- Hotels -->
-              <div style="border-top:0.5px solid var(--border-light);padding-top:14px;margin-top:6px">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-                  <div class="proj-field-label" style="margin:0">Accommodation</div>
-                  <button class="btn-secondary" id="pe-add-hotel" style="font-size:11px;padding:4px 10px">+ Add hotel</button>
-                </div>
-                <div id="pe-hotels-list">
-                  ${(p.hotels||[]).map((h,hi) => `
-                  <div class="pe-hotel-card" data-hotel-idx="${hi}" style="border:0.5px solid var(--border-med);border-radius:var(--radius-md);padding:12px;margin-bottom:8px;background:var(--bg-secondary)">
-                    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
-                      <input type="text" class="proj-input" value="${esc(h.name||'')}" placeholder="Hotel name" data-hotel-field="${hi},name" style="flex:1;margin-right:8px" />
-                      <button class="row-btn" style="color:#c03020;flex-shrink:0" data-hotel-rem="${hi}">×</button>
-                    </div>
-                    <div class="proj-field-label">Address or Maps link</div>
-                    <input type="text" class="proj-input" value="${esc(h.address||'')}" placeholder="Address or paste a Google Maps URL" data-hotel-field="${hi},address" style="margin-bottom:8px" />
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-                      <div>
-                        <div class="proj-field-label">Check-in</div>
-                        <input type="datetime-local" class="proj-input" value="${h.check_in||''}" data-hotel-field="${hi},check_in" />
-                      </div>
-                      <div>
-                        <div class="proj-field-label">Check-out</div>
-                        <input type="datetime-local" class="proj-input" value="${h.check_out||''}" data-hotel-field="${hi},check_out" />
-                      </div>
-                    </div>
-                    <div class="proj-field-label">Notes</div>
-                    <input type="text" class="proj-input" value="${esc(h.notes||'')}" placeholder="e.g. Breakfast included, parking on-site" data-hotel-field="${hi},notes" style="margin-bottom:8px" />
-                    <div class="proj-field-label">Crew staying here</div>
-                    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
-                      ${(p.crew||[]).filter(c=>c.name).map(c => {
-                        const checked = (h.assigned_crew||[]).includes(c.name)
-                        return `<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;background:var(--bg-primary);border:0.5px solid var(--border-med);border-radius:20px;padding:3px 10px">
-                          <input type="checkbox" ${checked?'checked':''} data-hotel-crew="${hi}" data-crew-name="${esc(c.name)}" style="cursor:pointer;width:12px;height:12px" />
-                          ${esc(c.name)}
-                        </label>`
-                      }).join('')}
-                      ${!(p.crew||[]).filter(c=>c.name).length ? '<span style="font-size:12px;color:var(--text-tertiary)">Add crew to the project first</span>' : ''}
-                    </div>
-                  </div>`).join('')}
-                  ${!(p.hotels||[]).length ? '<div style="font-size:12px;color:var(--text-tertiary);padding:4px 0">No accommodation added yet</div>' : ''}
-                </div>
+              <div style="margin-top:14px;padding:10px 12px;background:var(--bg-secondary);border-radius:var(--radius-md);font-size:12px;color:var(--text-secondary);line-height:1.5">
+                <strong style="color:var(--text-primary)">Shoot-specific details</strong> — location, crew call times, hotels, schedule, emergency services and H&S are now managed per-shoot. Save the project, then add individual shoots from the project view.
               </div>
             </div>
           </div>` : ''}

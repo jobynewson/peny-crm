@@ -1,5 +1,5 @@
 // api/callsheet.js
-// Public endpoint — GET /api/callsheet?token=SHEET_TOKEN&crew=CREW_TOKEN
+// Public endpoint — GET /api/callsheet?token=SHOOT_TOKEN&crew=CREW_TOKEN
 import { neon } from '@neondatabase/serverless'
 
 export default async function handler(req, res) {
@@ -14,57 +14,53 @@ export default async function handler(req, res) {
 
   const sql = neon(process.env.VITE_DATABASE_URL)
 
-  const sheets = await sql`
-    SELECT cs.*, p.name AS project_name, p.brief AS project_brief,
+  const rows = await sql`
+    SELECT sh.*, p.name AS project_name, p.brief AS project_brief,
            c.first_name, c.last_name, c.company,
            s.company_name AS studio_name
-    FROM call_sheets cs
-    JOIN projects p ON p.id = cs.project_id
+    FROM shoots sh
+    JOIN projects p ON p.id = sh.project_id
     LEFT JOIN contacts c ON c.id = p.client_id
-    LEFT JOIN settings s ON s.user_id = cs.user_id
-    WHERE cs.sheet_token = ${token}
+    LEFT JOIN settings s ON s.user_id = sh.user_id
+    WHERE sh.shoot_token = ${token}
     LIMIT 1
   `
-  if (!sheets[0]) return res.status(404).json({ error: 'Call sheet not found' })
-  const sheet = sheets[0]
+  if (!rows[0]) return res.status(404).json({ error: 'Shoot not found' })
+  const sh = rows[0]
 
-  const [crew, schedule, locations] = await Promise.all([
-    sql`SELECT * FROM call_sheet_crew WHERE call_sheet_id = ${sheet.id} ORDER BY sort_order`,
-    sql`SELECT * FROM call_sheet_schedule WHERE call_sheet_id = ${sheet.id} ORDER BY sort_order`,
-    sql`SELECT * FROM call_sheet_locations WHERE call_sheet_id = ${sheet.id} ORDER BY sort_order`,
-  ])
+  const crew = Array.isArray(sh.crew) ? sh.crew : []
+  const schedule = Array.isArray(sh.schedule) ? sh.schedule : []
+  const locations = Array.isArray(sh.locations) ? sh.locations : []
+  const hotels = Array.isArray(sh.hotels) ? sh.hotels : []
 
   // Find the specific crew member if crew token provided
   const thisCrew = crewToken ? crew.find(c => c.crew_token === crewToken) : null
 
   return res.status(200).json({
     sheet: {
-      date: sheet.sheet_date,
-      status: sheet.status,
-      general_call: sheet.general_call,
-      location_name: sheet.location_name,
-      location_address: sheet.location_address,
-      location_map_link: sheet.location_map_link,
-      weather_text: sheet.weather_text,
-      notes: sheet.notes,
-      hs_notes: sheet.hs_notes,
-      parking_notes: sheet.parking_notes,
-      nearest_transport: sheet.nearest_transport,
-      nearest_hospital_name: sheet.nearest_hospital_name,
-      nearest_hospital_address: sheet.nearest_hospital_address,
-      nearest_hospital_phone: sheet.nearest_hospital_phone,
-      nearest_police_name: sheet.nearest_police_name,
-      nearest_police_address: sheet.nearest_police_address,
-      nearest_police_phone: sheet.nearest_police_phone,
-      nearest_fire_name: sheet.nearest_fire_name,
-      nearest_fire_address: sheet.nearest_fire_address,
-      nearest_fire_phone: sheet.nearest_fire_phone,
-      hotels: sheet.hotels || [],
-      sheet_token: sheet.sheet_token,
+      date: sh.shoot_date,
+      status: sh.status,
+      general_call: sh.general_call,
+      location_name: sh.location_name,
+      location_address: sh.location_address,
+      location_map_link: sh.location_map_link,
+      weather_text: sh.weather_text,
+      notes: sh.notes,
+      hs_notes: sh.hs_notes,
+      parking_notes: sh.parking_notes,
+      nearest_transport: sh.nearest_transport,
+      nearest_hospital_name: sh.nearest_hospital_name,
+      nearest_hospital_address: sh.nearest_hospital_address,
+      nearest_police_name: sh.nearest_police_name,
+      nearest_police_address: sh.nearest_police_address,
+      nearest_fire_name: sh.nearest_fire_name,
+      nearest_fire_address: sh.nearest_fire_address,
+      hotels,
+      sheet_token: sh.shoot_token,
     },
-    project: { name: sheet.project_name, brief: sheet.project_brief },
-    client: sheet.first_name ? { name: sheet.first_name + ' ' + sheet.last_name, company: sheet.company } : null,
-    studio: { name: sheet.studio_name },
+    project: { name: sh.project_name, brief: sh.project_brief },
+    client: sh.first_name ? { name: sh.first_name + ' ' + sh.last_name, company: sh.company } : null,
+    studio: { name: sh.studio_name },
     thisCrew,
     crew,
     schedule,

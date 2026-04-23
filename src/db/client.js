@@ -420,3 +420,83 @@ export async function setQuoteToken(userId, budgetId, token) {
     UPDATE budgets SET quote_token = ${token} WHERE id = ${budgetId} AND user_id = ${userId} RETURNING *
   `).then(r => (r.rows ?? r)[0])
 }
+
+// ── Shoots ────────────────────────────────────────────────────────────────────
+export async function getShoots(userId, projectId) {
+  const { sql } = await import('drizzle-orm')
+  return db.execute(sql`
+    SELECT * FROM shoots
+    WHERE user_id = ${userId} AND project_id = ${projectId}
+    ORDER BY shoot_date NULLS LAST, sort_order, created_at
+  `).then(r => r.rows ?? r)
+}
+export async function getShoot(id) {
+  const { sql } = await import('drizzle-orm')
+  const [shoot] = await db.execute(sql`SELECT * FROM shoots WHERE id = ${id}`).then(r => r.rows ?? r)
+  return shoot || null
+}
+export async function createShoot(userId, projectId, data) {
+  const { sql } = await import('drizzle-orm')
+  const token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
+  const [shoot] = await db.execute(sql`
+    INSERT INTO shoots (
+      project_id, user_id, name, shoot_date, status, shoot_token,
+      general_call, location_name, location_address, location_map_link,
+      parking_notes, nearest_transport,
+      nearest_hospital_name, nearest_hospital_address,
+      nearest_police_name, nearest_police_address,
+      nearest_fire_name, nearest_fire_address,
+      weather_text, hs_notes, notes,
+      hotels, crew, schedule, locations
+    ) VALUES (
+      ${projectId}, ${userId}, ${data.name||null}, ${data.shoot_date||null}, 'draft', ${token},
+      ${data.general_call||null}, ${data.location_name||null}, ${data.location_address||null}, ${data.location_map_link||null},
+      ${data.parking_notes||null}, ${data.nearest_transport||null},
+      ${data.nearest_hospital_name||null}, ${data.nearest_hospital_address||null},
+      ${data.nearest_police_name||null}, ${data.nearest_police_address||null},
+      ${data.nearest_fire_name||null}, ${data.nearest_fire_address||null},
+      ${data.weather_text||null}, ${data.hs_notes||null}, ${data.notes||null},
+      ${JSON.stringify(data.hotels||[])}::jsonb,
+      ${JSON.stringify(data.crew||[])}::jsonb,
+      ${JSON.stringify(data.schedule||[])}::jsonb,
+      ${JSON.stringify(data.locations||[])}::jsonb
+    ) RETURNING *
+  `).then(r => r.rows ?? r)
+  return shoot
+}
+export async function updateShoot(id, data) {
+  const { sql } = await import('drizzle-orm')
+  const [shoot] = await db.execute(sql`
+    UPDATE shoots SET
+      name = ${data.name||null},
+      shoot_date = ${data.shoot_date||null},
+      status = ${data.status||'draft'},
+      general_call = ${data.general_call||null},
+      location_name = ${data.location_name||null},
+      location_address = ${data.location_address||null},
+      location_map_link = ${data.location_map_link||null},
+      parking_notes = ${data.parking_notes||null},
+      nearest_transport = ${data.nearest_transport||null},
+      nearest_hospital_name = ${data.nearest_hospital_name||null},
+      nearest_hospital_address = ${data.nearest_hospital_address||null},
+      nearest_police_name = ${data.nearest_police_name||null},
+      nearest_police_address = ${data.nearest_police_address||null},
+      nearest_fire_name = ${data.nearest_fire_name||null},
+      nearest_fire_address = ${data.nearest_fire_address||null},
+      weather_text = ${data.weather_text||null},
+      weather_fetched_at = ${data.weather_fetched_at||null},
+      hs_notes = ${data.hs_notes||null},
+      notes = ${data.notes||null},
+      hotels = ${JSON.stringify(data.hotels||[])}::jsonb,
+      crew = ${JSON.stringify(data.crew||[])}::jsonb,
+      schedule = ${JSON.stringify(data.schedule||[])}::jsonb,
+      locations = ${JSON.stringify(data.locations||[])}::jsonb,
+      updated_at = NOW()
+    WHERE id = ${id} RETURNING *
+  `).then(r => r.rows ?? r)
+  return shoot
+}
+export async function deleteShoot(id) {
+  const { sql } = await import('drizzle-orm')
+  return db.execute(sql`DELETE FROM shoots WHERE id = ${id}`)
+}
