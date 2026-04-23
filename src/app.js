@@ -5,6 +5,18 @@ import { ProjectsView } from './views/projects.js'
 import { BudgetsView, budTotal } from './views/budgets.js'
 import { CallSheetsView } from './views/callsheets.js'
 
+// Capture bookmarklet import text immediately at module load — before Clerk
+// or anything else can manipulate the URL
+const _importText = (() => {
+  const h = location.hash
+  if (!h.startsWith('#import=')) return null
+  try {
+    const text = decodeURIComponent(h.slice('#import='.length))
+    history.replaceState({}, '', location.pathname)
+    return text
+  } catch { return null }
+})()
+
 export class App {
   constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, onSignOut }) {
     this.userId      = userId
@@ -33,29 +45,24 @@ export class App {
     this.injectGlobalStyles()
     this.render()
     this._bindKeyboard()
-    // Handle bookmarklet import — text passed via URL hash #import=...
-    const hash = location.hash
-    if (hash.startsWith('#import=')) {
-      const importText = decodeURIComponent(hash.slice('#import='.length))
-      history.replaceState({}, '', location.pathname)
-      if (importText) {
+    // Handle bookmarklet import — text captured at module load before Clerk touches the URL
+    if (_importText) {
+      setTimeout(() => {
+        this.switchView('projects')
         setTimeout(() => {
-          this.switchView('projects')
+          const mc = document.getElementById('main-content')
+          this.projectsView.openNewModal(null, null, mc)
           setTimeout(() => {
-            const mc = document.getElementById('main-content')
-            this.projectsView.openNewModal(null, null, mc)
-            setTimeout(() => {
-              const textEl = mc?.querySelector('#pf-ai-text')
-              const panel  = mc?.querySelector('#pf-ai-panel')
-              const toggle = mc?.querySelector('#pf-ai-toggle')
-              if (textEl) textEl.value        = importText
-              if (panel)  panel.style.display = 'block'
-              if (toggle) toggle.textContent  = 'Hide'
-              mc?.querySelector('#pf-ai-extract')?.click()
-            }, 100)
-          }, 200)
-        }, 300)
-      }
+            const textEl = mc?.querySelector('#pf-ai-text')
+            const panel  = mc?.querySelector('#pf-ai-panel')
+            const toggle = mc?.querySelector('#pf-ai-toggle')
+            if (textEl) textEl.value        = _importText
+            if (panel)  panel.style.display = 'block'
+            if (toggle) toggle.textContent  = 'Hide'
+            mc?.querySelector('#pf-ai-extract')?.click()
+          }, 100)
+        }, 200)
+      }, 300)
     }
   }
 
