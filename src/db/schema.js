@@ -86,6 +86,7 @@ export const projects = pgTable('projects', {
   nearest_police_address:   text('nearest_police_address'),
   nearest_fire_name:        text('nearest_fire_name'),
   nearest_fire_address:     text('nearest_fire_address'),
+  hotels:            jsonb('hotels').notNull().default([]),
   ...timestamps,
 })
 

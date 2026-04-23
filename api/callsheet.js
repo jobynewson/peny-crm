@@ -59,6 +59,7 @@ export default async function handler(req, res) {
       nearest_fire_name: sheet.nearest_fire_name,
       nearest_fire_address: sheet.nearest_fire_address,
       nearest_fire_phone: sheet.nearest_fire_phone,
+      hotels: sheet.hotels || [],
       sheet_token: sheet.sheet_token,
     },
     project: { name: sheet.project_name, brief: sheet.project_brief },

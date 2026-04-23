@@ -1347,6 +1347,49 @@ export class ProjectsView {
                   <input type="text" class="proj-input" id="${id}-addr" value="${esc(p[key+'_address']||'')}" placeholder="Address" />
                 </div>
               </div>`).join('')}
+
+              <!-- Hotels -->
+              <div style="border-top:0.5px solid var(--border-light);padding-top:14px;margin-top:6px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                  <div class="proj-field-label" style="margin:0">Accommodation</div>
+                  <button class="btn-secondary" id="pe-add-hotel" style="font-size:11px;padding:4px 10px">+ Add hotel</button>
+                </div>
+                <div id="pe-hotels-list">
+                  ${(p.hotels||[]).map((h,hi) => `
+                  <div class="pe-hotel-card" data-hotel-idx="${hi}" style="border:0.5px solid var(--border-med);border-radius:var(--radius-md);padding:12px;margin-bottom:8px;background:var(--bg-secondary)">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+                      <input type="text" class="proj-input" value="${esc(h.name||'')}" placeholder="Hotel name" data-hotel-field="${hi},name" style="flex:1;margin-right:8px" />
+                      <button class="row-btn" style="color:#c03020;flex-shrink:0" data-hotel-rem="${hi}">×</button>
+                    </div>
+                    <div class="proj-field-label">Address or Maps link</div>
+                    <input type="text" class="proj-input" value="${esc(h.address||'')}" placeholder="Address or paste a Google Maps URL" data-hotel-field="${hi},address" style="margin-bottom:8px" />
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+                      <div>
+                        <div class="proj-field-label">Check-in</div>
+                        <input type="datetime-local" class="proj-input" value="${h.check_in||''}" data-hotel-field="${hi},check_in" />
+                      </div>
+                      <div>
+                        <div class="proj-field-label">Check-out</div>
+                        <input type="datetime-local" class="proj-input" value="${h.check_out||''}" data-hotel-field="${hi},check_out" />
+                      </div>
+                    </div>
+                    <div class="proj-field-label">Notes</div>
+                    <input type="text" class="proj-input" value="${esc(h.notes||'')}" placeholder="e.g. Breakfast included, parking on-site" data-hotel-field="${hi},notes" style="margin-bottom:8px" />
+                    <div class="proj-field-label">Crew staying here</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
+                      ${(p.crew||[]).filter(c=>c.name).map(c => {
+                        const checked = (h.assigned_crew||[]).includes(c.name)
+                        return `<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;background:var(--bg-primary);border:0.5px solid var(--border-med);border-radius:20px;padding:3px 10px">
+                          <input type="checkbox" ${checked?'checked':''} data-hotel-crew="${hi}" data-crew-name="${esc(c.name)}" style="cursor:pointer;width:12px;height:12px" />
+                          ${esc(c.name)}
+                        </label>`
+                      }).join('')}
+                      ${!(p.crew||[]).filter(c=>c.name).length ? '<span style="font-size:12px;color:var(--text-tertiary)">Add crew to the project first</span>' : ''}
+                    </div>
+                  </div>`).join('')}
+                  ${!(p.hotels||[]).length ? '<div style="font-size:12px;color:var(--text-tertiary);padding:4px 0">No accommodation added yet</div>' : ''}
+                </div>
+              </div>
             </div>
           </div>` : ''}
 
@@ -1892,6 +1935,37 @@ export class ProjectsView {
     mc.querySelector('#pe-fire-name')?.addEventListener('change',e => { p.nearest_fire_name = e.target.value.trim()||null; save() })
     mc.querySelector('#pe-fire-addr')?.addEventListener('change',e => { p.nearest_fire_address = e.target.value.trim()||null; save() })
 
+    // Hotels
+    mc.querySelector('#pe-add-hotel')?.addEventListener('click', () => {
+      if (!p.hotels) p.hotels = []
+      p.hotels.push({ name:'', address:'', check_in:'', check_out:'', notes:'', assigned_crew:[] })
+      save(); this.renderEditor(mc)
+    })
+    mc.querySelectorAll('[data-hotel-rem]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        p.hotels.splice(+btn.dataset.hotelRem, 1); save(); this.renderEditor(mc)
+      })
+    })
+    mc.querySelectorAll('[data-hotel-field]').forEach(el => {
+      el.addEventListener('change', () => {
+        const [hi, field] = el.dataset.hotelField.split(',')
+        if (!p.hotels[+hi]) return
+        p.hotels[+hi][field] = el.value
+        save()
+      })
+    })
+    mc.querySelectorAll('[data-hotel-crew]').forEach(el => {
+      el.addEventListener('change', () => {
+        const hi = +el.dataset.hotelCrew
+        const name = el.dataset.crewName
+        if (!p.hotels[hi]) return
+        if (!p.hotels[hi].assigned_crew) p.hotels[hi].assigned_crew = []
+        if (el.checked) { if (!p.hotels[hi].assigned_crew.includes(name)) p.hotels[hi].assigned_crew.push(name) }
+        else { p.hotels[hi].assigned_crew = p.hotels[hi].assigned_crew.filter(n => n !== name) }
+        save()
+      })
+    })
+
     mc.querySelector('#pe-find-nearby')?.addEventListener('click', async () => {
       const addrVal = mc.querySelector('#pe-location-addr')?.value.trim()
       const locName = mc.querySelector('#pe-location')?.value.trim()
@@ -2258,6 +2332,7 @@ export class ProjectsView {
         nearest_police_address:   p.nearest_police_address||null,
         nearest_fire_name:        p.nearest_fire_name||null,
         nearest_fire_address:     p.nearest_fire_address||null,
+        hotels: p.hotels || [],
         shoot_start: p.shoot_start || null, shoot_end: p.shoot_end || null,
         deliverables: p.deliverables, crew: p.crew, shots: p.shots,
         approvals: p.approvals, notes: p.notes,

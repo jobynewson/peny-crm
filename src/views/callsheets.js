@@ -90,6 +90,7 @@ export class CallSheetsView {
           nearest_police_address:   project.nearest_police_address || null,
           nearest_fire_name:        project.nearest_fire_name || null,
           nearest_fire_address:     project.nearest_fire_address || null,
+          hotels:                   project.hotels?.length ? JSON.parse(JSON.stringify(project.hotels)) : [],
         })
       }
       await this.openEditor(mc, sheet.id)
@@ -408,6 +409,7 @@ export class CallSheetsView {
         nearest_fire_address: mc.querySelector('#cs-fire-addr')?.value.trim() || null,
         nearest_fire_phone:   mc.querySelector('#cs-fire-phone')?.value.trim() || null,
         status: s.status,
+        hotels: s.hotels || [],
       }
       try {
         const updated = await updateCallSheet(s.id, data)
