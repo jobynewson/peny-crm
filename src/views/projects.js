@@ -156,6 +156,17 @@ export class ProjectsView {
           if (briefEl) briefEl.value = data.brief
         }
 
+        // Fill shoot dates + location
+        if (data.shoot_start || data.shoot_end || data.location) {
+          mc.querySelector('#pf-shoot-fields').style.display = 'block'
+          if (data.shoot_start) mc.querySelector('#pf-shoot-start').value = data.shoot_start
+          if (data.shoot_end)   mc.querySelector('#pf-shoot-end').value   = data.shoot_end
+          if (data.location)    mc.querySelector('#pf-location').value    = data.location
+        }
+
+        // Store full extraction for saveNew to use
+        this._aiExtraction = data
+
         // Client matching — fuzzy match against existing contacts
         if (data.client) {
           const { first_name, last_name, company } = data.client
@@ -263,6 +274,14 @@ export class ProjectsView {
               <div class="field"><div class="field-label">Brief</div><textarea id="pf-brief" style="width:100%;min-height:70px;padding:8px 10px;font-size:13px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.5"></textarea></div>
             </div>
 
+            <div id="pf-shoot-fields" style="display:none">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+                <div class="field" style="margin:0"><div class="field-label">Shoot start</div><input type="date" id="pf-shoot-start" class="proj-input" /></div>
+                <div class="field" style="margin:0"><div class="field-label">Shoot end</div><input type="date" id="pf-shoot-end" class="proj-input" /></div>
+              </div>
+              <div class="field"><div class="field-label">Location</div><input type="text" id="pf-location" placeholder="e.g. Brecon Beacons" /></div>
+            </div>
+
             <div class="field"><div class="field-label">Status</div>
               <select id="pf-status">
                 ${STAGES.map(s=>`<option value="${s}">${s}</option>`).join('')}
@@ -301,8 +320,18 @@ export class ProjectsView {
     if (aiText) aiText.value = ''
     const briefField = el.querySelector('#pf-brief-field')
     if (briefField) briefField.style.display = 'none'
+    const shootFields = el.querySelector('#pf-shoot-fields')
+    if (shootFields) {
+      shootFields.style.display = 'none'
+      const ss = el.querySelector('#pf-shoot-start'); if (ss) ss.value = ''
+      const se = el.querySelector('#pf-shoot-end');   if (se) se.value = ''
+      const lo = el.querySelector('#pf-location');    if (lo) lo.value = ''
+    }
+    const briefEl = el.querySelector('#pf-brief')
+    if (briefEl) briefEl.value = ''
     const aiToggle = el.querySelector('#pf-ai-toggle')
     if (aiToggle) aiToggle.textContent = 'Paste text'
+    this._aiExtraction = null
     // Store retainer flag on the modal for saveNew to read
     const modal = el.querySelector('#proj-new-modal')
     if (modal) modal.dataset.isRetainer = isRetainer ? '1' : ''
@@ -345,15 +374,20 @@ export class ProjectsView {
       } catch(e) { console.error(e); this.app.toast('Error creating contact'); return }
     }
 
+    const ai = this._aiExtraction || {}
+    const deliverables = ai.deliverables?.length
+      ? ai.deliverables.map(d => ({ text: d, done: false }))
+      : [{ text: '', done: false }]
+
     const data = {
       name,
       client_id:    clientId,
       status:       isRetainer ? 'Enquiry' : (mc.querySelector('#pf-status')?.value || 'Enquiry'),
       brief:        mc.querySelector('#pf-brief')?.value.trim() || '',
-      location:     '',
-      shoot_start:  null,
-      shoot_end:    null,
-      deliverables: [{ text: '', done: false }],
+      location:     mc.querySelector('#pf-location')?.value.trim() || '',
+      shoot_start:  mc.querySelector('#pf-shoot-start')?.value || null,
+      shoot_end:    mc.querySelector('#pf-shoot-end')?.value   || null,
+      deliverables,
       crew:         [{ name: '', role: '' }],
       shots:        [{ text: '' }],
       approvals:    [
@@ -363,7 +397,7 @@ export class ProjectsView {
         { label: 'Final delivery',    status: 'Pending' },
       ],
       budget_ids: [],
-      notes: '',
+      notes: ai.notes || ai.budget_notes || '',
       is_retainer:    isRetainer,
       retainer_fee:   null,
       retainer_hours: null,
