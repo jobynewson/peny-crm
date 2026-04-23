@@ -257,6 +257,12 @@
                 ${h.check_in?`<div><div style="font-size:10px;color:var(--text-ter);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px">Check-in</div><div style="font-size:13px;font-weight:500">${fmtDT(h.check_in)}</div></div>`:''}
                 ${h.check_out?`<div><div style="font-size:10px;color:var(--text-ter);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px">Check-out</div><div style="font-size:13px;font-weight:500">${fmtDT(h.check_out)}</div></div>`:''}
               </div>
+              ${!thisCrew && (h.assigned_crew||[]).length ? `<div style="margin-top:10px;padding-top:8px;border-top:0.5px solid var(--border)">
+                <div style="font-size:10px;color:var(--text-ter);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Guests</div>
+                <div style="display:flex;flex-wrap:wrap;gap:4px">
+                  ${h.assigned_crew.map(n => `<span style="font-size:11px;background:var(--surface2);padding:3px 8px;border-radius:12px">${esc(n)}</span>`).join('')}
+                </div>
+              </div>`:''}
               ${h.notes?`<div style="margin-top:8px;font-size:12px;color:var(--text-sec)">${esc(h.notes)}</div>`:''}
             </div>`).join('') + '</div>'
         })()}
