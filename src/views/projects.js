@@ -1146,6 +1146,22 @@ export class ProjectsView {
                 <textarea class="proj-textarea" id="se-hs" style="min-height:80px" placeholder="H&S notes, risks, PPE, emergency procedures...">${esc(sh.hs_notes||'')}</textarea>
               </div>
             </div>
+
+            <!-- Risk Assessment -->
+            <div class="proj-panel">
+              <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
+                <span>Risk Assessment</span>
+                <div style="display:flex;gap:6px">
+                  <button class="btn-secondary" id="se-ra-generate" style="font-size:11px;padding:3px 10px">✨ Generate with AI</button>
+                  <button class="btn-cancel" id="se-ra-copy" style="font-size:11px;padding:3px 10px">Copy from shoot</button>
+                  <button class="btn-cancel" id="se-ra-pdf" style="font-size:11px;padding:3px 10px">📄 Export PDF</button>
+                </div>
+              </div>
+              <div class="proj-panel-body" id="se-ra-body">
+                ${this._shootRAHTML(sh)}
+              </div>
+            </div>
+
             <div class="proj-panel">
               <div class="proj-panel-head">Notes</div>
               <div class="proj-panel-body">
@@ -1241,6 +1257,88 @@ export class ProjectsView {
     </div>`
   }
 
+  _shootRAHTML(sh) {
+    const ra = (sh.risk_assessment && typeof sh.risk_assessment === 'object') ? sh.risk_assessment : {}
+    const hazards = Array.isArray(ra.hazards) ? ra.hazards : []
+    const riskCell = (l, s) => {
+      const score = (parseInt(l)||0) * (parseInt(s)||0)
+      const color = score >= 15 ? '#c03020' : score >= 8 ? '#d98020' : score >= 4 ? '#c0a030' : '#5a9a5a'
+      return `<span style="display:inline-block;min-width:22px;text-align:center;padding:1px 4px;background:${color};color:white;border-radius:3px;font-size:11px;font-weight:500">${score||''}</span>`
+    }
+    if (!hazards.length) {
+      return `<div style="font-size:12px;color:var(--text-tertiary);padding:6px 0">No risk assessment yet. Click <strong style="color:var(--text-primary)">✨ Generate with AI</strong> to create one based on this shoot's details, or <strong style="color:var(--text-primary)">Copy from shoot</strong> to duplicate one from another shoot.</div>`
+    }
+    return `
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:800px">
+          <thead>
+            <tr style="background:var(--bg-secondary)">
+              <th style="padding:8px;text-align:left;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:0.5px solid var(--border-light);width:18%">Hazard</th>
+              <th style="padding:8px;text-align:left;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:0.5px solid var(--border-light);width:13%">Who at risk</th>
+              <th style="padding:8px;text-align:left;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:0.5px solid var(--border-light);width:18%">Existing controls</th>
+              <th style="padding:8px;text-align:center;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:0.5px solid var(--border-light)" title="Likelihood">L</th>
+              <th style="padding:8px;text-align:center;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:0.5px solid var(--border-light)" title="Severity">S</th>
+              <th style="padding:8px;text-align:center;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:0.5px solid var(--border-light)">Risk</th>
+              <th style="padding:8px;text-align:left;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:0.5px solid var(--border-light);width:18%">Additional controls</th>
+              <th style="padding:8px;text-align:center;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:0.5px solid var(--border-light)" title="Residual likelihood">rL</th>
+              <th style="padding:8px;text-align:center;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:0.5px solid var(--border-light)" title="Residual severity">rS</th>
+              <th style="padding:8px;text-align:center;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:0.5px solid var(--border-light)">Res.</th>
+              <th style="padding:8px;text-align:left;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:0.5px solid var(--border-light);width:10%">Owner</th>
+              <th style="padding:8px;border-bottom:0.5px solid var(--border-light);width:24px"></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${hazards.map((h, i) => `
+              <tr style="border-bottom:0.5px solid var(--border-light);vertical-align:top">
+                <td style="padding:6px 4px"><textarea class="bl-in w" data-ra-field="${i},hazard" style="width:100%;min-height:60px;font-size:11px;padding:4px 6px;resize:vertical">${esc(h.hazard||'')}</textarea></td>
+                <td style="padding:6px 4px"><textarea class="bl-in w" data-ra-field="${i},who_at_risk" style="width:100%;min-height:60px;font-size:11px;padding:4px 6px;resize:vertical">${esc(h.who_at_risk||'')}</textarea></td>
+                <td style="padding:6px 4px"><textarea class="bl-in w" data-ra-field="${i},existing_controls" style="width:100%;min-height:60px;font-size:11px;padding:4px 6px;resize:vertical">${esc(h.existing_controls||'')}</textarea></td>
+                <td style="padding:6px 4px;text-align:center"><input type="number" class="bl-in w" min="1" max="5" value="${h.likelihood||''}" data-ra-field="${i},likelihood" style="width:38px;font-size:11px;padding:4px;text-align:center" /></td>
+                <td style="padding:6px 4px;text-align:center"><input type="number" class="bl-in w" min="1" max="5" value="${h.severity||''}" data-ra-field="${i},severity" style="width:38px;font-size:11px;padding:4px;text-align:center" /></td>
+                <td style="padding:6px 4px;text-align:center">${riskCell(h.likelihood, h.severity)}</td>
+                <td style="padding:6px 4px"><textarea class="bl-in w" data-ra-field="${i},additional_controls" style="width:100%;min-height:60px;font-size:11px;padding:4px 6px;resize:vertical">${esc(h.additional_controls||'')}</textarea></td>
+                <td style="padding:6px 4px;text-align:center"><input type="number" class="bl-in w" min="1" max="5" value="${h.residual_likelihood||''}" data-ra-field="${i},residual_likelihood" style="width:38px;font-size:11px;padding:4px;text-align:center" /></td>
+                <td style="padding:6px 4px;text-align:center"><input type="number" class="bl-in w" min="1" max="5" value="${h.residual_severity||''}" data-ra-field="${i},residual_severity" style="width:38px;font-size:11px;padding:4px;text-align:center" /></td>
+                <td style="padding:6px 4px;text-align:center">${riskCell(h.residual_likelihood, h.residual_severity)}</td>
+                <td style="padding:6px 4px"><input type="text" class="bl-in w" value="${esc(h.responsible||'')}" data-ra-field="${i},responsible" style="width:100%;font-size:11px;padding:4px 6px" /></td>
+                <td style="padding:6px 2px;text-align:center"><button class="row-btn" style="color:#c03020;padding:2px 6px;font-size:11px" data-ra-rem="${i}">×</button></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+      <button class="add-line" id="se-ra-add" style="margin-top:10px">+ add hazard</button>
+
+      <div style="margin-top:16px;padding-top:14px;border-top:0.5px solid var(--border-light)">
+        <div class="proj-field-label" style="margin-bottom:6px">Assessment notes</div>
+        <textarea class="proj-textarea" id="se-ra-notes" style="width:100%;min-height:50px;font-size:12px" placeholder="Overall assessment notes, contingencies, etc.">${esc(ra.notes||'')}</textarea>
+      </div>
+
+      <div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr 140px;gap:10px">
+        <div>
+          <div class="proj-field-label">Assessed by</div>
+          <input type="text" class="proj-input" id="se-ra-assessor" value="${esc(ra.assessor_name||'')}" placeholder="Name" />
+        </div>
+        <div>
+          <div class="proj-field-label">Role</div>
+          <input type="text" class="proj-input" id="se-ra-role" value="${esc(ra.assessor_role||'')}" placeholder="e.g. Producer" />
+        </div>
+        <div>
+          <div class="proj-field-label">Date</div>
+          <input type="date" class="proj-input" id="se-ra-date" value="${ra.assessed_date||''}" />
+        </div>
+      </div>
+
+      <div style="margin-top:10px;font-size:10px;color:var(--text-tertiary);line-height:1.5">
+        <strong>Scale:</strong> Likelihood 1 (rare) → 5 (almost certain). Severity 1 (minor) → 5 (catastrophic). Score = L × S.
+        <span style="color:#5a9a5a">●</span> Low (1–3) ·
+        <span style="color:#c0a030">●</span> Medium (4–7) ·
+        <span style="color:#d98020">●</span> High (8–14) ·
+        <span style="color:#c03020">●</span> Critical (15–25)
+      </div>
+    `
+  }
+
   _renderShootCrewLinks(overlay, sh) {
     const el = overlay.querySelector('#se-crew-links')
     if (!el) return
@@ -1297,6 +1395,7 @@ export class ProjectsView {
         crew:      sh.crew      || [],
         schedule:  sh.schedule  || [],
         locations: sh.locations || [],
+        risk_assessment: sh.risk_assessment || {},
       }
       try {
         const { updateShoot } = await import('../db/client.js')
@@ -1453,6 +1552,252 @@ export class ProjectsView {
       this._refreshShootHotels(overlay, sh, save)
     })
     this._bindShootHotels(overlay, sh, save)
+
+    // Risk Assessment
+    this._bindShootRA(overlay, sh, save)
+    overlay.querySelector('#se-ra-generate')?.addEventListener('click', () => this._generateRA(overlay, sh, save))
+    overlay.querySelector('#se-ra-copy')?.addEventListener('click', () => this._openRACopyPicker(overlay, sh, save))
+    overlay.querySelector('#se-ra-pdf')?.addEventListener('click', () => this._generateRAPDF(sh, p))
+  }
+
+  _bindShootRA(overlay, sh, save) {
+    if (!sh.risk_assessment || typeof sh.risk_assessment !== 'object') sh.risk_assessment = { hazards: [] }
+    if (!Array.isArray(sh.risk_assessment.hazards)) sh.risk_assessment.hazards = []
+
+    overlay.querySelectorAll('#se-ra-body [data-ra-field]').forEach(el => {
+      el.addEventListener('change', () => {
+        const [i, f] = el.dataset.raField.split(',')
+        const val = ['likelihood','severity','residual_likelihood','residual_severity'].includes(f)
+          ? Math.max(1, Math.min(5, parseInt(el.value)||0)) || null
+          : el.value
+        if (!sh.risk_assessment.hazards[+i]) return
+        sh.risk_assessment.hazards[+i][f] = val
+        save()
+        // Refresh just the risk cells without losing focus by re-rendering the whole panel after save
+        if (['likelihood','severity','residual_likelihood','residual_severity'].includes(f)) {
+          this._refreshShootRA(overlay, sh, save)
+        }
+      })
+    })
+    overlay.querySelectorAll('#se-ra-body [data-ra-rem]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (!confirm('Remove this hazard row?')) return
+        sh.risk_assessment.hazards.splice(+btn.dataset.raRem, 1)
+        this._refreshShootRA(overlay, sh, save); save()
+      })
+    })
+    overlay.querySelector('#se-ra-add')?.addEventListener('click', () => {
+      sh.risk_assessment.hazards.push({ hazard:'', who_at_risk:'', existing_controls:'', likelihood:null, severity:null, additional_controls:'', residual_likelihood:null, residual_severity:null, responsible:'' })
+      this._refreshShootRA(overlay, sh, save); save()
+    })
+    overlay.querySelector('#se-ra-notes')?.addEventListener('change', e => {
+      sh.risk_assessment.notes = e.target.value; save()
+    })
+    overlay.querySelector('#se-ra-assessor')?.addEventListener('change', e => {
+      sh.risk_assessment.assessor_name = e.target.value; save()
+    })
+    overlay.querySelector('#se-ra-role')?.addEventListener('change', e => {
+      sh.risk_assessment.assessor_role = e.target.value; save()
+    })
+    overlay.querySelector('#se-ra-date')?.addEventListener('change', e => {
+      sh.risk_assessment.assessed_date = e.target.value; save()
+    })
+  }
+
+  _refreshShootRA(overlay, sh, save) {
+    const body = overlay.querySelector('#se-ra-body')
+    if (!body) return
+    body.innerHTML = this._shootRAHTML(sh)
+    this._bindShootRA(overlay, sh, save)
+  }
+
+  async _generateRA(overlay, sh, save) {
+    const btn = overlay.querySelector('#se-ra-generate')
+    const hadOne = sh.risk_assessment?.hazards?.length > 0
+    if (hadOne && !confirm('This will replace the existing risk assessment. Continue?')) return
+    btn.disabled = true; btn.textContent = '✨ Generating…'
+    try {
+      const res = await fetch('/api/generate-ra', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shoot_id: sh.id }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      const data = await res.json()
+      // Preserve existing assessor info if set
+      const existing = sh.risk_assessment || {}
+      sh.risk_assessment = {
+        hazards: data.hazards || [],
+        notes: data.notes || existing.notes || '',
+        assessor_name: existing.assessor_name || '',
+        assessor_role: existing.assessor_role || '',
+        assessed_date: existing.assessed_date || new Date().toISOString().split('T')[0],
+      }
+      this._refreshShootRA(overlay, sh, save)
+      save()
+      this.app.toast(`Generated ${data.hazards?.length||0} hazards ✓`)
+    } catch(e) {
+      console.error(e); this.app.toast('Generation failed — check your API key')
+    } finally {
+      btn.disabled = false; btn.textContent = '✨ Generate with AI'
+    }
+  }
+
+  async _openRACopyPicker(overlay, sh, save) {
+    try {
+      const { getShootsWithRA } = await import('../db/client.js')
+      const shoots = await getShootsWithRA(this.app.userId)
+      const available = shoots.filter(s => s.id !== sh.id)
+      if (!available.length) { this.app.toast('No other shoots with risk assessments yet'); return }
+
+      // Build picker modal
+      document.getElementById('ra-copy-picker')?.remove()
+      const picker = document.createElement('div')
+      picker.id = 'ra-copy-picker'
+      picker.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px'
+      const esc_ = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      picker.innerHTML = `
+        <div style="background:var(--bg-primary);border-radius:var(--radius-lg);max-width:500px;width:100%;max-height:80vh;display:flex;flex-direction:column">
+          <div style="padding:14px 18px;border-bottom:0.5px solid var(--border-light);display:flex;justify-content:space-between;align-items:center">
+            <strong style="font-size:14px">Copy risk assessment from another shoot</strong>
+            <button id="ra-pick-close" class="row-btn">×</button>
+          </div>
+          <div style="padding:14px 18px;overflow-y:auto;flex:1">
+            <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:10px">Select a shoot to copy its hazards from. You can edit them afterwards.</div>
+            ${available.map(s => {
+              const hazardCount = Array.isArray(s.risk_assessment?.hazards) ? s.risk_assessment.hazards.length : 0
+              const d = s.shoot_date ? new Date(s.shoot_date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : ''
+              return `<div class="ra-pick-item" data-pick-id="${s.id}" style="padding:10px 12px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);margin-bottom:6px;cursor:pointer" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''">
+                <div style="font-size:13px;font-weight:500">${esc_(s.name || s.location_name || 'Untitled shoot')}</div>
+                <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">${esc_(s.project_name)} · ${esc_(d)} · ${hazardCount} hazards</div>
+              </div>`
+            }).join('')}
+          </div>
+        </div>`
+      document.body.appendChild(picker)
+
+      picker.querySelector('#ra-pick-close')?.addEventListener('click', () => picker.remove())
+      picker.addEventListener('click', e => { if (e.target === picker) picker.remove() })
+      picker.querySelectorAll('.ra-pick-item').forEach(el => {
+        el.addEventListener('click', () => {
+          const source = available.find(s => s.id === el.dataset.pickId)
+          if (!source?.risk_assessment) return
+          const hadOne = sh.risk_assessment?.hazards?.length > 0
+          if (hadOne && !confirm('This will replace the existing risk assessment. Continue?')) return
+          // Deep clone hazards; keep assessor info from target
+          const existing = sh.risk_assessment || {}
+          sh.risk_assessment = {
+            hazards: JSON.parse(JSON.stringify(source.risk_assessment.hazards || [])),
+            notes: source.risk_assessment.notes || '',
+            assessor_name: existing.assessor_name || '',
+            assessor_role: existing.assessor_role || '',
+            assessed_date: existing.assessed_date || new Date().toISOString().split('T')[0],
+          }
+          picker.remove()
+          this._refreshShootRA(overlay, sh, save)
+          save()
+          this.app.toast(`Copied ${sh.risk_assessment.hazards.length} hazards ✓`)
+        })
+      })
+    } catch(e) { console.error(e); this.app.toast('Error loading shoots') }
+  }
+
+  _generateRAPDF(sh, p) {
+    const ra = sh.risk_assessment || {}
+    const hazards = Array.isArray(ra.hazards) ? ra.hazards : []
+    if (!hazards.length) { this.app.toast('No hazards to export'); return }
+    const w = window.open('', '_blank')
+    const esc_ = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')
+    const fmtDate = d => d ? new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}) : ''
+    const score = (l,s) => (parseInt(l)||0)*(parseInt(s)||0)
+    const riskColor = n => n>=15?'#c03020':n>=8?'#d98020':n>=4?'#c0a030':n>=1?'#5a9a5a':'#ccc'
+    const riskLabel = n => n>=15?'CRITICAL':n>=8?'HIGH':n>=4?'MEDIUM':n>=1?'LOW':''
+    w.document.write(`<!DOCTYPE html><html><head><title>Risk Assessment — ${esc_(p.name)}</title>
+      <style>
+        @page { size: A4 landscape; margin: 12mm }
+        body{font-family:-apple-system,sans-serif;color:#222;font-size:10px;line-height:1.4;margin:0;padding:14px}
+        h1{font-size:18px;margin:0 0 4px;padding-bottom:6px;border-bottom:2px solid #222}
+        .sub{color:#666;margin-bottom:14px;font-size:11px}
+        table{width:100%;border-collapse:collapse;margin-bottom:14px;table-layout:fixed}
+        th,td{border:0.5px solid #aaa;padding:4px 5px;text-align:left;vertical-align:top;font-size:10px;word-wrap:break-word}
+        th{background:#222;color:#fff;font-weight:500;text-transform:uppercase;letter-spacing:0.4px;font-size:9px}
+        .r{text-align:center}
+        .rcell{display:inline-block;min-width:22px;padding:2px 5px;color:#fff;border-radius:3px;font-weight:600;font-size:10px}
+        .sig{margin-top:20px;padding:14px;border:0.5px solid #888;border-radius:4px;display:grid;grid-template-columns:2fr 2fr 1fr;gap:12px}
+        .sig-label{font-size:9px;text-transform:uppercase;color:#888;letter-spacing:0.5px;margin-bottom:2px}
+        .sig-val{font-size:13px;font-weight:500;padding-bottom:8px;border-bottom:1px solid #333}
+        .scale{margin-top:10px;font-size:9px;color:#666;display:flex;gap:12px;flex-wrap:wrap}
+        .scale span{display:inline-flex;align-items:center;gap:4px}
+        .scale .dot{width:8px;height:8px;border-radius:2px;display:inline-block}
+      </style></head><body>
+      <h1>Risk Assessment — ${esc_(p.name)}${sh.name?' — '+esc_(sh.name):''}</h1>
+      <div class="sub">${esc_(fmtDate(sh.shoot_date))}${sh.location_name?' · '+esc_(sh.location_name):''}</div>
+
+      <table>
+        <colgroup>
+          <col style="width:15%"><col style="width:11%"><col style="width:15%">
+          <col style="width:3.5%"><col style="width:3.5%"><col style="width:6%">
+          <col style="width:15%">
+          <col style="width:3.5%"><col style="width:3.5%"><col style="width:6%">
+          <col style="width:10%"><col style="width:8%">
+        </colgroup>
+        <thead><tr>
+          <th>Hazard</th><th>Who at risk</th><th>Existing controls</th>
+          <th class="r">L</th><th class="r">S</th><th class="r">Risk</th>
+          <th>Additional controls</th>
+          <th class="r">rL</th><th class="r">rS</th><th class="r">Residual</th>
+          <th>Owner</th><th>Rating</th>
+        </tr></thead>
+        <tbody>
+          ${hazards.map(h => {
+            const s1 = score(h.likelihood, h.severity)
+            const s2 = score(h.residual_likelihood, h.residual_severity)
+            return `<tr>
+              <td>${esc_(h.hazard||'')}</td>
+              <td>${esc_(h.who_at_risk||'')}</td>
+              <td>${esc_(h.existing_controls||'')}</td>
+              <td class="r">${h.likelihood||''}</td>
+              <td class="r">${h.severity||''}</td>
+              <td class="r"><span class="rcell" style="background:${riskColor(s1)}">${s1||''}</span></td>
+              <td>${esc_(h.additional_controls||'')}</td>
+              <td class="r">${h.residual_likelihood||''}</td>
+              <td class="r">${h.residual_severity||''}</td>
+              <td class="r"><span class="rcell" style="background:${riskColor(s2)}">${s2||''}</span></td>
+              <td>${esc_(h.responsible||'')}</td>
+              <td class="r" style="font-size:9px;color:${riskColor(s2)};font-weight:600">${riskLabel(s2)}</td>
+            </tr>`
+          }).join('')}
+        </tbody>
+      </table>
+
+      ${ra.notes ? `<div style="padding:10px;background:#f5f5f3;border-radius:4px;font-size:11px;margin-bottom:14px"><strong>Assessment notes:</strong><br>${esc_(ra.notes)}</div>` : ''}
+
+      <div class="sig">
+        <div>
+          <div class="sig-label">Assessed by</div>
+          <div class="sig-val">${esc_(ra.assessor_name||'')}</div>
+        </div>
+        <div>
+          <div class="sig-label">Role</div>
+          <div class="sig-val">${esc_(ra.assessor_role||'')}</div>
+        </div>
+        <div>
+          <div class="sig-label">Date</div>
+          <div class="sig-val">${esc_(fmtDate(ra.assessed_date))}</div>
+        </div>
+      </div>
+
+      <div class="scale">
+        <span><span class="dot" style="background:#5a9a5a"></span>Low (1–3)</span>
+        <span><span class="dot" style="background:#c0a030"></span>Medium (4–7)</span>
+        <span><span class="dot" style="background:#d98020"></span>High (8–14)</span>
+        <span><span class="dot" style="background:#c03020"></span>Critical (15–25)</span>
+        <span style="color:#888">L=Likelihood (1=rare, 5=almost certain) · S=Severity (1=minor, 5=catastrophic)</span>
+      </div>
+
+      <script>window.onload=()=>window.print()</script>
+      </body></html>`)
+    w.document.close()
   }
 
   _bindShootLocs(overlay, sh, save) {

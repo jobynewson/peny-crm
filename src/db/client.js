@@ -491,6 +491,7 @@ export async function updateShoot(id, data) {
       crew = ${JSON.stringify(data.crew||[])}::jsonb,
       schedule = ${JSON.stringify(data.schedule||[])}::jsonb,
       locations = ${JSON.stringify(data.locations||[])}::jsonb,
+      risk_assessment = ${JSON.stringify(data.risk_assessment||{})}::jsonb,
       updated_at = NOW()
     WHERE id = ${id} RETURNING *
   `).then(r => r.rows ?? r)
@@ -499,4 +500,22 @@ export async function updateShoot(id, data) {
 export async function deleteShoot(id) {
   const { sql } = await import('drizzle-orm')
   return db.execute(sql`DELETE FROM shoots WHERE id = ${id}`)
+}
+
+// Find all shoots that have a risk assessment (for the "copy from" picker)
+export async function getShootsWithRA(userId) {
+  const { sql } = await import('drizzle-orm')
+  return db.execute(sql`
+    SELECT sh.id, sh.name, sh.shoot_date, sh.location_name, sh.risk_assessment,
+           p.name AS project_name
+    FROM shoots sh
+    JOIN projects p ON p.id = sh.project_id
+    WHERE sh.user_id = ${userId}
+      AND sh.risk_assessment IS NOT NULL
+      AND sh.risk_assessment != '{}'::jsonb
+      AND sh.risk_assessment->'hazards' IS NOT NULL
+      AND jsonb_array_length(sh.risk_assessment->'hazards') > 0
+    ORDER BY sh.shoot_date DESC NULLS LAST, sh.created_at DESC
+    LIMIT 50
+  `).then(r => r.rows ?? r)
 }

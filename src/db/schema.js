@@ -287,6 +287,7 @@ export const shoots = pgTable('shoots', {
   crew:              jsonb('crew').notNull().default([]),
   schedule:          jsonb('schedule').notNull().default([]),
   locations:         jsonb('locations').notNull().default([]),
+  risk_assessment:   jsonb('risk_assessment').notNull().default({}),
   sort_order:        integer('sort_order').notNull().default(0),
   created_at:        timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updated_at:        timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
