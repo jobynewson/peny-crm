@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Importing…</title></head>
+<body>
+<script>
+  try {
+    const params = new URLSearchParams(location.search)
+    const text = params.get('t')
+    if (text) localStorage.setItem('peny-import-text', decodeURIComponent(text))
+  } catch(e) {}
+  location.replace('/')
+</script>
+</body>
+</html>

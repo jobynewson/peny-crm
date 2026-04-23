@@ -5,16 +5,13 @@ import { ProjectsView } from './views/projects.js'
 import { BudgetsView, budTotal } from './views/budgets.js'
 import { CallSheetsView } from './views/callsheets.js'
 
-// Capture bookmarklet import text immediately at module load — before Clerk
-// or anything else can manipulate the URL
+// Capture bookmarklet import text — written to localStorage by /import-relay before Clerk loads
 const _importText = (() => {
-  const h = location.hash
-  if (!h.startsWith('#import=')) return null
   try {
-    const text = decodeURIComponent(h.slice('#import='.length))
-    history.replaceState({}, '', location.pathname)
-    return text
-  } catch { return null }
+    const text = localStorage.getItem('peny-import-text')
+    if (text) { localStorage.removeItem('peny-import-text'); return text }
+  } catch {}
+  return null
 })()
 
 export class App {
@@ -48,7 +45,12 @@ export class App {
     // Handle bookmarklet import — text captured at module load before Clerk touches the URL
     if (_importText) {
       setTimeout(() => {
-        this.switchView('projects')
+        this.currentView = 'projects'
+        this.projectsView.currentId = null
+        this.projectsView.editingId = null
+        this.budgetsView.currentId  = null
+        this.budgetsView.editingId  = null
+        this.render()
         setTimeout(() => {
           const mc = document.getElementById('main-content')
           this.projectsView.openNewModal(null, null, mc)
