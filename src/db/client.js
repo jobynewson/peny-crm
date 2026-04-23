@@ -322,10 +322,11 @@ export async function createCallSheet(userId, projectId, data) {
   const token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
   const [sheet] = await db.execute(sql`
     INSERT INTO call_sheets (project_id, user_id, sheet_date, status, general_call,
-      location_name, location_address, location_map_link, weather_text, notes, sheet_token)
+      location_name, location_address, location_map_link, weather_text, notes, sheet_token, hotels)
     VALUES (${projectId}, ${userId}, ${data.sheet_date}, 'draft', ${data.general_call||null},
       ${data.location_name||null}, ${data.location_address||null}, ${data.location_map_link||null},
-      ${data.weather_text||null}, ${data.notes||null}, ${token})
+      ${data.weather_text||null}, ${data.notes||null}, ${token},
+      ${JSON.stringify(data.hotels||[])}::jsonb)
     RETURNING *
   `).then(r => r.rows ?? r)
   return sheet
@@ -353,6 +354,7 @@ export async function updateCallSheet(id, data) {
       nearest_fire_address = ${data.nearest_fire_address||null},
       nearest_fire_phone = ${data.nearest_fire_phone||null},
       hs_notes = ${data.hs_notes||null},
+      hotels = ${JSON.stringify(data.hotels||[])}::jsonb,
       updated_at = NOW()
     WHERE id = ${id} RETURNING *
   `).then(r => r.rows ?? r)

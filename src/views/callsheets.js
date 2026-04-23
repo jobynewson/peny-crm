@@ -109,6 +109,9 @@ export class CallSheetsView {
   renderEditor(mc) {
     const s = this.sheet
     if (!s) return
+    // Abort any previous bindEditor listeners attached to mc
+    if (this._editorAbort) this._editorAbort.abort()
+    this._editorAbort = new AbortController()
     const project = this.app.projects.find(p => p.id === s.project_id)
     const origin = location.origin
 
@@ -294,7 +297,7 @@ export class CallSheetsView {
         </div>
       </div>`
 
-    this.bindEditor(mc, s)
+    this.bindEditor(mc, s, this._editorAbort.signal)
   }
 
   _readCrewFromDOM(mc, s) {
@@ -363,7 +366,7 @@ export class CallSheetsView {
     </div>`
   }
 
-  bindEditor(mc, s) {
+  bindEditor(mc, s, signal) {
     // Accordion panels — toggle cs-panel-body visibility on head click
     mc.querySelectorAll('.cs-panel-head').forEach(head => {
       head.addEventListener('click', e => {
@@ -477,7 +480,7 @@ export class CallSheetsView {
     // Crew changes — use document-level delegation to catch all tabs
     mc.addEventListener('change', e => {
       if (e.target.matches('[data-cs-crew-name],[data-cs-crew-role],[data-cs-crew-time]')) saveCrew()
-    })
+    }, { signal })
     // Crew type tabs — read DOM first, switch tab, refresh only crew panel
     mc.querySelectorAll('[data-crew-tab]').forEach(btn => {
       btn.addEventListener('click', () => {
