@@ -33,26 +33,29 @@ export class App {
     this.injectGlobalStyles()
     this.render()
     this._bindKeyboard()
-    // Handle bookmarklet import — text passed via sessionStorage to avoid URL length limits
-    const importText = sessionStorage.getItem('peny-import-text')
-    if (importText) {
-      sessionStorage.removeItem('peny-import-text')
-      setTimeout(() => {
-        this.switchView('projects')
+    // Handle bookmarklet import — text passed via URL hash #import=...
+    const hash = location.hash
+    if (hash.startsWith('#import=')) {
+      const importText = decodeURIComponent(hash.slice('#import='.length))
+      history.replaceState({}, '', location.pathname)
+      if (importText) {
         setTimeout(() => {
-          const mc = document.getElementById('main-content')
-          this.projectsView.openNewModal(null, null, mc)
+          this.switchView('projects')
           setTimeout(() => {
-            const textEl = mc?.querySelector('#pf-ai-text')
-            const panel  = mc?.querySelector('#pf-ai-panel')
-            const toggle = mc?.querySelector('#pf-ai-toggle')
-            if (textEl) textEl.value        = importText
-            if (panel)  panel.style.display = 'block'
-            if (toggle) toggle.textContent  = 'Hide'
-            mc?.querySelector('#pf-ai-extract')?.click()
-          }, 100)
-        }, 200)
-      }, 300)
+            const mc = document.getElementById('main-content')
+            this.projectsView.openNewModal(null, null, mc)
+            setTimeout(() => {
+              const textEl = mc?.querySelector('#pf-ai-text')
+              const panel  = mc?.querySelector('#pf-ai-panel')
+              const toggle = mc?.querySelector('#pf-ai-toggle')
+              if (textEl) textEl.value        = importText
+              if (panel)  panel.style.display = 'block'
+              if (toggle) toggle.textContent  = 'Hide'
+              mc?.querySelector('#pf-ai-extract')?.click()
+            }, 100)
+          }, 200)
+        }, 300)
+      }
     }
   }
 
