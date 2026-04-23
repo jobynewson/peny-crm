@@ -3,12 +3,17 @@
 <head><meta charset="UTF-8"><title>Importing…</title></head>
 <body>
 <script>
-  try {
-    const params = new URLSearchParams(location.search)
-    const text = params.get('t')
-    if (text) localStorage.setItem('peny-import-text', decodeURIComponent(text))
-  } catch(e) {}
-  location.replace('/')
+  // Receive text from bookmarklet via postMessage after opening
+  // The bookmarklet opens this page, waits for it to load, then sends the text
+  window.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'peny-import') {
+      try { localStorage.setItem('peny-import-text', e.data.text) } catch(err) {}
+      location.replace('/')
+    }
+  })
+  // Signal to opener that we're ready
+  if (window.opener) window.opener.postMessage('peny-relay-ready', '*')
 </script>
+<p style="font-family:sans-serif;color:#888;padding:40px;text-align:center">Importing to Peny CRM…</p>
 </body>
 </html>
