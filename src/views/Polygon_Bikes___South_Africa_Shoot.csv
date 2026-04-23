@@ -1,0 +1,32 @@
+"Budget","Polygon Bikes - South Africa Shoot"
+"Client","James Dart"
+"Production fee %","10.00"
+"Custom add-on %","0.00"
+"Travel rate %","50.00"
+"Master discount %","0.00"
+"VAT","No"
+""
+"Section","Item","Notes","Prep Days","Shoot Days","Qty","Travel Days","Rate (£)","Discount %","Total (£)"
+"C — Cast","Riders","","0","1","2","0","500","100","0"
+"C SUBTOTAL","","","","","","","","","0"
+
+"D — Production Crew","Director","","0","2","1","0","750","0","1500"
+"D — Production Crew","Stills ","","0","2","1","0","450","0","900"
+"D — Production Crew","Moto Rider","","0","2","1","0","690","0","1380"
+"D SUBTOTAL","","","","","","","","","3780"
+
+"E — Equipment","Camera Package","","0","2","1","0","600","0","1200"
+"E SUBTOTAL","","","","","","","","","1200"
+
+"H — Travel & Accommodation","Unit Vehicles / Transport","","N/A","N/A","1","N/A","250","0","250"
+"H — Travel & Accommodation","Taxis","","N/A","N/A","1","N/A","100","0","100"
+"H SUBTOTAL","","","","","","","","","350"
+
+"I — Post-production","Editor","","0","5","1","0","450","0","2250"
+"I — Post-production","Stills retouch","","0","1","1","0","500","0","500"
+"I SUBTOTAL","","","","","","","","","2750"
+
+"NET TOTAL","","","","","","","","8080"
+"PRODUCTION FEE (10.00%)","","","","","","","","808"
+"INSURANCE (2.5%)","","","","","","","","202"
+"GRAND TOTAL","","","","","","","","9090"

@@ -114,15 +114,124 @@ export class ProjectsView {
       if (client) { client.disabled = !isOpen; client.style.opacity = isOpen ? '' : '0.4' }
       if (toggle) toggle.textContent = isOpen ? '+ Add new contact instead' : '− Use existing contact instead'
     })
+
+    // AI import
+    mc.querySelector('#pf-ai-toggle')?.addEventListener('click', () => {
+      const panel = mc.querySelector('#pf-ai-panel')
+      const btn   = mc.querySelector('#pf-ai-toggle')
+      const open  = panel.style.display === 'none'
+      panel.style.display = open ? 'block' : 'none'
+      btn.textContent = open ? 'Hide' : 'Paste text'
+    })
+
+    mc.querySelector('#pf-ai-extract')?.addEventListener('click', async () => {
+      const text = mc.querySelector('#pf-ai-text')?.value.trim()
+      if (!text) { this.app.toast('Paste some text first'); return }
+
+      const statusEl = mc.querySelector('#pf-ai-status')
+      const extractBtn = mc.querySelector('#pf-ai-extract')
+      statusEl.style.display = 'block'
+      statusEl.textContent = '✨ Extracting project details…'
+      extractBtn.disabled = true
+
+      try {
+        const res = await fetch('/api/ai', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        })
+        if (!res.ok) throw new Error(await res.text())
+        const data = await res.json()
+
+        // Fill project fields
+        if (data.project_name) {
+          const nameEl = mc.querySelector('#pf-name')
+          if (nameEl) nameEl.value = data.project_name
+        }
+
+        // Fill brief
+        if (data.brief) {
+          mc.querySelector('#pf-brief-field').style.display = 'block'
+          const briefEl = mc.querySelector('#pf-brief')
+          if (briefEl) briefEl.value = data.brief
+        }
+
+        // Client matching — fuzzy match against existing contacts
+        if (data.client) {
+          const { first_name, last_name, company } = data.client
+          const searchName = `${first_name||''} ${last_name||''}`.toLowerCase().trim()
+          const searchCo   = (company||'').toLowerCase().trim()
+
+          const match = this.app.contacts.find(c => {
+            const cName = `${c.first_name||''} ${c.last_name||''}`.toLowerCase().trim()
+            const cCo   = (c.company||'').toLowerCase().trim()
+            return (searchName && cName.includes(searchName)) ||
+                   (searchName && searchName.includes(cName) && cName.length > 2) ||
+                   (searchCo   && cCo.length > 2 && (cCo.includes(searchCo) || searchCo.includes(cCo)))
+          })
+
+          if (match) {
+            const clientEl = mc.querySelector('#pf-client')
+            if (clientEl) clientEl.value = match.id
+            statusEl.textContent = `✓ Matched client: ${match.first_name} ${match.last_name}${match.company ? ' — ' + match.company : ''}`
+            statusEl.style.color = 'var(--green, #5a9a5a)'
+          } else {
+            // No match — show new contact panel pre-filled
+            const panel  = mc.querySelector('#pf-new-contact-panel')
+            const client = mc.querySelector('#pf-client')
+            const toggle = mc.querySelector('#pf-new-contact-toggle span')
+            panel.style.display = 'block'
+            if (client) { client.disabled = true; client.style.opacity = '0.4' }
+            if (toggle) toggle.textContent = '− Use existing contact instead'
+            const set = (id, val) => { const el = mc.querySelector(id); if (el && val) el.value = val }
+            set('#pf-nc-first',   data.client.first_name)
+            set('#pf-nc-last',    data.client.last_name)
+            set('#pf-nc-company', data.client.company)
+            set('#pf-nc-email',   data.client.email)
+            set('#pf-nc-phone',   data.client.phone)
+            statusEl.textContent = `New contact pre-filled — review details below`
+            statusEl.style.color = 'var(--accent)'
+          }
+        } else {
+          statusEl.textContent = '✓ Details extracted — no client identified'
+          statusEl.style.color = 'var(--text-tertiary)'
+        }
+
+        // Collapse the textarea
+        mc.querySelector('#pf-ai-panel').style.display = 'none'
+        mc.querySelector('#pf-ai-toggle').textContent = 'Paste text'
+
+      } catch(e) {
+        console.error(e)
+        statusEl.textContent = '⚠ Extraction failed — check your API key or try again'
+        statusEl.style.color = '#e07070'
+      } finally {
+        extractBtn.disabled = false
+      }
+    })
   }
 
   newModalHTML() {
     const { contacts } = this.app
     return `
       <div class="modal-backdrop" id="proj-new-modal">
-        <div class="modal" style="width:460px">
+        <div class="modal" style="width:500px">
           <div class="modal-header"><span class="modal-title">New project</span><button class="modal-close" data-close="proj-new-modal">×</button></div>
           <div class="modal-body">
+
+            <!-- AI import panel -->
+            <div style="background:linear-gradient(135deg,rgba(167,139,250,0.08),rgba(74,144,217,0.08));border:0.5px solid rgba(167,139,250,0.3);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:14px">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                <span style="font-size:12px;font-weight:500;color:var(--purple)">✨ Import from email / brief</span>
+                <button id="pf-ai-toggle" class="btn-cancel" style="font-size:11px;padding:3px 8px">Paste text</button>
+              </div>
+              <div id="pf-ai-panel" style="display:none">
+                <textarea id="pf-ai-text" placeholder="Paste your email thread, brief, or any project info here…" style="width:100%;min-height:100px;padding:8px 10px;font-size:12px;border:0.5px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.5;margin-bottom:8px"></textarea>
+                <button id="pf-ai-extract" class="btn-primary" style="font-size:12px;width:100%">✨ Extract project details</button>
+              </div>
+              <div id="pf-ai-status" style="font-size:11px;color:var(--text-tertiary);display:none"></div>
+            </div>
+
             <div class="field"><div class="field-label">Project title</div><input id="pf-name" type="text" placeholder="e.g. Brand Film — Kinetic Q2" /></div>
 
             <div class="field">
@@ -148,6 +257,10 @@ export class ProjectsView {
                 <div class="field" style="margin:0"><div class="field-label">Email</div><input type="email" id="pf-nc-email" placeholder="email@example.com" /></div>
                 <div class="field" style="margin:0"><div class="field-label">Phone</div><input type="text" id="pf-nc-phone" placeholder="+44..." /></div>
               </div>
+            </div>
+
+            <div id="pf-brief-field" style="display:none">
+              <div class="field"><div class="field-label">Brief</div><textarea id="pf-brief" style="width:100%;min-height:70px;padding:8px 10px;font-size:13px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.5"></textarea></div>
             </div>
 
             <div class="field"><div class="field-label">Status</div>
@@ -179,6 +292,17 @@ export class ProjectsView {
     ;['#pf-nc-first','#pf-nc-last','#pf-nc-company','#pf-nc-email','#pf-nc-phone'].forEach(id => {
       const inp = el.querySelector(id); if (inp) inp.value = ''
     })
+    // Reset AI panel
+    const aiPanel = el.querySelector('#pf-ai-panel')
+    if (aiPanel) aiPanel.style.display = 'none'
+    const aiStatus = el.querySelector('#pf-ai-status')
+    if (aiStatus) { aiStatus.style.display = 'none'; aiStatus.textContent = '' }
+    const aiText = el.querySelector('#pf-ai-text')
+    if (aiText) aiText.value = ''
+    const briefField = el.querySelector('#pf-brief-field')
+    if (briefField) briefField.style.display = 'none'
+    const aiToggle = el.querySelector('#pf-ai-toggle')
+    if (aiToggle) aiToggle.textContent = 'Paste text'
     // Store retainer flag on the modal for saveNew to read
     const modal = el.querySelector('#proj-new-modal')
     if (modal) modal.dataset.isRetainer = isRetainer ? '1' : ''
@@ -225,7 +349,7 @@ export class ProjectsView {
       name,
       client_id:    clientId,
       status:       isRetainer ? 'Enquiry' : (mc.querySelector('#pf-status')?.value || 'Enquiry'),
-      brief:        '',
+      brief:        mc.querySelector('#pf-brief')?.value.trim() || '',
       location:     '',
       shoot_start:  null,
       shoot_end:    null,
