@@ -265,6 +265,7 @@ export const shoots = pgTable('shoots', {
   user_id:           text('user_id').notNull(),
   name:              text('name'),
   shoot_date:        date('shoot_date'),
+  shoot_dates:       jsonb('shoot_dates').notNull().default([]),
   status:            text('status').notNull().default('draft'),
   shoot_token:       text('shoot_token'),
   general_call:      text('general_call'),

@@ -959,13 +959,31 @@ export class ProjectsView {
   async _createShoot(mc, p) {
     try {
       const { createShoot } = await import('../db/client.js')
-      // Start with project defaults
+      // Start with project defaults — pull phone from contacts where matched by name
+      const contacts = this.app.contacts || []
+      const findPhone = name => {
+        const lower = (name||'').toLowerCase().trim()
+        if (!lower) return ''
+        const match = contacts.find(c => `${c.first_name||''} ${c.last_name||''}`.toLowerCase().trim() === lower)
+        return match?.phone || ''
+      }
       const crew = (p.crew||[]).filter(c => c.name).map(c => ({
-        name: c.name, role: c.role||'', crew_type: c.crew_type||'crew', call_time: '', crew_token: null
+        name: c.name, role: c.role||'', phone: findPhone(c.name),
+        crew_type: c.crew_type||'crew', call_times: {}, crew_token: null
       }))
+      // Seed shoot_dates from project shoot_start/end if available
+      const shoot_dates = []
+      if (p.shoot_start) {
+        const start = new Date(p.shoot_start)
+        const end   = p.shoot_end ? new Date(p.shoot_end) : start
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate()+1)) {
+          shoot_dates.push({ date: d.toISOString().split('T')[0], general_call: '' })
+        }
+      }
       const shoot = await createShoot(this.app.userId, p.id, {
         name: '',
         shoot_date: p.shoot_start || null,
+        shoot_dates,
         location_name: p.location || null,
         location_address: p.location_address || null,
         location_map_link: p.location_map_link || null,
@@ -1029,18 +1047,12 @@ export class ProjectsView {
 
             <!-- Basics -->
             <div class="proj-panel">
-              <div class="proj-panel-head">Shoot details</div>
-              <div class="proj-panel-body">
-                <div class="proj-date-row">
-                  <div>
-                    <div class="proj-field-label">Date</div>
-                    <input type="date" class="proj-input" id="se-date" value="${sh.shoot_date?String(sh.shoot_date).split('T')[0]:''}" />
-                  </div>
-                  <div>
-                    <div class="proj-field-label">General call time</div>
-                    <input type="time" class="proj-input" id="se-general-call" value="${esc(sh.general_call||'')}" />
-                  </div>
-                </div>
+              <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
+                <span>Shoot dates &amp; general call times</span>
+                <button class="btn-secondary" id="se-add-day" style="font-size:11px;padding:3px 10px">+ Add day</button>
+              </div>
+              <div class="proj-panel-body" id="se-dates-list">
+                ${this._shootDatesHTML(sh)}
               </div>
             </div>
 
@@ -1115,17 +1127,22 @@ export class ProjectsView {
               </div>
             </div>
 
-            <!-- Crew -->
-            <div class="proj-panel">
-              <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
-                <span>Crew &amp; call times</span>
-                <button class="btn-secondary" id="se-fill-general" style="font-size:11px;padding:3px 8px">Fill blank with general call</button>
-              </div>
-              <div class="proj-panel-body" id="se-crew-list">
-                ${sh.crew.map((c,i) => this._shootCrewHTML(c, i)).join('')}
-                <button class="add-line" id="se-add-crew" style="margin-top:8px">+ add crew member</button>
-              </div>
-            </div>
+            <!-- Crew (split by type) -->
+            ${['crew','on_camera','client'].map(type => {
+              const label = type==='on_camera' ? 'On Camera' : type==='client' ? 'Client' : 'Crew'
+              return `<div class="proj-panel">
+                <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
+                  <span>${label}${type==='crew'?' &amp; call times':''}</span>
+                  <div style="display:flex;gap:6px">
+                    ${type==='crew'?`<button class="btn-secondary" id="se-fill-general" style="font-size:11px;padding:3px 8px">Fill blanks with general call</button>`:''}
+                    <button class="btn-secondary" data-add-crew-type="${type}" style="font-size:11px;padding:3px 8px">+ Add</button>
+                  </div>
+                </div>
+                <div class="proj-panel-body" id="se-crew-list-${type}">
+                  ${this._shootCrewSectionHTML(sh, type)}
+                </div>
+              </div>`
+            }).join('')}
 
             <!-- Hotels -->
             <div class="proj-panel">
@@ -1222,13 +1239,67 @@ export class ProjectsView {
     </div>`
   }
 
-  _shootCrewHTML(c, i) {
-    return `<div class="se-crew-row" style="display:grid;grid-template-columns:1fr 1fr 90px 28px;gap:6px;margin-bottom:6px" data-crew-idx="${i}">
-      <input type="text" class="bl-in w" value="${esc(c.name||'')}" placeholder="Name" data-crew-field="${i},name" style="font-size:12px;padding:5px 8px" />
-      <input type="text" class="bl-in w" value="${esc(c.role||'')}" placeholder="Role" data-crew-field="${i},role" style="font-size:12px;padding:5px 8px" />
-      <input type="time" class="bl-in w" value="${esc(c.call_time||'')}" data-crew-field="${i},call_time" style="font-size:12px;padding:5px 8px" />
-      <button class="row-btn" style="color:#c03020" data-crew-rem="${i}">×</button>
-    </div>`
+  // List of shoot dates with general call time per day
+  _shootDatesHTML(sh) {
+    const dates = Array.isArray(sh.shoot_dates) ? sh.shoot_dates : []
+    if (!dates.length) {
+      return `<div style="font-size:12px;color:var(--text-tertiary);padding:4px 0">No shoot dates yet — click <strong style="color:var(--text-primary)">+ Add day</strong> above</div>`
+    }
+    return dates.map((d, i) => `
+      <div style="display:grid;grid-template-columns:140px 1fr 120px 28px;gap:8px;margin-bottom:6px;align-items:center" data-date-idx="${i}">
+        <input type="date" class="proj-input" value="${d.date?String(d.date).split('T')[0]:''}" data-date-field="${i},date" style="font-size:12px;padding:5px 8px" />
+        <div style="font-size:11px;color:var(--text-tertiary)">${d.date ? new Date(d.date).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'}) : ''}</div>
+        <input type="time" class="proj-input" value="${esc(d.general_call||'')}" placeholder="General call" data-date-field="${i},general_call" style="font-size:12px;padding:5px 8px" />
+        <button class="row-btn" style="color:#c03020" data-date-rem="${i}">×</button>
+      </div>`).join('')
+  }
+
+  // Render the Crew/On Camera/Client section as a grid: name | role | phone | one call-time column per shoot date
+  _shootCrewSectionHTML(sh, type) {
+    const dates = Array.isArray(sh.shoot_dates) ? sh.shoot_dates.filter(d => d.date) : []
+    const filtered = (sh.crew || []).map((c, idx) => ({c, idx})).filter(({c}) => (c.crew_type||'crew') === type)
+    if (!filtered.length) {
+      return `<div style="font-size:12px;color:var(--text-tertiary);padding:4px 0">No ${type==='on_camera'?'on camera people':type==='client'?'clients':'crew'} added yet</div>`
+    }
+    if (!dates.length) {
+      // No dates set yet — show name/role/phone only
+      return filtered.map(({c, idx}) => `
+        <div style="display:grid;grid-template-columns:1fr 1fr 130px 28px;gap:6px;margin-bottom:6px" data-crew-idx="${idx}">
+          <input type="text" class="bl-in w" value="${esc(c.name||'')}" placeholder="Name" data-crew-field="${idx},name" style="font-size:12px;padding:5px 8px" />
+          <input type="text" class="bl-in w" value="${esc(c.role||'')}" placeholder="Role" data-crew-field="${idx},role" style="font-size:12px;padding:5px 8px" />
+          <input type="tel" class="bl-in w" value="${esc(c.phone||'')}" placeholder="Phone" data-crew-field="${idx},phone" style="font-size:12px;padding:5px 8px" />
+          <button class="row-btn" style="color:#c03020" data-crew-rem="${idx}">×</button>
+        </div>`).join('')
+    }
+    // With dates — show as a table with one call-time column per date
+    const dateHeaders = dates.map((d, di) => {
+      const lbl = d.date ? new Date(d.date).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}) : `Day ${di+1}`
+      return `<th style="padding:5px 4px;text-align:left;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);width:90px">${esc(lbl)}</th>`
+    }).join('')
+    const rows = filtered.map(({c, idx}) => {
+      const callTimes = c.call_times && typeof c.call_times === 'object' ? c.call_times : {}
+      const cells = dates.map(d => {
+        const k = String(d.date).split('T')[0]
+        return `<td style="padding:3px 2px"><input type="time" class="bl-in w" value="${esc(callTimes[k]||'')}" data-crew-call="${idx},${k}" style="font-size:12px;padding:5px 6px;width:100%" /></td>`
+      }).join('')
+      return `<tr data-crew-idx="${idx}">
+        <td style="padding:3px 2px"><input type="text" class="bl-in w" value="${esc(c.name||'')}" placeholder="Name" data-crew-field="${idx},name" style="font-size:12px;padding:5px 6px;width:100%" /></td>
+        <td style="padding:3px 2px"><input type="text" class="bl-in w" value="${esc(c.role||'')}" placeholder="Role" data-crew-field="${idx},role" style="font-size:12px;padding:5px 6px;width:100%" /></td>
+        <td style="padding:3px 2px"><input type="tel" class="bl-in w" value="${esc(c.phone||'')}" placeholder="Phone" data-crew-field="${idx},phone" style="font-size:12px;padding:5px 6px;width:100%" /></td>
+        ${cells}
+        <td style="padding:3px 2px;text-align:center"><button class="row-btn" style="color:#c03020" data-crew-rem="${idx}">×</button></td>
+      </tr>`
+    }).join('')
+    return `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:${500 + dates.length*100}px">
+      <thead><tr>
+        <th style="padding:5px 4px;text-align:left;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary)">Name</th>
+        <th style="padding:5px 4px;text-align:left;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary)">Role</th>
+        <th style="padding:5px 4px;text-align:left;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);width:130px">Phone</th>
+        ${dateHeaders}
+        <th style="width:24px"></th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`
   }
 
   _shootHotelHTML(h, i, crew) {
@@ -1371,11 +1442,15 @@ export class ProjectsView {
       // Gather location_address split
       const addrVal = overlay.querySelector('#se-loc-addr')?.value.trim()
       const isUrl = addrVal?.startsWith('http')
+      // Take first date as primary shoot_date for backwards compat / sorting
+      const dates = Array.isArray(sh.shoot_dates) ? sh.shoot_dates : []
+      const firstDate = dates.find(d => d.date)
       const data = {
         name:              overlay.querySelector('#se-name')?.value.trim() || null,
-        shoot_date:        overlay.querySelector('#se-date')?.value || null,
+        shoot_date:        firstDate?.date || null,
+        shoot_dates:       dates,
         status:            overlay.querySelector('#se-status')?.value || 'draft',
-        general_call:      overlay.querySelector('#se-general-call')?.value || null,
+        general_call:      firstDate?.general_call || null,
         location_name:     overlay.querySelector('#se-loc-name')?.value.trim() || null,
         location_address:  !isUrl ? (addrVal || null) : null,
         location_map_link: isUrl ? addrVal : null,
@@ -1406,6 +1481,7 @@ export class ProjectsView {
         sh.schedule  = Array.isArray(sh.schedule)  ? sh.schedule  : []
         sh.locations = Array.isArray(sh.locations) ? sh.locations : []
         sh.hotels    = Array.isArray(sh.hotels)    ? sh.hotels    : []
+        sh.shoot_dates = Array.isArray(sh.shoot_dates) ? sh.shoot_dates : []
         showSaved()
         // Refresh crew links sidebar (tokens may have been generated)
         this._renderShootCrewLinks(overlay, sh)
@@ -1430,24 +1506,76 @@ export class ProjectsView {
       } catch(e) { console.error(e); this.app.toast('Error deleting shoot') }
     })
 
-    // Top-level fields — autosave on change
-    overlay.querySelectorAll('#se-name,#se-date,#se-status,#se-general-call,#se-loc-name,#se-loc-addr,#se-parking,#se-transport,#se-weather,#se-hs,#se-notes,#se-hosp-name,#se-hosp-addr,#se-police-name,#se-police-addr,#se-fire-name,#se-fire-addr').forEach(el => {
+    // Top-level fields — autosave on change (no longer includes #se-date / #se-general-call)
+    overlay.querySelectorAll('#se-name,#se-status,#se-loc-name,#se-loc-addr,#se-parking,#se-transport,#se-weather,#se-hs,#se-notes,#se-hosp-name,#se-hosp-addr,#se-police-name,#se-police-addr,#se-fire-name,#se-fire-addr').forEach(el => {
       el.addEventListener('change', save)
     })
 
-    // General call cascade — update matching crew times
-    overlay.querySelector('#se-general-call')?.addEventListener('change', e => {
-      const newCall = e.target.value, oldCall = sh.general_call || ''
-      if (oldCall) sh.crew.forEach(c => { if (c.call_time === oldCall) c.call_time = newCall })
-      this._refreshShootCrew(overlay, sh, save)
+    // Shoot dates list
+    if (!Array.isArray(sh.shoot_dates)) sh.shoot_dates = []
+    const refreshDates = () => {
+      const list = overlay.querySelector('#se-dates-list')
+      if (list) list.innerHTML = this._shootDatesHTML(sh)
+      bindDateList()
+      // Crew sections also need re-rendering since columns depend on dates
+      this._refreshAllCrewSections(overlay, sh, save)
+    }
+    const bindDateList = () => {
+      overlay.querySelectorAll('[data-date-field]').forEach(el => {
+        el.addEventListener('change', () => {
+          const [i, f] = el.dataset.dateField.split(',')
+          if (!sh.shoot_dates[+i]) return
+          const oldVal = sh.shoot_dates[+i][f]
+          sh.shoot_dates[+i][f] = el.value
+          // If editing a date and crew have call_times keyed to the old date, migrate
+          if (f === 'date' && oldVal && oldVal !== el.value) {
+            const oldKey = String(oldVal).split('T')[0]
+            const newKey = String(el.value).split('T')[0]
+            sh.crew.forEach(c => {
+              if (c.call_times && c.call_times[oldKey] != null) {
+                c.call_times[newKey] = c.call_times[oldKey]
+                delete c.call_times[oldKey]
+              }
+            })
+          }
+          refreshDates()
+          save()
+        })
+      })
+      overlay.querySelectorAll('[data-date-rem]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const i = +btn.dataset.dateRem
+          const removed = sh.shoot_dates[i]
+          // Drop call_times for that date too
+          if (removed?.date) {
+            const k = String(removed.date).split('T')[0]
+            sh.crew.forEach(c => { if (c.call_times) delete c.call_times[k] })
+          }
+          sh.shoot_dates.splice(i, 1)
+          refreshDates()
+          save()
+        })
+      })
+    }
+    overlay.querySelector('#se-add-day')?.addEventListener('click', () => {
+      sh.shoot_dates.push({ date: '', general_call: '' })
+      refreshDates()
+      save()
     })
+    bindDateList()
 
-    // Fill blank call times
+    // Fill blanks with general call (per-day, fills any blank crew call time for that day with that day's general call)
     overlay.querySelector('#se-fill-general')?.addEventListener('click', () => {
-      const gc = overlay.querySelector('#se-general-call')?.value
-      if (!gc) { this.app.toast('Set a general call time first'); return }
-      sh.crew.forEach(c => { if (!c.call_time) c.call_time = gc })
-      this._refreshShootCrew(overlay, sh, save)
+      const dates = sh.shoot_dates.filter(d => d.date && d.general_call)
+      if (!dates.length) { this.app.toast('Set general call times on each day first'); return }
+      sh.crew.forEach(c => {
+        if (!c.call_times) c.call_times = {}
+        dates.forEach(d => {
+          const k = String(d.date).split('T')[0]
+          if (!c.call_times[k]) c.call_times[k] = d.general_call
+        })
+      })
+      this._refreshAllCrewSections(overlay, sh, save)
       save()
     })
 
@@ -1456,8 +1584,9 @@ export class ProjectsView {
       const btn = overlay.querySelector('#se-fetch-weather')
       const addrVal = overlay.querySelector('#se-loc-addr')?.value.trim()
       const locName = overlay.querySelector('#se-loc-name')?.value.trim()
-      const date = overlay.querySelector('#se-date')?.value
-      if (!date) { this.app.toast('Set the shoot date first'); return }
+      const firstDate = (sh.shoot_dates || []).find(d => d.date)
+      const date = firstDate?.date ? String(firstDate.date).split('T')[0] : ''
+      if (!date) { this.app.toast('Add a shoot date first'); return }
       if (!addrVal && !locName) { this.app.toast('Enter a location first'); return }
       btn.disabled = true; btn.textContent = 'Fetching…'
       try {
@@ -1539,10 +1668,12 @@ export class ProjectsView {
     })
     this._bindShootSched(overlay, sh, save)
 
-    // Crew
-    overlay.querySelector('#se-add-crew')?.addEventListener('click', () => {
-      sh.crew.push({ name:'', role:'', call_time: sh.general_call || '', crew_type:'crew' })
-      this._refreshShootCrew(overlay, sh, save)
+    // Crew (split into 3 sections: crew / on_camera / client)
+    overlay.querySelectorAll('[data-add-crew-type]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        sh.crew.push({ name:'', role:'', phone:'', call_times:{}, crew_type: btn.dataset.addCrewType })
+        this._refreshAllCrewSections(overlay, sh, save)
+      })
     })
     this._bindShootCrew(overlay, sh, save)
 
@@ -1842,25 +1973,33 @@ export class ProjectsView {
   }
 
   _bindShootCrew(overlay, sh, save) {
-    overlay.querySelectorAll('#se-crew-list [data-crew-field]').forEach(el => {
+    overlay.querySelectorAll('[data-crew-field]').forEach(el => {
       el.addEventListener('change', () => {
         const [i, f] = el.dataset.crewField.split(',')
+        if (!sh.crew[+i]) return
         sh.crew[+i][f] = el.value; save()
       })
     })
-    overlay.querySelectorAll('#se-crew-list [data-crew-rem]').forEach(btn => {
+    overlay.querySelectorAll('[data-crew-call]').forEach(el => {
+      el.addEventListener('change', () => {
+        const [i, dateKey] = el.dataset.crewCall.split(',')
+        if (!sh.crew[+i]) return
+        if (!sh.crew[+i].call_times) sh.crew[+i].call_times = {}
+        sh.crew[+i].call_times[dateKey] = el.value
+        save()
+      })
+    })
+    overlay.querySelectorAll('[data-crew-rem]').forEach(btn => {
       btn.addEventListener('click', () => {
         sh.crew.splice(+btn.dataset.crewRem, 1)
-        this._refreshShootCrew(overlay, sh, save); save()
+        this._refreshAllCrewSections(overlay, sh, save); save()
       })
     })
   }
-  _refreshShootCrew(overlay, sh, save) {
-    const el = overlay.querySelector('#se-crew-list')
-    el.innerHTML = sh.crew.map((c,i) => this._shootCrewHTML(c,i)).join('') + '<button class="add-line" id="se-add-crew" style="margin-top:8px">+ add crew member</button>'
-    overlay.querySelector('#se-add-crew')?.addEventListener('click', () => {
-      sh.crew.push({ name:'', role:'', call_time: sh.general_call || '', crew_type:'crew' })
-      this._refreshShootCrew(overlay, sh, save)
+  _refreshAllCrewSections(overlay, sh, save) {
+    ;['crew','on_camera','client'].forEach(type => {
+      const el = overlay.querySelector(`#se-crew-list-${type}`)
+      if (el) el.innerHTML = this._shootCrewSectionHTML(sh, type)
     })
     this._bindShootCrew(overlay, sh, save)
   }
@@ -1896,41 +2035,101 @@ export class ProjectsView {
   }
 
   _generateShootPDF(sh, p) {
-    // Simple print-to-PDF via new window
     const w = window.open('', '_blank')
     const fmtDate = d => d ? new Date(d).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) : ''
+    const fmtDateShort = d => d ? new Date(d).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}) : ''
     const esc_ = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    w.document.write(`<!DOCTYPE html><html><head><title>Call Sheet - ${esc_(sh.name||p.name)}</title>
+    const dates = (Array.isArray(sh.shoot_dates) ? sh.shoot_dates : []).filter(d => d.date)
+    // Fallback to legacy single-date if no shoot_dates yet
+    const effDates = dates.length ? dates : (sh.shoot_date ? [{ date: sh.shoot_date, general_call: sh.general_call }] : [])
+
+    const renderDateLabel = () => {
+      if (!effDates.length) return ''
+      if (effDates.length === 1) {
+        const d = effDates[0]
+        return `${esc_(fmtDate(d.date))}${d.general_call?' · General call: '+esc_(d.general_call):''}`
+      }
+      return effDates.map(d => `<div>${esc_(fmtDate(d.date))} · GC ${esc_(d.general_call||'TBC')}</div>`).join('')
+    }
+
+    // Render a crew section
+    const renderCrewSection = (label, type) => {
+      const filtered = (sh.crew||[]).filter(c => c.name && (c.crew_type||'crew') === type)
+      if (!filtered.length) return ''
+      const dateCols = effDates.map(d =>
+        `<th style="width:80px">${esc_(fmtDateShort(d.date))}</th>`).join('')
+      const dateColsLabel = effDates.length > 1 ? dateCols : '<th style="width:90px">Call</th>'
+      const rows = filtered.map(c => {
+        const callCells = effDates.length
+          ? effDates.map(d => {
+              const k = String(d.date).split('T')[0]
+              const t = c.call_times?.[k]
+              return `<td>${esc_(t || 'TBC')}</td>`
+            }).join('')
+          : `<td>${esc_((c.call_times && Object.values(c.call_times)[0]) || 'TBC')}</td>`
+        return `<tr><td>${esc_(c.name)}</td><td>${esc_(c.role||'')}</td><td>${esc_(c.phone||'')}</td>${callCells}</tr>`
+      }).join('')
+      return `<h2>${esc_(label)}</h2><table>
+        <thead><tr><th>Name</th><th>Role</th><th style="width:120px">Phone</th>${dateColsLabel}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`
+    }
+
+    const studio = this.app.settings || {}
+    const logoUrl = studio.logo_url || '/peny-logo.png'
+
+    w.document.write(`<!DOCTYPE html><html><head><title>Call Sheet — ${esc_(sh.name||p.name)}</title>
       <style>
-        body{font-family:-apple-system,sans-serif;padding:30px;max-width:800px;margin:0 auto;color:#222;font-size:12px;line-height:1.5}
-        h1{font-size:22px;margin:0 0 4px;border-bottom:2px solid #222;padding-bottom:8px}
-        h2{font-size:14px;background:#222;color:#fff;padding:5px 10px;margin:20px 0 8px;text-transform:uppercase;letter-spacing:1px}
-        .sub{color:#666;margin-bottom:20px}
+        body{font-family:-apple-system,sans-serif;padding:30px;max-width:820px;margin:0 auto;color:#222;font-size:12px;line-height:1.5}
+        .pdf-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #222;padding-bottom:10px;margin-bottom:14px;gap:18px}
+        .pdf-header img{max-height:42px;max-width:160px;object-fit:contain}
+        h1{font-size:22px;margin:0 0 4px;font-weight:600}
+        h2{font-size:13px;background:#222;color:#fff;padding:5px 10px;margin:18px 0 8px;text-transform:uppercase;letter-spacing:1px;font-weight:500}
+        .sub{color:#666;font-size:12px}
         table{width:100%;border-collapse:collapse;margin-bottom:8px}
         td,th{border:0.5px solid #ccc;padding:6px 8px;text-align:left;font-size:11px;vertical-align:top}
-        th{background:#f5f5f5}
-        .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:8px}
+        th{background:#f5f5f5;font-weight:500}
+        .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:8px}
         .block{border:0.5px solid #ccc;padding:10px;border-radius:4px}
         .label{font-size:9px;text-transform:uppercase;color:#888;letter-spacing:0.5px;margin-bottom:2px}
+        .notes-callout{background:#fff8e1;border:1px solid #f0d77a;border-left:4px solid #c9a23d;padding:12px 14px;border-radius:4px;margin:14px 0;font-size:12px;line-height:1.6}
+        .notes-callout strong{display:block;font-size:10px;color:#8a6f1f;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px}
         @media print { body{padding:15px} h2{page-break-after:avoid} table{page-break-inside:avoid} }
       </style></head><body>
-      <h1>${esc_(p.name)}${sh.name?' — '+esc_(sh.name):''}</h1>
-      <div class="sub">${esc_(fmtDate(sh.shoot_date))}${sh.general_call?' · General call: '+esc_(sh.general_call):''}</div>
+
+      <div class="pdf-header">
+        <div>
+          <h1>${esc_(p.name)}${sh.name?' — '+esc_(sh.name):''}</h1>
+          <div class="sub">${renderDateLabel()}</div>
+        </div>
+        <img src="${logoUrl}" alt="${esc_(studio.company_name||'')}" onerror="this.style.display='none'" />
+      </div>
+
+      ${sh.notes?`<div class="notes-callout"><strong>📌 Shoot notes</strong>${esc_(sh.notes).replace(/\n/g,'<br>')}</div>`:''}
+
       ${sh.location_name || sh.location_address ? `<div class="grid2">
         <div class="block"><div class="label">Location</div><strong>${esc_(sh.location_name||'')}</strong>${sh.location_address?'<br>'+esc_(sh.location_address):''}${sh.parking_notes?'<br><span class="label">Parking</span><br>'+esc_(sh.parking_notes):''}</div>
         <div class="block"><div class="label">Weather / Transport</div>${sh.weather_text?esc_(sh.weather_text)+'<br>':''}${sh.nearest_transport?'<span class="label">Transport</span><br>'+esc_(sh.nearest_transport):''}</div>
       </div>`:''}
+
       ${sh.schedule?.length?`<h2>Schedule</h2><table><thead><tr><th style="width:90px">Time</th><th>Action</th></tr></thead><tbody>${sh.schedule.map(r=>`<tr><td>${esc_(r.time||'')}</td><td>${esc_(r.description||'')}</td></tr>`).join('')}</tbody></table>`:''}
-      ${sh.crew?.length?`<h2>Crew</h2><table><thead><tr><th>Name</th><th>Role</th><th style="width:90px">Call</th></tr></thead><tbody>${sh.crew.filter(c=>c.name).map(c=>`<tr><td>${esc_(c.name)}</td><td>${esc_(c.role||'')}</td><td>${esc_(c.call_time||sh.general_call||'')}</td></tr>`).join('')}</tbody></table>`:''}
+
+      ${renderCrewSection('Crew','crew')}
+      ${renderCrewSection('On Camera','on_camera')}
+      ${renderCrewSection('Client','client')}
+
       ${sh.locations?.length?`<h2>Additional locations</h2><table><thead><tr><th>Name</th><th>Address</th><th style="width:80px">Move</th></tr></thead><tbody>${sh.locations.map(l=>`<tr><td>${esc_(l.name||'')}</td><td>${esc_(l.address||'')}</td><td>${esc_(l.move_time||'')}</td></tr>`).join('')}</tbody></table>`:''}
+
       ${sh.hotels?.length?`<h2>Accommodation</h2><table><thead><tr><th>Hotel</th><th>Address</th><th>Check-in</th><th>Check-out</th><th>Guests</th></tr></thead><tbody>${sh.hotels.map(h=>`<tr><td>${esc_(h.name||'')}</td><td>${esc_(h.address||'')}${h.notes?'<br><span style="color:#888;font-size:10px">'+esc_(h.notes)+'</span>':''}</td><td>${esc_(h.check_in||'')}</td><td>${esc_(h.check_out||'')}</td><td>${(h.assigned_crew||[]).map(n=>esc_(n)).join('<br>')||'<span style="color:#aaa">—</span>'}</td></tr>`).join('')}</tbody></table>`:''}
+
       ${(sh.nearest_hospital_name||sh.nearest_police_name||sh.nearest_fire_name)?`<h2>Emergency Services</h2><table><tbody>
         ${sh.nearest_hospital_name?`<tr><td style="width:100px">🏥 Hospital</td><td><strong>${esc_(sh.nearest_hospital_name)}</strong>${sh.nearest_hospital_address?'<br>'+esc_(sh.nearest_hospital_address):''}</td></tr>`:''}
         ${sh.nearest_police_name?`<tr><td>🚔 Police</td><td><strong>${esc_(sh.nearest_police_name)}</strong>${sh.nearest_police_address?'<br>'+esc_(sh.nearest_police_address):''}</td></tr>`:''}
         ${sh.nearest_fire_name?`<tr><td>🚒 Fire</td><td><strong>${esc_(sh.nearest_fire_name)}</strong>${sh.nearest_fire_address?'<br>'+esc_(sh.nearest_fire_address):''}</td></tr>`:''}
       </tbody></table>`:''}
+
       ${sh.hs_notes?`<h2>Health &amp; Safety</h2><div class="block">${esc_(sh.hs_notes).replace(/\n/g,'<br>')}</div>`:''}
-      ${sh.notes?`<h2>Notes</h2><div class="block">${esc_(sh.notes).replace(/\n/g,'<br>')}</div>`:''}
+
       <script>window.onload=()=>window.print()</script>
       </body></html>`)
     w.document.close()
@@ -2839,9 +3038,10 @@ export class ProjectsView {
   }
 
   crewHTML(pid, c, i) {
-    return `<div class="crew-row" data-ci="${i}" data-crew-type="${esc(c.crew_type||'crew')}">
+    return `<div class="crew-row" data-ci="${i}" data-crew-type="${esc(c.crew_type||'crew')}" style="display:grid;grid-template-columns:1fr 1fr 130px 28px;gap:6px;margin-bottom:4px">
       <input type="text" class="bl-in w" value="${esc(c.name)}" placeholder="Name" data-crew-name="${i}" style="font-size:12px" />
       <input type="text" class="bl-in w" value="${esc(c.role)}" placeholder="Role" data-crew-role="${i}" style="font-size:12px" />
+      <input type="tel" class="bl-in w" value="${esc(c.phone||'')}" placeholder="Phone" data-crew-phone="${i}" style="font-size:12px" />
       <button class="row-btn" style="color:#b03020" data-crew-rem="${i}">×</button>
     </div>`
   }
@@ -3115,6 +3315,9 @@ export class ProjectsView {
     mc.querySelectorAll('[data-crew-role]').forEach(el => {
       el.addEventListener('change', () => { p.crew[+el.dataset.crewRole].role = el.value; save() })
     })
+    mc.querySelectorAll('[data-crew-phone]').forEach(el => {
+      el.addEventListener('change', () => { p.crew[+el.dataset.crewPhone].phone = el.value; save() })
+    })
     mc.querySelectorAll('[data-crew-rem]').forEach(el => {
       el.addEventListener('click', () => {
         if (p.crew.length <= 1) return
@@ -3330,6 +3533,47 @@ export class ProjectsView {
         }
       }
     } catch (e) { console.error('Project save failed:', e) }
+    // After save, ensure any Crew (type) members exist as subcontractor contacts
+    this._ensureCrewContacts(p).catch(console.error)
+  }
+
+  async _ensureCrewContacts(p) {
+    const contacts = this.app.contacts || []
+    const crewNames = (p.crew||[])
+      .filter(c => (c.crew_type||'crew') === 'crew' && c.name && c.name.trim())
+      .map(c => c.name.trim())
+    if (!crewNames.length) return
+    const existing = new Set(contacts.map(c => `${c.first_name||''} ${c.last_name||''}`.toLowerCase().trim()))
+    const toAdd = []
+    for (const fullName of crewNames) {
+      if (existing.has(fullName.toLowerCase())) continue
+      const parts = fullName.split(' ')
+      const first = parts[0]
+      const last = parts.slice(1).join(' ')
+      // Find role from project crew
+      const role = (p.crew||[]).find(c => c.name === fullName)?.role || ''
+      toAdd.push({ first, last, role, fullName })
+      existing.add(fullName.toLowerCase()) // prevent dupes within this batch
+    }
+    if (!toAdd.length) return
+    try {
+      const { createContact } = await import('../db/client.js')
+      for (const c of toAdd) {
+        const result = await createContact(this.app.userId, {
+          first_name: c.first,
+          last_name:  c.last,
+          company:    '',
+          email:      '',
+          phone:      '',
+          role:       c.role,
+          type:       'subcontractor',
+          status:     'Active',
+          notes:      `Auto-added from project: ${p.name}`,
+        })
+        const created = Array.isArray(result) ? result[0] : result
+        if (created) this.app.contacts.push(created)
+      }
+    } catch(e) { console.error('Auto-add subcontractor failed:', e) }
   }
 
   async deleteProject(id, mc) {

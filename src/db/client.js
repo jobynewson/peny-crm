@@ -447,7 +447,7 @@ export async function createShoot(userId, projectId, data) {
       nearest_police_name, nearest_police_address,
       nearest_fire_name, nearest_fire_address,
       weather_text, hs_notes, notes,
-      hotels, crew, schedule, locations
+      hotels, crew, schedule, locations, shoot_dates
     ) VALUES (
       ${projectId}, ${userId}, ${data.name||null}, ${data.shoot_date||null}, 'draft', ${token},
       ${data.general_call||null}, ${data.location_name||null}, ${data.location_address||null}, ${data.location_map_link||null},
@@ -459,7 +459,8 @@ export async function createShoot(userId, projectId, data) {
       ${JSON.stringify(data.hotels||[])}::jsonb,
       ${JSON.stringify(data.crew||[])}::jsonb,
       ${JSON.stringify(data.schedule||[])}::jsonb,
-      ${JSON.stringify(data.locations||[])}::jsonb
+      ${JSON.stringify(data.locations||[])}::jsonb,
+      ${JSON.stringify(data.shoot_dates||[])}::jsonb
     ) RETURNING *
   `).then(r => r.rows ?? r)
   return shoot
@@ -491,6 +492,7 @@ export async function updateShoot(id, data) {
       crew = ${JSON.stringify(data.crew||[])}::jsonb,
       schedule = ${JSON.stringify(data.schedule||[])}::jsonb,
       locations = ${JSON.stringify(data.locations||[])}::jsonb,
+      shoot_dates = ${JSON.stringify(data.shoot_dates||[])}::jsonb,
       risk_assessment = ${JSON.stringify(data.risk_assessment||{})}::jsonb,
       updated_at = NOW()
     WHERE id = ${id} RETURNING *

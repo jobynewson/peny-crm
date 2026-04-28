@@ -32,6 +32,7 @@ export default async function handler(req, res) {
   const schedule = Array.isArray(sh.schedule) ? sh.schedule : []
   const locations = Array.isArray(sh.locations) ? sh.locations : []
   const hotels = Array.isArray(sh.hotels) ? sh.hotels : []
+  const shoot_dates = Array.isArray(sh.shoot_dates) ? sh.shoot_dates : []
 
   // Find the specific crew member if crew token provided
   const thisCrew = crewToken ? crew.find(c => c.crew_token === crewToken) : null
@@ -39,6 +40,7 @@ export default async function handler(req, res) {
   return res.status(200).json({
     sheet: {
       date: sh.shoot_date,
+      shoot_dates,
       status: sh.status,
       general_call: sh.general_call,
       location_name: sh.location_name,

@@ -190,39 +190,72 @@
         </div>
       </div>`).join('') : ''
 
-    const crewHTML = crew.length ? `
-      <div class="section">
-        <div class="section-head">Crew</div>
-        ${crew.map(c => `
-          <div class="crew-row ${thisCrew&&c.id===thisCrew.id?'me':''}">
+    const dates = Array.isArray(sheet.shoot_dates) ? sheet.shoot_dates.filter(d => d.date) : []
+    const fmtDateShort = d => d ? new Date(d).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}) : ''
+
+    const renderCrewSection = (label, type) => {
+      const filtered = crew.filter(c => c.name && (c.crew_type||'crew') === type)
+      if (!filtered.length) return ''
+      const multi = dates.length > 1
+      return `<div class="section">
+        <div class="section-head">${esc(label)}</div>
+        ${filtered.map(c => {
+          const callTimes = c.call_times && typeof c.call_times === 'object' ? c.call_times : {}
+          let timeBlock = ''
+          if (multi) {
+            timeBlock = `<div style="display:flex;flex-direction:column;gap:2px;align-items:flex-end">
+              ${dates.map(d => {
+                const k = String(d.date).split('T')[0]
+                const t = callTimes[k] || 'TBC'
+                return `<div style="font-size:11px;color:var(--text-sec)"><span style="color:var(--text-ter);margin-right:6px">${esc(fmtDateShort(d.date))}</span><span style="font-weight:600;color:var(--text)">${esc(t)}</span></div>`
+              }).join('')}
+            </div>`
+          } else {
+            const k = dates[0] ? String(dates[0].date).split('T')[0] : null
+            const t = (k && callTimes[k]) || (callTimes ? Object.values(callTimes)[0] : '') || c.call_time || 'TBC'
+            timeBlock = `<div class="crew-time">${esc(t)}</div>`
+          }
+          return `<div class="crew-row ${thisCrew&&c.id===thisCrew.id?'me':''}">
             <div>
               <div class="crew-name">${esc(c.name)}</div>
               <div class="crew-role">${esc(c.role||'')}</div>
               ${c.phone ? `<div class="crew-phone"><a href="tel:${esc(c.phone)}" style="color:var(--text-ter);text-decoration:none">${esc(c.phone)}</a></div>` : ''}
             </div>
-            <div class="crew-time">${esc(c.call_time||'TBC')}</div>
-          </div>`).join('')}
+            ${timeBlock}
+          </div>`
+        }).join('')}
+      </div>`
+    }
+
+    const crewHTML = renderCrewSection('Crew', 'crew') +
+                     renderCrewSection('On Camera', 'on_camera') +
+                     renderCrewSection('Client', 'client')
+
+    // Prominent notes callout — positioned at top of body, below hero
+    const notesHTML = sheet.notes ? `
+      <div style="background:#fff8e1;border:1px solid #f0d77a;border-left:4px solid #c9a23d;padding:14px 16px;border-radius:8px;margin:16px;font-size:13px;line-height:1.6;color:#5a4a1a">
+        <div style="font-size:10px;font-weight:600;color:#8a6f1f;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px">📌 Shoot notes</div>
+        ${esc(sheet.notes)}
       </div>` : ''
 
-    const notesHTML = sheet.notes ? `
-      <div class="section">
-        <div class="section-head">Notes</div>
-        <div class="notes-body">${esc(sheet.notes)}</div>
-      </div>` : ''
+    // Date display — single date or multi-day list
+    const dateDisplay = dates.length > 1
+      ? dates.map(d => `<div style="font-size:13px">${fmtDateShort(d.date)}${d.general_call?' · '+esc(d.general_call):''}</div>`).join('')
+      : fmtDate(sheet.date)
 
     document.getElementById('root').innerHTML = `
       <div class="hero">
         <img src="/peny-logo-white.png" alt="Peny" class="logo" onerror="this.style.display='none'" />
         <div class="project-name">${esc(project.name)}</div>
-        <div class="sheet-date">${fmtDate(sheet.date)}</div>
+        <div class="sheet-date">${dateDisplay}</div>
         ${heroHTML}
       </div>
+      ${notesHTML}
       <div class="wrap">
         ${schedHTML}
         ${locHTML}
         ${extraLocsHTML}
         ${crewHTML}
-        ${notesHTML}
         ${(()=>{
           const svcs = []
           if (sheet.nearest_hospital_name||sheet.nearest_hospital_address) svcs.push({icon:'🏥',label:'Nearest Hospital',name:sheet.nearest_hospital_name,addr:sheet.nearest_hospital_address,phone:sheet.nearest_hospital_phone})
