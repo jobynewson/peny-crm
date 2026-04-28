@@ -2114,9 +2114,9 @@ export class ProjectsView {
 
       ${sh.schedule?.length?`<h2>Schedule</h2><table><thead><tr><th style="width:90px">Time</th><th>Action</th></tr></thead><tbody>${sh.schedule.map(r=>`<tr><td>${esc_(r.time||'')}</td><td>${esc_(r.description||'')}</td></tr>`).join('')}</tbody></table>`:''}
 
-      ${renderCrewSection('Crew','crew')}
-      ${renderCrewSection('On Camera','on_camera')}
       ${renderCrewSection('Client','client')}
+      ${renderCrewSection('On Camera','on_camera')}
+      ${renderCrewSection('Crew','crew')}
 
       ${sh.locations?.length?`<h2>Additional locations</h2><table><thead><tr><th>Name</th><th>Address</th><th style="width:80px">Move</th></tr></thead><tbody>${sh.locations.map(l=>`<tr><td>${esc_(l.name||'')}</td><td>${esc_(l.address||'')}</td><td>${esc_(l.move_time||'')}</td></tr>`).join('')}</tbody></table>`:''}
 
