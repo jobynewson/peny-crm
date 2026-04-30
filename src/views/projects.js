@@ -93,7 +93,12 @@ export class ProjectsView {
       ${this.newModalHTML()}
     `
     mc.querySelectorAll('.kanban-card[data-open]').forEach(el => {
-      el.addEventListener('click', () => { this.currentId = el.dataset.open; this.render(mc); this.app.updateTitle() })
+      el.addEventListener('click', () => {
+        this.currentId = el.dataset.open
+        this.app._pushAppState(`#projects/${this.currentId}`, { view:'projects', id:this.currentId })
+        this.render(mc)
+        this.app.updateTitle()
+      })
     })
     mc.querySelectorAll('.kanban-add[data-stage]').forEach(btn => {
       btn.addEventListener('click', () => this.openNewModal(null, btn.dataset.stage, mc, !!btn.dataset.isRetainer))
@@ -415,6 +420,7 @@ export class ProjectsView {
       mc.querySelector('#proj-new-modal')?.classList.remove('open')
       this.currentId = created.id
       this.editingId = created.id  // open straight into edit mode
+      this.app._pushAppState(`#projects/${created.id}`, { view:'projects', id:created.id })
       this.render(mc)
       this.app.updateTitle()
       this.app.toast('Project created')
@@ -1281,6 +1287,8 @@ export class ProjectsView {
       </div>`
 
     document.body.appendChild(overlay)
+    // Push a history entry so the back button closes the overlay
+    this.app._pushAppState(`#projects/${p.id}`, { view:'projects', id:p.id, overlay:'shoot' })
     this._bindShootEditor(overlay, mc, p, sh)
     this._renderShootCrewLinks(overlay, sh)
   }

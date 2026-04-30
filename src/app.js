@@ -31,8 +31,11 @@ export class App {
     const saved = localStorage.getItem('peny-theme') || 'dark'
     document.documentElement.setAttribute('data-theme', saved)
     this.injectGlobalStyles()
+    this._restoreFromHash()   // parse URL before first render
     this.render()
     this._bindKeyboard()
+    // Handle browser back/forward
+    window.addEventListener('popstate', (e) => this._handlePopState(e))
   }
 
   async _openDevRequest() {
@@ -466,6 +469,51 @@ export class App {
     this.projectsView.currentId = null
     this.projectsView.editingId = null
     this.budgetsView.currentId  = null
+    this.budgetsView.editingId  = null
+    history.pushState({ view }, '', `#${view}`)
+    this.render()
+  }
+
+  // Push a URL state for a specific sub-location (called by views)
+  _pushAppState(hash, state = {}) {
+    history.pushState(state, '', hash)
+  }
+
+  // Parse the URL hash and restore view state before first render
+  _restoreFromHash() {
+    const hash = location.hash.slice(1) // e.g. 'projects/abc-123'
+    if (!hash) return
+    const [view, id] = hash.split('/')
+    const validViews = ['contacts','projects','budgets','settings','dashboard']
+    if (!validViews.includes(view)) return
+    this.currentView = view
+    if (view === 'projects' && id) this.projectsView.currentId = id
+    if (view === 'budgets'  && id) this.budgetsView.currentId  = id
+  }
+
+  // Handle browser back / forward button
+  _handlePopState(e) {
+    // If a shoot editor overlay is open, close it and stay on the project
+    const shootOverlay = document.getElementById('shoot-editor-overlay')
+    if (shootOverlay) {
+      shootOverlay.remove()
+      return
+    }
+
+    // If a generic modal overlay is open, close it
+    const modal = document.querySelector('.modal-overlay, #ra-copy-picker')
+    if (modal) { modal.remove(); return }
+
+    // Restore from URL
+    const hash = location.hash.slice(1)
+    const [view, id] = (hash || 'dashboard').split('/')
+    const validViews = ['contacts','projects','budgets','settings','dashboard']
+    if (!validViews.includes(view)) { this.currentView = 'dashboard'; this.render(); return }
+
+    this.currentView = view
+    this.projectsView.currentId = (view === 'projects' && id) ? id : null
+    this.projectsView.editingId = null
+    this.budgetsView.currentId  = (view === 'budgets'  && id) ? id : null
     this.budgetsView.editingId  = null
     this.render()
   }
