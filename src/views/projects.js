@@ -968,7 +968,8 @@ export class ProjectsView {
         return match?.phone || ''
       }
       const crew = (p.crew||[]).filter(c => c.name).map(c => ({
-        name: c.name, role: c.role||'', phone: findPhone(c.name),
+        name: c.name, role: c.role||'',
+        phone: c.phone || findPhone(c.name),
         crew_type: c.crew_type||'crew', call_times: {}, crew_token: null
       }))
       // Seed shoot_dates from project shoot_start/end if available
@@ -1209,6 +1210,13 @@ export class ProjectsView {
             <div class="proj-panel" id="se-crew-links-panel">
               <div class="proj-panel-head">Individual crew links</div>
               <div class="proj-panel-body" id="se-crew-links"></div>
+            </div>
+            <div class="proj-panel">
+              <div class="proj-panel-head">Sync</div>
+              <div class="proj-panel-body">
+                <button class="btn-secondary" id="se-refresh-crew" style="font-size:11px;width:100%">↻ Refresh phones &amp; roles from contacts</button>
+                <div style="font-size:11px;color:var(--text-tertiary);margin-top:6px;line-height:1.4">Pulls the latest phone numbers and roles from contacts for everyone on this shoot. Won't touch call times or anyone you've added directly to the shoot.</div>
+              </div>
             </div>
           </div>
         </div>
@@ -1651,6 +1659,28 @@ export class ProjectsView {
     // Generate PDF
     overlay.querySelector('#se-gen-pdf')?.addEventListener('click', () => {
       this._generateShootPDF(sh, p)
+    })
+
+    // Refresh phones & roles from contacts
+    overlay.querySelector('#se-refresh-crew')?.addEventListener('click', () => {
+      const contacts = this.app.contacts || []
+      let updated = 0
+      sh.crew.forEach(c => {
+        if (!c.name) return
+        const fullName = c.name.trim().toLowerCase()
+        const match = contacts.find(ct =>
+          `${ct.first_name||''} ${ct.last_name||''}`.toLowerCase().trim() === fullName
+        )
+        if (!match) return
+        let changed = false
+        if (match.phone && match.phone !== c.phone) { c.phone = match.phone; changed = true }
+        if (match.role && match.role !== c.role)    { c.role  = match.role;  changed = true }
+        if (changed) updated++
+      })
+      if (!updated) { this.app.toast('All crew already up to date'); return }
+      this._refreshAllCrewSections(overlay, sh, save)
+      save()
+      this.app.toast(`Updated ${updated} crew member${updated>1?'s':''} ✓`)
     })
 
     // Locations
@@ -3313,10 +3343,20 @@ export class ProjectsView {
       el.addEventListener('change', () => { p.crew[+el.dataset.crewName].name = el.value; save() })
     })
     mc.querySelectorAll('[data-crew-role]').forEach(el => {
-      el.addEventListener('change', () => { p.crew[+el.dataset.crewRole].role = el.value; save() })
+      el.addEventListener('change', async () => {
+        const i = +el.dataset.crewRole
+        p.crew[i].role = el.value
+        save()
+        await this._syncCrewToContact(p.crew[i])
+      })
     })
     mc.querySelectorAll('[data-crew-phone]').forEach(el => {
-      el.addEventListener('change', () => { p.crew[+el.dataset.crewPhone].phone = el.value; save() })
+      el.addEventListener('change', async () => {
+        const i = +el.dataset.crewPhone
+        p.crew[i].phone = el.value
+        save()
+        await this._syncCrewToContact(p.crew[i])
+      })
     })
     mc.querySelectorAll('[data-crew-rem]').forEach(el => {
       el.addEventListener('click', () => {
@@ -3539,21 +3579,24 @@ export class ProjectsView {
 
   async _ensureCrewContacts(p) {
     const contacts = this.app.contacts || []
-    const crewNames = (p.crew||[])
-      .filter(c => (c.crew_type||'crew') === 'crew' && c.name && c.name.trim())
-      .map(c => c.name.trim())
-    if (!crewNames.length) return
+    const crewMembers = (p.crew||[]).filter(c => (c.crew_type||'crew') === 'crew' && c.name && c.name.trim())
+    if (!crewMembers.length) return
     const existing = new Set(contacts.map(c => `${c.first_name||''} ${c.last_name||''}`.toLowerCase().trim()))
     const toAdd = []
-    for (const fullName of crewNames) {
-      if (existing.has(fullName.toLowerCase())) continue
+    const seenInBatch = new Set()
+    for (const cm of crewMembers) {
+      const fullName = cm.name.trim()
+      const lower = fullName.toLowerCase()
+      if (existing.has(lower) || seenInBatch.has(lower)) continue
       const parts = fullName.split(' ')
       const first = parts[0]
       const last = parts.slice(1).join(' ')
-      // Find role from project crew
-      const role = (p.crew||[]).find(c => c.name === fullName)?.role || ''
-      toAdd.push({ first, last, role, fullName })
-      existing.add(fullName.toLowerCase()) // prevent dupes within this batch
+      toAdd.push({
+        first, last,
+        role:  cm.role  || '',
+        phone: cm.phone || '',
+      })
+      seenInBatch.add(lower)
     }
     if (!toAdd.length) return
     try {
@@ -3564,7 +3607,7 @@ export class ProjectsView {
           last_name:  c.last,
           company:    '',
           email:      '',
-          phone:      '',
+          phone:      c.phone,
           role:       c.role,
           type:       'subcontractor',
           status:     'Active',
@@ -3574,6 +3617,32 @@ export class ProjectsView {
         if (created) this.app.contacts.push(created)
       }
     } catch(e) { console.error('Auto-add subcontractor failed:', e) }
+  }
+
+  // Sync a project crew row's phone/role into the matching contact (source of truth)
+  async _syncCrewToContact(crewMember) {
+    if (!crewMember?.name) return
+    const fullName = crewMember.name.trim().toLowerCase()
+    const match = (this.app.contacts||[]).find(c =>
+      `${c.first_name||''} ${c.last_name||''}`.toLowerCase().trim() === fullName
+    )
+    if (!match) return // _ensureCrewContacts will create it on next save with phone included
+    const newPhone = crewMember.phone || ''
+    const newRole  = crewMember.role  || ''
+    // Only update if at least one field differs
+    if ((match.phone||'') === newPhone && (match.role||'') === newRole) return
+    try {
+      const { updateContact } = await import('../db/client.js')
+      const result = await updateContact(this.app.userId, match.id, {
+        phone: newPhone,
+        role:  newRole,
+      })
+      const updated = Array.isArray(result) ? result[0] : result
+      if (updated) {
+        const idx = this.app.contacts.findIndex(c => c.id === match.id)
+        if (idx >= 0) this.app.contacts[idx] = updated
+      }
+    } catch(e) { console.error('Crew → contact sync failed:', e) }
   }
 
   async deleteProject(id, mc) {
