@@ -1021,6 +1021,7 @@ export class ProjectsView {
       sh.locations = Array.isArray(sh.locations) ? sh.locations : []
       sh.hotels    = Array.isArray(sh.hotels)    ? sh.hotels    : []
       sh.equipment = Array.isArray(sh.equipment) ? sh.equipment : []
+      sh.crew_section_notes = (sh.crew_section_notes && typeof sh.crew_section_notes === 'object') ? sh.crew_section_notes : {}
       this._renderShootEditor(mc, p, sh)
     } catch(e) { console.error(e); this.app.toast('Error loading shoot') }
   }
@@ -1138,6 +1139,7 @@ export class ProjectsView {
             <!-- Crew (split by type) -->
             ${['crew','on_camera','client'].map(type => {
               const label = type==='on_camera' ? 'On Camera' : type==='client' ? 'Client' : 'Crew'
+              const notes = (sh.crew_section_notes||{})[type] || ''
               return `<div class="proj-panel">
                 <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
                   <span>${label}${type==='crew'?' &amp; call times':''}</span>
@@ -1148,6 +1150,9 @@ export class ProjectsView {
                 </div>
                 <div class="proj-panel-body" id="se-crew-list-${type}">
                   ${this._shootCrewSectionHTML(sh, type)}
+                </div>
+                <div style="padding:0 14px 12px">
+                  <textarea class="proj-textarea" data-crew-section-notes="${type}" placeholder="Section notes — e.g. Bob, Jane and Tom are joining us on Thursday" style="min-height:36px;font-size:12px;font-style:italic">${esc(notes)}</textarea>
                 </div>
               </div>`
             }).join('')}
@@ -1332,13 +1337,15 @@ export class ProjectsView {
   _shootCrewSectionHTML(sh, type) {
     const dates = Array.isArray(sh.shoot_dates) ? sh.shoot_dates.filter(d => d.date) : []
     const filtered = (sh.crew || []).map((c, idx) => ({c, idx})).filter(({c}) => (c.crew_type||'crew') === type)
+    const handle = `<span class="crew-drag-handle" title="Drag to reorder" style="cursor:grab;color:var(--text-tertiary);padding:0 4px;font-size:14px;line-height:1;flex-shrink:0;user-select:none">⠿</span>`
+
     if (!filtered.length) {
       return `<div style="font-size:12px;color:var(--text-tertiary);padding:4px 0">No ${type==='on_camera'?'on camera people':type==='client'?'clients':'crew'} added yet</div>`
     }
     if (!dates.length) {
-      // No dates set yet — show name/role/phone/co only
       return filtered.map(({c, idx}) => `
-        <div style="display:grid;grid-template-columns:1fr 1fr 130px 100px 28px;gap:6px;margin-bottom:6px" data-crew-idx="${idx}">
+        <div draggable="true" data-crew-idx="${idx}" data-crew-type="${type}" style="display:grid;grid-template-columns:20px 1fr 1fr 130px 100px 28px;gap:6px;margin-bottom:6px;align-items:center" class="crew-drag-row">
+          ${handle}
           <input type="text" class="bl-in w" value="${esc(c.name||'')}" placeholder="Name" data-crew-field="${idx},name" style="font-size:12px;padding:5px 8px" />
           <input type="text" class="bl-in w" value="${esc(c.role||'')}" placeholder="Role" data-crew-field="${idx},role" style="font-size:12px;padding:5px 8px" />
           <input type="tel" class="bl-in w" value="${esc(c.phone||'')}" placeholder="Phone" data-crew-field="${idx},phone" style="font-size:12px;padding:5px 8px" />
@@ -1346,7 +1353,7 @@ export class ProjectsView {
           <button class="row-btn" style="color:#c03020" data-crew-rem="${idx}">×</button>
         </div>`).join('')
     }
-    // With dates — show as a table with one call-time column per date
+    // With dates — table layout with drag handle column
     const dateHeaders = dates.map((d, di) => {
       const lbl = d.date ? new Date(d.date).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}) : `Day ${di+1}`
       return `<th style="padding:5px 4px;text-align:left;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);width:90px">${esc(lbl)}</th>`
@@ -1357,7 +1364,8 @@ export class ProjectsView {
         const k = String(d.date).split('T')[0]
         return `<td style="padding:3px 2px"><input type="time" class="bl-in w" value="${esc(callTimes[k]||'')}" data-crew-call="${idx},${k}" style="font-size:12px;padding:5px 6px;width:100%" /></td>`
       }).join('')
-      return `<tr data-crew-idx="${idx}">
+      return `<tr draggable="true" data-crew-idx="${idx}" data-crew-type="${type}" class="crew-drag-row">
+        <td style="padding:3px 2px;cursor:grab;color:var(--text-tertiary);text-align:center;font-size:14px">⠿</td>
         <td style="padding:3px 2px"><input type="text" class="bl-in w" value="${esc(c.name||'')}" placeholder="Name" data-crew-field="${idx},name" style="font-size:12px;padding:5px 6px;width:100%" /></td>
         <td style="padding:3px 2px"><input type="text" class="bl-in w" value="${esc(c.role||'')}" placeholder="Role" data-crew-field="${idx},role" style="font-size:12px;padding:5px 6px;width:100%" /></td>
         <td style="padding:3px 2px"><input type="tel" class="bl-in w" value="${esc(c.phone||'')}" placeholder="Phone" data-crew-field="${idx},phone" style="font-size:12px;padding:5px 6px;width:100%" /></td>
@@ -1366,8 +1374,9 @@ export class ProjectsView {
         <td style="padding:3px 2px;text-align:center"><button class="row-btn" style="color:#c03020" data-crew-rem="${idx}">×</button></td>
       </tr>`
     }).join('')
-    return `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:${600 + dates.length*100}px">
+    return `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:${620 + dates.length*100}px">
       <thead><tr>
+        <th style="width:24px"></th>
         <th style="padding:5px 4px;text-align:left;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary)">Name</th>
         <th style="padding:5px 4px;text-align:left;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary)">Role</th>
         <th style="padding:5px 4px;text-align:left;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);width:130px">Phone</th>
@@ -1571,6 +1580,7 @@ export class ProjectsView {
         schedule:  sh.schedule  || [],
         locations: sh.locations || [],
         equipment: sh.equipment || [],
+        crew_section_notes: sh.crew_section_notes || {},
         risk_assessment: sh.risk_assessment || {},
         client_display:    overlay.querySelector('#se-client-display')?.value.trim() || null,
         insurer_name:      overlay.querySelector('#se-ins-name')?.value.trim()    || null,
@@ -1798,6 +1808,15 @@ export class ProjectsView {
       this._refreshShootSched(overlay, sh, save)
     })
     this._bindShootSched(overlay, sh, save)
+
+    // Crew section notes
+    if (!sh.crew_section_notes || typeof sh.crew_section_notes !== 'object') sh.crew_section_notes = {}
+    overlay.querySelectorAll('[data-crew-section-notes]').forEach(el => {
+      el.addEventListener('change', () => {
+        sh.crew_section_notes[el.dataset.crewSectionNotes] = el.value.trim() || ''
+        save()
+      })
+    })
 
     // Crew (split into 3 sections: crew / on_camera / client)
     overlay.querySelectorAll('[data-add-crew-type]').forEach(btn => {
@@ -2163,6 +2182,52 @@ export class ProjectsView {
         this._refreshAllCrewSections(overlay, sh, save); save()
       })
     })
+    this._bindCrewDragDrop(overlay, sh, save)
+  }
+
+  _bindCrewDragDrop(overlay, sh, save) {
+    let dragSrcIdx = null
+    let dragType   = null
+
+    overlay.querySelectorAll('.crew-drag-row').forEach(row => {
+      row.addEventListener('dragstart', e => {
+        dragSrcIdx = +row.dataset.crewIdx
+        dragType   = row.dataset.crewType
+        row.style.opacity = '0.4'
+        e.dataTransfer.effectAllowed = 'move'
+      })
+      row.addEventListener('dragend', () => {
+        row.style.opacity = ''
+        overlay.querySelectorAll('.crew-drag-row').forEach(r => {
+          r.classList.remove('drag-over')
+          r.style.borderTop = ''
+        })
+      })
+      row.addEventListener('dragover', e => {
+        e.preventDefault()
+        if (row.dataset.crewType !== dragType) return
+        e.dataTransfer.dropEffect = 'move'
+        overlay.querySelectorAll('.crew-drag-row').forEach(r => r.style.borderTop = '')
+        row.style.borderTop = '2px solid var(--accent)'
+      })
+      row.addEventListener('dragleave', () => {
+        row.style.borderTop = ''
+      })
+      row.addEventListener('drop', e => {
+        e.preventDefault()
+        row.style.borderTop = ''
+        const dropIdx  = +row.dataset.crewIdx
+        const dropType = row.dataset.crewType
+        if (dragSrcIdx === null || dragSrcIdx === dropIdx) return
+        if (dropType !== dragType) return
+        const item = sh.crew.splice(dragSrcIdx, 1)[0]
+        const adjusted = dropIdx > dragSrcIdx ? dropIdx - 1 : dropIdx
+        sh.crew.splice(adjusted, 0, item)
+        dragSrcIdx = null; dragType = null
+        this._refreshAllCrewSections(overlay, sh, save)
+        save()
+      })
+    })
   }
   _refreshAllCrewSections(overlay, sh, save) {
     ;['crew','on_camera','client'].forEach(type => {
@@ -2312,17 +2377,17 @@ export class ProjectsView {
         const email = findEmail(c.name)
         const phone = c.phone ? `Mob: ${esc_(c.phone)}` : ''
         return `<tr>
-          <td class="lbl">${i===0&&!client_display?'Client':''}</td>
+          <td class="lbl">${esc_(c.role||'')}</td>
           <td class="val" style="padding:0">
             <table style="width:100%;border-collapse:collapse"><tr>
               <td style="width:170px;padding:4px 6px;font-weight:600">${esc_(c.name)}</td>
-              <td style="width:140px;padding:4px 6px;color:#666">${esc_(c.role||'')}</td>
               <td style="padding:4px 6px;color:#666;font-size:10px">${esc_(email)}</td>
               <td style="width:150px;padding:4px 6px;color:#666;white-space:nowrap">${phone}</td>
             </tr></table>
           </td>
         </tr>`
       }),
+      clientNotesRow,
     ].join('') : ''
 
     // TALENT
@@ -2379,7 +2444,11 @@ export class ProjectsView {
       ...hotels.flatMap((h, hi) => {
         const isFirst = hi === 0
         const assigned = h.assigned_crew || []
-        const allIn = allCrewNames.length && allCrewNames.every(n => assigned.includes(n))
+        // "All" if everyone is ticked, or if nobody is ticked at all (no filtering = everyone)
+        const allIn = allCrewNames.length > 0 && (
+          assigned.length === 0 ||
+          allCrewNames.every(n => assigned.includes(n))
+        )
         const guestLine = allIn
           ? 'All athletes, crew and client in hotel'
           : assigned.length ? assigned.join(', ') : ''
@@ -2403,11 +2472,24 @@ export class ProjectsView {
     ].join('') : ''
 
     // MAIN UNIT
-    const secMainUnit = mainCrew.length ? [
+    const csNotes = (sh.crew_section_notes && typeof sh.crew_section_notes === 'object') ? sh.crew_section_notes : {}
+    const secMainUnit = mainCrew.length || csNotes.crew ? [
       hr(),
       `<tr class="section-head"><td class="lbl">Main unit</td><td class="val"></td></tr>`,
       ...mainCrew.map(c => crewRow(c)),
+      csNotes.crew ? `<tr><td class="lbl"></td><td class="val" style="font-style:italic;color:#666;font-size:10px;padding:4px 6px">${esc_(csNotes.crew)}</td></tr>` : '',
     ].join('') : ''
+
+    // ON CAMERA (in PDF: talent section already handles named rows; section notes go here)
+    const secTalentNotes = csNotes.on_camera ? [
+      hr(),
+      `<tr><td class="lbl">On camera</td><td class="val" style="font-style:italic;color:#666;font-size:10px;padding:4px 6px">${esc_(csNotes.on_camera)}</td></tr>`,
+    ].join('') : ''
+
+    // CLIENT NOTES (append to client section)
+    const clientNotesRow = csNotes.client
+      ? `<tr><td class="lbl"></td><td class="val" style="font-style:italic;color:#666;font-size:10px;padding:4px 6px">${esc_(csNotes.client)}</td></tr>`
+      : ''
 
     // EQUIPMENT
     const secEquipment = equipment.length ? [
@@ -2508,6 +2590,7 @@ export class ProjectsView {
       ${secJobName}
       ${secClient}
       ${secTalent}
+      ${secTalentNotes}
       ${secProduction}
       ${secDates}
       ${secLocation}
