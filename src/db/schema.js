@@ -27,6 +27,14 @@ export const settings = pgTable('settings', {
   prepared_by:     text('prepared_by'),
   budget_template:      jsonb('budget_template'),
   financial_year_start: integer('financial_year_start').notNull().default(4),
+  // Default insurance details (used as fallback for projects/shoots)
+  default_insurer_name:    text('default_insurer_name'),
+  default_insurer_address: text('default_insurer_address'),
+  default_insurer_email:   text('default_insurer_email'),
+  default_insurer_contact: text('default_insurer_contact'),
+  // Invoicing boilerplate (shown on call sheets)
+  invoicing_email:        text('invoicing_email'),
+  invoicing_boilerplate:  text('invoicing_boilerplate'),
   ...timestamps,
 })
 
@@ -86,6 +94,12 @@ export const projects = pgTable('projects', {
   nearest_police_address:   text('nearest_police_address'),
   nearest_fire_name:        text('nearest_fire_name'),
   nearest_fire_address:     text('nearest_fire_address'),
+  hotels:            jsonb('hotels').notNull().default([]),
+  // Per-project insurance override (falls back to settings.default_insurer_*)
+  insurer_name:    text('insurer_name'),
+  insurer_address: text('insurer_address'),
+  insurer_email:   text('insurer_email'),
+  insurer_contact: text('insurer_contact'),
   ...timestamps,
 })
 
@@ -98,6 +112,7 @@ export const budgets = pgTable('budgets', {
   notes:       text('notes'),
   prepared_by: text('prepared_by'),
   quote_email: text('quote_email'),
+  quote_token: text('quote_token'),
   markup:      numeric('markup', { precision: 5, scale: 2 }).notNull().default('10'),
   custom_pct:  numeric('custom_pct', { precision: 5, scale: 2 }).notNull().default('0'),
   vat:         boolean('vat').notNull().default(false),
@@ -253,4 +268,52 @@ export const call_sheet_schedule = pgTable('call_sheet_schedule', {
   time:          text('time').notNull().default(''),
   description:   text('description').notNull().default(''),
   sort_order:    integer('sort_order').notNull().default(0),
+})
+
+// ── Shoots ────────────────────────────────────────────────────────────────────
+// Replaces call_sheets — everything about a shoot day in one row
+export const shoots = pgTable('shoots', {
+  id:                uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  project_id:        uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  user_id:           text('user_id').notNull(),
+  name:              text('name'),
+  shoot_date:        date('shoot_date'),
+  shoot_dates:       jsonb('shoot_dates').notNull().default([]),
+  status:            text('status').notNull().default('draft'),
+  shoot_token:       text('shoot_token'),
+  general_call:      text('general_call'),
+  location_name:     text('location_name'),
+  location_address:  text('location_address'),
+  location_map_link: text('location_map_link'),
+  parking_notes:     text('parking_notes'),
+  nearest_transport: text('nearest_transport'),
+  nearest_hospital_name:    text('nearest_hospital_name'),
+  nearest_hospital_address: text('nearest_hospital_address'),
+  nearest_police_name:      text('nearest_police_name'),
+  nearest_police_address:   text('nearest_police_address'),
+  nearest_fire_name:        text('nearest_fire_name'),
+  nearest_fire_address:     text('nearest_fire_address'),
+  weather_text:      text('weather_text'),
+  weather_fetched_at: timestamp('weather_fetched_at', { withTimezone: true }),
+  hs_notes:          text('hs_notes'),
+  notes:             text('notes'),
+  hotels:            jsonb('hotels').notNull().default([]),
+  crew:              jsonb('crew').notNull().default([]),
+  schedule:          jsonb('schedule').notNull().default([]),
+  locations:         jsonb('locations').notNull().default([]),
+  equipment:         jsonb('equipment').notNull().default([]),
+  risk_assessment:   jsonb('risk_assessment').notNull().default({}),
+  // Display-only client override (defaults from project's client.company)
+  client_display:    text('client_display'),
+  // Per-shoot insurance override (falls back to project, then settings)
+  insurer_name:      text('insurer_name'),
+  insurer_address:   text('insurer_address'),
+  insurer_email:     text('insurer_email'),
+  insurer_contact:   text('insurer_contact'),
+  // Per-shoot invoicing (falls back to settings)
+  invoicing_email:   text('invoicing_email'),
+  invoicing_job_ref: text('invoicing_job_ref'),
+  sort_order:        integer('sort_order').notNull().default(0),
+  created_at:        timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updated_at:        timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })

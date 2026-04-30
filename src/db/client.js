@@ -322,10 +322,11 @@ export async function createCallSheet(userId, projectId, data) {
   const token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
   const [sheet] = await db.execute(sql`
     INSERT INTO call_sheets (project_id, user_id, sheet_date, status, general_call,
-      location_name, location_address, location_map_link, weather_text, notes, sheet_token)
+      location_name, location_address, location_map_link, weather_text, notes, sheet_token, hotels)
     VALUES (${projectId}, ${userId}, ${data.sheet_date}, 'draft', ${data.general_call||null},
       ${data.location_name||null}, ${data.location_address||null}, ${data.location_map_link||null},
-      ${data.weather_text||null}, ${data.notes||null}, ${token})
+      ${data.weather_text||null}, ${data.notes||null}, ${token},
+      ${JSON.stringify(data.hotels||[])}::jsonb)
     RETURNING *
   `).then(r => r.rows ?? r)
   return sheet
@@ -353,6 +354,7 @@ export async function updateCallSheet(id, data) {
       nearest_fire_address = ${data.nearest_fire_address||null},
       nearest_fire_phone = ${data.nearest_fire_phone||null},
       hs_notes = ${data.hs_notes||null},
+      hotels = ${JSON.stringify(data.hotels||[])}::jsonb,
       updated_at = NOW()
     WHERE id = ${id} RETURNING *
   `).then(r => r.rows ?? r)
@@ -396,4 +398,142 @@ export async function saveCallSheetLocations(callSheetId, rows) {
       VALUES (${callSheetId}, ${r.name||''}, ${r.address||null}, ${r.map_link||null}, ${r.move_time||null}, ${r.notes||null}, ${i})
     `)
   }
+}
+
+// ── Quote (client budget link) ────────────────────────────────────────────────
+export async function getBudgetByQuoteToken(token) {
+  const { sql } = await import('drizzle-orm')
+  const rows = await db.execute(sql`
+    SELECT b.*, c.first_name, c.last_name, c.company,
+           s.company_name, s.address, s.email, s.phone, s.website, s.vat_number
+    FROM budgets b
+    LEFT JOIN contacts c ON c.id = b.client_id
+    LEFT JOIN settings s ON s.user_id = b.user_id
+    WHERE b.quote_token = ${token}
+    LIMIT 1
+  `).then(r => r.rows ?? r)
+  return rows[0] || null
+}
+export async function setQuoteToken(userId, budgetId, token) {
+  const { sql } = await import('drizzle-orm')
+  return db.execute(sql`
+    UPDATE budgets SET quote_token = ${token} WHERE id = ${budgetId} AND user_id = ${userId} RETURNING *
+  `).then(r => (r.rows ?? r)[0])
+}
+
+// ── Shoots ────────────────────────────────────────────────────────────────────
+export async function getShoots(userId, projectId) {
+  const { sql } = await import('drizzle-orm')
+  return db.execute(sql`
+    SELECT * FROM shoots
+    WHERE user_id = ${userId} AND project_id = ${projectId}
+    ORDER BY shoot_date NULLS LAST, sort_order, created_at
+  `).then(r => r.rows ?? r)
+}
+export async function getShoot(id) {
+  const { sql } = await import('drizzle-orm')
+  const [shoot] = await db.execute(sql`SELECT * FROM shoots WHERE id = ${id}`).then(r => r.rows ?? r)
+  return shoot || null
+}
+export async function createShoot(userId, projectId, data) {
+  const { sql } = await import('drizzle-orm')
+  const token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
+  const [shoot] = await db.execute(sql`
+    INSERT INTO shoots (
+      project_id, user_id, name, shoot_date, status, shoot_token,
+      general_call, location_name, location_address, location_map_link,
+      parking_notes, nearest_transport,
+      nearest_hospital_name, nearest_hospital_address,
+      nearest_police_name, nearest_police_address,
+      nearest_fire_name, nearest_fire_address,
+      weather_text, hs_notes, notes,
+      hotels, crew, schedule, locations, shoot_dates,
+      equipment, client_display,
+      insurer_name, insurer_address, insurer_email, insurer_contact,
+      invoicing_email, invoicing_job_ref
+    ) VALUES (
+      ${projectId}, ${userId}, ${data.name||null}, ${data.shoot_date||null}, 'draft', ${token},
+      ${data.general_call||null}, ${data.location_name||null}, ${data.location_address||null}, ${data.location_map_link||null},
+      ${data.parking_notes||null}, ${data.nearest_transport||null},
+      ${data.nearest_hospital_name||null}, ${data.nearest_hospital_address||null},
+      ${data.nearest_police_name||null}, ${data.nearest_police_address||null},
+      ${data.nearest_fire_name||null}, ${data.nearest_fire_address||null},
+      ${data.weather_text||null}, ${data.hs_notes||null}, ${data.notes||null},
+      ${JSON.stringify(data.hotels||[])}::jsonb,
+      ${JSON.stringify(data.crew||[])}::jsonb,
+      ${JSON.stringify(data.schedule||[])}::jsonb,
+      ${JSON.stringify(data.locations||[])}::jsonb,
+      ${JSON.stringify(data.shoot_dates||[])}::jsonb,
+      ${JSON.stringify(data.equipment||[])}::jsonb,
+      ${data.client_display||null},
+      ${data.insurer_name||null}, ${data.insurer_address||null},
+      ${data.insurer_email||null}, ${data.insurer_contact||null},
+      ${data.invoicing_email||null}, ${data.invoicing_job_ref||null}
+    ) RETURNING *
+  `).then(r => r.rows ?? r)
+  return shoot
+}
+export async function updateShoot(id, data) {
+  const { sql } = await import('drizzle-orm')
+  const [shoot] = await db.execute(sql`
+    UPDATE shoots SET
+      name = ${data.name||null},
+      shoot_date = ${data.shoot_date||null},
+      status = ${data.status||'draft'},
+      general_call = ${data.general_call||null},
+      location_name = ${data.location_name||null},
+      location_address = ${data.location_address||null},
+      location_map_link = ${data.location_map_link||null},
+      parking_notes = ${data.parking_notes||null},
+      nearest_transport = ${data.nearest_transport||null},
+      nearest_hospital_name = ${data.nearest_hospital_name||null},
+      nearest_hospital_address = ${data.nearest_hospital_address||null},
+      nearest_police_name = ${data.nearest_police_name||null},
+      nearest_police_address = ${data.nearest_police_address||null},
+      nearest_fire_name = ${data.nearest_fire_name||null},
+      nearest_fire_address = ${data.nearest_fire_address||null},
+      weather_text = ${data.weather_text||null},
+      weather_fetched_at = ${data.weather_fetched_at||null},
+      hs_notes = ${data.hs_notes||null},
+      notes = ${data.notes||null},
+      hotels = ${JSON.stringify(data.hotels||[])}::jsonb,
+      crew = ${JSON.stringify(data.crew||[])}::jsonb,
+      schedule = ${JSON.stringify(data.schedule||[])}::jsonb,
+      locations = ${JSON.stringify(data.locations||[])}::jsonb,
+      shoot_dates = ${JSON.stringify(data.shoot_dates||[])}::jsonb,
+      equipment = ${JSON.stringify(data.equipment||[])}::jsonb,
+      risk_assessment = ${JSON.stringify(data.risk_assessment||{})}::jsonb,
+      client_display    = ${data.client_display||null},
+      insurer_name      = ${data.insurer_name||null},
+      insurer_address   = ${data.insurer_address||null},
+      insurer_email     = ${data.insurer_email||null},
+      insurer_contact   = ${data.insurer_contact||null},
+      invoicing_email   = ${data.invoicing_email||null},
+      invoicing_job_ref = ${data.invoicing_job_ref||null},
+      updated_at = NOW()
+    WHERE id = ${id} RETURNING *
+  `).then(r => r.rows ?? r)
+  return shoot
+}
+export async function deleteShoot(id) {
+  const { sql } = await import('drizzle-orm')
+  return db.execute(sql`DELETE FROM shoots WHERE id = ${id}`)
+}
+
+// Find all shoots that have a risk assessment (for the "copy from" picker)
+export async function getShootsWithRA(userId) {
+  const { sql } = await import('drizzle-orm')
+  return db.execute(sql`
+    SELECT sh.id, sh.name, sh.shoot_date, sh.location_name, sh.risk_assessment,
+           p.name AS project_name
+    FROM shoots sh
+    JOIN projects p ON p.id = sh.project_id
+    WHERE sh.user_id = ${userId}
+      AND sh.risk_assessment IS NOT NULL
+      AND sh.risk_assessment != '{}'::jsonb
+      AND sh.risk_assessment->'hazards' IS NOT NULL
+      AND jsonb_array_length(sh.risk_assessment->'hazards') > 0
+    ORDER BY sh.shoot_date DESC NULLS LAST, sh.created_at DESC
+    LIMIT 50
+  `).then(r => r.rows ?? r)
 }
