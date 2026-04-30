@@ -2004,10 +2004,15 @@ export class ProjectsView {
 
   _bindShootCrew(overlay, sh, save) {
     overlay.querySelectorAll('[data-crew-field]').forEach(el => {
-      el.addEventListener('change', () => {
+      el.addEventListener('change', async () => {
         const [i, f] = el.dataset.crewField.split(',')
         if (!sh.crew[+i]) return
-        sh.crew[+i][f] = el.value; save()
+        sh.crew[+i][f] = el.value
+        save()
+        // Sync phone/role/name changes back to the contact
+        if (f === 'phone' || f === 'role' || f === 'name') {
+          await this._syncCrewToContact(sh.crew[+i])
+        }
       })
     })
     overlay.querySelectorAll('[data-crew-call]').forEach(el => {
@@ -3579,7 +3584,10 @@ export class ProjectsView {
 
   async _ensureCrewContacts(p) {
     const contacts = this.app.contacts || []
-    const crewMembers = (p.crew||[]).filter(c => (c.crew_type||'crew') === 'crew' && c.name && c.name.trim())
+    // Include all crew types now — map crew_type to contact type
+    // crew → subcontractor, on_camera → subcontractor, client → brand
+    const contactTypeFor = ct => ct === 'client' ? 'brand' : 'subcontractor'
+    const crewMembers = (p.crew||[]).filter(c => c.name && c.name.trim())
     if (!crewMembers.length) return
     const existing = new Set(contacts.map(c => `${c.first_name||''} ${c.last_name||''}`.toLowerCase().trim()))
     const toAdd = []
@@ -3593,8 +3601,10 @@ export class ProjectsView {
       const last = parts.slice(1).join(' ')
       toAdd.push({
         first, last,
-        role:  cm.role  || '',
-        phone: cm.phone || '',
+        role:    cm.role  || '',
+        phone:   cm.phone || '',
+        ctype:   contactTypeFor(cm.crew_type || 'crew'),
+        crew_kind: cm.crew_type || 'crew',
       })
       seenInBatch.add(lower)
     }
@@ -3609,40 +3619,67 @@ export class ProjectsView {
           email:      '',
           phone:      c.phone,
           role:       c.role,
-          type:       'subcontractor',
+          type:       c.ctype,
           status:     'Active',
-          notes:      `Auto-added from project: ${p.name}`,
+          notes:      `Auto-added from project: ${p.name} (${c.crew_kind})`,
         })
         const created = Array.isArray(result) ? result[0] : result
         if (created) this.app.contacts.push(created)
       }
-    } catch(e) { console.error('Auto-add subcontractor failed:', e) }
+    } catch(e) { console.error('Auto-add contact failed:', e) }
   }
 
-  // Sync a project crew row's phone/role into the matching contact (source of truth)
+  // Sync a crew row's phone/role into the matching contact (source of truth)
+  // If no matching contact exists, create one as a subcontractor.
   async _syncCrewToContact(crewMember) {
     if (!crewMember?.name) return
-    const fullName = crewMember.name.trim().toLowerCase()
+    const fullName = crewMember.name.trim()
+    if (!fullName) return
+    const lower = fullName.toLowerCase()
     const match = (this.app.contacts||[]).find(c =>
-      `${c.first_name||''} ${c.last_name||''}`.toLowerCase().trim() === fullName
+      `${c.first_name||''} ${c.last_name||''}`.toLowerCase().trim() === lower
     )
-    if (!match) return // _ensureCrewContacts will create it on next save with phone included
     const newPhone = crewMember.phone || ''
     const newRole  = crewMember.role  || ''
-    // Only update if at least one field differs
-    if ((match.phone||'') === newPhone && (match.role||'') === newRole) return
-    try {
-      const { updateContact } = await import('../db/client.js')
-      const result = await updateContact(this.app.userId, match.id, {
-        phone: newPhone,
-        role:  newRole,
-      })
-      const updated = Array.isArray(result) ? result[0] : result
-      if (updated) {
-        const idx = this.app.contacts.findIndex(c => c.id === match.id)
-        if (idx >= 0) this.app.contacts[idx] = updated
-      }
-    } catch(e) { console.error('Crew → contact sync failed:', e) }
+    if (match) {
+      // Update existing contact only if a field actually changed
+      if ((match.phone||'') === newPhone && (match.role||'') === newRole) return
+      try {
+        const { updateContact } = await import('../db/client.js')
+        const result = await updateContact(this.app.userId, match.id, {
+          phone: newPhone,
+          role:  newRole,
+        })
+        const updated = Array.isArray(result) ? result[0] : result
+        if (updated) {
+          const idx = this.app.contacts.findIndex(c => c.id === match.id)
+          if (idx >= 0) this.app.contacts[idx] = updated
+        }
+      } catch(e) { console.error('Crew → contact sync failed:', e) }
+    } else {
+      // No matching contact — create one. Map crew_type → contact type.
+      const crewType = crewMember.crew_type || 'crew'
+      const contactType = crewType === 'client' ? 'brand' : 'subcontractor'
+      const parts = fullName.split(' ')
+      const first = parts[0]
+      const last = parts.slice(1).join(' ')
+      try {
+        const { createContact } = await import('../db/client.js')
+        const result = await createContact(this.app.userId, {
+          first_name: first,
+          last_name:  last,
+          company:    '',
+          email:      '',
+          phone:      newPhone,
+          role:       newRole,
+          type:       contactType,
+          status:     'Active',
+          notes:      `Auto-added from shoot crew (${crewType})`,
+        })
+        const created = Array.isArray(result) ? result[0] : result
+        if (created) this.app.contacts.push(created)
+      } catch(e) { console.error('Crew → contact create failed:', e) }
+    }
   }
 
   async deleteProject(id, mc) {
