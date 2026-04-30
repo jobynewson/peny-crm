@@ -1131,7 +1131,7 @@ export class ProjectsView {
                 <button class="btn-secondary" id="se-add-sched" style="font-size:11px;padding:3px 8px">+ Add row</button>
               </div>
               <div class="proj-panel-body" id="se-sched-list">
-                ${sh.schedule.map((r,i) => this._shootSchedHTML(r, i)).join('')}
+                ${sh.schedule.map((r,i) => this._shootSchedHTML(r, i, sh)).join('')}
                 ${!sh.schedule.length ? '<div style="font-size:12px;color:var(--text-tertiary)">No schedule yet</div>' : ''}
               </div>
             </div>
@@ -1310,8 +1310,16 @@ export class ProjectsView {
     </div>`
   }
 
-  _shootSchedHTML(r, i) {
-    return `<div style="display:grid;grid-template-columns:90px 1fr 28px;gap:6px;margin-bottom:6px" data-sched-idx="${i}">
+  _shootSchedHTML(r, i, sh) {
+    const dates = sh ? (Array.isArray(sh.shoot_dates) ? sh.shoot_dates.filter(d => d.date) : []) : []
+    const fmtDateShort = d => new Date(d).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})
+    const dateSelect = dates.length > 1 ? `
+      <select class="bl-in w" data-sched-field="${i},date" style="font-size:12px;padding:5px 8px;width:120px">
+        <option value="">All days</option>
+        ${dates.map(d => `<option value="${d.date}" ${r.date===d.date?'selected':''}>${fmtDateShort(d.date)}</option>`).join('')}
+      </select>` : ''
+    return `<div style="display:grid;grid-template-columns:${dates.length > 1 ? '120px ' : ''}90px 1fr 28px;gap:6px;margin-bottom:6px" data-sched-idx="${i}">
+      ${dateSelect}
       <input type="time" class="bl-in w" value="${esc(r.time||'')}" data-sched-field="${i},time" style="font-size:12px;padding:5px 8px" />
       <input type="text" class="bl-in w" value="${esc(r.description||'')}" placeholder="Description" data-sched-field="${i},description" style="font-size:12px;padding:5px 8px" />
       <button class="row-btn" style="color:#c03020" data-sched-rem="${i}">×</button>
@@ -1632,12 +1640,24 @@ export class ProjectsView {
 
     // Shoot dates list
     if (!Array.isArray(sh.shoot_dates)) sh.shoot_dates = []
+    const sortDates = () => {
+      sh.shoot_dates.sort((a, b) => {
+        if (!a.date) return 1
+        if (!b.date) return -1
+        return a.date < b.date ? -1 : a.date > b.date ? 1 : 0
+      })
+    }
     const refreshDates = () => {
+      sortDates()
       const list = overlay.querySelector('#se-dates-list')
       if (list) list.innerHTML = this._shootDatesHTML(sh)
       bindDateList()
       // Crew sections also need re-rendering since columns depend on dates
       this._refreshAllCrewSections(overlay, sh, save)
+      // Schedule also needs re-rendering since date options change
+      const schedList = overlay.querySelector('#se-sched-list')
+      if (schedList) schedList.innerHTML = sh.schedule.map((r,i) => this._shootSchedHTML(r, i, sh)).join('') || '<div style="font-size:12px;color:var(--text-tertiary)">No schedule yet</div>'
+      this._bindShootSched(overlay, sh, save)
     }
     const bindDateList = () => {
       overlay.querySelectorAll('[data-date-field]').forEach(el => {
@@ -1804,7 +1824,7 @@ export class ProjectsView {
 
     // Schedule
     overlay.querySelector('#se-add-sched')?.addEventListener('click', () => {
-      sh.schedule.push({ time:'', description:'' })
+      sh.schedule.push({ date: '', time:'', description:'' })
       this._refreshShootSched(overlay, sh, save)
     })
     this._bindShootSched(overlay, sh, save)
@@ -2150,7 +2170,7 @@ export class ProjectsView {
   }
   _refreshShootSched(overlay, sh, save) {
     const el = overlay.querySelector('#se-sched-list')
-    el.innerHTML = sh.schedule.map((r,i) => this._shootSchedHTML(r,i)).join('') || '<div style="font-size:12px;color:var(--text-tertiary)">No schedule yet</div>'
+    el.innerHTML = sh.schedule.map((r,i) => this._shootSchedHTML(r,i,sh)).join('') || '<div style="font-size:12px;color:var(--text-tertiary)">No schedule yet</div>'
     this._bindShootSched(overlay, sh, save)
   }
 
@@ -2462,14 +2482,37 @@ export class ProjectsView {
       }),
     ].join('') : ''
 
-    // SCHEDULE
-    const secSchedule = schedule.length ? [
-      hr(),
-      ...schedule.map((s,i) => `<tr>
-        <td class="lbl">${i===0?'Schedule':''}</td>
-        <td class="val"><span class="sched-time">${esc_(s.time||'')}</span>${s.time?'&emsp;':''}${esc_(s.description||'')}</td>
-      </tr>`),
-    ].join('') : ''
+    // SCHEDULE — grouped by date if multi-day
+    const secSchedule = (() => {
+      if (!schedule.length) return ''
+      const fmtDateShort = d => d ? new Date(d).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'}) : ''
+      const hasDateField = schedule.some(s => s.date)
+      if (!hasDateField || effDates.length <= 1) {
+        // No per-day assignment — flat list
+        return [
+          hr(),
+          ...schedule.map((s,i) => `<tr>
+            <td class="lbl">${i===0?'Schedule':''}</td>
+            <td class="val"><span class="sched-time">${esc_(s.time||'')}</span>${s.time?'&emsp;':''}${esc_(s.description||'')}</td>
+          </tr>`),
+        ].join('')
+      }
+      // Group: first show "All days" items, then each date's items
+      const allDay = schedule.filter(s => !s.date)
+      const rows = []
+      rows.push(hr())
+      rows.push(`<tr class="section-head"><td class="lbl">Schedule</td><td class="val"></td></tr>`)
+      if (allDay.length) {
+        allDay.forEach(s => rows.push(`<tr><td class="lbl dim" style="font-size:8px"></td><td class="val"><span class="sched-time">${esc_(s.time||'')}</span>${s.time?'&emsp;':''}${esc_(s.description||'')}</td></tr>`))
+      }
+      effDates.forEach(d => {
+        const items = schedule.filter(s => s.date === d.date)
+        if (!items.length) return
+        rows.push(`<tr><td class="lbl" style="padding-top:8px;color:#1a1a1a">${esc_(fmtDateShort(d.date))}</td><td class="val"></td></tr>`)
+        items.forEach(s => rows.push(`<tr><td class="lbl"></td><td class="val"><span class="sched-time">${esc_(s.time||'')}</span>${s.time?'&emsp;':''}${esc_(s.description||'')}</td></tr>`))
+      })
+      return rows.join('')
+    })()
 
     // MAIN UNIT
     const csNotes = (sh.crew_section_notes && typeof sh.crew_section_notes === 'object') ? sh.crew_section_notes : {}
@@ -2539,9 +2582,9 @@ export class ProjectsView {
     ].join('') : ''
 
     // ── Compose full document ────────────────────────────────────────────────
-    w.document.write(`<!DOCTYPE html><html><head>
+    const html = `<!DOCTYPE html><html><head>
       <meta charset="UTF-8">
-      <title>Call Sheet — ${esc_(p.name)}</title>
+      <title>Call Sheet \u2014 ${esc_(p.name)}</title>
       <style>
         @page { size: A4 portrait; margin: 14mm 16mm 14mm 16mm }
         * { box-sizing: border-box; margin: 0; padding: 0 }
@@ -2606,9 +2649,14 @@ export class ProjectsView {
       ${hr()}
     </table>
 
-    <script>window.onload = () => window.print()</script>
-    </body></html>`)
-    w.document.close()
+    <script>window.onload = () => window.print()<\/script>
+    </body></html>`
+
+    const blob = new Blob([html], { type: 'text/html' })
+    const url  = URL.createObjectURL(blob)
+    w.location.href = url
+    // Revoke after a moment to free memory
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
   }
 
 

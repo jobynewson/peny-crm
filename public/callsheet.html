@@ -136,15 +136,38 @@
       ${calBtnHTML}
     `
 
-    const schedHTML = schedule.length ? `
-      <div class="section">
-        <div class="section-head">Schedule</div>
-        ${schedule.map(s => `
-          <div class="sched-row">
-            <div class="sched-time">${esc(s.time)}</div>
-            <div class="sched-desc">${esc(s.description)}</div>
-          </div>`).join('')}
-      </div>` : ''
+    const dates = Array.isArray(sheet.shoot_dates) ? sheet.shoot_dates.filter(d => d.date) : []
+    const fmtDateFull = d => d ? new Date(d).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) : ''
+    const fmtDateShort = d => d ? new Date(d).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}) : ''
+
+    const schedHTML = (() => {
+      if (!schedule.length) return ''
+      const hasDateField = schedule.some(s => s.date)
+      if (!hasDateField || dates.length <= 1) {
+        return `<div class="section">
+          <div class="section-head">Schedule</div>
+          ${schedule.map(s => `
+            <div class="sched-row">
+              <div class="sched-time">${esc(s.time)}</div>
+              <div class="sched-desc">${esc(s.description)}</div>
+            </div>`).join('')}
+        </div>`
+      }
+      // Multi-day: group by date
+      const allDay = schedule.filter(s => !s.date)
+      let out = '<div class="section"><div class="section-head">Schedule</div>'
+      if (allDay.length) {
+        out += allDay.map(s => `<div class="sched-row"><div class="sched-time">${esc(s.time)}</div><div class="sched-desc">${esc(s.description)}</div></div>`).join('')
+      }
+      dates.forEach(d => {
+        const items = schedule.filter(s => s.date === d.date)
+        if (!items.length) return
+        out += `<div style="padding:8px 16px 4px;font-size:11px;font-weight:600;color:var(--text-sec);border-top:0.5px solid var(--border);text-transform:uppercase;letter-spacing:0.4px">${fmtDateShort(d.date)}</div>`
+        out += items.map(s => `<div class="sched-row"><div class="sched-time">${esc(s.time)}</div><div class="sched-desc">${esc(s.description)}</div></div>`).join('')
+      })
+      out += '</div>'
+      return out
+    })()
 
     const locHTML = (sheet.location_name || sheet.location_address) ? `
       <div class="section">
@@ -239,11 +262,15 @@
         <div class="notes-body">${esc(sheet.notes)}</div>
       </div>` : ''
 
+    const dateDisplay = dates.length > 1
+      ? dates.map(d => `<div>${fmtDateShort(d.date)}${d.general_call?' · GC '+esc(d.general_call):''}</div>`).join('')
+      : fmtDateFull(dates[0]?.date || sheet.date)
+
     document.getElementById('root').innerHTML = `
       <div class="hero">
         <img src="/peny-logo-white.png" alt="Peny" class="logo" onerror="this.style.display='none'" />
         <div class="project-name">${esc(project.name)}</div>
-        <div class="sheet-date">${fmtDate(sheet.date)}</div>
+        <div class="sheet-date">${dateDisplay}</div>
         ${heroHTML}
       </div>
       <div class="wrap">
