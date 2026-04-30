@@ -40,8 +40,10 @@ export class App {
     const saved = localStorage.getItem('peny-theme') || 'dark'
     document.documentElement.setAttribute('data-theme', saved)
     this.injectGlobalStyles()
+    this._restoreFromHash()   // parse URL before first render
     this.render()
     this._bindKeyboard()
+<<<<<<< HEAD
     // Handle bookmarklet import — text captured at module load before Clerk touches the URL
     if (_importText) {
       setTimeout(() => {
@@ -66,6 +68,10 @@ export class App {
         }, 200)
       }, 300)
     }
+=======
+    // Handle browser back/forward
+    window.addEventListener('popstate', (e) => this._handlePopState(e))
+>>>>>>> dev
   }
 
   async _openDevRequest() {
@@ -499,6 +505,51 @@ export class App {
     this.projectsView.currentId = null
     this.projectsView.editingId = null
     this.budgetsView.currentId  = null
+    this.budgetsView.editingId  = null
+    history.pushState({ view }, '', `#${view}`)
+    this.render()
+  }
+
+  // Push a URL state for a specific sub-location (called by views)
+  _pushAppState(hash, state = {}) {
+    history.pushState(state, '', hash)
+  }
+
+  // Parse the URL hash and restore view state before first render
+  _restoreFromHash() {
+    const hash = location.hash.slice(1) // e.g. 'projects/abc-123'
+    if (!hash) return
+    const [view, id] = hash.split('/')
+    const validViews = ['contacts','projects','budgets','settings','dashboard']
+    if (!validViews.includes(view)) return
+    this.currentView = view
+    if (view === 'projects' && id) this.projectsView.currentId = id
+    if (view === 'budgets'  && id) this.budgetsView.currentId  = id
+  }
+
+  // Handle browser back / forward button
+  _handlePopState(e) {
+    // If a shoot editor overlay is open, close it and stay on the project
+    const shootOverlay = document.getElementById('shoot-editor-overlay')
+    if (shootOverlay) {
+      shootOverlay.remove()
+      return
+    }
+
+    // If a generic modal overlay is open, close it
+    const modal = document.querySelector('.modal-overlay, #ra-copy-picker')
+    if (modal) { modal.remove(); return }
+
+    // Restore from URL
+    const hash = location.hash.slice(1)
+    const [view, id] = (hash || 'dashboard').split('/')
+    const validViews = ['contacts','projects','budgets','settings','dashboard']
+    if (!validViews.includes(view)) { this.currentView = 'dashboard'; this.render(); return }
+
+    this.currentView = view
+    this.projectsView.currentId = (view === 'projects' && id) ? id : null
+    this.projectsView.editingId = null
+    this.budgetsView.currentId  = (view === 'budgets'  && id) ? id : null
     this.budgetsView.editingId  = null
     this.render()
   }
@@ -955,6 +1006,33 @@ export class App {
           </div>
         </div>
 
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Default insurance</span></div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Used as the default insurer on all call sheets. Can be overridden per-project or per-shoot.</div>
+            <div class="field-row">
+              <div class="field"><div class="field-label">Insurer name</div><input type="text" id="s-ins-name" value="${s.default_insurer_name??''}" placeholder="e.g. TYSERS" /></div>
+              <div class="field"><div class="field-label">Contact name</div><input type="text" id="s-ins-contact" value="${s.default_insurer_contact??''}" placeholder="e.g. Amy Volino" /></div>
+            </div>
+            <div class="field"><div class="field-label">Address</div><input type="text" id="s-ins-addr" value="${s.default_insurer_address??''}" placeholder="71 Fenchurch Street, London, EC3M 4BS" /></div>
+            <div class="field"><div class="field-label">Email</div><input type="email" id="s-ins-email" value="${s.default_insurer_email??''}" placeholder="contact@insurer.com" /></div>
+            <div><button class="btn-primary" id="settings-save-btn-2">Save settings</button></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Invoicing defaults (for crew call sheets)</span></div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">The email and boilerplate shown to crew on call sheets so they know where to send invoices and what to include.</div>
+            <div class="field"><div class="field-label">Default invoicing email</div><input type="email" id="s-inv-email" value="${s.invoicing_email??''}" placeholder="e.g. finance@wearepeny.com" /></div>
+            <div class="field">
+              <div class="field-label">Invoicing boilerplate</div>
+              <textarea id="s-inv-boilerplate" style="width:100%;min-height:140px;padding:8px 11px;font-size:12px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.6" placeholder="In order to comply with HMRC regulations and for us to pay your invoice, please include the following:&#10;1. Correct Banking Information&#10;2. Dates worked and service provided&#10;3. Full name as registered with HMRC…">${s.invoicing_boilerplate??''}</textarea>
+            </div>
+            <div><button class="btn-primary" id="settings-save-btn-3">Save settings</button></div>
+          </div>
+        </div>
+
         ${isAdmin ? `
         <div class="panel">
           <div class="panel-header"><span class="panel-title">Users</span></div>
@@ -998,6 +1076,8 @@ export class App {
     </div>`
 
     mc.querySelector('#settings-save-btn')?.addEventListener('click', () => this.saveSettings(mc))
+    mc.querySelector('#settings-save-btn-2')?.addEventListener('click', () => this.saveSettings(mc))
+    mc.querySelector('#settings-save-btn-3')?.addEventListener('click', () => this.saveSettings(mc))
     mc.querySelector('#signout-settings')?.addEventListener('click', () => this.onSignOut())
 
     if (isAdmin) {
@@ -1298,6 +1378,12 @@ export class App {
       hs_boilerplate:      mc.querySelector('#s-hs')?.value.trim()||null,
       financial_year_start: parseInt(mc.querySelector('#s-fy-start')?.value||'4'),
       budget_template:     this.settings?.budget_template ?? null,
+      default_insurer_name:    mc.querySelector('#s-ins-name')?.value.trim()||null,
+      default_insurer_address: mc.querySelector('#s-ins-addr')?.value.trim()||null,
+      default_insurer_email:   mc.querySelector('#s-ins-email')?.value.trim()||null,
+      default_insurer_contact: mc.querySelector('#s-ins-contact')?.value.trim()||null,
+      invoicing_email:         mc.querySelector('#s-inv-email')?.value.trim()||null,
+      invoicing_boilerplate:   mc.querySelector('#s-inv-boilerplate')?.value.trim()||null,
     }
     try { const [updated] = await upsertSettings(this.userId, data); this.settings = updated; this.toast('Settings saved') }
     catch (e) { console.error(e); this.toast('Error saving settings') }

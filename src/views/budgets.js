@@ -118,6 +118,7 @@ export class BudgetsView {
       row.addEventListener('click', e => {
         if (e.target.closest('[data-delete]')) return
         this.currentId = row.dataset.open
+        this.app._pushAppState(`#budgets/${this.currentId}`, { view:'budgets', id:this.currentId })
         this.render(mc)
         this.app.updateTitle()
       })
@@ -279,6 +280,7 @@ export class BudgetsView {
       mc.querySelector('#budget-new-modal')?.classList.remove('open')
       this.currentId = created.id
       this.editingId = created.id  // open straight into edit mode
+      this.app._pushAppState(`#budgets/${created.id}`, { view:'budgets', id:created.id })
       this.render(mc)
       this.app.updateTitle()
       this.app.toast('Budget created')
