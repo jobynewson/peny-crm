@@ -2206,104 +2206,310 @@ export class ProjectsView {
 
   _generateShootPDF(sh, p) {
     const w = window.open('', '_blank')
-    const fmtDate = d => d ? new Date(d).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) : ''
-    const fmtDateShort = d => d ? new Date(d).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}) : ''
+    if (!w) { this.app.toast('Pop-up blocked — allow pop-ups and try again'); return }
+
     const esc_ = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    const dates = (Array.isArray(sh.shoot_dates) ? sh.shoot_dates : []).filter(d => d.date)
-    // Fallback to legacy single-date if no shoot_dates yet
-    const effDates = dates.length ? dates : (sh.shoot_date ? [{ date: sh.shoot_date, general_call: sh.general_call }] : [])
-
-    const renderDateLabel = () => {
-      if (!effDates.length) return ''
-      if (effDates.length === 1) {
-        const d = effDates[0]
-        return `${esc_(fmtDate(d.date))}${d.general_call?' · General call: '+esc_(d.general_call):''}`
-      }
-      return effDates.map(d => `<div>${esc_(fmtDate(d.date))} · GC ${esc_(d.general_call||'TBC')}</div>`).join('')
-    }
-
-    // Render a crew section
-    const renderCrewSection = (label, type) => {
-      const filtered = (sh.crew||[]).filter(c => c.name && (c.crew_type||'crew') === type)
-      if (!filtered.length) return ''
-      const dateCols = effDates.map(d =>
-        `<th style="width:80px">${esc_(fmtDateShort(d.date))}</th>`).join('')
-      const dateColsLabel = effDates.length > 1 ? dateCols : '<th style="width:90px">Call</th>'
-      const rows = filtered.map(c => {
-        const callCells = effDates.length
-          ? effDates.map(d => {
-              const k = String(d.date).split('T')[0]
-              const t = c.call_times?.[k]
-              return `<td>${esc_(t || 'TBC')}</td>`
-            }).join('')
-          : `<td>${esc_((c.call_times && Object.values(c.call_times)[0]) || 'TBC')}</td>`
-        return `<tr><td>${esc_(c.name)}</td><td>${esc_(c.role||'')}</td><td>${esc_(c.phone||'')}</td>${callCells}</tr>`
-      }).join('')
-      return `<h2>${esc_(label)}</h2><table>
-        <thead><tr><th>Name</th><th>Role</th><th style="width:120px">Phone</th>${dateColsLabel}</tr></thead>
-        <tbody>${rows}</tbody>
-      </table>`
-    }
+    const nl   = s => esc_(s).replace(/\n/g, '<br>')
+    const fmtDate = d => { try { return new Date(d).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) } catch { return String(d) } }
+    const fmtDT   = s => { try { return new Date(s).toLocaleString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) } catch { return String(s) } }
 
     const studio = this.app.settings || {}
     const logoUrl = studio.logo_url || '/peny-logo.png'
 
-    w.document.write(`<!DOCTYPE html><html><head><title>Call Sheet — ${esc_(sh.name||p.name)}</title>
+    // Cascade insurance: shoot → project → settings
+    const insurer = {
+      name:    sh.insurer_name    || p.insurer_name    || studio.default_insurer_name    || null,
+      address: sh.insurer_address || p.insurer_address || studio.default_insurer_address || null,
+      email:   sh.insurer_email   || p.insurer_email   || studio.default_insurer_email   || null,
+      contact: sh.insurer_contact || p.insurer_contact || studio.default_insurer_contact || null,
+    }
+
+    // Cascade invoicing
+    const invoicing = {
+      email:       sh.invoicing_email   || studio.invoicing_email       || null,
+      job_ref:     sh.invoicing_job_ref || null,
+      boilerplate: studio.invoicing_boilerplate || null,
+    }
+
+    // Client display: shoot override → project client company → project client name
+    const clientContact = (this.app.contacts||[]).find(c => c.id === p.client_id)
+    const projectClientCompany = clientContact?.company
+      || (clientContact ? `${clientContact.first_name||''} ${clientContact.last_name||''}`.trim() : '')
+    const client_display = sh.client_display || projectClientCompany || null
+
+    // Email lookup from contacts by full name
+    const findEmail = name => {
+      if (!name) return ''
+      const lower = name.toLowerCase().trim()
+      const match = (this.app.contacts||[]).find(c =>
+        `${c.first_name||''} ${c.last_name||''}`.toLowerCase().trim() === lower
+      )
+      return match?.email || ''
+    }
+
+    const dates     = (Array.isArray(sh.shoot_dates) ? sh.shoot_dates : []).filter(d => d.date)
+    const effDates  = dates.length ? dates : (sh.shoot_date ? [{date:sh.shoot_date, general_call:sh.general_call}] : [])
+    const crew      = Array.isArray(sh.crew)      ? sh.crew      : []
+    const schedule  = Array.isArray(sh.schedule)  ? sh.schedule  : []
+    const hotels    = Array.isArray(sh.hotels)    ? sh.hotels.filter(h=>h.name) : []
+    const equipment = Array.isArray(sh.equipment) ? sh.equipment.filter(e=>e.category) : []
+    const clientCrew = crew.filter(c => c.name && (c.crew_type||'crew')==='client')
+    const talentCrew = crew.filter(c => c.name && (c.crew_type||'crew')==='on_camera')
+    const mainCrew   = crew.filter(c => c.name && (c.crew_type||'crew')==='crew')
+    const allCrewNames = crew.filter(c=>c.name).map(c=>c.name)
+
+    // ── Row builders ────────────────────────────────────────────────────────
+    // Standard label | content row. Pass html=true to skip esc_ on content.
+    const row = (label, content, html=false) => {
+      if (!content && content !== 0) return ''
+      const c = html ? content : esc_(content)
+      return `<tr><td class="lbl">${label?esc_(label):''}</td><td class="val">${c}</td></tr>`
+    }
+
+    // Continuation row (blank label)
+    const cont = (content, html=false) => row('', content, html)
+
+    // Horizontal rule between major sections
+    const hr = () => `<tr class="hr"><td colspan="2"></td></tr>`
+
+    // Crew row: role in label col, name + email + phone/co in value col
+    const crewRow = (c, showRole=true) => {
+      const email = findEmail(c.name)
+      const phone = c.phone ? `Mob: ${esc_(c.phone)}` : (c.co ? `℅ ${esc_(c.co)}` : '')
+      const cols = [
+        `<strong>${esc_(c.name)}</strong>`,
+        email ? `<span class="dim">${esc_(email)}</span>` : '',
+        phone ? `<span class="dim">${phone}</span>` : '',
+      ].filter(Boolean).join('&emsp;')
+      return `<tr><td class="lbl">${showRole?esc_(c.role||''):''}</td><td class="val">${cols}</td></tr>`
+    }
+
+    // ── Build sections ───────────────────────────────────────────────────────
+
+    // JOB NAME
+    const secJobName = [
+      hr(),
+      row('Job name', p.name + (sh.name ? ` — ${sh.name}` : '')),
+    ].join('')
+
+    // CLIENT
+    const secClient = (client_display || clientCrew.length) ? [
+      hr(),
+      row('Client', client_display||'', false),
+      ...clientCrew.map((c,i) => {
+        const email = findEmail(c.name)
+        const phone = c.phone ? `Mob: ${esc_(c.phone)}` : ''
+        return `<tr>
+          <td class="lbl">${i===0&&!client_display?'Client':''}</td>
+          <td class="val">
+            <span class="crew-name">${esc_(c.name)}</span>
+            ${c.role?`<span class="crew-role">${esc_(c.role)}</span>`:''}
+            ${phone?`<span class="dim">${phone}</span>`:''}
+          </td>
+        </tr>`
+      }),
+    ].join('') : ''
+
+    // TALENT
+    const secTalent = talentCrew.length ? [
+      hr(),
+      ...talentCrew.map((c,i) => {
+        const phone = c.phone ? `Mob: ${esc_(c.phone)}` : (c.co ? `c/o ${esc_(c.co)}` : '')
+        return `<tr>
+          <td class="lbl">${i===0?'Talent':''}</td>
+          <td class="val">
+            <span class="crew-name">${esc_(c.name)}</span>
+            ${c.role?`<span class="crew-role">${esc_(c.role)}</span>`:''}
+            ${c.co?`<span class="dim">c/o ${esc_(c.co)}</span>`:(phone?`<span class="dim">${phone}</span>`:'')}
+          </td>
+        </tr>`
+      }),
+    ].join('') : ''
+
+    // PRODUCTION COMPANY
+    const studioAddr = studio.address || ''
+    const secProduction = (studio.company_name||studioAddr) ? [
+      hr(),
+      row('Production company', studio.company_name||''),
+      ...studioAddr.split(/[,\n]/).map(s=>s.trim()).filter(Boolean).map(s=>cont(s)),
+    ].join('') : ''
+
+    // SHOOT DATES
+    const secDates = effDates.length ? [
+      hr(),
+      ...effDates.map((d,i) => {
+        const label = i===0 ? 'Shoot dates' : ''
+        const txt = fmtDate(d.date) + (d.general_call?` &emsp; General call: <strong>${esc_(d.general_call)}</strong>`:'')
+        return `<tr><td class="lbl">${label}</td><td class="val">${txt}</td></tr>`
+      }),
+    ].join('') : ''
+
+    // LOCATION
+    const secLocation = (sh.location_name||sh.location_address||sh.location_map_link) ? [
+      hr(),
+      row('Location address', sh.location_name ? `<strong>${esc_(sh.location_name)}</strong>` : '', true),
+      sh.location_address ? cont(sh.location_address) : '',
+      sh.location_map_link && !sh.location_address ? cont(sh.location_map_link) : '',
+      sh.parking_notes    ? `<tr><td class="lbl"></td><td class="val dim">Parking: ${esc_(sh.parking_notes)}</td></tr>` : '',
+      sh.nearest_transport? `<tr><td class="lbl"></td><td class="val dim">Nearest transport: ${esc_(sh.nearest_transport)}</td></tr>` : '',
+      sh.weather_text     ? `<tr><td class="lbl"></td><td class="val dim">Weather: ${esc_(sh.weather_text)}</td></tr>` : '',
+    ].join('') : ''
+
+    // HOTELS
+    const secHotels = hotels.length ? [
+      hr(),
+      ...hotels.flatMap((h, hi) => {
+        const isFirst = hi === 0
+        const assigned = h.assigned_crew || []
+        const allIn = allCrewNames.length && allCrewNames.every(n => assigned.includes(n))
+        const guestLine = allIn
+          ? 'All athletes, crew and client in hotel'
+          : assigned.length ? assigned.join(', ') : ''
+        return [
+          `<tr><td class="lbl">${isFirst?'Hotel address':''}</td><td class="val"><strong>${esc_(h.name)}</strong></td></tr>`,
+          h.address ? cont(h.address) : '',
+          guestLine ? `<tr><td class="lbl"></td><td class="val">${esc_(guestLine)}</td></tr>` : '',
+          (h.check_in||h.check_out) ? `<tr><td class="lbl"></td><td class="val dim">${h.check_in?'Check-in: '+fmtDT(h.check_in):''}${h.check_in&&h.check_out?' &ensp;|&ensp; ':''}${h.check_out?'Check-out: '+fmtDT(h.check_out):''}</td></tr>` : '',
+          h.notes ? `<tr><td class="lbl"></td><td class="val dim">${nl(h.notes)}</td></tr>` : '',
+        ].join('')
+      }),
+    ].join('') : ''
+
+    // SCHEDULE
+    const secSchedule = schedule.length ? [
+      hr(),
+      ...schedule.map((s,i) => `<tr>
+        <td class="lbl">${i===0?'Schedule':''}</td>
+        <td class="val"><span class="sched-time">${esc_(s.time||'')}</span>${s.time?'&emsp;':''}${esc_(s.description||'')}</td>
+      </tr>`),
+    ].join('') : ''
+
+    // MAIN UNIT
+    const secMainUnit = mainCrew.length ? [
+      hr(),
+      `<tr class="section-head"><td class="lbl">Main unit</td><td class="val"></td></tr>`,
+      ...mainCrew.map(c => crewRow(c)),
+    ].join('') : ''
+
+    // EQUIPMENT
+    const secEquipment = equipment.length ? [
+      hr(),
+      `<tr class="section-head"><td class="lbl">Equipment</td><td class="val"></td></tr>`,
+      ...equipment.flatMap((e, ei) => [
+        `<tr><td class="lbl cat-label">${esc_(e.category||'')}</td><td class="val">${e.supplier?`<span class="dim">C/O ${esc_(e.supplier)}</span>`:''}${e.description?`<br>${nl(e.description)}`:''}</td></tr>`,
+      ]),
+    ].join('') : ''
+
+    // INSURANCE
+    const secInsurance = insurer.name ? [
+      hr(),
+      `<tr><td class="lbl">Insurance</td><td class="val"><strong>${esc_(insurer.name)}</strong></td></tr>`,
+      insurer.address ? `<tr><td class="lbl"></td><td class="val dim">${esc_(insurer.address)}</td></tr>` : '',
+      (insurer.contact||insurer.email) ? `<tr><td class="lbl">Contact</td><td class="val">${insurer.contact?esc_(insurer.contact):''}${insurer.contact&&insurer.email?' &emsp; ':''}<span class="dim">${insurer.email?esc_(insurer.email):''}</span></td></tr>` : '',
+      `<tr><td class="lbl"></td><td class="val dim" style="font-size:9px">The Producer / Production Manager must be notified of any potential Insurance claims on the day of the shoot.</td></tr>`,
+    ].join('') : ''
+
+    // HOSPITAL / EMERGENCY SERVICES
+    const secEmergency = (sh.nearest_hospital_name||sh.nearest_police_name||sh.nearest_fire_name) ? [
+      hr(),
+      sh.nearest_hospital_name ? `<tr><td class="lbl">Hospital A&amp;E</td><td class="val"><strong>${esc_(sh.nearest_hospital_name)}</strong>${sh.nearest_hospital_address?`<br><span class="dim">${esc_(sh.nearest_hospital_address)}</span>`:''}</td></tr>` : '',
+      sh.nearest_police_name   ? `<tr><td class="lbl">Police</td><td class="val"><strong>${esc_(sh.nearest_police_name)}</strong>${sh.nearest_police_address?`<br><span class="dim">${esc_(sh.nearest_police_address)}</span>`:''}</td></tr>` : '',
+      sh.nearest_fire_name     ? `<tr><td class="lbl">Fire station</td><td class="val"><strong>${esc_(sh.nearest_fire_name)}</strong>${sh.nearest_fire_address?`<br><span class="dim">${esc_(sh.nearest_fire_address)}</span>`:''}</td></tr>` : '',
+    ].join('') : ''
+
+    // H&S NOTES
+    const secHS = sh.hs_notes ? [
+      hr(),
+      `<tr><td class="lbl">H&amp;S notes</td><td class="val">${nl(sh.hs_notes)}</td></tr>`,
+    ].join('') : ''
+
+    // SHOOT NOTES
+    const secNotes = sh.notes ? [
+      hr(),
+      `<tr><td class="lbl">Notes</td><td class="val" style="background:#fffdf0">${nl(sh.notes)}</td></tr>`,
+    ].join('') : ''
+
+    // INVOICING
+    const secInvoicing = (invoicing.email||invoicing.job_ref||invoicing.boilerplate) ? [
+      hr(),
+      `<tr class="section-head"><td class="lbl">Invoicing</td><td class="val"></td></tr>`,
+      invoicing.email   ? `<tr><td class="lbl">Email address</td><td class="val"><a href="mailto:${esc_(invoicing.email)}" style="color:#1a1a1a">${esc_(invoicing.email)}</a></td></tr>` : '',
+      invoicing.job_ref ? `<tr><td class="lbl">Job reference</td><td class="val"><strong>${esc_(invoicing.job_ref)}</strong></td></tr>` : '',
+      invoicing.boilerplate ? `<tr><td class="lbl"></td><td class="val dim" style="margin-top:6px">${nl(invoicing.boilerplate)}</td></tr>` : '',
+    ].join('') : ''
+
+    // ── Compose full document ────────────────────────────────────────────────
+    w.document.write(`<!DOCTYPE html><html><head>
+      <meta charset="UTF-8">
+      <title>Call Sheet — ${esc_(p.name)}</title>
       <style>
-        body{font-family:-apple-system,sans-serif;padding:30px;max-width:820px;margin:0 auto;color:#222;font-size:12px;line-height:1.5}
-        .pdf-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #222;padding-bottom:10px;margin-bottom:14px;gap:18px}
-        .pdf-header img{max-height:42px;max-width:160px;object-fit:contain}
-        h1{font-size:22px;margin:0 0 4px;font-weight:600}
-        h2{font-size:13px;background:#222;color:#fff;padding:5px 10px;margin:18px 0 8px;text-transform:uppercase;letter-spacing:1px;font-weight:500}
-        .sub{color:#666;font-size:12px}
-        table{width:100%;border-collapse:collapse;margin-bottom:8px}
-        td,th{border:0.5px solid #ccc;padding:6px 8px;text-align:left;font-size:11px;vertical-align:top}
-        th{background:#f5f5f5;font-weight:500}
-        .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:8px}
-        .block{border:0.5px solid #ccc;padding:10px;border-radius:4px}
-        .label{font-size:9px;text-transform:uppercase;color:#888;letter-spacing:0.5px;margin-bottom:2px}
-        .notes-callout{background:#fff8e1;border:1px solid #f0d77a;border-left:4px solid #c9a23d;padding:12px 14px;border-radius:4px;margin:14px 0;font-size:12px;line-height:1.6}
-        .notes-callout strong{display:block;font-size:10px;color:#8a6f1f;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px}
-        @media print { body{padding:15px} h2{page-break-after:avoid} table{page-break-inside:avoid} }
-      </style></head><body>
+        @page { size: A4 portrait; margin: 14mm 16mm 14mm 16mm }
+        * { box-sizing: border-box; margin: 0; padding: 0 }
+        body { font-family: Arial, Helvetica, sans-serif; font-size: 10.5px; color: #1a1a1a; line-height: 1.55 }
 
-      <div class="pdf-header">
-        <div>
-          <h1>${esc_(p.name)}${sh.name?' — '+esc_(sh.name):''}</h1>
-          <div class="sub">${renderDateLabel()}</div>
-        </div>
-        <img src="${logoUrl}" alt="${esc_(studio.company_name||'')}" onerror="this.style.display='none'" />
-      </div>
+        .pdf-header {
+          display: flex; justify-content: space-between; align-items: flex-start;
+          padding-bottom: 12px; margin-bottom: 8px; border-bottom: 2px solid #1a1a1a
+        }
+        .pdf-header img { max-height: 46px; max-width: 130px; object-fit: contain }
+        .pdf-title { font-size: 26px; font-weight: 700; letter-spacing: 3px }
 
-      ${sh.notes?`<div class="notes-callout"><strong>📌 Shoot notes</strong>${esc_(sh.notes).replace(/\n/g,'<br>')}</div>`:''}
+        table.cs { width: 100%; border-collapse: collapse }
 
-      ${sh.location_name || sh.location_address ? `<div class="grid2">
-        <div class="block"><div class="label">Location</div><strong>${esc_(sh.location_name||'')}</strong>${sh.location_address?'<br>'+esc_(sh.location_address):''}${sh.parking_notes?'<br><span class="label">Parking</span><br>'+esc_(sh.parking_notes):''}</div>
-        <div class="block"><div class="label">Weather / Transport</div>${sh.weather_text?esc_(sh.weather_text)+'<br>':''}${sh.nearest_transport?'<span class="label">Transport</span><br>'+esc_(sh.nearest_transport):''}</div>
-      </div>`:''}
+        td { padding: 4px 6px; vertical-align: top }
+        td.lbl {
+          width: 160px; min-width: 160px; font-size: 9px; font-weight: 700;
+          text-transform: uppercase; letter-spacing: 0.6px; color: #555;
+          padding-right: 14px; padding-top: 6px; white-space: nowrap
+        }
+        td.val { font-size: 10.5px }
 
-      ${sh.schedule?.length?`<h2>Schedule</h2><table><thead><tr><th style="width:90px">Time</th><th>Action</th></tr></thead><tbody>${sh.schedule.map(r=>`<tr><td>${esc_(r.time||'')}</td><td>${esc_(r.description||'')}</td></tr>`).join('')}</tbody></table>`:''}
+        tr.hr td { border-top: 0.5px solid #bbb; height: 0; padding: 4px 0 0 0 }
+        tr.section-head td { padding-top: 8px; font-weight: 700; text-transform: uppercase; font-size: 9px; letter-spacing: 0.6px; color: #555; border-top: 0.5px solid #bbb }
+        tr.section-head td.lbl { color: #1a1a1a }
 
-      ${renderCrewSection('Client','client')}
-      ${renderCrewSection('On Camera','on_camera')}
-      ${renderCrewSection('Crew','crew')}
+        .crew-name { font-weight: 600 }
+        .crew-role { margin-left: 1.5em; color: #444 }
+        .dim { color: #666 }
+        .sched-time { font-weight: 600; min-width: 40px; display: inline-block }
+        .cat-label { font-weight: 700; font-size: 9.5px; text-transform: none; letter-spacing: 0; color: #1a1a1a }
 
-      ${sh.locations?.length?`<h2>Additional locations</h2><table><thead><tr><th>Name</th><th>Address</th><th style="width:80px">Move</th></tr></thead><tbody>${sh.locations.map(l=>`<tr><td>${esc_(l.name||'')}</td><td>${esc_(l.address||'')}</td><td>${esc_(l.move_time||'')}</td></tr>`).join('')}</tbody></table>`:''}
+        @media print {
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact }
+          tr { page-break-inside: avoid }
+        }
+      </style>
+    </head><body>
 
-      ${sh.hotels?.length?`<h2>Accommodation</h2><table><thead><tr><th>Hotel</th><th>Address</th><th>Check-in</th><th>Check-out</th><th>Guests</th></tr></thead><tbody>${sh.hotels.map(h=>`<tr><td>${esc_(h.name||'')}</td><td>${esc_(h.address||'')}${h.notes?'<br><span style="color:#888;font-size:10px">'+esc_(h.notes)+'</span>':''}</td><td>${esc_(h.check_in||'')}</td><td>${esc_(h.check_out||'')}</td><td>${(h.assigned_crew||[]).map(n=>esc_(n)).join('<br>')||'<span style="color:#aaa">—</span>'}</td></tr>`).join('')}</tbody></table>`:''}
+    <div class="pdf-header">
+      <img src="${logoUrl}" alt="${esc_(studio.company_name||'')}" onerror="this.style.display='none'" />
+      <div class="pdf-title">CALLSHEET</div>
+    </div>
 
-      ${(sh.nearest_hospital_name||sh.nearest_police_name||sh.nearest_fire_name)?`<h2>Emergency Services</h2><table><tbody>
-        ${sh.nearest_hospital_name?`<tr><td style="width:100px">🏥 Hospital</td><td><strong>${esc_(sh.nearest_hospital_name)}</strong>${sh.nearest_hospital_address?'<br>'+esc_(sh.nearest_hospital_address):''}</td></tr>`:''}
-        ${sh.nearest_police_name?`<tr><td>🚔 Police</td><td><strong>${esc_(sh.nearest_police_name)}</strong>${sh.nearest_police_address?'<br>'+esc_(sh.nearest_police_address):''}</td></tr>`:''}
-        ${sh.nearest_fire_name?`<tr><td>🚒 Fire</td><td><strong>${esc_(sh.nearest_fire_name)}</strong>${sh.nearest_fire_address?'<br>'+esc_(sh.nearest_fire_address):''}</td></tr>`:''}
-      </tbody></table>`:''}
+    <table class="cs">
+      ${secJobName}
+      ${secClient}
+      ${secTalent}
+      ${secProduction}
+      ${secDates}
+      ${secLocation}
+      ${secHotels}
+      ${secSchedule}
+      ${secMainUnit}
+      ${secEquipment}
+      ${secInsurance}
+      ${secEmergency}
+      ${secHS}
+      ${secNotes}
+      ${secInvoicing}
+      ${hr()}
+    </table>
 
-      ${sh.hs_notes?`<h2>Health &amp; Safety</h2><div class="block">${esc_(sh.hs_notes).replace(/\n/g,'<br>')}</div>`:''}
-
-      <script>window.onload=()=>window.print()</script>
-      </body></html>`)
+    <script>window.onload = () => window.print()</script>
+    </body></html>`)
     w.document.close()
   }
+
 
   async _loadTimePanel(mc, p) {
     const el = mc.querySelector('#pv-time')
