@@ -95,14 +95,11 @@ export const projects = pgTable('projects', {
   nearest_fire_name:        text('nearest_fire_name'),
   nearest_fire_address:     text('nearest_fire_address'),
   hotels:            jsonb('hotels').notNull().default([]),
-<<<<<<< HEAD
-=======
   // Per-project insurance override (falls back to settings.default_insurer_*)
   insurer_name:    text('insurer_name'),
   insurer_address: text('insurer_address'),
   insurer_email:   text('insurer_email'),
   insurer_contact: text('insurer_contact'),
->>>>>>> dev
   ...timestamps,
 })
 
@@ -304,9 +301,6 @@ export const shoots = pgTable('shoots', {
   crew:              jsonb('crew').notNull().default([]),
   schedule:          jsonb('schedule').notNull().default([]),
   locations:         jsonb('locations').notNull().default([]),
-<<<<<<< HEAD
-  risk_assessment:   jsonb('risk_assessment').notNull().default({}),
-=======
   equipment:         jsonb('equipment').notNull().default([]),
   risk_assessment:   jsonb('risk_assessment').notNull().default({}),
   // Display-only client override (defaults from project's client.company)
@@ -319,7 +313,6 @@ export const shoots = pgTable('shoots', {
   // Per-shoot invoicing (falls back to settings)
   invoicing_email:   text('invoicing_email'),
   invoicing_job_ref: text('invoicing_job_ref'),
->>>>>>> dev
   sort_order:        integer('sort_order').notNull().default(0),
   created_at:        timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updated_at:        timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
