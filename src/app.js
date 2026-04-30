@@ -5,15 +5,6 @@ import { ProjectsView } from './views/projects.js'
 import { BudgetsView, budTotal } from './views/budgets.js'
 import { CallSheetsView } from './views/callsheets.js'
 
-// Capture bookmarklet import text — written to localStorage by /import-relay before Clerk loads
-const _importText = (() => {
-  try {
-    const text = localStorage.getItem('peny-import-text')
-    if (text) { localStorage.removeItem('peny-import-text'); return text }
-  } catch {}
-  return null
-})()
-
 export class App {
   constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, onSignOut }) {
     this.userId      = userId
@@ -43,35 +34,8 @@ export class App {
     this._restoreFromHash()   // parse URL before first render
     this.render()
     this._bindKeyboard()
-<<<<<<< HEAD
-    // Handle bookmarklet import — text captured at module load before Clerk touches the URL
-    if (_importText) {
-      setTimeout(() => {
-        this.currentView = 'projects'
-        this.projectsView.currentId = null
-        this.projectsView.editingId = null
-        this.budgetsView.currentId  = null
-        this.budgetsView.editingId  = null
-        this.render()
-        setTimeout(() => {
-          const mc = document.getElementById('main-content')
-          this.projectsView.openNewModal(null, null, mc)
-          setTimeout(() => {
-            const textEl = mc?.querySelector('#pf-ai-text')
-            const panel  = mc?.querySelector('#pf-ai-panel')
-            const toggle = mc?.querySelector('#pf-ai-toggle')
-            if (textEl) textEl.value        = _importText
-            if (panel)  panel.style.display = 'block'
-            if (toggle) toggle.textContent  = 'Hide'
-            mc?.querySelector('#pf-ai-extract')?.click()
-          }, 100)
-        }, 200)
-      }, 300)
-    }
-=======
     // Handle browser back/forward
     window.addEventListener('popstate', (e) => this._handlePopState(e))
->>>>>>> dev
   }
 
   async _openDevRequest() {
@@ -1504,7 +1468,7 @@ export class App {
       .cs-panel-head:hover{background:var(--bg-secondary)}
       .cs-panel-body{}.cs-panel-body.cs-collapsed{display:none}
       .bsec-body{display:none;border-top:0.5px solid var(--border-light)}.bsec-body.open{display:block;overflow-x:auto}
-      .bl-table{width:100%;border-collapse:collapse;min-width:920px}
+      .bl-table{width:100%;border-collapse:collapse;min-width:880px}
       .bl-table th{font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;padding:8px 6px;text-align:left;border-bottom:0.5px solid var(--border-light);font-weight:400}
       .bl-table th.r{text-align:right}.bl-table td{padding:4px 4px;vertical-align:middle;border-bottom:0.5px solid var(--border-light)}
       .bl-table tr:last-child td{border-bottom:none}.bl-table tr.sub td{background:var(--bg-secondary);font-size:12px;font-weight:500}
