@@ -27,12 +27,12 @@ export const settings = pgTable('settings', {
   prepared_by:     text('prepared_by'),
   budget_template:      jsonb('budget_template'),
   financial_year_start: integer('financial_year_start').notNull().default(4),
-  // Default insurance details (used as fallback for projects/shoots)
+  // Default insurance details
   default_insurer_name:    text('default_insurer_name'),
   default_insurer_address: text('default_insurer_address'),
   default_insurer_email:   text('default_insurer_email'),
   default_insurer_contact: text('default_insurer_contact'),
-  // Invoicing boilerplate (shown on call sheets)
+  // Invoicing boilerplate
   invoicing_email:        text('invoicing_email'),
   invoicing_boilerplate:  text('invoicing_boilerplate'),
   ...timestamps,
@@ -95,7 +95,7 @@ export const projects = pgTable('projects', {
   nearest_fire_name:        text('nearest_fire_name'),
   nearest_fire_address:     text('nearest_fire_address'),
   hotels:            jsonb('hotels').notNull().default([]),
-  // Per-project insurance override (falls back to settings.default_insurer_*)
+  // Per-project insurance override
   insurer_name:    text('insurer_name'),
   insurer_address: text('insurer_address'),
   insurer_email:   text('insurer_email'),
@@ -278,7 +278,6 @@ export const shoots = pgTable('shoots', {
   user_id:           text('user_id').notNull(),
   name:              text('name'),
   shoot_date:        date('shoot_date'),
-  shoot_dates:       jsonb('shoot_dates').notNull().default([]),
   status:            text('status').notNull().default('draft'),
   shoot_token:       text('shoot_token'),
   general_call:      text('general_call'),
@@ -301,12 +300,13 @@ export const shoots = pgTable('shoots', {
   crew:              jsonb('crew').notNull().default([]),
   schedule:          jsonb('schedule').notNull().default([]),
   locations:         jsonb('locations').notNull().default([]),
+  risk_assessment:   jsonb('risk_assessment').notNull().default({}),
   equipment:         jsonb('equipment').notNull().default([]),
   catering:          jsonb('catering').notNull().default({}),
   crew_section_notes: jsonb('crew_section_notes').notNull().default({}),
-  risk_assessment:   jsonb('risk_assessment').notNull().default({}),
   shoot_camera_setups: jsonb('shoot_camera_setups').notNull().default([]),
-  // Display-only client override (defaults from project's client.company)
+  shoot_dates:       jsonb('shoot_dates').notNull().default([]),
+  // Display-only client override
   client_display:    text('client_display'),
   // Per-shoot insurance override (falls back to project, then settings)
   insurer_name:      text('insurer_name'),
@@ -330,16 +330,4 @@ export const camera_setups = pgTable('camera_setups', {
   custom_items: jsonb('custom_items').notNull().default([]),
   created_at:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updated_at:   timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-})
-  // Per-shoot insurance override (falls back to project, then settings)
-  insurer_name:      text('insurer_name'),
-  insurer_address:   text('insurer_address'),
-  insurer_email:     text('insurer_email'),
-  insurer_contact:   text('insurer_contact'),
-  // Per-shoot invoicing (falls back to settings)
-  invoicing_email:   text('invoicing_email'),
-  invoicing_job_ref: text('invoicing_job_ref'),
-  sort_order:        integer('sort_order').notNull().default(0),
-  created_at:        timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updated_at:        timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
