@@ -1,10 +1,10 @@
 {
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/import-relay", "destination": "/import-relay.html" },
+    { "source": "/track/(.*)", "destination": "/track.html" },
     { "source": "/portal/(.*)", "destination": "/portal.html" },
     { "source": "/call/(.*)", "destination": "/callsheet.html" },
-    { "source": "/quote/(.*)", "destination": "/quote.html" },
+    { "source": "/pack/(.*)", "destination": "/packing.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

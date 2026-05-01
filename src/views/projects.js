@@ -1023,6 +1023,7 @@ export class ProjectsView {
       sh.equipment = Array.isArray(sh.equipment) ? sh.equipment : []
       sh.crew_section_notes = (sh.crew_section_notes && typeof sh.crew_section_notes === 'object') ? sh.crew_section_notes : {}
       sh.catering = (sh.catering && typeof sh.catering === 'object') ? sh.catering : {}
+      sh.shoot_camera_setups = Array.isArray(sh.shoot_camera_setups) ? sh.shoot_camera_setups : []
       this._renderShootEditor(mc, p, sh)
     } catch(e) { console.error(e); this.app.toast('Error loading shoot') }
   }
@@ -1209,6 +1210,24 @@ export class ProjectsView {
                   <div><div class="proj-field-label">Supplied by / responsibility</div><input type="text" class="proj-input" id="se-catering-supplier" value="${esc((sh.catering||{}).supplier||'')}" placeholder="e.g. C/O Red Bull, C/O Production" /></div>
                   <div><div class="proj-field-label">Plan / notes</div><textarea class="proj-textarea" id="se-catering-notes" style="min-height:70px" placeholder="e.g. Crew breakfast at hotel. Lunch box on set. Evening meal TBC.">${esc((sh.catering||{}).notes||'')}</textarea></div>
                 </div>
+              </div>
+            </div>
+
+            <!-- Camera rigs / kit packing -->
+            <div class="bsec-wrap" id="sep-rigs">
+              <div class="bsec-head enabled" data-se-panel="rigs">
+                <span class="bsec-name" style="flex:1">📦 Camera rigs &amp; kit packing</span>
+                <button class="btn-secondary" id="se-rig-from-library" style="font-size:11px;padding:3px 10px;margin-right:4px">＋ From library</button>
+                <button class="btn-secondary" id="se-rig-add-new" style="font-size:11px;padding:3px 10px;margin-right:8px">＋ New rig</button>
+                <span class="bsec-chev open">▶</span>
+              </div>
+              <div class="bsec-body open">
+                <div style="padding:14px" id="se-rigs-list">
+                  ${this._shootRigsHTML(sh)}
+                </div>
+                ${sh.shoot_token ? `<div style="padding:0 14px 14px;display:flex;gap:8px">
+                  <a href="/pack/${sh.shoot_token}" target="_blank" class="btn-primary" style="font-size:12px;text-decoration:none;display:inline-flex;align-items:center;gap:6px">📱 Open packing list</a>
+                </div>` : ''}
               </div>
             </div>
 
@@ -1482,6 +1501,39 @@ export class ProjectsView {
       </div>`).join('')
   }
 
+  _shootRigsHTML(sh) {
+    const rigs = Array.isArray(sh.shoot_camera_setups) ? sh.shoot_camera_setups : []
+    if (!rigs.length) {
+      return `<div style="font-size:12px;color:var(--text-tertiary);padding:4px 0">No camera rigs added yet. Use <strong style="color:var(--text-primary)">＋ From library</strong> to add a saved rig, or <strong style="color:var(--text-primary)">＋ New rig</strong> to create one.</div>`
+    }
+    const totalItems = r => (r.items||[]).filter(it => !it.section && it.status !== 'not_required').length
+    const packedItems = r => (r.items||[]).filter(it => !it.section && it.status === 'packed').length
+    return rigs.map((r, i) => {
+      const total = totalItems(r), packed = packedItems(r)
+      const pct = total > 0 ? Math.round(packed/total*100) : 0
+      const pctColor = pct === 100 ? '#6ec96e' : pct > 50 ? '#f59e0b' : 'var(--text-tertiary)'
+      return `<div style="border:0.5px solid var(--border-med);border-radius:var(--radius-md);padding:12px;margin-bottom:8px;background:var(--bg-secondary)" data-rig-idx="${i}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+          <div style="flex:1;min-width:0;margin-right:8px">
+            <input type="text" class="proj-input" value="${esc(r.name||'')}" placeholder="Rig name — e.g. Sony FX6 Main" data-rig-field="${i},name" style="font-weight:500;margin-bottom:6px" />
+            <textarea class="proj-textarea" placeholder="Notes — e.g. Remember 10mm lens" data-rig-field="${i},notes" style="min-height:36px;font-size:12px;font-style:italic">${esc(r.notes||'')}</textarea>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+            <div style="text-align:right">
+              <div style="font-size:18px;font-weight:700;color:${pctColor}">${pct}%</div>
+              <div style="font-size:10px;color:var(--text-tertiary)">${packed}/${total} packed</div>
+            </div>
+            <button class="row-btn" style="color:#c03020" data-rig-rem="${i}">×</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn-secondary" data-rig-save-lib="${i}" style="font-size:11px">💾 Save to library</button>
+          ${r.packed_at ? `<span style="font-size:11px;color:var(--text-tertiary)">Packed ${new Date(r.packed_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).replace(',',' ')}${r.packed_by?' by '+r.packed_by:''}</span>` : ''}
+        </div>
+      </div>`
+    }).join('')
+  }
+
   _shootRAHTML(sh) {
     const ra = (sh.risk_assessment && typeof sh.risk_assessment === 'object') ? sh.risk_assessment : {}
     const hazards = Array.isArray(ra.hazards) ? ra.hazards : []
@@ -1627,6 +1679,7 @@ export class ProjectsView {
         equipment: sh.equipment || [],
         crew_section_notes: sh.crew_section_notes || {},
         catering: sh.catering || {},
+        shoot_camera_setups: sh.shoot_camera_setups || [],
         risk_assessment: sh.risk_assessment || {},
         client_display:    overlay.querySelector('#se-client-display')?.value.trim() || null,
         insurer_name:      overlay.querySelector('#se-ins-name')?.value.trim()    || null,
@@ -1648,7 +1701,7 @@ export class ProjectsView {
         sh.equipment = Array.isArray(sh.equipment) ? sh.equipment : []
         sh.shoot_dates = Array.isArray(sh.shoot_dates) ? sh.shoot_dates : []
         sh.catering = (sh.catering && typeof sh.catering === 'object') ? sh.catering : {}
-        showSaved()
+        sh.shoot_camera_setups = Array.isArray(sh.shoot_camera_setups) ? sh.shoot_camera_setups : []
         // Refresh crew links sidebar (tokens may have been generated)
         this._renderShootCrewLinks(overlay, sh)
       } catch(e) { console.error(e); if (indicator) { indicator.textContent = '⚠ Save failed'; indicator.style.color = '#e07070' } }
@@ -1692,6 +1745,86 @@ export class ProjectsView {
     overlay.querySelector('#se-catering-notes')?.addEventListener('change', e => {
       sh.catering.notes = e.target.value.trim() || ''; save()
     })
+
+    // Camera rigs
+    if (!Array.isArray(sh.shoot_camera_setups)) sh.shoot_camera_setups = []
+    const refreshRigs = () => {
+      const el = overlay.querySelector('#se-rigs-list')
+      if (el) el.innerHTML = this._shootRigsHTML(sh)
+      bindRigs()
+    }
+    const bindRigs = () => {
+      overlay.querySelectorAll('[data-rig-field]').forEach(el => {
+        el.addEventListener('change', () => {
+          const [i, f] = el.dataset.rigField.split(',')
+          if (!sh.shoot_camera_setups[+i]) return
+          sh.shoot_camera_setups[+i][f] = el.value; save()
+        })
+      })
+      overlay.querySelectorAll('[data-rig-rem]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          sh.shoot_camera_setups.splice(+btn.dataset.rigRem, 1)
+          refreshRigs(); save()
+        })
+      })
+      overlay.querySelectorAll('[data-rig-save-lib]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const i = +btn.dataset.rigSaveLib
+          const rig = sh.shoot_camera_setups[i]
+          if (!rig?.name) { this.app.toast('Enter a rig name first'); return }
+          try {
+            const { createCameraSetup } = await import('../db/client.js')
+            await createCameraSetup(this.app.userId, { name: rig.name, notes: rig.notes || '' })
+            this.app.toast(`"${rig.name}" saved to library ✓`)
+          } catch(e) { console.error(e); this.app.toast('Save to library failed') }
+        })
+      })
+    }
+    overlay.querySelector('#se-rig-add-new')?.addEventListener('click', () => {
+      sh.shoot_camera_setups.push({ name:'', notes:'', bag:'', packed_by:'', packed_at:null, library_id:null, items:[] })
+      refreshRigs(); save()
+    })
+    overlay.querySelector('#se-rig-from-library')?.addEventListener('click', async () => {
+      try {
+        const { getCameraSetups } = await import('../db/client.js')
+        const library = await getCameraSetups(this.app.userId)
+        if (!library.length) { this.app.toast('No saved rigs yet — create one with ＋ New rig and save it to the library'); return }
+        // Build picker
+        document.getElementById('rig-lib-picker')?.remove()
+        const picker = document.createElement('div')
+        picker.id = 'rig-lib-picker'
+        picker.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px'
+        picker.innerHTML = `<div style="background:var(--bg-primary);border-radius:var(--radius-lg);max-width:440px;width:100%;max-height:80vh;display:flex;flex-direction:column">
+          <div style="padding:14px 18px;border-bottom:0.5px solid var(--border-light);display:flex;justify-content:space-between;align-items:center">
+            <strong style="font-size:14px">Add rig from library</strong>
+            <button id="rig-pick-close" class="row-btn">×</button>
+          </div>
+          <div style="padding:14px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:6px">
+            ${library.map(r => `
+              <div data-pick-rig="${r.id}" style="padding:10px 12px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);cursor:pointer" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''">
+                <div style="font-size:13px;font-weight:500">${esc(r.name)}</div>
+                ${r.notes ? `<div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">${esc(r.notes)}</div>` : ''}
+              </div>`).join('')}
+          </div>
+        </div>`
+        document.body.appendChild(picker)
+        picker.querySelector('#rig-pick-close')?.addEventListener('click', () => picker.remove())
+        picker.addEventListener('click', e => { if (e.target === picker) picker.remove() })
+        picker.querySelectorAll('[data-pick-rig]').forEach(el => {
+          el.addEventListener('click', () => {
+            const src = library.find(r => r.id === el.dataset.pickRig)
+            if (!src) return
+            sh.shoot_camera_setups.push({
+              name: src.name, notes: src.notes||'', bag:'', packed_by:'', packed_at:null,
+              library_id: src.id, items: [],
+            })
+            picker.remove()
+            refreshRigs(); save()
+          })
+        })
+      } catch(e) { console.error(e); this.app.toast('Error loading library') }
+    })
+    bindRigs()
 
     // Top-level fields — autosave on change (no longer includes #se-date / #se-general-call)
     overlay.querySelectorAll('#se-name,#se-status,#se-loc-name,#se-loc-addr,#se-parking,#se-transport,#se-weather,#se-hs,#se-notes,#se-hosp-name,#se-hosp-addr,#se-police-name,#se-police-addr,#se-fire-name,#se-fire-addr,#se-client-display,#se-ins-name,#se-ins-addr,#se-ins-email,#se-ins-contact,#se-inv-email,#se-inv-ref').forEach(el => {

@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Packing List — Peny</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+    :root {
+      --bg: #0f0f0f; --surface: #1a1a1a; --surface2: #222; --surface3: #2a2a2a;
+      --border: #2a2a2a; --border2: #333;
+      --text: #e8e8e4; --text-sec: #9a9a90; --text-ter: #5a5a54;
+      --accent: #4a90d9; --green: #6ec96e; --amber: #f59e0b; --red: #ef4444;
+      --radius: 10px; --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    body { background:var(--bg); color:var(--text); font-family:var(--font); min-height:100vh; padding-bottom:60px }
+    .hero { background:linear-gradient(160deg,#1a1a2e,#16213e); padding:24px 20px 20px; border-bottom:0.5px solid var(--border) }
+    .logo { height:22px; opacity:0.7; margin-bottom:14px; display:block }
+    .hero-title { font-size:11px; color:var(--text-sec); text-transform:uppercase; letter-spacing:0.8px; margin-bottom:4px }
+    .hero-name { font-size:20px; font-weight:600; margin-bottom:2px }
+    .hero-date { font-size:13px; color:var(--text-sec) }
+    .actions { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap }
+    .btn { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; border:none; font-family:var(--font); text-decoration:none }
+    .btn-pri { background:rgba(74,144,217,0.2); color:var(--accent); border:0.5px solid rgba(74,144,217,0.4) }
+    .btn-sec { background:var(--surface2); color:var(--text-sec); border:0.5px solid var(--border2) }
+    .btn-green { background:rgba(110,201,110,0.15); color:var(--green); border:0.5px solid rgba(110,201,110,0.3) }
+    .wrap { max-width:600px; margin:0 auto; padding:16px }
+    .rig { background:var(--surface); border:0.5px solid var(--border); border-radius:var(--radius); margin-bottom:16px; overflow:hidden }
+    .rig-head { padding:14px 16px; border-bottom:0.5px solid var(--border); display:flex; justify-content:space-between; align-items:flex-start; gap:12px }
+    .rig-name { font-size:16px; font-weight:600 }
+    .rig-notes { font-size:12px; color:var(--amber); margin-top:3px; line-height:1.4 }
+    .progress { display:flex; align-items:center; gap:8px; flex-shrink:0 }
+    .progress-bar { width:60px; height:5px; background:var(--surface3); border-radius:3px; overflow:hidden }
+    .progress-fill { height:100%; background:var(--green); transition:width 0.2s }
+    .progress-pct { font-size:11px; color:var(--text-ter); width:28px; text-align:right }
+    .rig-meta { padding:12px 16px; display:grid; grid-template-columns:1fr 1fr; gap:8px; border-bottom:0.5px solid var(--border) }
+    .meta-field { display:flex; flex-direction:column; gap:3px }
+    .meta-label { font-size:10px; color:var(--text-ter); text-transform:uppercase; letter-spacing:0.5px }
+    .meta-input { background:var(--surface2); border:0.5px solid var(--border2); border-radius:6px; padding:6px 9px; color:var(--text); font-family:var(--font); font-size:12px; outline:none; width:100% }
+    .meta-input:focus { border-color:var(--accent) }
+    .packed-stamp { grid-column:1/-1; font-size:11px; color:var(--text-ter); padding-top:2px }
+    .items { display:flex; flex-direction:column }
+    .item { display:flex; align-items:center; justify-content:space-between; padding:11px 16px; border-bottom:0.5px solid var(--border); gap:8px; cursor:pointer; user-select:none; -webkit-tap-highlight-color:transparent }
+    .item:last-child { border-bottom:none }
+    .item:active { background:var(--surface2) }
+    .item-label { font-size:14px; flex:1 }
+    .item-status { display:flex; align-items:center; gap:6px }
+    .status-badge { font-size:11px; padding:3px 9px; border-radius:12px; font-weight:500; white-space:nowrap }
+    .s-null { background:var(--surface3); color:var(--text-ter); border:0.5px solid var(--border2) }
+    .s-packed { background:rgba(110,201,110,0.15); color:var(--green); border:0.5px solid rgba(110,201,110,0.3) }
+    .s-not_required { background:rgba(90,90,84,0.3); color:var(--text-ter); border:0.5px solid var(--border2) }
+    .item-icon { font-size:18px; width:24px; text-align:center }
+    .section-divider { padding:8px 16px; font-size:10px; color:var(--text-ter); text-transform:uppercase; letter-spacing:0.6px; background:var(--surface2); border-bottom:0.5px solid var(--border) }
+    .add-item-row { padding:10px 16px; border-top:0.5px solid var(--border); display:flex; gap:8px }
+    .add-item-input { flex:1; background:var(--surface2); border:0.5px solid var(--border2); border-radius:6px; padding:7px 10px; color:var(--text); font-family:var(--font); font-size:13px; outline:none }
+    .add-item-input:focus { border-color:var(--accent) }
+    .add-item-btn { background:transparent; border:0.5px solid var(--border2); border-radius:6px; color:var(--text-sec); font-size:13px; padding:7px 12px; cursor:pointer; font-family:var(--font) }
+    .loading { text-align:center; padding:80px 20px; color:var(--text-ter) }
+    .empty { text-align:center; padding:40px 20px; color:var(--text-ter); font-size:14px }
+    .save-toast { position:fixed; bottom:20px; right:20px; background:var(--surface); border:0.5px solid var(--green); color:var(--green); padding:8px 16px; border-radius:8px; font-size:13px; font-weight:500; transform:translateY(80px); transition:transform 0.2s; z-index:100 }
+    .save-toast.show { transform:translateY(0) }
+    @media print {
+      :root { --bg:#fff; --surface:#fff; --surface2:#f5f5f5; --surface3:#eee; --border:#ddd; --border2:#ccc; --text:#111; --text-sec:#555; --text-ter:#888; --green:#2a8a2a; --amber:#b07020 }
+      body { background:white; padding:0 }
+      .hero { background:white; border-bottom:1px solid #ccc }
+      .logo { filter:invert(1) }
+      .actions, .add-item-row, .save-toast { display:none !important }
+      .item { page-break-inside:avoid }
+      .rig { border:0.5px solid #ccc; margin-bottom:12px }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"><div class="loading">Loading…</div></div>
+  <div class="save-toast" id="toast">✓ Saved</div>
+
+  <script type="module">
+    const DEFAULT_ITEMS = [
+      { section: 'Camera' },
+      { id: 'body',       label: 'Camera body' },
+      { id: 'batteries',  label: 'Batteries' },
+      { id: 'charger',    label: 'Battery charger(s)' },
+      { id: 'media',      label: 'Media (cards / SSDs)' },
+      { id: 'reader',     label: 'Media reader / hub' },
+      { section: 'Optics' },
+      { id: 'lenses',     label: 'Lenses' },
+      { id: 'nd',         label: 'ND filters' },
+      { id: 'mattebox',   label: 'Matte box / filter holder' },
+      { id: 'adapters',   label: 'Lens adapters' },
+      { section: 'Rigging' },
+      { id: 'monitor',    label: 'Monitor / EVF' },
+      { id: 'cage',       label: 'Cage / top handle' },
+      { id: 'tripod',     label: 'Tripod / fluid head' },
+      { id: 'ff',         label: 'Follow focus' },
+      { section: 'Connectivity' },
+      { id: 'hdmi',       label: 'HDMI / SDI cables' },
+      { id: 'usbc',       label: 'USB-C / power cables' },
+      { id: 'wireless',   label: 'Wireless video tx/rx' },
+      { section: 'Audio' },
+      { id: 'mic',        label: 'Microphone' },
+      { id: 'recorder',   label: 'Audio recorder' },
+      { id: 'audiocables',label: 'Audio cables / XLR' },
+      { section: 'Other' },
+      { id: 'rain',       label: 'Rain cover / weather protection' },
+      { id: 'cleaning',   label: 'Cleaning kit' },
+      { id: 'tools',      label: 'Hex keys / tools' },
+    ]
+
+    const token = location.pathname.split('/pack/')[1]?.split('/')[0]
+    if (!token) {
+      document.getElementById('root').innerHTML = '<div class="empty">Invalid packing link.</div>'
+      throw new Error('no token')
+    }
+
+    const res = await fetch(`/api/packing?token=${token}`)
+    if (!res.ok) {
+      document.getElementById('root').innerHTML = '<div class="empty">Packing list not found.</div>'
+      throw new Error('not found')
+    }
+    const data = await res.json()
+    let { shoot, project, studio, camera_setups } = data
+
+    const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    const fmtDate = s => {
+      if (!s) return ''
+      const d = new Date(String(s).split('T')[0] + 'T12:00:00')
+      return isNaN(d) ? '' : d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})
+    }
+
+    document.title = `Packing — ${project.name}`
+
+    // Ensure all setups have full item lists (merge defaults + customs)
+    camera_setups = camera_setups.map(setup => {
+      const existingById = Object.fromEntries((setup.items||[]).map(it => [it.id, it]))
+      const items = []
+      for (const d of DEFAULT_ITEMS) {
+        if (d.section) { items.push(d); continue }
+        items.push({ id: d.id, label: d.label, status: existingById[d.id]?.status ?? null })
+      }
+      // Append custom items not in defaults
+      for (const it of (setup.items||[])) {
+        if (!DEFAULT_ITEMS.find(d => d.id === it.id)) {
+          items.push({ id: it.id, label: it.label, status: it.status ?? null, custom: true })
+        }
+      }
+      return { ...setup, items }
+    })
+
+    // Save debounce
+    let saveTimer = null
+    const toast = document.getElementById('toast')
+    const save = () => {
+      clearTimeout(saveTimer)
+      saveTimer = setTimeout(async () => {
+        try {
+          await fetch(`/api/packing?token=${token}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ camera_setups }),
+          })
+          toast.classList.add('show')
+          setTimeout(() => toast.classList.remove('show'), 2000)
+        } catch(e) { console.error('Save failed', e) }
+      }, 600)
+    }
+
+    const packedCount = (setup) => setup.items.filter(it => !it.section && it.status === 'packed').length
+    const requiredCount = (setup) => setup.items.filter(it => !it.section && it.status !== 'not_required').length
+
+    const statusIcon = s => s === 'packed' ? '✅' : s === 'not_required' ? '➖' : '⬜'
+    const statusClass = s => s === 'packed' ? 's-packed' : s === 'not_required' ? 's-not_required' : 's-null'
+    const statusLabel = s => s === 'packed' ? 'Packed' : s === 'not_required' ? 'N/A' : ''
+    const cycleStatus = s => s === null ? 'packed' : s === 'packed' ? 'not_required' : null
+
+    const renderSetup = (setup, si) => {
+      const pc = packedCount(setup)
+      const rc = requiredCount(setup)
+      const pct = rc > 0 ? Math.round(pc / rc * 100) : 0
+      let html = `<div class="rig" id="rig-${si}">
+        <div class="rig-head">
+          <div>
+            <div class="rig-name">${esc(setup.name||'Unnamed rig')}</div>
+            ${setup.notes ? `<div class="rig-notes">📝 ${esc(setup.notes)}</div>` : ''}
+          </div>
+          <div class="progress">
+            <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+            <div class="progress-pct">${pct}%</div>
+          </div>
+        </div>
+        <div class="rig-meta">
+          <div class="meta-field">
+            <span class="meta-label">📦 Bag / case</span>
+            <input class="meta-input" type="text" value="${esc(setup.bag||'')}" placeholder="e.g. Pelican 1510" data-meta="${si},bag" />
+          </div>
+          <div class="meta-field">
+            <span class="meta-label">👤 Packed by</span>
+            <input class="meta-input" type="text" value="${esc(setup.packed_by||'')}" placeholder="Name" data-meta="${si},packed_by" />
+          </div>
+          ${setup.packed_at ? `<div class="packed-stamp">Packed: ${new Date(setup.packed_at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
+        </div>
+        <div class="items" id="items-${si}">`
+
+      let curSection = null
+      for (let ii = 0; ii < setup.items.length; ii++) {
+        const item = setup.items[ii]
+        if (item.section) {
+          curSection = item.section
+          html += `<div class="section-divider">${esc(item.section)}</div>`
+        } else {
+          html += `<div class="item" data-item="${si},${ii}">
+            <div class="item-label">${esc(item.label)}</div>
+            <div class="item-status">
+              ${item.status ? `<span class="status-badge ${statusClass(item.status)}">${statusLabel(item.status)}</span>` : ''}
+              <span class="item-icon">${statusIcon(item.status)}</span>
+            </div>
+          </div>`
+        }
+      }
+
+      html += `</div>
+        <div class="add-item-row">
+          <input class="add-item-input" type="text" placeholder="Add custom item…" data-add-input="${si}" />
+          <button class="add-item-btn" data-add-btn="${si}">Add</button>
+        </div>
+      </div>`
+
+      return html
+    }
+
+    const dates = Array.isArray(shoot.shoot_dates) ? shoot.shoot_dates.filter(d=>d.date) : []
+    const dateStr = dates.length > 0
+      ? (dates.length === 1 ? fmtDate(dates[0].date) : dates.map(d => new Date(String(d.date).split('T')[0]+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'})).join(' – '))
+      : fmtDate(shoot.shoot_date)
+
+    const renderAll = () => {
+      const root = document.getElementById('root')
+      root.innerHTML = `
+        <div class="hero">
+          <img src="/peny-logo-white.png" class="logo" alt="Peny" onerror="this.style.display='none'" />
+          <div class="hero-title">${esc(project.name)}${shoot.name?' — '+esc(shoot.name):''}</div>
+          <div class="hero-name">Kit packing list</div>
+          ${dateStr ? `<div class="hero-date">${esc(dateStr)}</div>` : ''}
+          <div class="actions">
+            <button class="btn btn-green" id="pack-all-btn">✅ Mark all packed</button>
+            <button class="btn btn-sec" id="reset-btn">↺ Reset all</button>
+            <button class="btn btn-sec" onclick="window.print()">🖨 Print</button>
+          </div>
+        </div>
+        <div class="wrap">
+          ${camera_setups.length
+            ? camera_setups.map((s,i) => renderSetup(s,i)).join('')
+            : '<div class="empty">No camera rigs added to this shoot yet.<br>Add them from the shoot editor in the CRM.</div>'
+          }
+        </div>`
+
+      // Bind item taps
+      root.querySelectorAll('[data-item]').forEach(el => {
+        el.addEventListener('click', () => {
+          const [si, ii] = el.dataset.item.split(',').map(Number)
+          const item = camera_setups[si].items[ii]
+          if (item.section) return
+          const wasNull = item.status === null
+          item.status = cycleStatus(item.status)
+          // Auto-stamp on first interaction with this setup
+          if (wasNull && !camera_setups[si].packed_at) {
+            camera_setups[si].packed_at = new Date().toISOString()
+          }
+          // Re-render just this rig
+          const rig = document.getElementById(`rig-${si}`)
+          if (rig) {
+            const next = document.createElement('div')
+            next.innerHTML = renderSetup(camera_setups[si], si)
+            rig.replaceWith(next.firstElementChild)
+            bindRig(si)
+          }
+          save()
+        })
+      })
+
+      // Bind meta inputs
+      root.querySelectorAll('[data-meta]').forEach(el => {
+        el.addEventListener('change', () => {
+          const [si, field] = el.dataset.meta.split(',')
+          camera_setups[+si][field] = el.value
+          save()
+        })
+      })
+
+      // Bind add custom item
+      root.querySelectorAll('[data-add-btn]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const si = +btn.dataset.addBtn
+          const input = root.querySelector(`[data-add-input="${si}"]`)
+          const label = input?.value.trim()
+          if (!label) return
+          const id = 'custom_' + Date.now()
+          camera_setups[si].items.push({ id, label, status: null, custom: true })
+          input.value = ''
+          const rig = document.getElementById(`rig-${si}`)
+          if (rig) {
+            const next = document.createElement('div')
+            next.innerHTML = renderSetup(camera_setups[si], si)
+            rig.replaceWith(next.firstElementChild)
+            bindRig(si)
+          }
+          save()
+        })
+      })
+
+      // Mark all packed
+      root.querySelector('#pack-all-btn')?.addEventListener('click', () => {
+        const now = new Date().toISOString()
+        camera_setups.forEach(s => {
+          s.items.forEach(it => { if (!it.section && it.status !== 'not_required') it.status = 'packed' })
+          if (!s.packed_at) s.packed_at = now
+        })
+        renderAll()
+        save()
+      })
+
+      // Reset all
+      root.querySelector('#reset-btn')?.addEventListener('click', () => {
+        if (!confirm('Reset all packing states?')) return
+        camera_setups.forEach(s => {
+          s.items.forEach(it => { if (!it.section) it.status = null })
+          s.packed_at = null
+        })
+        renderAll()
+        save()
+      })
+    }
+
+    const bindRig = (si) => {
+      const rig = document.getElementById(`rig-${si}`)
+      if (!rig) return
+      rig.querySelectorAll('[data-item]').forEach(el => {
+        el.addEventListener('click', () => {
+          const [s, ii] = el.dataset.item.split(',').map(Number)
+          const item = camera_setups[s].items[ii]
+          if (item.section) return
+          const wasNull = item.status === null
+          item.status = cycleStatus(item.status)
+          if (wasNull && !camera_setups[s].packed_at) camera_setups[s].packed_at = new Date().toISOString()
+          const next = document.createElement('div')
+          next.innerHTML = renderSetup(camera_setups[s], s)
+          rig.replaceWith(next.firstElementChild)
+          bindRig(s)
+          save()
+        })
+      })
+      rig.querySelectorAll('[data-meta]').forEach(el => {
+        el.addEventListener('change', () => {
+          const [s, field] = el.dataset.meta.split(',')
+          camera_setups[+s][field] = el.value; save()
+        })
+      })
+      rig.querySelectorAll('[data-add-btn]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const s = +btn.dataset.addBtn
+          const input = rig.querySelector(`[data-add-input="${s}"]`)
+          const label = input?.value.trim()
+          if (!label) return
+          camera_setups[s].items.push({ id:'custom_'+Date.now(), label, status:null, custom:true })
+          input.value = ''
+          const next = document.createElement('div')
+          next.innerHTML = renderSetup(camera_setups[s], s)
+          rig.replaceWith(next.firstElementChild)
+          bindRig(s); save()
+        })
+      })
+    }
+
+    renderAll()
+  </script>
+</body>
+</html>

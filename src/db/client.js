@@ -515,6 +515,7 @@ export async function updateShoot(id, data) {
       invoicing_job_ref = ${data.invoicing_job_ref||null},
       crew_section_notes = ${JSON.stringify(data.crew_section_notes||{})}::jsonb,
       catering = ${JSON.stringify(data.catering||{})}::jsonb,
+      shoot_camera_setups = ${JSON.stringify(data.shoot_camera_setups||[])}::jsonb,
       updated_at = NOW()
     WHERE id = ${id} RETURNING *
   `).then(r => r.rows ?? r)
@@ -541,4 +542,36 @@ export async function getShootsWithRA(userId) {
     ORDER BY sh.shoot_date DESC NULLS LAST, sh.created_at DESC
     LIMIT 50
   `).then(r => r.rows ?? r)
+}
+
+// ── Camera setup library ──────────────────────────────────────────────────────
+export async function getCameraSetups(userId) {
+  const { sql } = await import('drizzle-orm')
+  return db.execute(sql`
+    SELECT * FROM camera_setups WHERE user_id = ${userId} ORDER BY name
+  `).then(r => r.rows ?? r)
+}
+export async function createCameraSetup(userId, data) {
+  const { sql } = await import('drizzle-orm')
+  const [row] = await db.execute(sql`
+    INSERT INTO camera_setups (user_id, name, notes, custom_items)
+    VALUES (${userId}, ${data.name}, ${data.notes||null}, ${JSON.stringify(data.custom_items||[])}::jsonb)
+    RETURNING *
+  `).then(r => r.rows ?? r)
+  return row
+}
+export async function updateCameraSetup(id, userId, data) {
+  const { sql } = await import('drizzle-orm')
+  const [row] = await db.execute(sql`
+    UPDATE camera_setups SET
+      name = ${data.name}, notes = ${data.notes||null},
+      custom_items = ${JSON.stringify(data.custom_items||[])}::jsonb,
+      updated_at = NOW()
+    WHERE id = ${id} AND user_id = ${userId} RETURNING *
+  `).then(r => r.rows ?? r)
+  return row
+}
+export async function deleteCameraSetup(id, userId) {
+  const { sql } = await import('drizzle-orm')
+  return db.execute(sql`DELETE FROM camera_setups WHERE id = ${id} AND user_id = ${userId}`)
 }

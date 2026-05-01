@@ -305,8 +305,32 @@ export const shoots = pgTable('shoots', {
   catering:          jsonb('catering').notNull().default({}),
   crew_section_notes: jsonb('crew_section_notes').notNull().default({}),
   risk_assessment:   jsonb('risk_assessment').notNull().default({}),
+  shoot_camera_setups: jsonb('shoot_camera_setups').notNull().default([]),
   // Display-only client override (defaults from project's client.company)
   client_display:    text('client_display'),
+  // Per-shoot insurance override (falls back to project, then settings)
+  insurer_name:      text('insurer_name'),
+  insurer_address:   text('insurer_address'),
+  insurer_email:     text('insurer_email'),
+  insurer_contact:   text('insurer_contact'),
+  // Per-shoot invoicing (falls back to settings)
+  invoicing_email:   text('invoicing_email'),
+  invoicing_job_ref: text('invoicing_job_ref'),
+  sort_order:        integer('sort_order').notNull().default(0),
+  created_at:        timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updated_at:        timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// ── Camera setup library ───────────────────────────────────────────────────────
+export const camera_setups = pgTable('camera_setups', {
+  id:           uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id:      text('user_id').notNull(),
+  name:         text('name').notNull(),
+  notes:        text('notes'),
+  custom_items: jsonb('custom_items').notNull().default([]),
+  created_at:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updated_at:   timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
   // Per-shoot insurance override (falls back to project, then settings)
   insurer_name:      text('insurer_name'),
   insurer_address:   text('insurer_address'),
