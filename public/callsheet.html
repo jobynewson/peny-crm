@@ -112,41 +112,55 @@
       : esc(fmtDate(dates[0]?.date || sheet.date))
 
     const heroHTML = (() => {
+      const firstDate = dates[0]?.date
       if (!thisCrew) {
-        return sheet.general_call ? `<div class="general-call">General call: <strong>${esc(sheet.general_call)}</strong></div>` : ''
+        // Master view — show general call + countdown to first day
+        const gc = sheet.general_call || dates[0]?.general_call || ''
+        const countdown = (() => {
+          if (!gc || !firstDate) return ''
+          const [h,m] = gc.split(':').map(Number)
+          const target = new Date(`${String(firstDate).split('T')[0]}T${String(h).padStart(2,'0')}:${String(m||0).padStart(2,'0')}:00`)
+          const diff = target - new Date()
+          if (isNaN(diff) || diff < 0) return diff > -8*3600*1000 ? '<div style="font-size:13px;color:var(--amber);margin-top:8px;font-weight:500">🎬 Shoot is live</div>' : ''
+          const days=Math.floor(diff/86400000), hrs=Math.floor((diff%86400000)/3600000), mins=Math.floor((diff%3600000)/60000)
+          if (days>14) return `<div style="font-size:12px;color:var(--text-ter);margin-top:8px">in ${days} days</div>`
+          if (days>=1) return `<div style="font-size:12px;color:var(--text-sec);margin-top:8px">in ${days}d ${hrs}h</div>`
+          if (hrs>=1)  return `<div style="font-size:12px;color:var(--amber);margin-top:8px;font-weight:500">in ${hrs}h ${mins}m</div>`
+          return `<div style="font-size:13px;color:#ef4444;margin-top:8px;font-weight:600">⚡ in ${mins} mins</div>`
+        })()
+        return gc ? `<div class="general-call">General call: <strong>${esc(gc)}</strong>${countdown}</div>` : countdown
       }
       const callTimes = thisCrew.call_times && typeof thisCrew.call_times === 'object' ? thisCrew.call_times : {}
-      const firstDate = dates[0]?.date
       const firstKey  = firstDate ? String(firstDate).split('T')[0] : null
       const myCall    = (firstKey && callTimes[firstKey]) || Object.values(callTimes)[0] || sheet.general_call || ''
+      // Calendar link
+      const calDateStr = firstDate ? String(firstDate).split('T')[0].replace(/-/g,'') : ''
+      const [cH,cM] = (myCall||'09:00').split(':').map(Number)
+      const calStart = calDateStr ? calDateStr+'T'+String(cH||9).padStart(2,'0')+String(cM||0).padStart(2,'0')+'00' : ''
+      const calEnd   = calDateStr ? calDateStr+'T'+String(Math.min((cH||9)+10,23)).padStart(2,'0')+String(cM||0).padStart(2,'0')+'00' : ''
+      const calURL   = calStart ? `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(project.name+' — '+thisCrew.name+' shoot')}&dates=${calStart}/${calEnd}&location=${encodeURIComponent(sheet.location_address||sheet.location_name||'')}&details=${encodeURIComponent('Call time: '+(myCall||'TBC'))}` : ''
       const countdown = (() => {
         if (!myCall || !firstDate) return ''
-        const dateStr = String(firstDate).split('T')[0]
         const [h,m] = myCall.split(':').map(Number)
-        const target = new Date(`${dateStr}T${String(h).padStart(2,'0')}:${String(m||0).padStart(2,'0')}:00`)
+        const target = new Date(`${String(firstDate).split('T')[0]}T${String(h).padStart(2,'0')}:${String(m||0).padStart(2,'0')}:00`)
         const diff = target - new Date()
-        if (isNaN(diff)) return ''
-        if (diff < 0 && diff > -8*3600*1000) return '<div style="font-size:12px;color:var(--amber);margin-top:6px;font-weight:500">🎬 Shoot is live</div>'
-        if (diff < 0) return ''
+        if (isNaN(diff) || diff < 0) return diff > -8*3600*1000 ? '<div style="font-size:12px;color:var(--amber);margin-top:6px;font-weight:500">🎬 Shoot is live</div>' : ''
         const days=Math.floor(diff/86400000), hrs=Math.floor((diff%86400000)/3600000), mins=Math.floor((diff%3600000)/60000)
         if (days>14) return `<div style="font-size:12px;color:var(--text-ter);margin-top:6px">in ${days} days</div>`
         if (days>=1) return `<div style="font-size:12px;color:var(--text-sec);margin-top:6px">in ${days}d ${hrs}h</div>`
         if (hrs>=1)  return `<div style="font-size:12px;color:var(--amber);margin-top:6px;font-weight:500">in ${hrs}h ${mins}m</div>`
-        return `<div style="font-size:13px;color:#ef4444;margin-top:6px;font-weight:600">in ${mins} mins ⚡</div>`
+        return `<div style="font-size:13px;color:#ef4444;margin-top:6px;font-weight:600">⚡ in ${mins} mins</div>`
       })()
+      const calBtn = calURL ? `<a href="${calURL}" target="_blank" class="cal-btn">📅 Add to Google Calendar</a>` : ''
       if (dates.length > 1) {
-        // Multi-day: show call times per day
         return `<div class="call-block">
           <div class="call-label">Your call times</div>
           <div class="call-name">${esc(thisCrew.name)}</div>
           <div style="margin-top:8px">
-            ${dates.map(d => {
-              const k = String(d.date).split('T')[0]
-              const t = callTimes[k] || 'TBC'
-              return `<div style="font-size:13px;color:var(--text-sec);margin-bottom:2px">${esc(fmtDateShort(d.date))} <strong style="color:var(--accent)">${esc(t)}</strong></div>`
-            }).join('')}
+            ${dates.map(d => { const k=String(d.date).split('T')[0]; const t=callTimes[k]||'TBC'; return `<div style="font-size:13px;color:var(--text-sec);margin-bottom:2px">${esc(fmtDateShort(d.date))} <strong style="color:var(--accent)">${esc(t)}</strong></div>` }).join('')}
           </div>
           ${thisCrew.role ? `<div class="call-role">${esc(thisCrew.role)}</div>` : ''}
+          ${calBtn}
         </div>`
       }
       return `<div class="call-block">
@@ -155,6 +169,7 @@
         <div class="call-time">${esc(myCall||'TBC')}</div>
         ${thisCrew.role ? `<div class="call-role">${esc(thisCrew.role)}</div>` : ''}
         ${countdown}
+        ${calBtn}
       </div>`
     })()
 
@@ -301,6 +316,17 @@
       </div>`
     }
 
+    // Catering
+    const catering = sheet.catering || {}
+    const cateringHTML = (catering.supplier || catering.notes) ? `
+      <div class="section">
+        <div class="section-head">Catering</div>
+        <div class="row">
+          ${catering.supplier ? `<div style="font-size:13px;font-weight:500;margin-bottom:${catering.notes?'6px':'0'}">C/O ${esc(catering.supplier)}</div>` : ''}
+          ${catering.notes ? `<div style="font-size:13px;color:var(--text-sec);line-height:1.6;white-space:pre-line">${esc(catering.notes)}</div>` : ''}
+        </div>
+      </div>` : ''
+
     // Equipment
     const equipHTML = equipment.length ? `
       <div class="section">
@@ -378,6 +404,7 @@
         ${renderCrewSection('On Camera', 'on_camera')}
         ${renderCrewSection('Crew', 'crew')}
         ${equipHTML}
+        ${cateringHTML}
         ${emergencyHTML}
         ${insuranceHTML}
         ${hsHTML}

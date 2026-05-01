@@ -451,7 +451,7 @@ export async function createShoot(userId, projectId, data) {
       equipment, client_display,
       insurer_name, insurer_address, insurer_email, insurer_contact,
       invoicing_email, invoicing_job_ref,
-      crew_section_notes
+      crew_section_notes, catering
     ) VALUES (
       ${projectId}, ${userId}, ${data.name||null}, ${data.shoot_date||null}, 'draft', ${token},
       ${data.general_call||null}, ${data.location_name||null}, ${data.location_address||null}, ${data.location_map_link||null},
@@ -470,7 +470,8 @@ export async function createShoot(userId, projectId, data) {
       ${data.insurer_name||null}, ${data.insurer_address||null},
       ${data.insurer_email||null}, ${data.insurer_contact||null},
       ${data.invoicing_email||null}, ${data.invoicing_job_ref||null},
-      ${JSON.stringify(data.crew_section_notes||{})}::jsonb
+      ${JSON.stringify(data.crew_section_notes||{})}::jsonb,
+      ${JSON.stringify(data.catering||{})}::jsonb
     ) RETURNING *
   `).then(r => r.rows ?? r)
   return shoot
@@ -513,6 +514,7 @@ export async function updateShoot(id, data) {
       invoicing_email   = ${data.invoicing_email||null},
       invoicing_job_ref = ${data.invoicing_job_ref||null},
       crew_section_notes = ${JSON.stringify(data.crew_section_notes||{})}::jsonb,
+      catering = ${JSON.stringify(data.catering||{})}::jsonb,
       updated_at = NOW()
     WHERE id = ${id} RETURNING *
   `).then(r => r.rows ?? r)

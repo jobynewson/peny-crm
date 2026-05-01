@@ -1022,6 +1022,7 @@ export class ProjectsView {
       sh.hotels    = Array.isArray(sh.hotels)    ? sh.hotels    : []
       sh.equipment = Array.isArray(sh.equipment) ? sh.equipment : []
       sh.crew_section_notes = (sh.crew_section_notes && typeof sh.crew_section_notes === 'object') ? sh.crew_section_notes : {}
+      sh.catering = (sh.catering && typeof sh.catering === 'object') ? sh.catering : {}
       this._renderShootEditor(mc, p, sh)
     } catch(e) { console.error(e); this.app.toast('Error loading shoot') }
   }
@@ -1054,205 +1055,241 @@ export class ProjectsView {
         <div style="display:grid;grid-template-columns:1fr 320px;gap:20px">
           <div style="display:flex;flex-direction:column;gap:14px">
 
-            <!-- Basics -->
-            <div class="proj-panel">
-              <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
-                <span>Shoot dates &amp; general call times</span>
-                <button class="btn-secondary" id="se-add-day" style="font-size:11px;padding:3px 10px">+ Add day</button>
+            <!-- Accordion panels -->
+            <div class="bsec-wrap" id="sep-dates">
+              <div class="bsec-head enabled" data-se-panel="dates">
+                <span class="bsec-name" style="flex:1">Shoot dates &amp; general call times</span>
+                <button class="btn-secondary" id="se-add-day" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add day</button>
+                <span class="bsec-chev open">▶</span>
               </div>
-              <div class="proj-panel-body" id="se-dates-list">
-                ${this._shootDatesHTML(sh)}
+              <div class="bsec-body open">
+                <div style="padding:14px">
+                  <div id="se-dates-list">${this._shootDatesHTML(sh)}</div>
+                </div>
               </div>
             </div>
 
-            <!-- Location -->
-            <div class="proj-panel">
-              <div class="proj-panel-head">Primary location</div>
-              <div class="proj-panel-body">
-                <div>
-                  <div class="proj-field-label">Location name</div>
-                  <input type="text" class="proj-input" id="se-loc-name" value="${esc(sh.location_name||'')}" placeholder="e.g. Eastnor Castle" />
-                </div>
-                <div style="margin-top:10px">
-                  <div class="proj-field-label">Address or Maps link</div>
-                  <input type="text" class="proj-input" id="se-loc-addr" value="${esc(sh.location_address||sh.location_map_link||'')}" placeholder="Full address or paste a Google Maps URL" />
-                </div>
-                <div class="proj-date-row" style="margin-top:10px">
-                  <div>
-                    <div class="proj-field-label">Parking</div>
-                    <input type="text" class="proj-input" id="se-parking" value="${esc(sh.parking_notes||'')}" placeholder="e.g. On-site car park" />
+            <div class="bsec-wrap" id="sep-location">
+              <div class="bsec-head enabled" data-se-panel="location">
+                <span class="bsec-name" style="flex:1">Primary location</span>
+                <button class="btn-secondary" id="se-fetch-weather" style="font-size:11px;padding:3px 10px;margin-right:8px">🌤 Weather</button><button class="btn-secondary" id="se-find-nearby" style="font-size:11px;padding:3px 10px;margin-right:8px">📍 Nearby</button>
+                <span class="bsec-chev open">▶</span>
+              </div>
+              <div class="bsec-body open">
+                <div style="padding:14px;display:flex;flex-direction:column;gap:10px">
+                  <div><div class="proj-field-label">Location name</div><input type="text" class="proj-input" id="se-loc-name" value="${esc(sh.location_name||'')}" placeholder="e.g. Eastnor Castle" /></div>
+                  <div><div class="proj-field-label">Address or Maps link</div><input type="text" class="proj-input" id="se-loc-addr" value="${esc(sh.location_address||sh.location_map_link||'')}" placeholder="Full address or paste a Google Maps URL" /></div>
+                  <div class="proj-date-row">
+                    <div><div class="proj-field-label">Parking</div><input type="text" class="proj-input" id="se-parking" value="${esc(sh.parking_notes||'')}" placeholder="e.g. On-site car park" /></div>
+                    <div><div class="proj-field-label">Nearest transport</div><input type="text" class="proj-input" id="se-transport" value="${esc(sh.nearest_transport||'')}" placeholder="e.g. Ledbury station, 2 miles" /></div>
                   </div>
-                  <div>
-                    <div class="proj-field-label">Nearest transport</div>
-                    <input type="text" class="proj-input" id="se-transport" value="${esc(sh.nearest_transport||'')}" placeholder="e.g. Ledbury station, 2 miles" />
-                  </div>
-                </div>
-                <div style="display:flex;gap:8px;align-items:flex-end;margin-top:10px">
-                  <div style="flex:1">
-                    <div class="proj-field-label">Weather</div>
-                    <input type="text" class="proj-input" id="se-weather" value="${esc(sh.weather_text||'')}" placeholder="e.g. 12°C, partly cloudy" />
-                  </div>
-                  <button class="btn-secondary" id="se-fetch-weather" style="font-size:12px;white-space:nowrap">🌤 Fetch</button>
+                  <div><div class="proj-field-label">Weather</div><input type="text" class="proj-input" id="se-weather" value="${esc(sh.weather_text||'')}" placeholder="e.g. 12°C, partly cloudy" /></div>
                 </div>
               </div>
             </div>
 
-            <!-- Emergency services -->
-            <div class="proj-panel">
-              <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
-                <span>Emergency services</span>
-                <button class="btn-secondary" id="se-find-nearby" style="font-size:11px;padding:3px 8px">📍 Find nearby</button>
+            <div class="bsec-wrap" id="sep-emergency">
+              <div class="bsec-head enabled" data-se-panel="emergency">
+                <span class="bsec-name" style="flex:1">Emergency services</span>
+                
+                <span class="bsec-chev open">▶</span>
               </div>
-              <div class="proj-panel-body">
-                ${[['Hospital','se-hosp','nearest_hospital'],['Police','se-police','nearest_police'],['Fire','se-fire','nearest_fire']].map(([label,id,key]) => `
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-                  <div><div class="proj-field-label">${label} name</div><input type="text" class="proj-input" id="${id}-name" value="${esc(sh[key+'_name']||'')}" placeholder="${label} name" /></div>
-                  <div><div class="proj-field-label">${label} address</div><input type="text" class="proj-input" id="${id}-addr" value="${esc(sh[key+'_address']||'')}" placeholder="Address" /></div>
-                </div>`).join('')}
-              </div>
-            </div>
-
-            <!-- Additional locations -->
-            <div class="proj-panel">
-              <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
-                <span>Additional locations</span>
-                <button class="btn-secondary" id="se-add-loc" style="font-size:11px;padding:3px 8px">+ Add</button>
-              </div>
-              <div class="proj-panel-body" id="se-locs-list">
-                ${sh.locations.map((l,i) => this._shootLocHTML(l, i)).join('')}
-                ${!sh.locations.length ? '<div style="font-size:12px;color:var(--text-tertiary)">No additional locations</div>' : ''}
+              <div class="bsec-body open">
+                <div style="padding:14px;display:flex;flex-direction:column;gap:10px">
+                  ${[['Hospital','se-hosp','nearest_hospital'],['Police','se-police','nearest_police'],['Fire','se-fire','nearest_fire']].map(([label,id,key]) => `
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                    <div><div class="proj-field-label">${label} name</div><input type="text" class="proj-input" id="${id}-name" value="${esc(sh[key+'_name']||'')}" placeholder="${label} name" /></div>
+                    <div><div class="proj-field-label">${label} address</div><input type="text" class="proj-input" id="${id}-addr" value="${esc(sh[key+'_address']||'')}" placeholder="Address" /></div>
+                  </div>`).join('')}
+                </div>
               </div>
             </div>
 
-            <!-- Schedule -->
-            <div class="proj-panel">
-              <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
-                <span>Schedule / run of show</span>
-                <button class="btn-secondary" id="se-add-sched" style="font-size:11px;padding:3px 8px">+ Add row</button>
+            <div class="bsec-wrap" id="sep-locations">
+              <div class="bsec-head enabled" data-se-panel="locations">
+                <span class="bsec-name" style="flex:1">Additional locations</span>
+                <button class="btn-secondary" id="se-add-loc" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add</button>
+                <span class="bsec-chev open">▶</span>
               </div>
-              <div class="proj-panel-body" id="se-sched-list">
-                ${sh.schedule.map((r,i) => this._shootSchedHTML(r, i, sh)).join('')}
-                ${!sh.schedule.length ? '<div style="font-size:12px;color:var(--text-tertiary)">No schedule yet</div>' : ''}
+              <div class="bsec-body open">
+                <div style="padding:14px" id="se-locs-list">
+                  ${sh.locations.map((l,i) => this._shootLocHTML(l, i)).join('') || '<div style="font-size:12px;color:var(--text-tertiary)">No additional locations</div>'}
+                </div>
               </div>
             </div>
 
-            <!-- Crew (split by type) -->
+            <div class="bsec-wrap" id="sep-schedule">
+              <div class="bsec-head enabled" data-se-panel="schedule">
+                <span class="bsec-name" style="flex:1">Schedule / run of show</span>
+                <button class="btn-secondary" id="se-add-sched" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add row</button>
+                <span class="bsec-chev open">▶</span>
+              </div>
+              <div class="bsec-body open">
+                <div style="padding:14px" id="se-sched-list">
+                  ${sh.schedule.map((r,i) => this._shootSchedHTML(r, i, sh)).join('') || '<div style="font-size:12px;color:var(--text-tertiary)">No schedule yet</div>'}
+                </div>
+              </div>
+            </div>
+
+            <!-- Crew sections (separate accordions per type) -->
             ${['crew','on_camera','client'].map(type => {
               const label = type==='on_camera' ? 'On Camera' : type==='client' ? 'Client' : 'Crew'
               const notes = (sh.crew_section_notes||{})[type] || ''
-              return `<div class="proj-panel">
-                <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
-                  <span>${label}${type==='crew'?' &amp; call times':''}</span>
-                  <div style="display:flex;gap:6px">
-                    ${type==='crew'?`<button class="btn-secondary" id="se-fill-general" style="font-size:11px;padding:3px 8px">Fill blanks with general call</button>`:''}
-                    <button class="btn-secondary" data-add-crew-type="${type}" style="font-size:11px;padding:3px 8px">+ Add</button>
+              const fillBtn = type==='crew' ? `<button class="btn-secondary" id="se-fill-general" style="font-size:11px;padding:3px 10px;margin-right:8px">Fill blanks</button>` : ''
+              return `<div class="bsec-wrap" id="sep-crew-${type}">
+                <div class="bsec-head enabled" data-se-panel="crew-${type}">
+                  <span class="bsec-name" style="flex:1">${label}</span>
+                  ${fillBtn}
+                  <button class="btn-secondary" data-add-crew-type="${type}" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add</button>
+                  <span class="bsec-chev open">▶</span>
+                </div>
+                <div class="bsec-body open">
+                  <div style="padding:14px" id="se-crew-list-${type}">
+                    ${this._shootCrewSectionHTML(sh, type)}
                   </div>
-                </div>
-                <div class="proj-panel-body" id="se-crew-list-${type}">
-                  ${this._shootCrewSectionHTML(sh, type)}
-                </div>
-                <div style="padding:0 14px 12px">
-                  <textarea class="proj-textarea" data-crew-section-notes="${type}" placeholder="Section notes — e.g. Bob, Jane and Tom are joining us on Thursday" style="min-height:36px;font-size:12px;font-style:italic">${esc(notes)}</textarea>
+                  <div style="padding:0 14px 12px">
+                    <textarea class="proj-textarea" data-crew-section-notes="${type}" placeholder="Section notes — e.g. Bob, Jane and Tom are joining us on Thursday" style="min-height:36px;font-size:12px;font-style:italic">${esc(notes)}</textarea>
+                  </div>
                 </div>
               </div>`
             }).join('')}
 
-            <!-- Hotels -->
-            <div class="proj-panel">
-              <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
-                <span>Accommodation</span>
-                <button class="btn-secondary" id="se-add-hotel" style="font-size:11px;padding:3px 8px">+ Add hotel</button>
+            <div class="bsec-wrap" id="sep-hotels">
+              <div class="bsec-head enabled" data-se-panel="hotels">
+                <span class="bsec-name" style="flex:1">Accommodation</span>
+                <button class="btn-secondary" id="se-add-hotel" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add hotel</button>
+                <span class="bsec-chev open">▶</span>
               </div>
-              <div class="proj-panel-body" id="se-hotels-list">
-                ${sh.hotels.map((h,i) => this._shootHotelHTML(h, i, sh.crew)).join('')}
-                ${!sh.hotels.length ? '<div style="font-size:12px;color:var(--text-tertiary)">No accommodation added</div>' : ''}
-              </div>
-            </div>
-
-            <!-- Client display name -->
-            <div class="proj-panel">
-              <div class="proj-panel-head">Client (display)</div>
-              <div class="proj-panel-body">
-                ${(() => {
-                  const clientContact = (this.app.contacts||[]).find(c => c.id === p.client_id)
-                  const projectClient = clientContact?.company || (clientContact ? `${clientContact.first_name||''} ${clientContact.last_name||''}`.trim() : '')
-                  return `<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:8px">Defaults to project client (${esc(projectClient||'not set')}). Edit only if you need a different name on the call sheet.</div>
-                  <input type="text" class="proj-input" id="se-client-display" value="${esc(sh.client_display||'')}" placeholder="${esc(projectClient || 'e.g. Red Bull UK')}" />`
-                })()}
-              </div>
-            </div>
-
-            <!-- Equipment -->
-            <div class="proj-panel">
-              <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
-                <span>Equipment</span>
-                <button class="btn-secondary" id="se-add-equip" style="font-size:11px;padding:3px 8px">+ Add category</button>
-              </div>
-              <div class="proj-panel-body" id="se-equip-list">
-                ${this._shootEquipmentHTML(sh)}
-              </div>
-            </div>
-
-            <!-- Insurance (per-shoot override) -->
-            <div class="proj-panel">
-              <div class="proj-panel-head">Insurance</div>
-              <div class="proj-panel-body">
-                ${(() => {
-                  const s = this.app.settings || {}
-                  const projHasIns = p.insurer_name || p.insurer_address
-                  const settingsHasIns = s.default_insurer_name || s.default_insurer_address
-                  if (projHasIns) return `<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:10px">Leave blank to use project insurer: <strong style="color:var(--text-secondary)">${esc(p.insurer_name||'')}</strong></div>`
-                  if (settingsHasIns) return `<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:10px">Leave blank to use studio default: <strong style="color:var(--text-secondary)">${esc(s.default_insurer_name||'')}</strong></div>`
-                  return `<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:10px">No project or studio default — fill in here, or set defaults at project / settings level.</div>`
-                })()}
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-                  <div><div class="proj-field-label">Insurer</div><input type="text" class="proj-input" id="se-ins-name" value="${esc(sh.insurer_name||'')}" placeholder="e.g. TYSERS" /></div>
-                  <div><div class="proj-field-label">Contact</div><input type="text" class="proj-input" id="se-ins-contact" value="${esc(sh.insurer_contact||'')}" placeholder="Contact name" /></div>
-                </div>
-                <div style="margin-top:8px"><div class="proj-field-label">Address</div><input type="text" class="proj-input" id="se-ins-addr" value="${esc(sh.insurer_address||'')}" placeholder="Insurer address" /></div>
-                <div style="margin-top:8px"><div class="proj-field-label">Email</div><input type="email" class="proj-input" id="se-ins-email" value="${esc(sh.insurer_email||'')}" placeholder="contact@insurer.com" /></div>
-              </div>
-            </div>
-
-            <!-- Invoicing -->
-            <div class="proj-panel">
-              <div class="proj-panel-head">Invoicing (for crew)</div>
-              <div class="proj-panel-body">
-                <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:10px">Boilerplate text comes from Settings. The job ref is shown to crew on the call sheet so they know what to put on invoices.</div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-                  <div><div class="proj-field-label">Invoicing email</div><input type="email" class="proj-input" id="se-inv-email" value="${esc(sh.invoicing_email||'')}" placeholder="${esc((this.app.settings||{}).invoicing_email||'finance@yourcompany.com')}" /></div>
-                  <div><div class="proj-field-label">Job reference</div><input type="text" class="proj-input" id="se-inv-ref" value="${esc(sh.invoicing_job_ref||'')}" placeholder="e.g. ProjectName_ShootName" /></div>
+              <div class="bsec-body open">
+                <div style="padding:14px" id="se-hotels-list">
+                  ${sh.hotels.map((h,i) => this._shootHotelHTML(h, i, sh.crew)).join('') || '<div style="font-size:12px;color:var(--text-tertiary)">No accommodation added</div>'}
                 </div>
               </div>
             </div>
 
-            <!-- H&S + Notes -->
-            <div class="proj-panel">
-              <div class="proj-panel-head">Health &amp; safety notes</div>
-              <div class="proj-panel-body">
-                <textarea class="proj-textarea" id="se-hs" style="min-height:80px" placeholder="H&S notes, risks, PPE, emergency procedures...">${esc(sh.hs_notes||'')}</textarea>
+            <div class="bsec-wrap" id="sep-client-display">
+              <div class="bsec-head enabled" data-se-panel="client-display">
+                <span class="bsec-name" style="flex:1">Client (display)</span>
+                
+                <span class="bsec-chev ">▶</span>
               </div>
-            </div>
-
-            <!-- Risk Assessment -->
-            <div class="proj-panel">
-              <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
-                <span>Risk Assessment</span>
-                <div style="display:flex;gap:6px">
-                  <button class="btn-secondary" id="se-ra-generate" style="font-size:11px;padding:3px 10px">✨ Generate with AI</button>
-                  <button class="btn-cancel" id="se-ra-copy" style="font-size:11px;padding:3px 10px">Copy from shoot</button>
-                  <button class="btn-cancel" id="se-ra-pdf" style="font-size:11px;padding:3px 10px">📄 Export PDF</button>
+              <div class="bsec-body ">
+                <div style="padding:14px">
+                  ${(() => {
+                    const clientContact = (this.app.contacts||[]).find(c => c.id === p.client_id)
+                    const projectClient = clientContact?.company || (clientContact ? `${clientContact.first_name||''} ${clientContact.last_name||''}`.trim() : '')
+                    return `<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:8px">Defaults to project client (${esc(projectClient||'not set')}). Edit only if you need a different name on the call sheet.</div>
+                    <input type="text" class="proj-input" id="se-client-display" value="${esc(sh.client_display||'')}" placeholder="${esc(projectClient || 'e.g. Red Bull UK')}" />`
+                  })()}
                 </div>
               </div>
-              <div class="proj-panel-body" id="se-ra-body">
-                ${this._shootRAHTML(sh)}
+            </div>
+
+            <div class="bsec-wrap" id="sep-equipment">
+              <div class="bsec-head enabled" data-se-panel="equipment">
+                <span class="bsec-name" style="flex:1">Equipment</span>
+                <button class="btn-secondary" id="se-add-equip" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add category</button>
+                <span class="bsec-chev open">▶</span>
+              </div>
+              <div class="bsec-body open">
+                <div style="padding:14px" id="se-equip-list">
+                  ${this._shootEquipmentHTML(sh)}
+                </div>
               </div>
             </div>
 
-            <div class="proj-panel">
-              <div class="proj-panel-head">Notes</div>
-              <div class="proj-panel-body">
-                <textarea class="proj-textarea" id="se-notes" style="min-height:60px" placeholder="Any other notes for crew...">${esc(sh.notes||'')}</textarea>
+            <div class="bsec-wrap" id="sep-catering">
+              <div class="bsec-head enabled" data-se-panel="catering">
+                <span class="bsec-name" style="flex:1">Catering</span>
+                
+                <span class="bsec-chev open">▶</span>
+              </div>
+              <div class="bsec-body open">
+                <div style="padding:14px;display:flex;flex-direction:column;gap:10px">
+                  <div><div class="proj-field-label">Supplied by / responsibility</div><input type="text" class="proj-input" id="se-catering-supplier" value="${esc((sh.catering||{}).supplier||'')}" placeholder="e.g. C/O Red Bull, C/O Production" /></div>
+                  <div><div class="proj-field-label">Plan / notes</div><textarea class="proj-textarea" id="se-catering-notes" style="min-height:70px" placeholder="e.g. Crew breakfast at hotel. Lunch box on set. Evening meal TBC.">${esc((sh.catering||{}).notes||'')}</textarea></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="bsec-wrap" id="sep-insurance">
+              <div class="bsec-head enabled" data-se-panel="insurance">
+                <span class="bsec-name" style="flex:1">Insurance</span>
+                
+                <span class="bsec-chev ">▶</span>
+              </div>
+              <div class="bsec-body ">
+                <div style="padding:14px;display:flex;flex-direction:column;gap:10px">
+                  ${(() => {
+                    const s = this.app.settings || {}
+                    const projHasIns = p.insurer_name || p.insurer_address
+                    const settingsHasIns = s.default_insurer_name || s.default_insurer_address
+                    if (projHasIns) return `<div style="font-size:11px;color:var(--text-tertiary)">Leave blank to use project insurer: <strong style="color:var(--text-secondary)">${esc(p.insurer_name||'')}"</strong></div>`
+                    if (settingsHasIns) return `<div style="font-size:11px;color:var(--text-tertiary)">Leave blank to use studio default: <strong style="color:var(--text-secondary)">${esc(s.default_insurer_name||'')}"</strong></div>`
+                    return `<div style="font-size:11px;color:var(--text-tertiary)">No project or studio default set.</div>`
+                  })()}
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                    <div><div class="proj-field-label">Insurer</div><input type="text" class="proj-input" id="se-ins-name" value="${esc(sh.insurer_name||'')}" placeholder="e.g. TYSERS" /></div>
+                    <div><div class="proj-field-label">Contact</div><input type="text" class="proj-input" id="se-ins-contact" value="${esc(sh.insurer_contact||'')}" placeholder="Contact name" /></div>
+                  </div>
+                  <div><div class="proj-field-label">Address</div><input type="text" class="proj-input" id="se-ins-addr" value="${esc(sh.insurer_address||'')}" /></div>
+                  <div><div class="proj-field-label">Email</div><input type="email" class="proj-input" id="se-ins-email" value="${esc(sh.insurer_email||'')}" /></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="bsec-wrap" id="sep-invoicing">
+              <div class="bsec-head enabled" data-se-panel="invoicing">
+                <span class="bsec-name" style="flex:1">Invoicing</span>
+                
+                <span class="bsec-chev ">▶</span>
+              </div>
+              <div class="bsec-body ">
+                <div style="padding:14px;display:flex;flex-direction:column;gap:10px">
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                    <div><div class="proj-field-label">Invoicing email</div><input type="email" class="proj-input" id="se-inv-email" value="${esc(sh.invoicing_email||'')}" placeholder="${esc((this.app.settings||{}).invoicing_email||'')}" /></div>
+                    <div><div class="proj-field-label">Job reference</div><input type="text" class="proj-input" id="se-inv-ref" value="${esc(sh.invoicing_job_ref||'')}" placeholder="e.g. RedBull_SkinnyLine" /></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="bsec-wrap" id="sep-hs">
+              <div class="bsec-head enabled" data-se-panel="hs">
+                <span class="bsec-name" style="flex:1">Health &amp; safety notes</span>
+                
+                <span class="bsec-chev open">▶</span>
+              </div>
+              <div class="bsec-body open">
+                <div style="padding:14px">
+                  <textarea class="proj-textarea" id="se-hs" style="min-height:80px" placeholder="H&S notes, risks, PPE...">${esc(sh.hs_notes||'')}</textarea>
+                </div>
+              </div>
+            </div>
+
+            <div class="bsec-wrap" id="sep-ra">
+              <div class="bsec-head enabled" data-se-panel="ra">
+                <span class="bsec-name" style="flex:1">Risk Assessment</span>
+                <button class="btn-secondary" id="se-ra-generate" style="font-size:11px;padding:3px 10px;margin-right:4px">✨ Generate</button><button class="btn-cancel" id="se-ra-copy" style="font-size:11px;padding:3px 10px;margin-right:4px">Copy from shoot</button><button class="btn-cancel" id="se-ra-pdf" style="font-size:11px;padding:3px 10px;margin-right:8px">📄 Export</button>
+                <span class="bsec-chev ">▶</span>
+              </div>
+              <div class="bsec-body ">
+                <div style="padding:14px" id="se-ra-body">
+                  ${this._shootRAHTML(sh)}
+                </div>
+              </div>
+            </div>
+
+            <div class="bsec-wrap" id="sep-notes">
+              <div class="bsec-head enabled" data-se-panel="notes">
+                <span class="bsec-name" style="flex:1">Notes</span>
+                
+                <span class="bsec-chev open">▶</span>
+              </div>
+              <div class="bsec-body open">
+                <div style="padding:14px">
+                  <textarea class="proj-textarea" id="se-notes" style="min-height:60px" placeholder="Any other notes for crew...">${esc(sh.notes||'')}</textarea>
+                </div>
               </div>
             </div>
           </div>
@@ -1589,6 +1626,7 @@ export class ProjectsView {
         locations: sh.locations || [],
         equipment: sh.equipment || [],
         crew_section_notes: sh.crew_section_notes || {},
+        catering: sh.catering || {},
         risk_assessment: sh.risk_assessment || {},
         client_display:    overlay.querySelector('#se-client-display')?.value.trim() || null,
         insurer_name:      overlay.querySelector('#se-ins-name')?.value.trim()    || null,
@@ -1609,6 +1647,7 @@ export class ProjectsView {
         sh.hotels    = Array.isArray(sh.hotels)    ? sh.hotels    : []
         sh.equipment = Array.isArray(sh.equipment) ? sh.equipment : []
         sh.shoot_dates = Array.isArray(sh.shoot_dates) ? sh.shoot_dates : []
+        sh.catering = (sh.catering && typeof sh.catering === 'object') ? sh.catering : {}
         showSaved()
         // Refresh crew links sidebar (tokens may have been generated)
         this._renderShootCrewLinks(overlay, sh)
@@ -1631,6 +1670,27 @@ export class ProjectsView {
         await this._loadShoots(mc, p)
         this.app.toast('Shoot deleted')
       } catch(e) { console.error(e); this.app.toast('Error deleting shoot') }
+    })
+
+    // Accordion panel toggles
+    overlay.querySelectorAll('[data-se-panel]').forEach(head => {
+      head.addEventListener('click', e => {
+        if (e.target.closest('button, input, select, textarea')) return
+        const wrap = head.closest('.bsec-wrap')
+        const body = wrap?.querySelector('.bsec-body')
+        const chev = wrap?.querySelector('.bsec-chev')
+        body?.classList.toggle('open')
+        chev?.classList.toggle('open')
+      })
+    })
+
+    // Catering
+    if (!sh.catering || typeof sh.catering !== 'object') sh.catering = {}
+    overlay.querySelector('#se-catering-supplier')?.addEventListener('change', e => {
+      sh.catering.supplier = e.target.value.trim() || ''; save()
+    })
+    overlay.querySelector('#se-catering-notes')?.addEventListener('change', e => {
+      sh.catering.notes = e.target.value.trim() || ''; save()
     })
 
     // Top-level fields — autosave on change (no longer includes #se-date / #se-general-call)
@@ -2534,6 +2594,13 @@ export class ProjectsView {
       `<tr><td class="lbl">On camera</td><td class="val" style="font-style:italic;color:#666;font-size:10px;padding:4px 6px">${esc_(csNotes.on_camera)}</td></tr>`,
     ].join('') : ''
 
+    // CATERING
+    const catering = (sh.catering && typeof sh.catering === 'object') ? sh.catering : {}
+    const secCatering = (catering.supplier || catering.notes) ? [
+      hr(),
+      `<tr><td class="lbl">Catering</td><td class="val">${catering.supplier?`<span style="font-weight:600">C/O ${esc_(catering.supplier)}</span><br>`:''}${catering.notes?`<span class="dim">${nl(catering.notes)}</span>`:''}</td></tr>`,
+    ].join('') : ''
+
     // EQUIPMENT
     const secEquipment = equipment.length ? [
       hr(),
@@ -2641,6 +2708,7 @@ export class ProjectsView {
       ${secSchedule}
       ${secMainUnit}
       ${secEquipment}
+      ${secCatering}
       ${secInsurance}
       ${secEmergency}
       ${secHS}

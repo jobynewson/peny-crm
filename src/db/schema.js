@@ -302,6 +302,7 @@ export const shoots = pgTable('shoots', {
   schedule:          jsonb('schedule').notNull().default([]),
   locations:         jsonb('locations').notNull().default([]),
   equipment:         jsonb('equipment').notNull().default([]),
+  catering:          jsonb('catering').notNull().default({}),
   crew_section_notes: jsonb('crew_section_notes').notNull().default({}),
   risk_assessment:   jsonb('risk_assessment').notNull().default({}),
   // Display-only client override (defaults from project's client.company)

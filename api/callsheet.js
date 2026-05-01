@@ -49,6 +49,7 @@ export default async function handler(req, res) {
   const equipment   = Array.isArray(sh.equipment)  ? sh.equipment : []
   const shoot_dates = Array.isArray(sh.shoot_dates)? sh.shoot_dates: []
   const crew_section_notes = (sh.crew_section_notes && typeof sh.crew_section_notes === 'object') ? sh.crew_section_notes : {}
+  const catering = (sh.catering && typeof sh.catering === 'object') ? sh.catering : {}
 
   // Cascade insurance: shoot → project → settings
   const insurer = {
@@ -94,6 +95,7 @@ export default async function handler(req, res) {
       hotels,
       equipment,
       crew_section_notes,
+      catering,
       client_display,
       insurer,
       invoicing,
