@@ -2389,6 +2389,12 @@ export class ProjectsView {
       row('Job name', p.name + (sh.name ? ` — ${sh.name}` : '')),
     ].join('')
 
+    // Crew section notes — needed by secClient, secMainUnit, secTalentNotes
+    const csNotes = (sh.crew_section_notes && typeof sh.crew_section_notes === 'object') ? sh.crew_section_notes : {}
+    const clientNotesRow = csNotes.client
+      ? `<tr><td class="lbl"></td><td class="val" style="font-style:italic;color:#666;font-size:10px;padding:4px 6px">${esc_(csNotes.client)}</td></tr>`
+      : ''
+
     // CLIENT
     const secClient = (client_display || clientCrew.length) ? [
       hr(),
@@ -2515,7 +2521,6 @@ export class ProjectsView {
     })()
 
     // MAIN UNIT
-    const csNotes = (sh.crew_section_notes && typeof sh.crew_section_notes === 'object') ? sh.crew_section_notes : {}
     const secMainUnit = mainCrew.length || csNotes.crew ? [
       hr(),
       `<tr class="section-head"><td class="lbl">Main unit</td><td class="val"></td></tr>`,
@@ -2523,16 +2528,11 @@ export class ProjectsView {
       csNotes.crew ? `<tr><td class="lbl"></td><td class="val" style="font-style:italic;color:#666;font-size:10px;padding:4px 6px">${esc_(csNotes.crew)}</td></tr>` : '',
     ].join('') : ''
 
-    // ON CAMERA (in PDF: talent section already handles named rows; section notes go here)
+    // ON CAMERA notes
     const secTalentNotes = csNotes.on_camera ? [
       hr(),
       `<tr><td class="lbl">On camera</td><td class="val" style="font-style:italic;color:#666;font-size:10px;padding:4px 6px">${esc_(csNotes.on_camera)}</td></tr>`,
     ].join('') : ''
-
-    // CLIENT NOTES (append to client section)
-    const clientNotesRow = csNotes.client
-      ? `<tr><td class="lbl"></td><td class="val" style="font-style:italic;color:#666;font-size:10px;padding:4px 6px">${esc_(csNotes.client)}</td></tr>`
-      : ''
 
     // EQUIPMENT
     const secEquipment = equipment.length ? [
