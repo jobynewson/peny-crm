@@ -9,14 +9,14 @@
     :root {
       --bg: #0f0f0f; --surface: #1a1a1a; --surface2: #222;
       --border: #2a2a2a; --text: #e8e8e4; --text-sec: #9a9a90; --text-ter: #5a5a54;
-      --accent: #4a90d9; --green: #6ec96e; --amber: #f59e0b; --purple: #a78bfa;
+      --accent: #4a90d9; --green: #6ec96e; --amber: #f59e0b;
       --radius: 10px; --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     }
     body { background:var(--bg); color:var(--text); font-family:var(--font); min-height:100vh; padding:0 0 60px }
     .hero { background:linear-gradient(160deg,#1a1a2e,#16213e); padding:32px 20px 28px; text-align:center; border-bottom:0.5px solid var(--border) }
     .logo { height:26px; opacity:0.8; margin-bottom:20px }
     .project-name { font-size:13px; color:var(--text-sec); text-transform:uppercase; letter-spacing:0.8px; margin-bottom:6px }
-    .sheet-date { font-size:22px; font-weight:600; margin-bottom:20px }
+    .sheet-date { font-size:20px; font-weight:600; margin-bottom:20px; line-height:1.4 }
     .call-block { display:inline-block; background:rgba(74,144,217,0.15); border:0.5px solid rgba(74,144,217,0.4); border-radius:12px; padding:16px 32px; margin-bottom:8px }
     .call-label { font-size:11px; color:var(--accent); text-transform:uppercase; letter-spacing:0.8px; margin-bottom:4px }
     .call-name { font-size:17px; font-weight:600; margin-bottom:2px }
@@ -24,32 +24,42 @@
     .call-role { font-size:13px; color:var(--text-sec); margin-top:4px }
     .general-call { font-size:13px; color:var(--text-sec); margin-top:12px }
     .wrap { max-width:560px; margin:0 auto; padding:0 16px }
-    .section { margin-top:20px; background:var(--surface); border:0.5px solid var(--border); border-radius:var(--radius); overflow:hidden }
-    .section-head { padding:12px 16px; font-size:11px; text-transform:uppercase; letter-spacing:0.6px; color:var(--text-ter); border-bottom:0.5px solid var(--border); background:var(--surface2) }
+    .section { margin-top:16px; background:var(--surface); border:0.5px solid var(--border); border-radius:var(--radius); overflow:hidden }
+    .section-head { padding:10px 16px; font-size:10px; text-transform:uppercase; letter-spacing:0.6px; color:var(--text-ter); border-bottom:0.5px solid var(--border); background:var(--surface2) }
+    .row { padding:11px 16px; border-bottom:0.5px solid var(--border); font-size:13px }
+    .row:last-child { border-bottom:none }
+    .row-label { font-size:10px; color:var(--text-ter); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:3px }
     .sched-row { display:flex; gap:12px; padding:11px 16px; border-bottom:0.5px solid var(--border); font-size:14px }
     .sched-row:last-child { border-bottom:none }
+    .sched-date-head { padding:7px 16px; font-size:10px; font-weight:600; color:var(--accent); text-transform:uppercase; letter-spacing:0.5px; border-bottom:0.5px solid var(--border); background:rgba(74,144,217,0.06) }
     .sched-time { color:var(--accent); font-weight:500; white-space:nowrap; min-width:52px; font-variant-numeric:tabular-nums }
     .sched-desc { color:var(--text); line-height:1.4 }
     .loc-body { padding:14px 16px }
     .loc-name { font-size:15px; font-weight:500; margin-bottom:4px }
     .loc-addr { font-size:13px; color:var(--text-sec); line-height:1.5; margin-bottom:10px }
     .maps-btn { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; background:rgba(74,144,217,0.12); border:0.5px solid rgba(74,144,217,0.3); border-radius:8px; color:var(--accent); font-size:13px; text-decoration:none; font-family:var(--font) }
-    .weather { padding:12px 16px; font-size:13px; color:var(--text-sec); line-height:1.6; white-space:pre-line }
-    .crew-row { display:flex; justify-content:space-between; align-items:center; padding:10px 16px; border-bottom:0.5px solid var(--border); font-size:13px }
+    .crew-row { display:flex; justify-content:space-between; align-items:flex-start; padding:10px 16px; border-bottom:0.5px solid var(--border); font-size:13px; gap:8px }
     .crew-row:last-child { border-bottom:none }
     .crew-row.me { background:rgba(74,144,217,0.08) }
     .crew-name { font-weight:500 }
     .crew-role { font-size:11px; color:var(--text-ter); margin-top:1px }
-    .crew-time { font-weight:600; color:var(--accent); white-space:nowrap; margin-left:12px }
-    .crew-phone { font-size:11px; color:var(--text-ter) }
+    .crew-co { font-size:11px; color:var(--text-ter); margin-top:1px; font-style:italic }
+    .crew-phone { font-size:11px; color:var(--text-ter); margin-top:1px }
+    .crew-time { font-weight:600; color:var(--accent); white-space:nowrap; margin-left:8px; flex-shrink:0; text-align:right }
     .notes-body { padding:14px 16px; font-size:13px; color:var(--text-sec); line-height:1.7; white-space:pre-line }
-    .move-badge { font-size:11px; color:var(--amber); margin-bottom:4px }
-    .loading { text-align:center; padding:80px 20px; color:var(--text-ter) }
+    .notes-callout { background:#1e1a08; border:1px solid #4a3d0a; border-left:3px solid var(--amber); padding:14px 16px; margin:16px 0; border-radius:var(--radius); font-size:13px; color:#d4a820; line-height:1.6 }
+    .notes-callout-label { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.6px; margin-bottom:6px; color:var(--amber) }
+    .equip-row { padding:12px 16px; border-bottom:0.5px solid var(--border) }
+    .equip-row:last-child { border-bottom:none }
+    .equip-cat { font-size:12px; font-weight:600; color:var(--text); margin-bottom:2px }
+    .equip-supplier { font-size:11px; color:var(--accent); margin-bottom:4px }
+    .equip-desc { font-size:12px; color:var(--text-sec); line-height:1.5; white-space:pre-line }
     .cal-btn { display:flex; align-items:center; justify-content:center; gap:8px; padding:12px; background:rgba(110,201,110,0.12); border:0.5px solid rgba(110,201,110,0.3); border-radius:8px; color:var(--green); font-size:14px; font-weight:500; text-decoration:none; font-family:var(--font); margin-top:12px }
-    .cal-btn:hover { opacity:0.8 }
+    .loading { text-align:center; padding:80px 20px; color:var(--text-ter) }
     .error-state { text-align:center; padding:80px 20px }
     .error-state h2 { font-size:18px; margin-bottom:8px }
     .error-state p { color:var(--text-sec); font-size:14px }
+    .pill { display:inline-flex; align-items:center; gap:4px; font-size:11px; padding:3px 8px; border-radius:12px; background:var(--surface2); border:0.5px solid var(--border) }
   </style>
 </head>
 <body>
@@ -63,187 +73,226 @@
       throw new Error('No token')
     }
 
-    const url = `/api/callsheet?token=${sheetToken}${crewToken?'&crew='+crewToken:''}`
-    const res = await fetch(url)
+    const res = await fetch(`/api/callsheet?token=${sheetToken}${crewToken?'&crew='+crewToken:''}`)
     if (!res.ok) {
       document.getElementById('root').innerHTML = `<div class="error-state"><h2>Not found</h2><p>This call sheet link has expired or doesn't exist.</p></div>`
       throw new Error('Not found')
     }
-    const { sheet, project, thisCrew, crew, schedule, locations } = await res.json()
+    const { sheet, project, client, studio, thisCrew, crew, schedule, locations } = await res.json()
 
     const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    const nl  = s => esc(s).replace(/\n/g,'<br>')
     const fmtDate = s => {
       if (!s) return ''
-      const dateStr = String(s).split('T')[0]  // strip time if present
-      const d = new Date(dateStr + 'T12:00:00')
-      if (isNaN(d)) return ''
-      return d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})
+      const d = new Date(String(s).split('T')[0] + 'T12:00:00')
+      return isNaN(d) ? '' : d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})
     }
-
-    document.title = `${project.name} — ${fmtDate(sheet.date)}`
-
-    // Countdown to call time
-    const countdownHTML = (callTime, date) => {
-      if (!callTime || !date) return ''
-      const dateStr = String(date).split('T')[0]
-      const [h, m] = callTime.split(':').map(Number)
-      const target = new Date(`${dateStr}T${String(h).padStart(2,'0')}:${String(m||0).padStart(2,'0')}:00`)
-      const now = new Date()
-      const diff = target - now
-      if (isNaN(diff)) return ''
-      if (diff < 0 && diff > -8*3600*1000) return '<div style="font-size:12px;color:var(--amber);margin-top:6px;font-weight:500">🎬 Shoot is live</div>'
-      if (diff < 0) return ''
-      const days  = Math.floor(diff / 86400000)
-      const hrs   = Math.floor((diff % 86400000) / 3600000)
-      const mins  = Math.floor((diff % 3600000) / 60000)
-      if (days > 14) return `<div style="font-size:12px;color:var(--text-ter);margin-top:6px">in ${days} days</div>`
-      if (days >= 1) return `<div style="font-size:12px;color:var(--text-sec);margin-top:6px">in ${days}d ${hrs}h</div>`
-      if (hrs >= 1)  return `<div style="font-size:12px;color:var(--amber);margin-top:6px;font-weight:500">in ${hrs}h ${mins}m</div>`
-      return `<div style="font-size:13px;color:#ef4444;margin-top:6px;font-weight:600">in ${mins} mins ⚡</div>`
+    const fmtDateShort = s => {
+      if (!s) return ''
+      const d = new Date(String(s).split('T')[0] + 'T12:00:00')
+      return isNaN(d) ? '' : d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})
     }
+    const fmtDT = s => {
+      if (!s) return ''
+      try { return new Date(s).toLocaleString('en-GB',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) } catch { return s }
+    }
+    const mapPin = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`
 
-    // Build Google Calendar add link
-    const calDate = (sheet.date||'').split('T')[0].replace(/-/g,'')
-    const myCallTime = thisCrew?.call_time || sheet.general_call || ''
-    const [cH,cM] = myCallTime.split(':').map(Number)
-    const calStart = calDate && myCallTime ? calDate+'T'+String(cH||9).padStart(2,'0')+String(cM||0).padStart(2,'0')+'00' : calDate
-    const calEnd   = calDate && myCallTime ? calDate+'T'+String(Math.min(cH+10,23)).padStart(2,'0')+String(cM||0).padStart(2,'0')+'00' : calDate
-    const calTitle = encodeURIComponent(project.name + (thisCrew ? ' — '+thisCrew.name : '') + ' shoot day')
-    const calLoc   = encodeURIComponent(sheet.location_address || sheet.location_name || '')
-    const calDets  = encodeURIComponent('Call time: '+(thisCrew?.call_time||sheet.general_call||'TBC')+'\n'+(sheet.location_name||'')+(sheet.location_address?'\n'+sheet.location_address:''))
-    const calURL   = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${calTitle}&dates=${calStart}/${calEnd}&location=${calLoc}&details=${calDets}`
-    const calBtnHTML = `<a href="${calURL}" target="_blank" class="cal-btn">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/></svg>
-      Add to Google Calendar
-    </a>`
+    document.title = `${project.name} — Call Sheet`
 
-    const heroHTML = thisCrew ? `
-      <div class="call-block">
+    const dates = Array.isArray(sheet.shoot_dates) ? sheet.shoot_dates.filter(d=>d.date).sort((a,b)=>a.date<b.date?-1:1) : []
+    const hotels = Array.isArray(sheet.hotels) ? sheet.hotels.filter(h=>h.name) : []
+    const equipment = Array.isArray(sheet.equipment) ? sheet.equipment.filter(e=>e.category) : []
+    const csNotes = sheet.crew_section_notes || {}
+    const allCrewNames = crew.filter(c=>c.name).map(c=>c.name)
+
+    // ── Hero ──────────────────────────────────────────────────────────────────
+    const dateDisplay = dates.length > 1
+      ? dates.map(d => `<div>${esc(fmtDateShort(d.date))}${d.general_call?` &middot; GC <strong>${esc(d.general_call)}</strong>`:''}</div>`).join('')
+      : esc(fmtDate(dates[0]?.date || sheet.date))
+
+    const heroHTML = (() => {
+      if (!thisCrew) {
+        return sheet.general_call ? `<div class="general-call">General call: <strong>${esc(sheet.general_call)}</strong></div>` : ''
+      }
+      const callTimes = thisCrew.call_times && typeof thisCrew.call_times === 'object' ? thisCrew.call_times : {}
+      const firstDate = dates[0]?.date
+      const firstKey  = firstDate ? String(firstDate).split('T')[0] : null
+      const myCall    = (firstKey && callTimes[firstKey]) || Object.values(callTimes)[0] || sheet.general_call || ''
+      const countdown = (() => {
+        if (!myCall || !firstDate) return ''
+        const dateStr = String(firstDate).split('T')[0]
+        const [h,m] = myCall.split(':').map(Number)
+        const target = new Date(`${dateStr}T${String(h).padStart(2,'0')}:${String(m||0).padStart(2,'0')}:00`)
+        const diff = target - new Date()
+        if (isNaN(diff)) return ''
+        if (diff < 0 && diff > -8*3600*1000) return '<div style="font-size:12px;color:var(--amber);margin-top:6px;font-weight:500">🎬 Shoot is live</div>'
+        if (diff < 0) return ''
+        const days=Math.floor(diff/86400000), hrs=Math.floor((diff%86400000)/3600000), mins=Math.floor((diff%3600000)/60000)
+        if (days>14) return `<div style="font-size:12px;color:var(--text-ter);margin-top:6px">in ${days} days</div>`
+        if (days>=1) return `<div style="font-size:12px;color:var(--text-sec);margin-top:6px">in ${days}d ${hrs}h</div>`
+        if (hrs>=1)  return `<div style="font-size:12px;color:var(--amber);margin-top:6px;font-weight:500">in ${hrs}h ${mins}m</div>`
+        return `<div style="font-size:13px;color:#ef4444;margin-top:6px;font-weight:600">in ${mins} mins ⚡</div>`
+      })()
+      if (dates.length > 1) {
+        // Multi-day: show call times per day
+        return `<div class="call-block">
+          <div class="call-label">Your call times</div>
+          <div class="call-name">${esc(thisCrew.name)}</div>
+          <div style="margin-top:8px">
+            ${dates.map(d => {
+              const k = String(d.date).split('T')[0]
+              const t = callTimes[k] || 'TBC'
+              return `<div style="font-size:13px;color:var(--text-sec);margin-bottom:2px">${esc(fmtDateShort(d.date))} <strong style="color:var(--accent)">${esc(t)}</strong></div>`
+            }).join('')}
+          </div>
+          ${thisCrew.role ? `<div class="call-role">${esc(thisCrew.role)}</div>` : ''}
+        </div>`
+      }
+      return `<div class="call-block">
         <div class="call-label">Your call time</div>
         <div class="call-name">${esc(thisCrew.name)}</div>
-        <div class="call-time">${esc(thisCrew.call_time||'TBC')}</div>
+        <div class="call-time">${esc(myCall||'TBC')}</div>
         ${thisCrew.role ? `<div class="call-role">${esc(thisCrew.role)}</div>` : ''}
-        ${countdownHTML(thisCrew.call_time, sheet.date)}
-      </div>
-      ${sheet.general_call ? `<div class="general-call">General call: ${esc(sheet.general_call)}</div>` : ''}
-      ${calBtnHTML}
-    ` : `
-      <div class="call-block">
-        <div class="call-label">General call time</div>
-        <div class="call-time">${esc(sheet.general_call||'TBC')}</div>
-        ${countdownHTML(sheet.general_call, sheet.date)}
-      </div>
-      ${calBtnHTML}
-    `
+        ${countdown}
+      </div>`
+    })()
 
-    const dates = Array.isArray(sheet.shoot_dates) ? sheet.shoot_dates.filter(d => d.date) : []
-    const fmtDateFull = d => d ? new Date(d).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) : ''
-    const fmtDateShort = d => d ? new Date(d).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}) : ''
+    // ── Sections ──────────────────────────────────────────────────────────────
 
+    // Notes callout
+    const notesCallout = sheet.notes ? `
+      <div class="notes-callout">
+        <div class="notes-callout-label">📌 Shoot notes</div>
+        ${nl(sheet.notes)}
+      </div>` : ''
+
+    // Schedule (grouped by date)
     const schedHTML = (() => {
       if (!schedule.length) return ''
       const hasDateField = schedule.some(s => s.date)
+      const schedRow = s => `<div class="sched-row"><div class="sched-time">${esc(s.time||'')}</div><div class="sched-desc">${esc(s.description||'')}</div></div>`
       if (!hasDateField || dates.length <= 1) {
-        return `<div class="section">
-          <div class="section-head">Schedule</div>
-          ${schedule.map(s => `
-            <div class="sched-row">
-              <div class="sched-time">${esc(s.time)}</div>
-              <div class="sched-desc">${esc(s.description)}</div>
-            </div>`).join('')}
-        </div>`
+        return `<div class="section"><div class="section-head">Schedule</div>${schedule.map(schedRow).join('')}</div>`
       }
-      // Multi-day: group by date
       const allDay = schedule.filter(s => !s.date)
       let out = '<div class="section"><div class="section-head">Schedule</div>'
-      if (allDay.length) {
-        out += allDay.map(s => `<div class="sched-row"><div class="sched-time">${esc(s.time)}</div><div class="sched-desc">${esc(s.description)}</div></div>`).join('')
-      }
+      if (allDay.length) out += allDay.map(schedRow).join('')
       dates.forEach(d => {
         const items = schedule.filter(s => s.date === d.date)
         if (!items.length) return
-        out += `<div style="padding:8px 16px 4px;font-size:11px;font-weight:600;color:var(--text-sec);border-top:0.5px solid var(--border);text-transform:uppercase;letter-spacing:0.4px">${fmtDateShort(d.date)}</div>`
-        out += items.map(s => `<div class="sched-row"><div class="sched-time">${esc(s.time)}</div><div class="sched-desc">${esc(s.description)}</div></div>`).join('')
+        out += `<div class="sched-date-head">${esc(fmtDateShort(d.date))}</div>`
+        out += items.map(schedRow).join('')
       })
-      out += '</div>'
-      return out
+      return out + '</div>'
     })()
 
-    const locHTML = (sheet.location_name || sheet.location_address) ? `
+    // Production company
+    const studioHTML = (studio?.name || studio?.address) ? `
       <div class="section">
-        <div class="section-head">Primary location</div>
-        ${(() => {
-          // Build map embed src — use coords if available, otherwise address/name
-          const q = sheet.location_address || sheet.location_name
-          const mapLink = sheet.location_map_link || ''
-          // Extract coords from stored map link if present
-          let embedSrc = null
-          const coordMatch = mapLink.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) ||
-                             mapLink.match(/\/search\/(-?\d+\.\d+),\+?(-?\d+\.\d+)/) ||
-                             mapLink.match(/3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/)
-          if (coordMatch) {
-            embedSrc = `https://maps.google.com/maps?q=${coordMatch[1]},${coordMatch[2]}&z=15&output=embed`
-          } else if (q) {
-            embedSrc = `https://maps.google.com/maps?q=${encodeURIComponent(q)}&z=15&output=embed`
-          }
-          return embedSrc ? `<div style="border-bottom:0.5px solid var(--border)"><iframe src="${embedSrc}" width="100%" height="220" style="border:none;display:block" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe></div>` : ''
-        })()}
-        <div class="loc-body">
-          ${sheet.location_name ? `<div class="loc-name">${esc(sheet.location_name)}</div>` : ''}
-          ${sheet.location_address ? `<div class="loc-addr">${esc(sheet.location_address)}</div>` : ''}
-          ${(() => {
-            const mapPin = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`
-            if (sheet.location_map_link) return `<a href="${sheet.location_map_link}" target="_blank" class="maps-btn">${mapPin} Open in Maps</a>`
-            const q = sheet.location_address || sheet.location_name
-            if (q) return `<a href="https://maps.google.com/?q=${encodeURIComponent(q)}" target="_blank" class="maps-btn">${mapPin} Open in Maps</a>`
-            return ''
-          })()}
-          ${sheet.weather_text ? `<div style="margin-top:12px;padding:10px;background:var(--surface2);border-radius:8px;font-size:12px;color:var(--text-sec)">🌤 ${esc(sheet.weather_text)}</div>` : ''}
+        <div class="section-head">Production company</div>
+        <div class="row">
+          <div style="font-size:14px;font-weight:500;margin-bottom:${studio.address?'4px':'0'}">${esc(studio.name||'')}</div>
+          ${studio.address ? `<div style="font-size:12px;color:var(--text-sec);line-height:1.5">${nl(studio.address)}</div>` : ''}
         </div>
       </div>` : ''
 
+    // Location
+    const locHTML = (sheet.location_name || sheet.location_address) ? (() => {
+      const q = sheet.location_address || sheet.location_name
+      const mapLink = sheet.location_map_link || ''
+      const coordMatch = mapLink.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || mapLink.match(/\/search\/(-?\d+\.\d+),\+?(-?\d+\.\d+)/) || mapLink.match(/3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/)
+      const embedSrc = coordMatch
+        ? `https://maps.google.com/maps?q=${coordMatch[1]},${coordMatch[2]}&z=15&output=embed`
+        : q ? `https://maps.google.com/maps?q=${encodeURIComponent(q)}&z=15&output=embed` : null
+      return `<div class="section">
+        <div class="section-head">Location</div>
+        ${embedSrc ? `<div style="border-bottom:0.5px solid var(--border)"><iframe src="${embedSrc}" width="100%" height="200" style="border:none;display:block" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe></div>` : ''}
+        <div class="loc-body">
+          ${sheet.location_name ? `<div class="loc-name">${esc(sheet.location_name)}</div>` : ''}
+          ${sheet.location_address ? `<div class="loc-addr">${esc(sheet.location_address)}</div>` : ''}
+          ${mapLink ? `<a href="${mapLink}" target="_blank" class="maps-btn">${mapPin} Open in Maps</a>` : q ? `<a href="https://maps.google.com/?q=${encodeURIComponent(q)}" target="_blank" class="maps-btn">${mapPin} Open in Maps</a>` : ''}
+          ${sheet.weather_text ? `<div style="margin-top:12px;padding:10px;background:var(--surface2);border-radius:8px;font-size:12px;color:var(--text-sec)">🌤 ${esc(sheet.weather_text)}</div>` : ''}
+        </div>
+        ${sheet.parking_notes ? `<div style="padding:10px 16px;border-top:0.5px solid var(--border)"><div class="row-label">🅿 Parking</div><div style="font-size:13px;color:var(--text-sec)">${esc(sheet.parking_notes)}</div></div>` : ''}
+        ${sheet.nearest_transport ? `<div style="padding:10px 16px;border-top:0.5px solid var(--border)"><div class="row-label">🚂 Transport</div><div style="font-size:13px;color:var(--text-sec)">${esc(sheet.nearest_transport)}</div></div>` : ''}
+      </div>`
+    })() : ''
+
+    // Additional locations
     const extraLocsHTML = locations.length ? locations.map(loc => `
       <div class="section">
         <div class="section-head">📍 ${esc(loc.name||'Additional location')}</div>
         <div class="loc-body">
-          ${loc.move_time ? `<div class="move-badge">Move time: ${esc(loc.move_time)}</div>` : ''}
+          ${loc.move_time ? `<div style="font-size:11px;color:var(--amber);margin-bottom:6px;font-weight:500">Move: ${esc(loc.move_time)}</div>` : ''}
           ${loc.address ? `<div class="loc-addr">${esc(loc.address)}</div>` : ''}
-          ${loc.address ? `<a href="https://maps.google.com/?q=${encodeURIComponent(loc.address)}" target="_blank" class="maps-btn">Open in Maps</a>` : ''}
+          ${loc.address ? `<a href="https://maps.google.com/?q=${encodeURIComponent(loc.address)}" target="_blank" class="maps-btn">${mapPin} Open in Maps</a>` : ''}
           ${loc.notes ? `<div style="margin-top:10px;font-size:13px;color:var(--text-sec)">${esc(loc.notes)}</div>` : ''}
         </div>
       </div>`).join('') : ''
 
-    const csNotes = sheet.crew_section_notes || {}
+    // Hotels — filter to assigned if crew token
+    const hotelsHTML = (() => {
+      const visible = hotels.filter(h => {
+        if (!thisCrew) return true
+        const assigned = h.assigned_crew || []
+        const allIn = allCrewNames.length && (assigned.length === 0 || allCrewNames.every(n => assigned.includes(n)))
+        return allIn || assigned.includes(thisCrew.name)
+      })
+      if (!visible.length) return ''
+      return visible.map(h => {
+        const assigned = h.assigned_crew || []
+        const allIn = allCrewNames.length && (assigned.length === 0 || allCrewNames.every(n => assigned.includes(n)))
+        const guests = allIn ? 'All athletes, crew and client' : assigned.join(', ')
+        return `<div class="section">
+          <div class="section-head">🏨 Accommodation</div>
+          <div class="row">
+            <div style="font-size:15px;font-weight:600;margin-bottom:4px">${esc(h.name)}</div>
+            ${h.address ? `<div style="font-size:12px;color:var(--text-sec);margin-bottom:8px">${esc(h.address)}</div>` : ''}
+            ${h.address ? `<a href="https://maps.google.com/?q=${encodeURIComponent(h.address)}" target="_blank" class="maps-btn" style="margin-bottom:10px;display:inline-flex">${mapPin} Open in Maps</a>` : ''}
+            ${(h.check_in||h.check_out) ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+              ${h.check_in ? `<div><div class="row-label">Check-in</div><div style="font-size:13px;font-weight:500">${esc(fmtDT(h.check_in))}</div></div>` : ''}
+              ${h.check_out ? `<div><div class="row-label">Check-out</div><div style="font-size:13px;font-weight:500">${esc(fmtDT(h.check_out))}</div></div>` : ''}
+            </div>` : ''}
+            ${guests && !thisCrew ? `<div style="margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border)"><div class="row-label">Guests</div><div style="font-size:12px;color:var(--text-sec);margin-top:3px">${esc(guests)}</div></div>` : ''}
+            ${h.notes ? `<div style="margin-top:10px;font-size:12px;color:var(--text-sec);font-style:italic">${esc(h.notes)}</div>` : ''}
+          </div>
+        </div>`
+      }).join('')
+    })()
+
+    // Crew sections (Client → On Camera → Crew)
     const renderCrewSection = (label, type) => {
       const filtered = crew.filter(c => c.name && (c.crew_type||'crew') === type)
       const sectionNote = csNotes[type] || ''
       if (!filtered.length && !sectionNote) return ''
-      const multi = (sheet.shoot_dates||[]).filter(d=>d.date).length > 1
-      const dates  = (sheet.shoot_dates||[]).filter(d=>d.date)
-      const fmtDateShort = d => d ? new Date(d).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}) : ''
+      const multi = dates.length > 1
       return `<div class="section">
         <div class="section-head">${esc(label)}</div>
         ${filtered.map(c => {
           const callTimes = c.call_times && typeof c.call_times === 'object' ? c.call_times : {}
           let timeBlock = ''
-          if (multi) {
-            timeBlock = `<div style="display:flex;flex-direction:column;gap:2px;align-items:flex-end">
-              ${dates.map(d => {
-                const k = String(d.date).split('T')[0]
-                const t = callTimes[k] || 'TBC'
-                return `<div style="font-size:11px;color:var(--text-sec)"><span style="color:var(--text-ter);margin-right:6px">${esc(fmtDateShort(d.date))}</span><span style="font-weight:600;color:var(--text)">${esc(t)}</span></div>`
-              }).join('')}
-            </div>`
-          } else {
-            const k = dates[0] ? String(dates[0].date).split('T')[0] : null
-            const t = (k && callTimes[k]) || (callTimes ? Object.values(callTimes)[0] : '') || c.call_time || 'TBC'
-            timeBlock = `<div class="crew-time">${esc(t)}</div>`
+          if (type === 'crew' || type === 'on_camera') {
+            if (multi) {
+              timeBlock = `<div style="flex-shrink:0;text-align:right">
+                ${dates.map(d => {
+                  const k = String(d.date).split('T')[0]
+                  const t = callTimes[k] || 'TBC'
+                  return `<div style="font-size:11px"><span style="color:var(--text-ter);margin-right:4px">${esc(fmtDateShort(d.date))}</span><strong style="color:var(--accent)">${esc(t)}</strong></div>`
+                }).join('')}
+              </div>`
+            } else {
+              const k = dates[0] ? String(dates[0].date).split('T')[0] : null
+              const t = (k && callTimes[k]) || Object.values(callTimes)[0] || c.call_time || 'TBC'
+              timeBlock = `<div class="crew-time">${esc(t)}</div>`
+            }
           }
           return `<div class="crew-row ${thisCrew&&c.crew_token===thisCrew.crew_token?'me':''}">
-            <div>
+            <div style="flex:1;min-width:0">
               <div class="crew-name">${esc(c.name)}</div>
-              <div class="crew-role">${esc(c.role||'')}</div>
-              ${c.phone ? `<div class="crew-phone"><a href="tel:${esc(c.phone)}" style="color:var(--text-ter);text-decoration:none">${esc(c.phone)}</a></div>` : ''}
+              ${c.role ? `<div class="crew-role">${esc(c.role)}</div>` : ''}
+              ${c.co ? `<div class="crew-co">c/o ${esc(c.co)}</div>` : ''}
+              ${c.phone ? `<div class="crew-phone"><a href="tel:${esc(c.phone)}" style="color:var(--text-ter);text-decoration:none">📞 ${esc(c.phone)}</a></div>` : ''}
             </div>
             ${timeBlock}
           </div>`
@@ -252,20 +301,65 @@
       </div>`
     }
 
-    const crewHTML = renderCrewSection('Client', 'client') +
-                     renderCrewSection('On Camera', 'on_camera') +
-                     renderCrewSection('Crew', 'crew')
-
-    const notesHTML = sheet.notes ? `
+    // Equipment
+    const equipHTML = equipment.length ? `
       <div class="section">
-        <div class="section-head">Notes</div>
-        <div class="notes-body">${esc(sheet.notes)}</div>
+        <div class="section-head">Equipment</div>
+        ${equipment.map(e => `
+          <div class="equip-row">
+            <div class="equip-cat">${esc(e.category)}</div>
+            ${e.supplier ? `<div class="equip-supplier">C/O ${esc(e.supplier)}</div>` : ''}
+            ${e.description ? `<div class="equip-desc">${esc(e.description)}</div>` : ''}
+          </div>`).join('')}
       </div>` : ''
 
-    const dateDisplay = dates.length > 1
-      ? dates.map(d => `<div>${fmtDateShort(d.date)}${d.general_call?' · GC '+esc(d.general_call):''}</div>`).join('')
-      : fmtDateFull(dates[0]?.date || sheet.date)
+    // Insurance
+    const insurer = sheet.insurer || {}
+    const insuranceHTML = insurer.name ? `
+      <div class="section">
+        <div class="section-head">Insurance</div>
+        <div class="row">
+          <div style="font-size:14px;font-weight:500;margin-bottom:4px">${esc(insurer.name)}</div>
+          ${insurer.address ? `<div style="font-size:12px;color:var(--text-sec);margin-bottom:6px">${esc(insurer.address)}</div>` : ''}
+          ${insurer.contact ? `<div style="font-size:12px;color:var(--text-sec)">Contact: ${esc(insurer.contact)}${insurer.email?` &middot; <a href="mailto:${esc(insurer.email)}" style="color:var(--accent)">${esc(insurer.email)}</a>`:''}</div>` : insurer.email ? `<div style="font-size:12px"><a href="mailto:${esc(insurer.email)}" style="color:var(--accent)">${esc(insurer.email)}</a></div>` : ''}
+          <div style="font-size:11px;color:var(--text-ter);margin-top:8px;line-height:1.5">The Producer / Production Manager must be notified of any potential insurance claims on the day of the shoot.</div>
+        </div>
+      </div>` : ''
 
+    // Emergency services
+    const emergencyHTML = (() => {
+      const svcs = []
+      if (sheet.nearest_hospital_name||sheet.nearest_hospital_address) svcs.push({icon:'🏥',label:'Hospital A&E',name:sheet.nearest_hospital_name,addr:sheet.nearest_hospital_address})
+      if (sheet.nearest_police_name||sheet.nearest_police_address) svcs.push({icon:'🚔',label:'Police',name:sheet.nearest_police_name,addr:sheet.nearest_police_address})
+      if (sheet.nearest_fire_name||sheet.nearest_fire_address) svcs.push({icon:'🚒',label:'Fire station',name:sheet.nearest_fire_name,addr:sheet.nearest_fire_address})
+      if (!svcs.length) return ''
+      return `<div class="section"><div class="section-head">Emergency Services</div>${svcs.map(sv => `
+        <div class="row">
+          <div class="row-label">${sv.icon} ${sv.label}</div>
+          <div style="font-size:14px;font-weight:500">${esc(sv.name||'')}</div>
+          ${sv.addr ? `<div style="font-size:12px;color:var(--text-sec);margin-top:2px">${esc(sv.addr)}</div>` : ''}
+          ${sv.addr ? `<a href="https://maps.google.com/?q=${encodeURIComponent(sv.addr)}" target="_blank" class="maps-btn" style="margin-top:8px;display:inline-flex">${mapPin} Directions</a>` : ''}
+        </div>`).join('')}</div>`
+    })()
+
+    // H&S
+    const hsHTML = sheet.hs_notes ? `
+      <div class="section">
+        <div class="section-head">Health &amp; Safety</div>
+        <div class="notes-body">${nl(sheet.hs_notes)}</div>
+      </div>` : ''
+
+    // Invoicing
+    const invoicing = sheet.invoicing || {}
+    const invoicingHTML = (invoicing.email || invoicing.job_ref || invoicing.boilerplate) ? `
+      <div class="section">
+        <div class="section-head">Invoicing</div>
+        ${invoicing.email ? `<div class="row"><div class="row-label">Send invoices to</div><a href="mailto:${esc(invoicing.email)}" style="font-size:13px;color:var(--accent)">${esc(invoicing.email)}</a></div>` : ''}
+        ${invoicing.job_ref ? `<div class="row"><div class="row-label">Job reference</div><div style="font-size:13px;font-weight:600">${esc(invoicing.job_ref)}</div></div>` : ''}
+        ${invoicing.boilerplate ? `<div class="notes-body" style="font-size:12px;color:var(--text-ter)">${nl(invoicing.boilerplate)}</div>` : ''}
+      </div>` : ''
+
+    // ── Compose ───────────────────────────────────────────────────────────────
     document.getElementById('root').innerHTML = `
       <div class="hero">
         <img src="/peny-logo-white.png" alt="Peny" class="logo" onerror="this.style.display='none'" />
@@ -274,30 +368,20 @@
         ${heroHTML}
       </div>
       <div class="wrap">
+        ${notesCallout}
         ${schedHTML}
+        ${studioHTML}
         ${locHTML}
         ${extraLocsHTML}
-        ${crewHTML}
-        ${notesHTML}
-        ${(()=>{
-          const svcs = []
-          if (sheet.nearest_hospital_name||sheet.nearest_hospital_address) svcs.push({icon:'🏥',label:'Nearest Hospital',name:sheet.nearest_hospital_name,addr:sheet.nearest_hospital_address,phone:sheet.nearest_hospital_phone})
-          if (sheet.nearest_police_name||sheet.nearest_police_address) svcs.push({icon:'🚔',label:'Nearest Police',name:sheet.nearest_police_name,addr:sheet.nearest_police_address,phone:sheet.nearest_police_phone})
-          if (sheet.nearest_fire_name||sheet.nearest_fire_address) svcs.push({icon:'🚒',label:'Fire Station',name:sheet.nearest_fire_name,addr:sheet.nearest_fire_address,phone:sheet.nearest_fire_phone})
-          if (!svcs.length) return ''
-          return '<div class="section"><div class="section-head">Emergency Services</div>'+svcs.map(sv=>`
-            <div style="padding:12px 16px;border-bottom:0.5px solid var(--border)">
-              <div style="font-size:10px;color:var(--text-ter);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px">${sv.icon} ${esc(sv.label)}</div>
-              <div style="font-size:14px;font-weight:500">${esc(sv.name||'')}</div>
-              ${sv.addr?`<div style="font-size:12px;color:var(--text-sec);margin-top:2px">${esc(sv.addr)}</div>`:''}
-              ${sv.phone?`<a href="tel:${esc(sv.phone)}" style="display:inline-block;margin-top:6px;font-size:13px;color:#ef4444;text-decoration:none">📞 ${esc(sv.phone)}</a>`:''}
-            </div>`).join('')+'</div>'
-        })()}
-        ${sheet.parking_notes||sheet.nearest_transport ? `<div class="section"><div class="section-head">Getting There</div>
-          ${sheet.parking_notes?`<div style="padding:12px 16px;border-bottom:0.5px solid var(--border)"><div style="font-size:10px;color:var(--text-ter);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px">🅿 Parking</div><div style="font-size:13px;color:var(--text-sec)">${esc(sheet.parking_notes)}</div></div>`:''}
-          ${sheet.nearest_transport?`<div style="padding:12px 16px"><div style="font-size:10px;color:var(--text-ter);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px">🚂 Public transport</div><div style="font-size:13px;color:var(--text-sec)">${esc(sheet.nearest_transport)}</div></div>`:''}
-        </div>` : ''}
-        ${sheet.hs_notes?`<div class="section"><div class="section-head">Health &amp; Safety</div><div class="notes-body">${esc(sheet.hs_notes)}</div></div>`:''}
+        ${hotelsHTML}
+        ${renderCrewSection('Client', 'client')}
+        ${renderCrewSection('On Camera', 'on_camera')}
+        ${renderCrewSection('Crew', 'crew')}
+        ${equipHTML}
+        ${emergencyHTML}
+        ${insuranceHTML}
+        ${hsHTML}
+        ${invoicingHTML}
         <div style="text-align:center;margin-top:32px;font-size:11px;color:var(--text-ter)">Powered by Peny</div>
       </div>`
   </script>
