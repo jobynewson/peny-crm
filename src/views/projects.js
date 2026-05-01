@@ -1061,9 +1061,9 @@ export class ProjectsView {
               <div class="bsec-head enabled" data-se-panel="dates">
                 <span class="bsec-name" style="flex:1">Shoot dates &amp; general call times</span>
                 <button class="btn-secondary" id="se-add-day" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add day</button>
-                <span class="bsec-chev open">▶</span>
+                <span class="bsec-chev">▶</span>
               </div>
-              <div class="bsec-body open">
+              <div class="bsec-body">
                 <div style="padding:14px">
                   <div id="se-dates-list">${this._shootDatesHTML(sh)}</div>
                 </div>
@@ -1074,9 +1074,9 @@ export class ProjectsView {
               <div class="bsec-head enabled" data-se-panel="location">
                 <span class="bsec-name" style="flex:1">Primary location</span>
                 <button class="btn-secondary" id="se-fetch-weather" style="font-size:11px;padding:3px 10px;margin-right:8px">🌤 Weather</button><button class="btn-secondary" id="se-find-nearby" style="font-size:11px;padding:3px 10px;margin-right:8px">📍 Nearby</button>
-                <span class="bsec-chev open">▶</span>
+                <span class="bsec-chev">▶</span>
               </div>
-              <div class="bsec-body open">
+              <div class="bsec-body">
                 <div style="padding:14px;display:flex;flex-direction:column;gap:10px">
                   <div><div class="proj-field-label">Location name</div><input type="text" class="proj-input" id="se-loc-name" value="${esc(sh.location_name||'')}" placeholder="e.g. Eastnor Castle" /></div>
                   <div><div class="proj-field-label">Address or Maps link</div><input type="text" class="proj-input" id="se-loc-addr" value="${esc(sh.location_address||sh.location_map_link||'')}" placeholder="Full address or paste a Google Maps URL" /></div>
@@ -1093,9 +1093,9 @@ export class ProjectsView {
               <div class="bsec-head enabled" data-se-panel="emergency">
                 <span class="bsec-name" style="flex:1">Emergency services</span>
                 
-                <span class="bsec-chev open">▶</span>
+                <span class="bsec-chev">▶</span>
               </div>
-              <div class="bsec-body open">
+              <div class="bsec-body">
                 <div style="padding:14px;display:flex;flex-direction:column;gap:10px">
                   ${[['Hospital','se-hosp','nearest_hospital'],['Police','se-police','nearest_police'],['Fire','se-fire','nearest_fire']].map(([label,id,key]) => `
                   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
@@ -1110,9 +1110,9 @@ export class ProjectsView {
               <div class="bsec-head enabled" data-se-panel="locations">
                 <span class="bsec-name" style="flex:1">Additional locations</span>
                 <button class="btn-secondary" id="se-add-loc" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add</button>
-                <span class="bsec-chev open">▶</span>
+                <span class="bsec-chev">▶</span>
               </div>
-              <div class="bsec-body open">
+              <div class="bsec-body">
                 <div style="padding:14px" id="se-locs-list">
                   ${sh.locations.map((l,i) => this._shootLocHTML(l, i)).join('') || '<div style="font-size:12px;color:var(--text-tertiary)">No additional locations</div>'}
                 </div>
@@ -1123,9 +1123,9 @@ export class ProjectsView {
               <div class="bsec-head enabled" data-se-panel="schedule">
                 <span class="bsec-name" style="flex:1">Schedule / run of show</span>
                 <button class="btn-secondary" id="se-add-sched" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add row</button>
-                <span class="bsec-chev open">▶</span>
+                <span class="bsec-chev">▶</span>
               </div>
-              <div class="bsec-body open">
+              <div class="bsec-body">
                 <div style="padding:14px" id="se-sched-list">
                   ${sh.schedule.map((r,i) => this._shootSchedHTML(r, i, sh)).join('') || '<div style="font-size:12px;color:var(--text-tertiary)">No schedule yet</div>'}
                 </div>
@@ -1142,9 +1142,9 @@ export class ProjectsView {
                   <span class="bsec-name" style="flex:1">${label}</span>
                   ${fillBtn}
                   <button class="btn-secondary" data-add-crew-type="${type}" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add</button>
-                  <span class="bsec-chev open">▶</span>
+                  <span class="bsec-chev">▶</span>
                 </div>
-                <div class="bsec-body open">
+                <div class="bsec-body">
                   <div style="padding:14px" id="se-crew-list-${type}">
                     ${this._shootCrewSectionHTML(sh, type)}
                   </div>
@@ -1159,9 +1159,9 @@ export class ProjectsView {
               <div class="bsec-head enabled" data-se-panel="hotels">
                 <span class="bsec-name" style="flex:1">Accommodation</span>
                 <button class="btn-secondary" id="se-add-hotel" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add hotel</button>
-                <span class="bsec-chev open">▶</span>
+                <span class="bsec-chev">▶</span>
               </div>
-              <div class="bsec-body open">
+              <div class="bsec-body">
                 <div style="padding:14px" id="se-hotels-list">
                   ${sh.hotels.map((h,i) => this._shootHotelHTML(h, i, sh.crew)).join('') || '<div style="font-size:12px;color:var(--text-tertiary)">No accommodation added</div>'}
                 </div>
@@ -1190,9 +1190,9 @@ export class ProjectsView {
               <div class="bsec-head enabled" data-se-panel="equipment">
                 <span class="bsec-name" style="flex:1">Equipment</span>
                 <button class="btn-secondary" id="se-add-equip" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add category</button>
-                <span class="bsec-chev open">▶</span>
+                <span class="bsec-chev">▶</span>
               </div>
-              <div class="bsec-body open">
+              <div class="bsec-body">
                 <div style="padding:14px" id="se-equip-list">
                   ${this._shootEquipmentHTML(sh)}
                 </div>
@@ -1203,9 +1203,9 @@ export class ProjectsView {
               <div class="bsec-head enabled" data-se-panel="catering">
                 <span class="bsec-name" style="flex:1">Catering</span>
                 
-                <span class="bsec-chev open">▶</span>
+                <span class="bsec-chev">▶</span>
               </div>
-              <div class="bsec-body open">
+              <div class="bsec-body">
                 <div style="padding:14px;display:flex;flex-direction:column;gap:10px">
                   <div><div class="proj-field-label">Supplied by / responsibility</div><input type="text" class="proj-input" id="se-catering-supplier" value="${esc((sh.catering||{}).supplier||'')}" placeholder="e.g. C/O Red Bull, C/O Production" /></div>
                   <div><div class="proj-field-label">Plan / notes</div><textarea class="proj-textarea" id="se-catering-notes" style="min-height:70px" placeholder="e.g. Crew breakfast at hotel. Lunch box on set. Evening meal TBC.">${esc((sh.catering||{}).notes||'')}</textarea></div>
@@ -1219,9 +1219,9 @@ export class ProjectsView {
                 <span class="bsec-name" style="flex:1">📦 Camera rigs &amp; kit packing</span>
                 <button class="btn-secondary" id="se-rig-from-library" style="font-size:11px;padding:3px 10px;margin-right:4px">＋ From library</button>
                 <button class="btn-secondary" id="se-rig-add-new" style="font-size:11px;padding:3px 10px;margin-right:8px">＋ New rig</button>
-                <span class="bsec-chev open">▶</span>
+                <span class="bsec-chev">▶</span>
               </div>
-              <div class="bsec-body open">
+              <div class="bsec-body">
                 <div style="padding:14px" id="se-rigs-list">
                   ${this._shootRigsHTML(sh)}
                 </div>
@@ -1277,9 +1277,9 @@ export class ProjectsView {
               <div class="bsec-head enabled" data-se-panel="hs">
                 <span class="bsec-name" style="flex:1">Health &amp; safety notes</span>
                 
-                <span class="bsec-chev open">▶</span>
+                <span class="bsec-chev">▶</span>
               </div>
-              <div class="bsec-body open">
+              <div class="bsec-body">
                 <div style="padding:14px">
                   <textarea class="proj-textarea" id="se-hs" style="min-height:80px" placeholder="H&S notes, risks, PPE...">${esc(sh.hs_notes||'')}</textarea>
                 </div>
@@ -1303,9 +1303,9 @@ export class ProjectsView {
               <div class="bsec-head enabled" data-se-panel="notes">
                 <span class="bsec-name" style="flex:1">Notes</span>
                 
-                <span class="bsec-chev open">▶</span>
+                <span class="bsec-chev">▶</span>
               </div>
-              <div class="bsec-body open">
+              <div class="bsec-body">
                 <div style="padding:14px">
                   <textarea class="proj-textarea" id="se-notes" style="min-height:60px" placeholder="Any other notes for crew...">${esc(sh.notes||'')}</textarea>
                 </div>
@@ -1702,6 +1702,7 @@ export class ProjectsView {
         sh.shoot_dates = Array.isArray(sh.shoot_dates) ? sh.shoot_dates : []
         sh.catering = (sh.catering && typeof sh.catering === 'object') ? sh.catering : {}
         sh.shoot_camera_setups = Array.isArray(sh.shoot_camera_setups) ? sh.shoot_camera_setups : []
+        showSaved()
         // Refresh crew links sidebar (tokens may have been generated)
         this._renderShootCrewLinks(overlay, sh)
       } catch(e) { console.error(e); if (indicator) { indicator.textContent = '⚠ Save failed'; indicator.style.color = '#e07070' } }

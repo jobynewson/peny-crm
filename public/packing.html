@@ -39,7 +39,19 @@
     .meta-input { background:var(--surface2); border:0.5px solid var(--border2); border-radius:6px; padding:6px 9px; color:var(--text); font-family:var(--font); font-size:12px; outline:none; width:100% }
     .meta-input:focus { border-color:var(--accent) }
     .packed-stamp { grid-column:1/-1; font-size:11px; color:var(--text-ter); padding-top:2px }
-    .items { display:flex; flex-direction:column }
+
+    /* Section divider with notes toggle */
+    .section-divider { padding:7px 16px; font-size:10px; color:var(--text-ter); text-transform:uppercase; letter-spacing:0.6px; background:var(--surface2); border-bottom:0.5px solid var(--border); display:flex; justify-content:space-between; align-items:center }
+    .section-note-btn { font-size:16px; cursor:pointer; opacity:0.6; line-height:1; background:none; border:none; color:var(--text-ter); padding:2px 4px }
+    .section-note-btn:hover, .section-note-btn.has-note { opacity:1; color:var(--amber) }
+    .section-note-panel { background:rgba(245,158,11,0.06); border-bottom:0.5px solid var(--border); padding:10px 16px; display:none }
+    .section-note-panel.open { display:block }
+    .section-note-input { width:100%; background:transparent; border:none; border-bottom:0.5px solid var(--border2); color:var(--text-sec); font-family:var(--font); font-size:13px; padding:4px 0; outline:none; line-height:1.5 }
+    .section-note-input::placeholder { color:var(--text-ter) }
+    .section-note-input:focus { border-color:var(--amber) }
+    .section-note-display { font-size:12px; color:var(--amber); padding:6px 16px; background:rgba(245,158,11,0.05); border-bottom:0.5px solid var(--border); font-style:italic }
+
+    /* Regular items */
     .item { display:flex; align-items:center; justify-content:space-between; padding:11px 16px; border-bottom:0.5px solid var(--border); gap:8px; cursor:pointer; user-select:none; -webkit-tap-highlight-color:transparent }
     .item:last-child { border-bottom:none }
     .item:active { background:var(--surface2) }
@@ -50,7 +62,30 @@
     .s-packed { background:rgba(110,201,110,0.15); color:var(--green); border:0.5px solid rgba(110,201,110,0.3) }
     .s-not_required { background:rgba(90,90,84,0.3); color:var(--text-ter); border:0.5px solid var(--border2) }
     .item-icon { font-size:18px; width:24px; text-align:center }
-    .section-divider { padding:8px 16px; font-size:10px; color:var(--text-ter); text-transform:uppercase; letter-spacing:0.6px; background:var(--surface2); border-bottom:0.5px solid var(--border) }
+
+    /* Lenses expand button */
+    .lens-expand-btn { font-size:11px; padding:2px 8px; border-radius:10px; background:var(--surface3); border:0.5px solid var(--border2); color:var(--text-sec); cursor:pointer; margin-right:4px; white-space:nowrap }
+    .lens-expand-btn:hover { border-color:var(--accent); color:var(--accent) }
+
+    /* Lenses sub-panel */
+    .lenses-panel { background:var(--surface2); border-bottom:0.5px solid var(--border); display:none }
+    .lenses-panel.open { display:block }
+    .lens-item { display:flex; align-items:center; padding:9px 16px 9px 28px; border-bottom:0.5px solid var(--border); gap:10px; cursor:pointer; user-select:none }
+    .lens-item:last-of-type { border-bottom:none }
+    .lens-item:active { background:var(--surface3) }
+    .lens-name { font-size:13px; flex:1; color:var(--text-sec) }
+    .lens-add { padding:10px 16px; display:flex; flex-direction:column; gap:8px; border-top:0.5px solid var(--border) }
+    .lens-suggestions { display:flex; flex-wrap:wrap; gap:6px }
+    .lens-chip { font-size:11px; padding:3px 10px; border-radius:12px; background:var(--surface3); border:0.5px solid var(--border2); color:var(--text-sec); cursor:pointer }
+    .lens-chip:hover { border-color:var(--accent); color:var(--accent) }
+    .lens-input-row { display:flex; gap:8px }
+    .lens-input { flex:1; background:var(--surface3); border:0.5px solid var(--border2); border-radius:6px; padding:7px 10px; color:var(--text); font-family:var(--font); font-size:13px; outline:none }
+    .lens-input:focus { border-color:var(--accent) }
+    .lens-add-btn { background:transparent; border:0.5px solid var(--border2); border-radius:6px; color:var(--text-sec); font-size:13px; padding:7px 12px; cursor:pointer; font-family:var(--font); white-space:nowrap }
+    .lens-save-lib { font-size:11px; color:var(--text-ter); cursor:pointer; text-align:center; padding:2px }
+    .lens-save-lib:hover { color:var(--amber) }
+    .lens-rem { font-size:16px; color:var(--text-ter); cursor:pointer; padding:2px 4px; background:none; border:none }
+
     .add-item-row { padding:10px 16px; border-top:0.5px solid var(--border); display:flex; gap:8px }
     .add-item-input { flex:1; background:var(--surface2); border:0.5px solid var(--border2); border-radius:6px; padding:7px 10px; color:var(--text); font-family:var(--font); font-size:13px; outline:none }
     .add-item-input:focus { border-color:var(--accent) }
@@ -64,8 +99,9 @@
       body { background:white; padding:0 }
       .hero { background:white; border-bottom:1px solid #ccc }
       .logo { filter:invert(1) }
-      .actions, .add-item-row, .save-toast { display:none !important }
-      .item { page-break-inside:avoid }
+      .actions, .add-item-row, .lens-add, .section-note-panel, .save-toast, .lens-expand-btn, .section-note-btn, .lens-rem { display:none !important }
+      .lenses-panel { display:block !important }
+      .item, .lens-item { page-break-inside:avoid }
       .rig { border:0.5px solid #ccc; margin-bottom:12px }
     }
   </style>
@@ -75,6 +111,8 @@
   <div class="save-toast" id="toast">✓ Saved</div>
 
   <script type="module">
+    const LENS_LIBRARY_KEY = 'peny-lens-library'
+
     const DEFAULT_ITEMS = [
       { section: 'Camera' },
       { id: 'body',       label: 'Camera body' },
@@ -83,7 +121,7 @@
       { id: 'media',      label: 'Media (cards / SSDs)' },
       { id: 'reader',     label: 'Media reader / hub' },
       { section: 'Optics' },
-      { id: 'lenses',     label: 'Lenses' },
+      { id: 'lenses',     label: 'Lenses', hasSubItems: true },
       { id: 'nd',         label: 'ND filters' },
       { id: 'mattebox',   label: 'Matte box / filter holder' },
       { id: 'adapters',   label: 'Lens adapters' },
@@ -126,23 +164,37 @@
       const d = new Date(String(s).split('T')[0] + 'T12:00:00')
       return isNaN(d) ? '' : d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})
     }
+    const fmtDateShort = s => {
+      if (!s) return ''
+      const d = new Date(String(s).split('T')[0] + 'T12:00:00')
+      return isNaN(d) ? '' : d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})
+    }
 
     document.title = `Packing — ${project.name}`
 
-    // Ensure all setups have full item lists (merge defaults + customs)
+    // Lens library from localStorage
+    const getLensLibrary = () => { try { return JSON.parse(localStorage.getItem(LENS_LIBRARY_KEY)||'[]') } catch { return [] } }
+    const saveLensToLibrary = name => {
+      const lib = getLensLibrary()
+      if (!lib.includes(name)) { lib.unshift(name); localStorage.setItem(LENS_LIBRARY_KEY, JSON.stringify(lib.slice(0,30))) }
+    }
+
+    // Merge defaults into setup items
     camera_setups = camera_setups.map(setup => {
       const existingById = Object.fromEntries((setup.items||[]).map(it => [it.id, it]))
       const items = []
       for (const d of DEFAULT_ITEMS) {
         if (d.section) { items.push(d); continue }
-        items.push({ id: d.id, label: d.label, status: existingById[d.id]?.status ?? null })
+        const existing = existingById[d.id] || {}
+        items.push({ id: d.id, label: d.label, status: existing.status ?? null,
+          ...(d.hasSubItems ? { lens_items: existing.lens_items || [], lensOpen: false } : {}) })
       }
-      // Append custom items not in defaults
       for (const it of (setup.items||[])) {
         if (!DEFAULT_ITEMS.find(d => d.id === it.id)) {
           items.push({ id: it.id, label: it.label, status: it.status ?? null, custom: true })
         }
       }
+      if (!setup.section_notes) setup.section_notes = {}
       return { ...setup, items }
     })
 
@@ -152,11 +204,15 @@
     const save = () => {
       clearTimeout(saveTimer)
       saveTimer = setTimeout(async () => {
+        // Strip UI-only fields before saving
+        const payload = camera_setups.map(s => ({
+          ...s,
+          items: s.items.filter(it => !it.section).map(({ lensOpen, ...rest }) => rest)
+        }))
         try {
           await fetch(`/api/packing?token=${token}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ camera_setups }),
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ camera_setups: payload }),
           })
           toast.classList.add('show')
           setTimeout(() => toast.classList.remove('show'), 2000)
@@ -164,13 +220,35 @@
       }, 600)
     }
 
-    const packedCount = (setup) => setup.items.filter(it => !it.section && it.status === 'packed').length
-    const requiredCount = (setup) => setup.items.filter(it => !it.section && it.status !== 'not_required').length
-
     const statusIcon = s => s === 'packed' ? '✅' : s === 'not_required' ? '➖' : '⬜'
     const statusClass = s => s === 'packed' ? 's-packed' : s === 'not_required' ? 's-not_required' : 's-null'
     const statusLabel = s => s === 'packed' ? 'Packed' : s === 'not_required' ? 'N/A' : ''
     const cycleStatus = s => s === null ? 'packed' : s === 'packed' ? 'not_required' : null
+
+    const packedCount = setup => setup.items.filter(it => !it.section && it.status === 'packed').length
+    const requiredCount = setup => setup.items.filter(it => !it.section && it.status !== 'not_required').length
+
+    const renderLensPanel = (item, si, ii) => {
+      const lenses = item.lens_items || []
+      const libSuggestions = getLensLibrary().filter(l => !lenses.find(x => x.name === l)).slice(0, 6)
+      return `<div class="lenses-panel ${item.lensOpen?'open':''}" id="lens-panel-${si}-${ii}">
+        ${lenses.map((l, li) => `
+          <div class="lens-item" data-lens-item="${si},${ii},${li}">
+            <span class="item-icon" style="font-size:15px">${statusIcon(l.status)}</span>
+            <span class="lens-name">${esc(l.name)}</span>
+            ${l.status ? `<span class="status-badge ${statusClass(l.status)}" style="font-size:10px">${statusLabel(l.status)}</span>` : ''}
+            <button class="lens-rem" data-lens-rem="${si},${ii},${li}" title="Remove">×</button>
+          </div>`).join('')}
+        <div class="lens-add">
+          ${libSuggestions.length ? `<div class="lens-suggestions">${libSuggestions.map(l => `<span class="lens-chip" data-lens-suggest="${si},${ii}">${esc(l)}</span>`).join('')}</div>` : ''}
+          <div class="lens-input-row">
+            <input class="lens-input" type="text" placeholder="e.g. Sony 24-70mm GM f/2.8" data-lens-input="${si},${ii}" />
+            <button class="lens-add-btn" data-lens-add="${si},${ii}">Add</button>
+          </div>
+          ${lenses.length ? `<div class="lens-save-lib" data-lens-save-lib="${si},${ii}">💾 Save this lens list to library</div>` : ''}
+        </div>
+      </div>`
+    }
 
     const renderSetup = (setup, si) => {
       const pc = packedCount(setup)
@@ -205,7 +283,27 @@
         const item = setup.items[ii]
         if (item.section) {
           curSection = item.section
-          html += `<div class="section-divider">${esc(item.section)}</div>`
+          const note = (setup.section_notes||{})[item.section] || ''
+          html += `<div class="section-divider">
+            <span>${esc(item.section)}</span>
+            <button class="section-note-btn ${note?'has-note':''}" data-sec-note-btn="${si},${item.section}" title="Add section note">📝</button>
+          </div>
+          ${note ? `<div class="section-note-display">${esc(note)}</div>` : ''}
+          <div class="section-note-panel" id="sec-note-${si}-${encodeURIComponent(item.section)}">
+            <input class="section-note-input" type="text" value="${esc(note)}" placeholder="Section note — e.g. Check battery grip is fitted" data-sec-note="${si},${item.section}" />
+          </div>`
+        } else if (item.id === 'lenses') {
+          const lensCount = (item.lens_items||[]).length
+          const lensPacked = (item.lens_items||[]).filter(l => l.status === 'packed').length
+          html += `<div class="item" data-item="${si},${ii}" style="flex-wrap:wrap">
+            <div class="item-label">Lenses${lensCount ? ` <span style="font-size:11px;color:var(--text-ter)">(${lensPacked}/${lensCount})</span>` : ''}</div>
+            <div class="item-status" style="gap:6px">
+              <button class="lens-expand-btn" data-lens-toggle="${si},${ii}">${item.lensOpen ? 'Hide list ▲' : 'Manage ▼'}</button>
+              ${item.status ? `<span class="status-badge ${statusClass(item.status)}">${statusLabel(item.status)}</span>` : ''}
+              <span class="item-icon">${statusIcon(item.status)}</span>
+            </div>
+          </div>
+          ${renderLensPanel(item, si, ii)}`
         } else {
           html += `<div class="item" data-item="${si},${ii}">
             <div class="item-label">${esc(item.label)}</div>
@@ -223,14 +321,180 @@
           <button class="add-item-btn" data-add-btn="${si}">Add</button>
         </div>
       </div>`
-
       return html
     }
 
     const dates = Array.isArray(shoot.shoot_dates) ? shoot.shoot_dates.filter(d=>d.date) : []
     const dateStr = dates.length > 0
-      ? (dates.length === 1 ? fmtDate(dates[0].date) : dates.map(d => new Date(String(d.date).split('T')[0]+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'})).join(' – '))
+      ? (dates.length === 1 ? fmtDate(dates[0].date) : dates.map(d=>fmtDateShort(d.date)).join(' – '))
       : fmtDate(shoot.shoot_date)
+
+    const reRig = (si) => {
+      const rig = document.getElementById(`rig-${si}`)
+      if (!rig) return
+      const next = document.createElement('div')
+      next.innerHTML = renderSetup(camera_setups[si], si)
+      rig.replaceWith(next.firstElementChild)
+      bindRig(si)
+    }
+
+    const bindRig = (si) => {
+      const rig = document.getElementById(`rig-${si}`)
+      if (!rig) return
+
+      // Regular item tap → cycle status
+      rig.querySelectorAll('[data-item]').forEach(el => {
+        el.addEventListener('click', e => {
+          if (e.target.closest('[data-lens-toggle]')) return // handled separately
+          const [s, ii] = el.dataset.item.split(',').map(Number)
+          const item = camera_setups[s].items[ii]
+          if (!item || item.section) return
+          const wasNull = item.status === null
+          item.status = cycleStatus(item.status)
+          if (wasNull && !camera_setups[s].packed_at) camera_setups[s].packed_at = new Date().toISOString()
+          reRig(s); save()
+        })
+      })
+
+      // Lens toggle — expand/collapse panel
+      rig.querySelectorAll('[data-lens-toggle]').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation()
+          const [s, ii] = btn.dataset.lensToggle.split(',').map(Number)
+          camera_setups[s].items[ii].lensOpen = !camera_setups[s].items[ii].lensOpen
+          reRig(s)
+        })
+      })
+
+      // Lens item tap → cycle status
+      rig.querySelectorAll('[data-lens-item]').forEach(el => {
+        el.addEventListener('click', e => {
+          if (e.target.closest('[data-lens-rem]')) return
+          const [s, ii, li] = el.dataset.lensItem.split(',').map(Number)
+          const lens = camera_setups[s].items[ii].lens_items[li]
+          if (!lens) return
+          lens.status = cycleStatus(lens.status)
+          reRig(s); save()
+        })
+      })
+
+      // Remove a lens
+      rig.querySelectorAll('[data-lens-rem]').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation()
+          const [s, ii, li] = btn.dataset.lensRem.split(',').map(Number)
+          camera_setups[s].items[ii].lens_items.splice(li, 1)
+          reRig(s); save()
+        })
+      })
+
+      // Add lens from suggestion chip
+      rig.querySelectorAll('[data-lens-suggest]').forEach(chip => {
+        chip.addEventListener('click', () => {
+          const [s, ii] = chip.dataset.lensSuggest.split(',').map(Number)
+          const name = chip.textContent
+          if (!camera_setups[s].items[ii].lens_items) camera_setups[s].items[ii].lens_items = []
+          if (!camera_setups[s].items[ii].lens_items.find(l => l.name === name)) {
+            camera_setups[s].items[ii].lens_items.push({ name, status: null })
+          }
+          reRig(s); save()
+        })
+      })
+
+      // Add custom lens
+      rig.querySelectorAll('[data-lens-add]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const [s, ii] = btn.dataset.lensAdd.split(',').map(Number)
+          const input = rig.querySelector(`[data-lens-input="${s},${ii}"]`)
+          const name = input?.value.trim()
+          if (!name) return
+          if (!camera_setups[s].items[ii].lens_items) camera_setups[s].items[ii].lens_items = []
+          if (!camera_setups[s].items[ii].lens_items.find(l => l.name === name)) {
+            camera_setups[s].items[ii].lens_items.push({ name, status: null })
+          }
+          if (input) input.value = ''
+          reRig(s); save()
+        })
+      })
+
+      // Add lens on Enter key
+      rig.querySelectorAll('[data-lens-input]').forEach(input => {
+        input.addEventListener('keydown', e => {
+          if (e.key !== 'Enter') return
+          const [s, ii] = input.dataset.lensInput.split(',').map(Number)
+          const name = input.value.trim()
+          if (!name) return
+          if (!camera_setups[s].items[ii].lens_items) camera_setups[s].items[ii].lens_items = []
+          if (!camera_setups[s].items[ii].lens_items.find(l => l.name === name)) {
+            camera_setups[s].items[ii].lens_items.push({ name, status: null })
+          }
+          input.value = ''
+          reRig(s); save()
+        })
+      })
+
+      // Save lens list to library
+      rig.querySelectorAll('[data-lens-save-lib]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const [s, ii] = btn.dataset.lensSaveLib.split(',').map(Number)
+          const lenses = camera_setups[s].items[ii].lens_items || []
+          lenses.forEach(l => saveLensToLibrary(l.name))
+          btn.textContent = '✓ Saved to suggestions'; setTimeout(() => { btn.textContent = '💾 Save this lens list to library' }, 2000)
+        })
+      })
+
+      // Section note toggle
+      rig.querySelectorAll('[data-sec-note-btn]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const [s, sectionName] = btn.dataset.secNoteBtn.split(',')
+          const panel = rig.querySelector(`#sec-note-${s}-${encodeURIComponent(sectionName)}`)
+          if (panel) panel.classList.toggle('open')
+        })
+      })
+
+      // Section note input
+      rig.querySelectorAll('[data-sec-note]').forEach(input => {
+        input.addEventListener('change', () => {
+          const [s, sectionName] = input.dataset.secNote.split(',')
+          if (!camera_setups[+s].section_notes) camera_setups[+s].section_notes = {}
+          camera_setups[+s].section_notes[sectionName] = input.value.trim()
+          reRig(+s); save()
+        })
+      })
+
+      // Meta inputs
+      rig.querySelectorAll('[data-meta]').forEach(el => {
+        el.addEventListener('change', () => {
+          const [s, field] = el.dataset.meta.split(',')
+          camera_setups[+s][field] = el.value; save()
+        })
+      })
+
+      // Add custom item
+      rig.querySelectorAll('[data-add-btn]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const s = +btn.dataset.addBtn
+          const input = rig.querySelector(`[data-add-input="${s}"]`)
+          const label = input?.value.trim()
+          if (!label) return
+          camera_setups[s].items.push({ id:'custom_'+Date.now(), label, status:null, custom:true })
+          if (input) input.value = ''
+          reRig(s); save()
+        })
+      })
+
+      rig.querySelectorAll('[data-add-input]').forEach(input => {
+        input.addEventListener('keydown', e => {
+          if (e.key !== 'Enter') return
+          const s = +input.dataset.addInput
+          const label = input.value.trim()
+          if (!label) return
+          camera_setups[s].items.push({ id:'custom_'+Date.now(), label, status:null, custom:true })
+          input.value = ''
+          reRig(s); save()
+        })
+      })
+    }
 
     const renderAll = () => {
       const root = document.getElementById('root')
@@ -253,120 +517,23 @@
           }
         </div>`
 
-      // Bind item taps
-      root.querySelectorAll('[data-item]').forEach(el => {
-        el.addEventListener('click', () => {
-          const [si, ii] = el.dataset.item.split(',').map(Number)
-          const item = camera_setups[si].items[ii]
-          if (item.section) return
-          const wasNull = item.status === null
-          item.status = cycleStatus(item.status)
-          // Auto-stamp on first interaction with this setup
-          if (wasNull && !camera_setups[si].packed_at) {
-            camera_setups[si].packed_at = new Date().toISOString()
-          }
-          // Re-render just this rig
-          const rig = document.getElementById(`rig-${si}`)
-          if (rig) {
-            const next = document.createElement('div')
-            next.innerHTML = renderSetup(camera_setups[si], si)
-            rig.replaceWith(next.firstElementChild)
-            bindRig(si)
-          }
-          save()
-        })
-      })
+      camera_setups.forEach((_, si) => bindRig(si))
 
-      // Bind meta inputs
-      root.querySelectorAll('[data-meta]').forEach(el => {
-        el.addEventListener('change', () => {
-          const [si, field] = el.dataset.meta.split(',')
-          camera_setups[+si][field] = el.value
-          save()
-        })
-      })
-
-      // Bind add custom item
-      root.querySelectorAll('[data-add-btn]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const si = +btn.dataset.addBtn
-          const input = root.querySelector(`[data-add-input="${si}"]`)
-          const label = input?.value.trim()
-          if (!label) return
-          const id = 'custom_' + Date.now()
-          camera_setups[si].items.push({ id, label, status: null, custom: true })
-          input.value = ''
-          const rig = document.getElementById(`rig-${si}`)
-          if (rig) {
-            const next = document.createElement('div')
-            next.innerHTML = renderSetup(camera_setups[si], si)
-            rig.replaceWith(next.firstElementChild)
-            bindRig(si)
-          }
-          save()
-        })
-      })
-
-      // Mark all packed
       root.querySelector('#pack-all-btn')?.addEventListener('click', () => {
         const now = new Date().toISOString()
         camera_setups.forEach(s => {
           s.items.forEach(it => { if (!it.section && it.status !== 'not_required') it.status = 'packed' })
           if (!s.packed_at) s.packed_at = now
         })
-        renderAll()
-        save()
+        renderAll(); save()
       })
-
-      // Reset all
       root.querySelector('#reset-btn')?.addEventListener('click', () => {
         if (!confirm('Reset all packing states?')) return
         camera_setups.forEach(s => {
           s.items.forEach(it => { if (!it.section) it.status = null })
           s.packed_at = null
         })
-        renderAll()
-        save()
-      })
-    }
-
-    const bindRig = (si) => {
-      const rig = document.getElementById(`rig-${si}`)
-      if (!rig) return
-      rig.querySelectorAll('[data-item]').forEach(el => {
-        el.addEventListener('click', () => {
-          const [s, ii] = el.dataset.item.split(',').map(Number)
-          const item = camera_setups[s].items[ii]
-          if (item.section) return
-          const wasNull = item.status === null
-          item.status = cycleStatus(item.status)
-          if (wasNull && !camera_setups[s].packed_at) camera_setups[s].packed_at = new Date().toISOString()
-          const next = document.createElement('div')
-          next.innerHTML = renderSetup(camera_setups[s], s)
-          rig.replaceWith(next.firstElementChild)
-          bindRig(s)
-          save()
-        })
-      })
-      rig.querySelectorAll('[data-meta]').forEach(el => {
-        el.addEventListener('change', () => {
-          const [s, field] = el.dataset.meta.split(',')
-          camera_setups[+s][field] = el.value; save()
-        })
-      })
-      rig.querySelectorAll('[data-add-btn]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const s = +btn.dataset.addBtn
-          const input = rig.querySelector(`[data-add-input="${s}"]`)
-          const label = input?.value.trim()
-          if (!label) return
-          camera_setups[s].items.push({ id:'custom_'+Date.now(), label, status:null, custom:true })
-          input.value = ''
-          const next = document.createElement('div')
-          next.innerHTML = renderSetup(camera_setups[s], s)
-          rig.replaceWith(next.firstElementChild)
-          bindRig(s); save()
-        })
+        renderAll(); save()
       })
     }
 
