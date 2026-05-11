@@ -481,39 +481,38 @@ export class App {
 
   // Parse the URL hash and restore view state before first render
   _restoreFromHash() {
-    const hash = location.hash.slice(1) // e.g. 'projects/abc-123'
+    const hash = location.hash.slice(1)
     if (!hash) return
-    const [view, id] = hash.split('/')
+    const parts = hash.split('/')
+    const view = parts[0], id = parts[1], tab = parts[2]
     const validViews = ['contacts','projects','budgets','settings','dashboard']
     if (!validViews.includes(view)) return
     this.currentView = view
-    if (view === 'projects' && id) this.projectsView.currentId = id
-    if (view === 'budgets'  && id) this.budgetsView.currentId  = id
+    if (view === 'projects' && id) {
+      this.projectsView.currentId = id
+      if (tab) this.projectsView._pvTab = tab
+    }
+    if (view === 'budgets' && id) this.budgetsView.currentId = id
   }
 
   // Handle browser back / forward button
   _handlePopState(e) {
-    // If a shoot editor overlay is open, close it and stay on the project
     const shootOverlay = document.getElementById('shoot-editor-overlay')
-    if (shootOverlay) {
-      shootOverlay.remove()
-      return
-    }
-
-    // If a generic modal overlay is open, close it
-    const modal = document.querySelector('.modal-overlay, #ra-copy-picker')
+    if (shootOverlay) { shootOverlay.remove(); return }
+    const modal = document.querySelector('.modal-overlay, #ra-copy-picker, #rig-lib-picker')
     if (modal) { modal.remove(); return }
 
-    // Restore from URL
     const hash = location.hash.slice(1)
-    const [view, id] = (hash || 'dashboard').split('/')
+    const parts = (hash || 'dashboard').split('/')
+    const view = parts[0], id = parts[1], tab = parts[2]
     const validViews = ['contacts','projects','budgets','settings','dashboard']
     if (!validViews.includes(view)) { this.currentView = 'dashboard'; this.render(); return }
 
     this.currentView = view
     this.projectsView.currentId = (view === 'projects' && id) ? id : null
+    this.projectsView._pvTab = tab || 'overview'
     this.projectsView.editingId = null
-    this.budgetsView.currentId  = (view === 'budgets'  && id) ? id : null
+    this.budgetsView.currentId  = (view === 'budgets' && id) ? id : null
     this.budgetsView.editingId  = null
     this.render()
   }
@@ -1492,7 +1491,15 @@ export class App {
       .kanban-add{border:0.5px dashed var(--border-med);border-radius:var(--radius-md);padding:9px 12px;font-size:12px;color:var(--text-tertiary);cursor:pointer;text-align:center;background:transparent;width:100%;font-family:var(--font);transition:background 0.1s,color 0.1s}
       .kanban-add:hover{background:var(--bg-primary);color:var(--text-secondary)}
       .proj-layout{display:flex;gap:20px;align-items:flex-start}
-      .proj-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:16px}.proj-sidebar{width:240px;flex-shrink:0;display:flex;flex-direction:column;gap:12px}
+      .proj-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:16px}.proj-sidebar{width:240px;flex-shrink:0;display:flex;flex-direction:column;gap:12px;transition:width 0.2s,opacity 0.2s}
+      .proj-sidebar.collapsed{width:0;overflow:hidden;opacity:0;pointer-events:none}
+      .proj-tab-bar{display:flex;gap:0;border-bottom:0.5px solid var(--border-light);margin-bottom:20px;overflow-x:auto;scrollbar-width:none}
+      .proj-tab-bar::-webkit-scrollbar{display:none}
+      .proj-tab{padding:8px 16px;font-size:13px;font-weight:500;color:var(--text-tertiary);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;background:none;border-left:none;border-right:none;border-top:none;font-family:var(--font);transition:color 0.1s}
+      .proj-tab:hover{color:var(--text-primary)}
+      .proj-tab.active{color:var(--text-primary);border-bottom-color:var(--accent)}
+      .proj-sidebar-toggle{background:none;border:0.5px solid var(--border-light);border-radius:var(--radius-sm);padding:4px 8px;font-size:12px;color:var(--text-tertiary);cursor:pointer;flex-shrink:0}
+      .proj-sidebar-toggle:hover{color:var(--text-primary);border-color:var(--border-strong)}
       .proj-panel{background:var(--bg-primary);border:0.5px solid var(--border-light);border-radius:var(--radius-lg);overflow:hidden}
       .proj-panel-head{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);padding:11px 16px;border-bottom:0.5px solid var(--border-light);display:flex;align-items:center;gap:8px}
       .proj-panel-body{padding:16px;display:flex;flex-direction:column;gap:12px}

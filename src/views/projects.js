@@ -11,7 +11,9 @@ export class ProjectsView {
   constructor(app) {
     this.app = app
     this.currentId = null
-    this.editingId = null  // which project is in edit mode (null = view mode)
+    this.editingId = null
+    this._pvTab = 'overview'  // current project tab
+    this._pvCrewTab = 'crew'
   }
 
   render(mc) {
@@ -95,7 +97,8 @@ export class ProjectsView {
     mc.querySelectorAll('.kanban-card[data-open]').forEach(el => {
       el.addEventListener('click', () => {
         this.currentId = el.dataset.open
-        this.app._pushAppState(`#projects/${this.currentId}`, { view:'projects', id:this.currentId })
+        this._pvTab = 'overview'
+        this.app._pushAppState(`#projects/${this.currentId}/overview`, { view:'projects', id:this.currentId, tab:'overview' })
         this.render(mc)
         this.app.updateTitle()
       })
@@ -437,22 +440,22 @@ export class ProjectsView {
     const p = this.app.projects.find(x => x.id === this.currentId)
     if (!p) { this.currentId = null; this.renderKanban(mc); return }
 
-    // Auto-reset monthly deliverables if period has rolled over
     if (p.is_retainer && p.retainer_start) this._checkRetainerReset(p)
+    const tab = this._pvTab || 'overview'
     const { contacts, budgets } = this.app
     const cl = contacts.find(c => c.id === p.client_id)
-    const delivs = (p.deliverables||[]).filter(d => d.text)
-    const crew = (p.crew||[]).filter(c => c.name || c.role)
-    const shots = (p.shots||[]).filter(s => s.text)
     const budgetIds = Array.isArray(p.budget_ids) ? p.budget_ids : []
     const linked = budgetIds.map(id => budgets.find(b => b.id === id)).filter(Boolean)
-    const doneCount = delivs.filter(d => d.done).length
 
-    const field = (label, value) => value ? `
-      <div style="margin-bottom:10px">
-        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">${label}</div>
-        <div style="font-size:13px;color:var(--text-primary);line-height:1.6">${value}</div>
-      </div>` : ''
+    const sidebarCollapsed = localStorage.getItem('peny-sidebar-collapsed') === '1'
+
+    const TABS = [
+      { id: 'overview', label: '📋 Overview' },
+      { id: 'shoots',   label: '🎬 Shoots', hide: (p.project_type||'full_service') === 'post_production' },
+      { id: 'budget',   label: '💰 Budget' },
+      { id: 'planning', label: '🗂 Planning' },
+      { id: 'files',    label: '📁 Files' },
+    ].filter(t => !t.hide)
 
     mc.innerHTML = `
       <div class="bh-row">
@@ -468,472 +471,397 @@ export class ProjectsView {
         ${this.app.permissions?.projects_edit ? `<button class="btn-primary" id="enter-edit">Edit project</button>` : ''}
         <button class="row-btn" id="pv-delete" style="color:#b03020;border-color:rgba(180,50,30,0.2)">Delete</button>
       </div>
+
       <div class="proj-layout">
         <div class="proj-main">
-
-          <div class="proj-panel">
-            <div class="proj-panel-head">Brief &amp; overview</div>
-            <div class="proj-panel-body">
-              ${cl ? `
-              <div>
-                <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Client</div>
-                <div style="font-size:13px;color:var(--accent);cursor:pointer;text-decoration:underline;text-underline-offset:2px;text-decoration-color:rgba(74,144,217,0.4)" data-open-contact="${cl.id}">${esc(cl.first_name)} ${esc(cl.last_name)} — ${esc(cl.company)}</div>
-              </div>` : ''}
-              ${field('Creative brief', esc(p.brief))}
-              ${field('Location', esc(p.location))}
-              ${(p.shoot_start||p.shoot_end) ? field('Shoot dates', [p.shoot_start, p.shoot_end].filter(Boolean).join(' → ')) : ''}
-              ${!p.brief && !p.location && !p.shoot_start && !cl ? '<div style="font-size:13px;color:var(--text-tertiary)">No details yet — click Edit project to add.</div>' : ''}
+          <div style="display:flex;align-items:center;gap:0;border-bottom:0.5px solid var(--border-light);margin-bottom:20px">
+            <div class="proj-tab-bar" style="flex:1;border-bottom:none">
+              ${TABS.map(t => `<button class="proj-tab ${t.id===tab?'active':''}" data-tab="${t.id}">${t.label}</button>`).join('')}
             </div>
+            <button class="proj-sidebar-toggle" id="sidebar-toggle" title="${sidebarCollapsed?'Show sidebar':'Hide sidebar'}">${sidebarCollapsed?'▷':'◁'}</button>
           </div>
 
-          ${p.is_retainer ? `
-          <div class="proj-panel">
-            <div class="proj-panel-head">
-              Retainer
-              <button class="btn-secondary" id="pv-ret-pdf" style="margin-left:auto;font-size:11px;padding:4px 10px">Export PDF</button>
-            </div>
-            <div class="proj-panel-body">
-              ${(() => {
-                const items = p.retainer_items||[]
-                const calcFee = items.reduce((s,i)=>{
-                  const r=parseFloat(i.rate)||0, q=parseFloat(i.qty)||0
-                  const mult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}[i.period||'month']||1
-                  return s + r*q*mult
-                }, 0)
-                const displayFee = p.retainer_fee_mode==='calculated' ? calcFee : (parseFloat(p.retainer_fee)||0)
-                const periodLabel = {week:'week',month:'month',quarter:'quarter',half:'half year',year:'year'}
-                return `
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-                  <div>
-                    <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Monthly fee</div>
-                    <div style="font-size:16px;font-weight:600">£${Math.round(displayFee).toLocaleString('en-GB')}</div>
-                    ${p.retainer_fee_mode==='calculated'?'<div style="font-size:10px;color:var(--text-tertiary)">calculated from items</div>':''}
-                  </div>
-                  ${p.retainer_start ? `<div><div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Period</div><div style="font-size:13px">Resets day ${new Date(p.retainer_start).getUTCDate()} · Alert ${p.retainer_alert??80}%</div></div>` : ''}
-                </div>
-                ${items.length ? `
-                <table style="width:100%;border-collapse:collapse;font-size:12px">
-                  <thead><tr style="border-bottom:0.5px solid var(--border-light)">
-                    <th style="text-align:left;font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;font-weight:400;padding:4px 0">Item</th>
-                    <th style="text-align:right;font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;font-weight:400;padding:4px 8px">Qty</th>
-                    <th style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;font-weight:400;padding:4px 0">Unit</th>
-                    <th style="text-align:right;font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;font-weight:400;padding:4px 0">Rate</th>
-                    <th style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;font-weight:400;padding:4px 0">Per</th>
-                    <th style="text-align:right;font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;font-weight:400;padding:4px 0">/mo equiv</th>
-                  </tr></thead>
-                  <tbody>
-                  ${items.map(item => {
-                    const r=parseFloat(item.rate)||0, q=parseFloat(item.qty)||0
-                    const mult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}[item.period||'month']||1
-                    const monthly = r*q*mult
-                    const pl = periodLabel[item.period||'month']
-                    return `<tr style="border-bottom:0.5px solid var(--border-light)">
-                      <td style="padding:6px 0;font-weight:500">${esc(item.label)}</td>
-                      <td style="padding:6px 8px;text-align:right;color:var(--text-secondary)">${q}</td>
-                      <td style="padding:6px 0;color:var(--text-secondary)">${item.unit||'days'}</td>
-                      <td style="padding:6px 0;text-align:right;color:var(--text-secondary)">${r?'£'+r.toLocaleString('en-GB'):'—'}</td>
-                      <td style="padding:6px 0;color:var(--text-secondary)">per ${pl}</td>
-                      <td style="padding:6px 0;text-align:right;font-weight:500">${monthly?'£'+Math.round(monthly).toLocaleString('en-GB'):'—'}</td>
-                    </tr>`
-                  }).join('')}
-                  </tbody>
-                </table>` : '<div style="font-size:12px;color:var(--text-tertiary)">No items — click Edit project to add.</div>'}
-                `
-              })()}
-            </div>
-          </div>` : ''}
-
-          ${delivs.length ? `
-          <div class="proj-panel">
-            <div class="proj-panel-head">
-              ${p.is_retainer ? 'Fixed monthly deliverables' : 'Deliverables'}
-              <div style="margin-left:auto;display:flex;gap:6px;font-weight:400;text-transform:none;letter-spacing:0">
-                <button class="row-btn" id="pv-delivs-all" style="font-size:10px">All done</button>
-                <button class="row-btn" id="pv-delivs-clear" style="font-size:10px">Clear</button>
-                <span style="font-size:11px;color:var(--text-tertiary)">${doneCount}/${delivs.length}</span>
-              </div>
-            </div>
-            <div style="padding:0 16px" id="pv-delivs">
-              ${delivs.map((d, di) => {
-                const today = new Date(); today.setHours(0,0,0,0)
-                const due = d.due ? new Date(d.due) : null
-                const daysUntil = due ? Math.round((due - today) / 86400000) : null
-                const overdue = !d.done && due && daysUntil < 0
-                const dueSoon = !d.done && due && daysUntil >= 0 && daysUntil <= 3
-                const dueColour = overdue ? '#ef4444' : dueSoon ? '#f59e0b' : 'var(--text-tertiary)'
-                const dueLabel = due && !d.done ? (overdue ? `⚠ ${Math.abs(daysUntil)}d overdue` : daysUntil === 0 ? '⏰ due today' : dueSoon ? `⏰ ${daysUntil}d left` : new Date(d.due).toLocaleDateString('en-GB',{day:'numeric',month:'short'})) : ''
-                return `<div class="deliverable-row" id="pvd-${p.id}-${di}" style="${overdue?'background:rgba(239,68,68,0.05);border-radius:6px;margin:1px 0':''}">
-                  <input type="checkbox" class="deliverable-check" ${d.done?'checked':''} data-pv-deliv="${p.id}" data-pv-idx="${di}" />
-                  <span style="font-size:13px;flex:1;${d.done?'text-decoration:line-through;color:var(--text-tertiary)':'color:var(--text-primary)'}">${esc(d.text)}</span>
-                  ${dueLabel ? `<span style="font-size:10px;color:${dueColour};white-space:nowrap;flex-shrink:0;font-weight:${overdue||dueSoon?'500':'400'}">${dueLabel}</span>` : ''}
-                </div>`
-              }).join('')}
-            </div>
-          </div>` : ''}
-
-          ${p.is_retainer ? (() => {
-            const mDelivs = (p.monthly_deliverables||[]).filter(d => d.text)
-            const mDone = mDelivs.filter(d => d.done).length
-            return `<div class="proj-panel">
-              <div class="proj-panel-head">
-                This month's deliverables
-                <span style="margin-left:auto;font-size:11px;color:var(--text-tertiary);font-weight:400;text-transform:none;letter-spacing:0">${mDone}/${mDelivs.length} done</span>
-              </div>
-              <div style="padding:0 16px" id="pv-monthly-delivs">
-                ${mDelivs.map((d, di) => `
-                  <div class="deliverable-row" id="pvmd-${p.id}-${di}">
-                    <input type="checkbox" class="deliverable-check" ${d.done?'checked':''} data-pv-monthly-deliv="${p.id}" data-pv-monthly-idx="${di}" />
-                    <span style="font-size:13px;${d.done?'text-decoration:line-through;color:var(--text-tertiary)':'color:var(--text-primary)'}">${esc(d.text)}</span>
-                  </div>`).join('')}
-                ${this.app.permissions?.projects_edit ? `
-                <div style="padding:8px 0" id="pv-add-monthly-form">
-                  <div style="display:flex;gap:6px;margin-top:4px">
-                    <input type="text" id="pv-new-monthly-text" placeholder="Add this month's deliverable…"
-                      style="flex:1;font-size:12px;padding:6px 8px;border:0.5px solid var(--border-light);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
-                    <button class="btn-secondary" id="pv-add-monthly-btn" style="font-size:12px;white-space:nowrap">Add</button>
-                  </div>
-                </div>` : ''}
-              </div>
-            </div>`
-          })() : ''}
-
-          ${shots.length ? `
-          <div class="proj-panel">
-            <div class="proj-panel-head">Shot list / run of show</div>
-            <div style="padding:0 16px">
-              ${shots.map((s,i) => `
-                <div class="shot-row">
-                  <span class="shot-num">${i+1}.</span>
-                  <span style="font-size:13px;color:var(--text-primary);line-height:1.5;padding:6px 0;display:block">${esc(s.text)}</span>
-                </div>`).join('')}
-            </div>
-          </div>` : ''}
-
-          ${crew.length || (this.app.contacts||[]).some(c => c.type==='subcontractor' && c.status!=='Retired') ? `
-          <div class="proj-panel">
-            <div class="proj-panel-head" style="display:flex;align-items:center;gap:0">
-              <div style="display:flex;gap:0;background:var(--bg-secondary);border-radius:20px;padding:3px">
-                ${[['crew','Crew'],['on_camera','On Camera'],['client','Client']].map(([type,label]) =>
-                  `<button class="filter-pill ${(this._pvCrewTab||'crew')===type?'active':''}" data-pv-crew-tab="${type}" style="border-radius:16px;font-size:11px">${label}</button>`
-                ).join('')}
-              </div>
-            </div>
-            <div style="padding:0 16px">
-              ${(() => {
-                const tab = this._pvCrewTab||'crew'
-                const subbies = (this.app.contacts||[]).filter(c => c.type==='subcontractor' && c.status!=='Retired' && !crew.some(cr => cr.name===(c.first_name+' '+c.last_name).trim()))
-                const tabCrew = crew.filter(c => (c.crew_type||'crew') === tab)
-                return (tab==='crew' && subbies.length ? `
-                <div style="padding:8px 0;border-bottom:0.5px solid var(--border-light);display:flex;gap:8px;align-items:center">
-                  <select id="pv-add-sub-select" style="flex:1;font-size:12px;padding:5px 8px;border:0.5px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none">
-                    <option value="">+ Add subcontractor…</option>
-                    ${subbies.map(c => {
-                      const name = (c.first_name+' '+c.last_name).trim()
-                      return `<option value="${esc(name)}" data-role="${esc(c.role||'')}">${esc(name)}${c.role?' — '+esc(c.role):''}</option>`
-                    }).join('')}
-                  </select>
-                </div>` : '') +
-                (tabCrew.length ? `
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:6px 0;border-bottom:0.5px solid var(--border-light)">
-                  <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Name</div>
-                  <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Role</div>
-                </div>
-                ${tabCrew.map(c => `
-                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:7px 0;border-bottom:0.5px solid var(--border-light);font-size:13px">
-                    <div>${esc(c.name)}</div>
-                    <div style="color:var(--text-secondary)">${esc(c.role)}</div>
-                  </div>`).join('')}` :
-                `<div style="padding:10px 0;font-size:12px;color:var(--text-tertiary)">No ${tab==='on_camera'?'on camera people':tab==='client'?'clients':'crew'} added yet</div>`)
-              })()}
-            </div>
-          </div>` : ''}
-
+          <div id="pv-tab-content">
+            ${this._renderTab(tab, p, cl, linked)}
+          </div>
         </div>
-        <div class="proj-sidebar">
 
-          <div class="proj-panel">
-            <div class="proj-panel-head">Approvals</div>
-            <div style="padding:0 14px" id="pv-approvals">
-              ${(p.approvals||[]).map((a,ai) => {
-                const cls = a.status==='Approved'?'apv-approved':a.status==='Changes requested'?'apv-changes':'apv-pending'
-                return `<div class="approval-row">
-                  <span class="approval-label">${esc(a.label)}</span>
-                  <button class="approval-status ${cls}" data-pv-cycle="${p.id},${ai}">${esc(a.status)}</button>
-                </div>`
-              }).join('')}
-            </div>
-          </div>
+        <div class="proj-sidebar ${sidebarCollapsed?'collapsed':''}" id="proj-sidebar">
+          ${this._renderSidebar(p, linked)}
+        </div>
+      </div>
+      ${this.newModalHTML()}
+    `
 
-          <div class="proj-panel">
-            <div class="proj-panel-head">Linked budgets</div>
-            <div style="padding:10px 14px;display:flex;flex-direction:column;gap:6px">
-              ${linked.map(b => `
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;background:var(--bg-secondary);border-radius:var(--radius-md);font-size:12px;cursor:pointer" data-open-budget="${b.id}">
-                  <span style="font-weight:500">${esc(b.name)}</span>
-                  ${b.signed_off ? `<span style="font-size:10px;color:#6ec96e">✓ Signed off</span>` : ''}
-                </div>`).join('')}
-              ${this.app.permissions?.budgets_edit ? `<button class="dashed-btn" id="pv-new-budget" style="font-size:12px">+ create new budget</button>` : ''}
-            </div>
-          </div>
+    // Tab switching
+    mc.querySelectorAll('[data-tab]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const newTab = btn.dataset.tab
+        this._pvTab = newTab
+        this.app._pushAppState(`#projects/${p.id}/${newTab}`, { view:'projects', id:p.id, tab:newTab })
+        mc.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === newTab))
+        const content = mc.querySelector('#pv-tab-content')
+        if (content) {
+          content.innerHTML = this._renderTab(newTab, p, cl, linked)
+          this._bindTabContent(mc, newTab, p, cl, linked)
+        }
+      })
+    })
 
-          ${(p.project_type||'full_service') === 'full_service' ? `
-          <div class="proj-panel">
-            <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
-              <span>Shoots</span>
-              <button class="btn-primary" id="pv-add-shoot" style="font-size:11px;padding:4px 10px">+ Add shoot</button>
-            </div>
-            <div style="padding:10px 14px;display:flex;flex-direction:column;gap:6px" id="pv-shoots-list">
-              ${(p._shoots||[]).length ? (p._shoots||[]).map(sh => {
-                const d = sh.shoot_date ? new Date(sh.shoot_date).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}) : 'No date'
-                const label = sh.name || sh.location_name || 'Untitled shoot'
-                const statusColor = sh.status === 'sent' ? '#6ec96e' : 'var(--text-tertiary)'
-                return `<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:var(--bg-secondary);border-radius:var(--radius-md);font-size:12px;cursor:pointer" data-open-shoot="${sh.id}">
-                  <div style="flex:1;min-width:0">
-                    <div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(label)}</div>
-                    <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">${esc(d)}${sh.general_call?' · '+esc(sh.general_call):''}</div>
+    // Sidebar toggle
+    mc.querySelector('#sidebar-toggle')?.addEventListener('click', () => {
+      const sidebar = mc.querySelector('#proj-sidebar')
+      const btn = mc.querySelector('#sidebar-toggle')
+      const isCollapsed = sidebar?.classList.toggle('collapsed')
+      localStorage.setItem('peny-sidebar-collapsed', isCollapsed ? '1' : '0')
+      if (btn) btn.textContent = isCollapsed ? '▷' : '◁'
+      if (btn) btn.title = isCollapsed ? 'Show sidebar' : 'Hide sidebar'
+    })
+
+    // Shared bindings (header row)
+    this._bindViewerHeader(mc, p)
+    // Tab-specific bindings
+    this._bindTabContent(mc, tab, p, cl, linked)
+    // Sidebar bindings
+    this._bindSidebar(mc, p, linked)
+    // Async loaders
+    this._loadShoots(mc, p)
+    if (tab === 'overview') {
+      this._loadProjectActivity(mc, p.id)
+      this._loadWorkLog(mc, p)
+      this._loadTimePanel(mc, p)
+    }
+  }
+
+  _renderTab(tab, p, cl, linked) {
+    const delivs = (p.deliverables||[]).filter(d => d.text)
+    const crew   = (p.crew||[]).filter(c => c.name || c.role)
+    const shots  = (p.shots||[]).filter(s => s.text)
+    const doneCount = delivs.filter(d => d.done).length
+
+    const field = (label, value) => value ? `
+      <div style="margin-bottom:10px">
+        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">${label}</div>
+        <div style="font-size:13px;color:var(--text-primary);line-height:1.6">${value}</div>
+      </div>` : ''
+
+    if (tab === 'overview') return this._renderTabOverview(p, cl, delivs, crew, shots, doneCount, field)
+    if (tab === 'shoots')   return this._renderTabShoots(p)
+    if (tab === 'budget')   return this._renderTabBudget(p, linked)
+    if (tab === 'planning') return this._renderTabPlanning(p)
+    if (tab === 'files')    return this._renderTabFiles(p)
+    return ''
+  }
+
+  _renderTabOverview(p, cl, delivs, crew, shots, doneCount, field) {
+    return `
+      <div class="proj-panel">
+        <div class="proj-panel-head">Brief &amp; overview</div>
+        <div class="proj-panel-body">
+          ${field('Client', cl ? `${esc(cl.first_name)} ${esc(cl.last_name)}${cl.company?' · '+esc(cl.company):''}` : '')}
+          ${field('Brief', p.brief ? esc(p.brief) : '')}
+          ${p.shoot_start ? field('Shoot dates', esc(p.shoot_start) + (p.shoot_end && p.shoot_end!==p.shoot_start ? ' → '+esc(p.shoot_end) : '')) : ''}
+          ${field('Notes', p.notes ? esc(p.notes) : '')}
+        </div>
+      </div>
+
+      <div class="proj-panel">
+        <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Deliverables <span style="font-size:11px;color:var(--text-tertiary);font-weight:400">(${doneCount}/${delivs.length})</span></span>
+          ${this.app.permissions?.projects_edit ? `
+          <div style="display:flex;gap:6px">
+            <button class="btn-cancel" id="pv-mark-all-done" style="font-size:11px">Mark all done</button>
+            <button class="btn-cancel" id="pv-reset-delivs" style="font-size:11px">Reset</button>
+          </div>` : ''}
+        </div>
+        <div style="padding:0 14px">
+          ${delivs.map((d,i) => `
+            <div class="deliv-row" style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:0.5px solid var(--border-light)">
+              <input type="checkbox" ${d.done?'checked':''} data-pv-deliv="${p.id},${i}" style="width:15px;height:15px;cursor:pointer;flex-shrink:0" />
+              <span style="font-size:13px;${d.done?'text-decoration:line-through;color:var(--text-tertiary)':''}">${esc(d.text)}</span>
+            </div>`).join('')}
+        </div>
+      </div>
+
+      ${crew.length ? `
+      <div class="proj-panel">
+        <div class="proj-panel-head">Key crew</div>
+        <div style="padding:0 14px">
+          ${['crew','on_camera','client'].map(type => {
+            const label = type==='on_camera'?'On Camera':type==='client'?'Client':'Crew'
+            const members = crew.filter(c=>(c.crew_type||'crew')===type)
+            if (!members.length) return ''
+            return `<div style="margin:10px 0">
+              <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">${label}</div>
+              ${members.map(c => `
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:13px;border-bottom:0.5px solid var(--border-light)">
+                  <span style="font-weight:500">${esc(c.name)}</span>
+                  <div style="display:flex;gap:12px;align-items:center">
+                    <span style="color:var(--text-tertiary);font-size:12px">${esc(c.role||'')}</span>
+                    ${c.phone?`<a href="tel:${esc(c.phone)}" style="font-size:12px;color:var(--accent);text-decoration:none">${esc(c.phone)}</a>`:''}
                   </div>
-                  <span style="font-size:10px;color:${statusColor};text-transform:uppercase;letter-spacing:0.4px">${esc(sh.status||'draft')}</span>
-                </div>`
-              }).join('') : '<div style="font-size:12px;color:var(--text-tertiary);padding:4px 0">No shoots yet</div>'}
-            </div>
-          </div>` : ''}
+                </div>`).join('')}
+            </div>`
+          }).join('')}
+        </div>
+      </div>` : ''}
 
-          ${p.notes ? `
-          <div class="proj-panel">
-            <div class="proj-panel-head">Notes</div>
-            <div style="padding:12px 14px;font-size:13px;color:var(--text-secondary);line-height:1.6">${esc(p.notes)}</div>
-          </div>` : ''}
+      ${shots.length ? `
+      <div class="proj-panel">
+        <div class="proj-panel-head">Shot list</div>
+        <div style="padding:0 14px">
+          ${shots.map((s,i) => `
+            <div style="display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:0.5px solid var(--border-light)">
+              <input type="checkbox" ${s.done?'checked':''} data-pv-shot="${p.id},${i}" style="width:15px;height:15px;cursor:pointer;flex-shrink:0;margin-top:1px" />
+              <span style="font-size:13px">${esc(s.text)}</span>
+            </div>`).join('')}
+        </div>
+      </div>` : ''}
 
-          <div class="proj-panel">
-            <div class="proj-panel-head">Time tracking</div>
-            <div id="pv-time" style="padding:0 14px 14px">
-              <div style="font-size:11px;color:var(--text-tertiary);padding:10px 0">Loading…</div>
-            </div>
-          </div>
+      <div class="proj-panel">
+        <div class="proj-panel-head">Work log</div>
+        <div id="pv-worklog" style="padding:0 14px">
+          <div style="font-size:11px;color:var(--text-tertiary);padding:10px 0">Loading…</div>
+        </div>
+      </div>
 
-          <div class="proj-panel">
-            <div class="proj-panel-head">Activity log</div>
-            <div id="pv-activity" style="padding:0 14px">
-              <div style="font-size:11px;color:var(--text-tertiary);padding:10px 0">Loading…</div>
-            </div>
-          </div>
+      <div class="proj-panel">
+        <div class="proj-panel-head">Time tracking</div>
+        <div id="pv-time" style="padding:0 14px 14px">
+          <div style="font-size:11px;color:var(--text-tertiary);padding:10px 0">Loading…</div>
+        </div>
+      </div>
 
-          <div class="proj-panel">
-            <div class="proj-panel-head">
-              Work log
-              ${p.portal_token ? `<a href="/portal/${p.portal_token}" target="_blank" style="margin-left:auto;font-size:11px;color:var(--accent);text-decoration:none">View portal ↗</a>` : ''}
-            </div>
-            <div id="pv-worklog" style="padding:0 14px">
-              <div style="font-size:11px;color:var(--text-tertiary);padding:10px 0">Loading…</div>
-            </div>
-            <div style="padding:10px 14px;border-top:0.5px solid var(--border-light)">
-              <div style="display:flex;flex-direction:column;gap:6px">
-                <textarea id="wl-note" placeholder="What did you work on today?" style="width:100%;min-height:72px;padding:8px 10px;font-size:12px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.5"></textarea>
-                <div style="display:flex;gap:6px">
-                  <input type="date" id="wl-date" value="${new Date().toISOString().split('T')[0]}" style="flex:1;padding:7px 10px;font-size:12px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);outline:none" />
-                  <button class="btn-primary" id="wl-submit" style="font-size:12px;padding:7px 14px;white-space:nowrap">Add entry</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
+      <div class="proj-panel">
+        <div class="proj-panel-head">Activity</div>
+        <div id="pv-activity" style="padding:0 14px">
+          <div style="font-size:11px;color:var(--text-tertiary);padding:10px 0">Loading…</div>
         </div>
       </div>`
+  }
 
-    mc.querySelector('#back-to-kanban')?.addEventListener('click', () => {
-      this.currentId = null; this.editingId = null; this.render(mc); this.app.updateTitle()
-    })
-    mc.querySelector('#pv-name')?.addEventListener('change', async e => {
-      const val = e.target.value.trim()
-      if (!val) { e.target.value = p.name; return }
-      const prev = p.name
-      p.name = val
-      const idx = this.app.projects.findIndex(x => x.id === p.id)
-      if (idx >= 0) this.app.projects[idx].name = val
-      this.app.updateTitle()
-      try {
-        await updateProject(this.app.userId, p.id, { name: val })
-        logActivity(this.app.userId, 'project', p.id, val, `Renamed from "${prev}"`).catch(console.error)
-        this.app.toast(`Renamed to "${val}"`)
-      } catch(e) { console.error(e) }
-    })
+  _renderTabShoots(p) {
+    return `
+      <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
+        <button class="btn-primary" id="pv-add-shoot">+ Add shoot</button>
+      </div>
+      <div id="pv-shoots-list">
+        ${(p._shoots||[]).length ? (p._shoots||[]).map(sh => {
+          const dates = Array.isArray(sh.shoot_dates) ? sh.shoot_dates.filter(d=>d.date).sort((a,b)=>a.date<b.date?-1:1) : []
+          const firstDate = dates[0]?.date || sh.shoot_date
+          const lastDate = dates[dates.length-1]?.date
+          const d = firstDate ? new Date(firstDate).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}) : 'No date'
+          const dEnd = lastDate && lastDate !== firstDate ? ' → '+new Date(lastDate).toLocaleDateString('en-GB',{day:'numeric',month:'short'}) : ''
+          const label = sh.name || sh.location_name || 'Untitled shoot'
+          const statusColor = sh.status === 'sent' ? '#6ec96e' : 'var(--text-tertiary)'
+          const gc = sh.general_call || dates[0]?.general_call || ''
+          return `<div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:var(--bg-secondary);border-radius:var(--radius-md);border:0.5px solid var(--border-light);margin-bottom:8px;cursor:pointer" data-open-shoot="${sh.id}">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:14px;font-weight:500;margin-bottom:3px">${esc(label)}</div>
+              <div style="font-size:12px;color:var(--text-tertiary)">${esc(d)}${esc(dEnd)}${gc?' · GC '+esc(gc):''}${sh.location_name?' · '+esc(sh.location_name):''}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;flex-shrink:0">
+              <span style="font-size:10px;color:${statusColor};text-transform:uppercase;letter-spacing:0.4px">${esc(sh.status||'draft')}</span>
+              ${sh.shoot_token ? `<a href="/pack/${sh.shoot_token}" target="_blank" class="btn-cancel" style="font-size:11px;padding:3px 8px;text-decoration:none" onclick="event.stopPropagation()">📦 Pack</a>` : ''}
+            </div>
+          </div>`
+        }).join('') : '<div style="font-size:13px;color:var(--text-tertiary);padding:20px 0;text-align:center">No shoots yet — click <strong style="color:var(--text-primary)">+ Add shoot</strong> above.</div>'}
+      </div>`
+  }
 
-    mc.querySelector('#pv-status')?.addEventListener('change', async e => {
-      p.status = e.target.value
-      const idx = this.app.projects.findIndex(x => x.id === p.id)
-      if (idx >= 0) this.app.projects[idx].status = p.status
-      try { await updateProject(this.app.userId, p.id, { status: p.status }); this.app.toast(`Status → ${p.status}`) }
-      catch(err) { console.error(err) }
-    })
+  _renderTabBudget(p, linked) {
+    return `
+      <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
+        ${this.app.permissions?.budgets_edit ? `<button class="btn-primary" id="pv-new-budget">+ Create budget</button>` : ''}
+      </div>
+      ${linked.length ? linked.map(b => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:var(--bg-secondary);border-radius:var(--radius-md);border:0.5px solid var(--border-light);margin-bottom:8px;cursor:pointer" data-open-budget="${b.id}">
+          <div>
+            <div style="font-size:14px;font-weight:500;margin-bottom:3px">${esc(b.name)}</div>
+            ${b.signed_off ? '<div style="font-size:12px;color:#6ec96e">✓ Signed off</div>' : ''}
+          </div>
+        </div>`).join('')
+      : '<div style="font-size:13px;color:var(--text-tertiary);padding:20px 0;text-align:center">No budgets linked yet.</div>'}
+    `
+  }
 
-    mc.querySelector('#pv-ret-pdf')?.addEventListener('click', () => this._exportRetainerPDF(p))
+  _renderTabPlanning(p) {
+    return `
+      <div style="text-align:center;padding:60px 20px;color:var(--text-tertiary)">
+        <div style="font-size:32px;margin-bottom:12px">🗂</div>
+        <div style="font-size:15px;font-weight:500;color:var(--text-secondary);margin-bottom:8px">Planning boards coming soon</div>
+        <div style="font-size:13px;line-height:1.6;max-width:320px;margin:0 auto">Moodboards, shot reference images, and visual planning tools will live here once Vercel Blob is set up.</div>
+      </div>`
+  }
 
-    mc.querySelector('#enter-edit')?.addEventListener('click', () => {
-      this.editingId = this.currentId; this.render(mc)
-    })
-    mc.querySelector('#pv-duplicate')?.addEventListener('click', async () => {
-      const copy = {
-        name: p.name + ' (copy)', status: 'Enquiry', client_id: p.client_id,
-        brief: p.brief, location: p.location,
-        project_type: p.project_type || 'full_service',
-        location_address: p.location_address||null,
-        location_map_link: p.location_map_link||null,
-        parking_notes: p.parking_notes||null,
-        nearest_transport: p.nearest_transport||null,
-        nearest_hospital_name: p.nearest_hospital_name||null,
-        nearest_hospital_address: p.nearest_hospital_address||null,
-        nearest_police_name: p.nearest_police_name||null,
-        nearest_police_address: p.nearest_police_address||null,
-        nearest_fire_name: p.nearest_fire_name||null,
-        nearest_fire_address: p.nearest_fire_address||null,
-        shoot_start: null, shoot_end: null,
-        deliverables: JSON.parse(JSON.stringify(p.deliverables||[])).map(d=>({...d,done:false})),
-        crew: JSON.parse(JSON.stringify(p.crew||[])),
-        shots: JSON.parse(JSON.stringify(p.shots||[])),
-        approvals: (p.approvals||[]).map(a=>({...a,status:'Pending'})),
-        notes: p.notes, is_retainer: p.is_retainer,
-        retainer_fee: p.retainer_fee, retainer_hours: p.retainer_hours,
-        retainer_alert: p.retainer_alert, retainer_start: p.retainer_start,
-        monthly_deliverables: [],
-      }
-      try {
-        const [created] = await createProject(this.app.userId, copy)
-        this.app.projects.unshift({...created, budget_ids:[]})
-        this.currentId = created.id; this.editingId = created.id
-        this.render(mc); this.app.updateTitle()
-        this.app.toast('Project duplicated — now editing copy')
-      } catch(e) { console.error(e); this.app.toast('Error duplicating project') }
-    })
-    mc.querySelectorAll('[data-pv-crew-tab]').forEach(btn => {
-      btn.addEventListener('click', () => { this._pvCrewTab = btn.dataset.pvCrewTab; this.renderViewer(mc) })
-    })
+  _renderTabFiles(p) {
+    return `
+      <div style="text-align:center;padding:60px 20px;color:var(--text-tertiary)">
+        <div style="font-size:32px;margin-bottom:12px">📁</div>
+        <div style="font-size:15px;font-weight:500;color:var(--text-secondary);margin-bottom:8px">Files coming soon</div>
+        <div style="font-size:13px;line-height:1.6;max-width:320px;margin:0 auto">Contracts, release forms, risk assessment exports, and other project files will live here.</div>
+      </div>`
+  }
 
-    mc.querySelector('#pv-add-sub-select')?.addEventListener('change', async e => {
-      const opt = e.target.selectedOptions[0]
-      if (!opt?.value) return
-      const name = opt.value, role = opt.dataset.role || ''
-      if (!p.crew) p.crew = []
-      if (!p.crew.some(c => c.name === name)) {
-        p.crew.push({ name, role, crew_type: 'crew' })
-        const idx = this.app.projects.findIndex(x => x.id === p.id)
-        if (idx >= 0) this.app.projects[idx].crew = p.crew
-        try {
-          const { updateProject } = await import('../db/client.js')
-          await updateProject(this.app.userId, p.id, { crew: p.crew })
-          this.renderViewer(mc)
-        } catch(err) { console.error(err); this.app.toast('Error adding subcontractor') }
-      }
-      e.target.value = ''
-    })
+  _renderSidebar(p, linked) {
+    const { contacts } = this.app
+    const cl = contacts.find(c => c.id === p.client_id)
+    return `
+      <div class="proj-panel">
+        <div class="proj-panel-head">Project info</div>
+        <div style="padding:12px 14px">
+          ${cl ? `<div style="margin-bottom:8px">
+            <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px">Client</div>
+            <div style="font-size:13px;font-weight:500">${esc(cl.first_name)} ${esc(cl.last_name)}</div>
+            ${cl.company ? `<div style="font-size:12px;color:var(--text-tertiary)">${esc(cl.company)}</div>` : ''}
+            ${cl.phone ? `<a href="tel:${esc(cl.phone)}" style="font-size:12px;color:var(--accent);text-decoration:none">${esc(cl.phone)}</a>` : ''}
+          </div>` : ''}
+          ${p.shoot_start ? `<div style="margin-bottom:8px">
+            <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px">Shoot dates</div>
+            <div style="font-size:12px">${esc(p.shoot_start)}${p.shoot_end && p.shoot_end!==p.shoot_start?' → '+esc(p.shoot_end):''}</div>
+          </div>` : ''}
+          <div style="margin-bottom:8px">
+            <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px">Type</div>
+            <div style="font-size:12px">${p.project_type==='post_production'?'Post Production':'Full Service'}</div>
+          </div>
+        </div>
+      </div>
 
-    mc.querySelector('#pv-delete')?.addEventListener('click', () => this.deleteProject(p.id, mc))
+      <div class="proj-panel">
+        <div class="proj-panel-head">Approvals</div>
+        <div style="padding:0 14px" id="pv-approvals">
+          ${(p.approvals||[]).map((a,ai) => {
+            const cls = a.status==='Approved'?'apv-approved':a.status==='Changes requested'?'apv-changes':'apv-pending'
+            return `<div class="approval-row">
+              <span class="approval-label">${esc(a.label)}</span>
+              <button class="approval-status ${cls}" data-pv-cycle="${p.id},${ai}">${esc(a.status)}</button>
+            </div>`
+          }).join('')}
+        </div>
+      </div>
 
-    // Clickable client link
-    mc.querySelector('[data-open-contact]')?.addEventListener('click', () => {
-      const cid = mc.querySelector('[data-open-contact]').dataset.openContact
-      this.app.navigate('contacts')
-      setTimeout(() => this.app.contactsView.showDetail(cid), 50)
-    })
+      ${linked.length ? `
+      <div class="proj-panel">
+        <div class="proj-panel-head">Budgets</div>
+        <div style="padding:10px 14px;display:flex;flex-direction:column;gap:6px">
+          ${linked.map(b => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;background:var(--bg-secondary);border-radius:var(--radius-md);font-size:12px;cursor:pointer" data-open-budget="${b.id}">
+              <span style="font-weight:500">${esc(b.name)}</span>
+              ${b.signed_off ? `<span style="font-size:10px;color:#6ec96e">✓</span>` : ''}
+            </div>`).join('')}
+        </div>
+      </div>` : ''}
+    `
+  }
 
-    mc.querySelector('#pv-delivs-all')?.addEventListener('click', async () => {
-      p.deliverables.forEach(d => { if (d.text) d.done = true })
-      try { await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }); this.renderViewer(mc); this.app.toast('All deliverables marked done') } catch(e) { console.error(e) }
-    })
-    mc.querySelector('#pv-delivs-clear')?.addEventListener('click', async () => {
-      p.deliverables.forEach(d => d.done = false)
-      try { await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }); this.renderViewer(mc) } catch(e) { console.error(e) }
-    })
-
-    // Deliverable tickboxes — interactive in view mode
-    mc.querySelectorAll('[data-pv-deliv]').forEach(el => {
-      el.addEventListener('change', async () => {
-        const idx = +el.dataset.pvIdx
-        p.deliverables[idx].done = el.checked
-        const row = mc.querySelector(`#pvd-${p.id}-${idx}`)
-        if (row) {
-          const span = row.querySelector('span')
-          if (span) { span.style.textDecoration = el.checked ? 'line-through' : ''; span.style.color = el.checked ? 'var(--text-tertiary)' : 'var(--text-primary)' }
-        }
-        // Update done count
-        const done = (p.deliverables||[]).filter(d=>d.done&&d.text).length
-        const total = (p.deliverables||[]).filter(d=>d.text).length
-        const head = mc.querySelector('.proj-panel-head span[style*="text-tertiary"]')
-        if (head) head.textContent = `${done}/${total} done`
-        try { await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }); this.app.toast(el.checked ? '✓ Done' : 'Unmarked') }
-        catch(e) { console.error(e) }
+  _bindTabContent(mc, tab, p, cl, linked) {
+    if (tab === 'overview') {
+      mc.querySelectorAll('[data-pv-deliv]').forEach(el => {
+        el.addEventListener('change', async () => {
+          const [pid, i] = el.dataset.pvDeliv.split(',')
+          p.deliverables[+i].done = el.checked
+          try { await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }) } catch(e) { console.error(e) }
+          // Update line-through style
+          const span = el.nextElementSibling
+          if (span) span.style.cssText = el.checked ? 'font-size:13px;text-decoration:line-through;color:var(--text-tertiary)' : 'font-size:13px'
+        })
       })
-    })
-
-    // Monthly deliverable tickboxes (retainer viewer)
-    mc.querySelectorAll('[data-pv-monthly-deliv]').forEach(el => {
-      el.addEventListener('change', async () => {
-        if (!Array.isArray(p.monthly_deliverables)) p.monthly_deliverables = []
-        const idx = +el.dataset.pvMonthlyIdx
-        p.monthly_deliverables[idx].done = el.checked
-        const row = mc.querySelector(`#pvmd-${p.id}-${idx}`)
-        if (row) {
-          const span = row.querySelector('span')
-          if (span) { span.style.textDecoration = el.checked ? 'line-through' : ''; span.style.color = el.checked ? 'var(--text-tertiary)' : 'var(--text-primary)' }
-        }
-        const mDone = p.monthly_deliverables.filter(d=>d.done&&d.text).length
-        const mTotal = p.monthly_deliverables.filter(d=>d.text).length
-        const heads = mc.querySelectorAll('.proj-panel-head')
-        heads.forEach(h => { if (h.textContent.includes("This month")) { const sp = h.querySelector('span'); if (sp) sp.textContent = `${mDone}/${mTotal} done` } })
-        try { await updateProject(this.app.userId, p.id, { monthly_deliverables: p.monthly_deliverables }) }
-        catch(e) { console.error(e) }
+      mc.querySelectorAll('[data-pv-shot]').forEach(el => {
+        el.addEventListener('change', async () => {
+          const [pid, i] = el.dataset.pvShot.split(',')
+          p.shots[+i].done = el.checked
+          try { await updateProject(this.app.userId, p.id, { shots: p.shots }) } catch(e) { console.error(e) }
+        })
       })
-    })
+      mc.querySelector('#pv-mark-all-done')?.addEventListener('click', async () => {
+        try { p.deliverables.forEach(d => { if(d.text) d.done = true }); await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }); this.renderViewer(mc); this.app.toast('All deliverables marked done') } catch(e) { console.error(e) }
+      })
+      mc.querySelector('#pv-reset-delivs')?.addEventListener('click', async () => {
+        try { p.deliverables.forEach(d => d.done = false); await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }); this.renderViewer(mc) } catch(e) { console.error(e) }
+      })
+    }
+    if (tab === 'shoots') {
+      mc.querySelector('#pv-add-shoot')?.addEventListener('click', () => this._createShoot(mc, p))
+      mc.querySelectorAll('[data-open-shoot]').forEach(el => {
+        el.addEventListener('click', () => this._openShootEditor(mc, p, el.dataset.openShoot))
+      })
+    }
+    if (tab === 'budget') {
+      mc.querySelector('#pv-new-budget')?.addEventListener('click', () => {
+        this.app.budgetsView.openNewModalFromProject(p)
+      })
+      mc.querySelectorAll('[data-open-budget]').forEach(el => {
+        el.addEventListener('click', () => this.app.openBudget(el.dataset.openBudget))
+      })
+    }
+  }
 
-    // Inline add monthly deliverable
-    mc.querySelector('#pv-add-monthly-btn')?.addEventListener('click', async () => {
-      const inp = mc.querySelector('#pv-new-monthly-text')
-      const text = inp?.value.trim()
-      if (!text) return
-      if (!Array.isArray(p.monthly_deliverables)) p.monthly_deliverables = []
-      p.monthly_deliverables.push({ text, done: false })
-      inp.value = ''
-      try {
-        await updateProject(this.app.userId, p.id, { monthly_deliverables: p.monthly_deliverables })
-        this.renderViewer(mc)
-      } catch(e) { console.error(e) }
-    })
-    mc.querySelector('#pv-new-monthly-text')?.addEventListener('keydown', e => {
-      if (e.key === 'Enter') mc.querySelector('#pv-add-monthly-btn')?.click()
-    })
-
-    // Approval cycle in view mode
+  _bindSidebar(mc, p, linked) {
     mc.querySelectorAll('[data-pv-cycle]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const [pid, ai] = btn.dataset.pvCycle.split(',')
+        const a = p.approvals[+ai]
         const cycle = ['Pending','Approved','Changes requested']
-        p.approvals[+ai].status = cycle[(cycle.indexOf(p.approvals[+ai].status)+1)%cycle.length]
-        const cls = p.approvals[+ai].status==='Approved'?'apv-approved':p.approvals[+ai].status==='Changes requested'?'apv-changes':'apv-pending'
-        btn.className = `approval-status ${cls}`; btn.textContent = p.approvals[+ai].status
-        try { await updateProject(this.app.userId, p.id, { approvals: p.approvals }) }
-        catch(e) { console.error(e) }
+        a.status = cycle[(cycle.indexOf(a.status)+1)%cycle.length]
+        const cls = a.status==='Approved'?'apv-approved':a.status==='Changes requested'?'apv-changes':'apv-pending'
+        btn.className = `approval-status ${cls}`
+        btn.textContent = a.status
+        try { await updateProject(this.app.userId, p.id, { approvals: p.approvals }) } catch(e) { console.error(e) }
       })
     })
-
     mc.querySelectorAll('[data-open-budget]').forEach(el => {
       el.addEventListener('click', () => this.app.openBudget(el.dataset.openBudget))
     })
-    mc.querySelector('#pv-new-budget')?.addEventListener('click', () => {
-      this.app.budgetsView.openNewModalFromProject(p)
-    })
+  }
 
-    // Shoots
-    mc.querySelector('#pv-add-shoot')?.addEventListener('click', () => this._createShoot(mc, p))
-    mc.querySelectorAll('[data-open-shoot]').forEach(el => {
-      el.addEventListener('click', () => this._openShootEditor(mc, p, el.dataset.openShoot))
+  _bindViewerHeader(mc, p) {
+    mc.querySelector('#back-to-kanban')?.addEventListener('click', () => {
+      this.currentId = null; this.editingId = null
+      history.pushState({ view: 'projects' }, '', '#projects')
+      this.renderKanban(mc); this.app.updateTitle()
     })
-
-    // Load activity log
-    this._loadProjectActivity(mc, p.id)
-    this._loadWorkLog(mc, p)
-    // Load time tracking panel
-    this._loadTimePanel(mc, p)
-    // Load shoots list
-    this._loadShoots(mc, p)
+    mc.querySelector('#pv-name')?.addEventListener('change', e => {
+      p.name = e.target.value.trim() || p.name
+      updateProject(this.app.userId, p.id, { name: p.name }).catch(console.error)
+      this.app.updateTitle()
+    })
+    mc.querySelector('#pv-status')?.addEventListener('change', e => {
+      p.status = e.target.value
+      updateProject(this.app.userId, p.id, { status: p.status }).catch(console.error)
+    })
+    mc.querySelector('#enter-edit')?.addEventListener('click', () => {
+      this.editingId = this.currentId; this.renderEditor(mc)
+    })
+    mc.querySelector('#pv-duplicate')?.addEventListener('click', async () => {
+      const copy = {
+        name: p.name + ' (copy)', status: 'Enquiry', brief: p.brief, notes: p.notes,
+        client_id: p.client_id, project_type: p.project_type, shoot_start: p.shoot_start, shoot_end: p.shoot_end,
+        location: p.location, deliverables: JSON.parse(JSON.stringify(p.deliverables||[])),
+        crew: JSON.parse(JSON.stringify(p.crew||[])), shots: JSON.parse(JSON.stringify(p.shots||[])),
+        approvals: (p.approvals||[]).map(a=>({...a,status:'Pending'})),
+        hotels: JSON.parse(JSON.stringify(p.hotels||[])),
+        is_retainer: p.is_retainer, retainer_fee: p.retainer_fee,
+      }
+      try {
+        const [created] = await createProject(this.app.userId, copy)
+        this.app.projects.unshift(created)
+        this.currentId = created.id; this._pvTab = 'overview'
+        this.app._pushAppState(`#projects/${created.id}/overview`, { view:'projects', id:created.id, tab:'overview' })
+        this.renderViewer(mc); this.app.updateTitle()
+        this.app.toast('Project duplicated')
+      } catch(e) { console.error(e); this.app.toast('Error duplicating project') }
+    })
+    mc.querySelector('#pv-delete')?.addEventListener('click', async () => {
+      if (!confirm(`Delete "${p.name}"? This cannot be undone.`)) return
+      try {
+        await deleteProject(this.app.userId, p.id)
+        this.app.projects = this.app.projects.filter(x => x.id !== p.id)
+        this.currentId = null; this.editingId = null
+        history.pushState({ view: 'projects' }, '', '#projects')
+        this.renderKanban(mc); this.app.updateTitle()
+        this.app.toast('Project deleted')
+      } catch (e) { console.error(e); this.app.toast('Error deleting project') }
+    })
   }
 
   async _loadShoots(mc, p) {
@@ -1504,29 +1432,35 @@ export class ProjectsView {
   _shootRigsHTML(sh) {
     const rigs = Array.isArray(sh.shoot_camera_setups) ? sh.shoot_camera_setups : []
     if (!rigs.length) {
-      return `<div style="font-size:12px;color:var(--text-tertiary);padding:4px 0">No camera rigs added yet. Use <strong style="color:var(--text-primary)">＋ From library</strong> to add a saved rig, or <strong style="color:var(--text-primary)">＋ New rig</strong> to create one.</div>`
+      return `<div style="font-size:12px;color:var(--text-tertiary);padding:4px 0">No rigs added yet. Use <strong style="color:var(--text-primary)">＋ From library</strong> to add a saved one, or <strong style="color:var(--text-primary)">＋ New</strong> to create one.</div>`
     }
     const totalItems = r => (r.items||[]).filter(it => !it.section && it.status !== 'not_required').length
     const packedItems = r => (r.items||[]).filter(it => !it.section && it.status === 'packed').length
     return rigs.map((r, i) => {
+      const isCam = r.is_camera_kit !== false // default true
       const total = totalItems(r), packed = packedItems(r)
       const pct = total > 0 ? Math.round(packed/total*100) : 0
       const pctColor = pct === 100 ? '#6ec96e' : pct > 50 ? '#f59e0b' : 'var(--text-tertiary)'
       return `<div style="border:0.5px solid var(--border-med);border-radius:var(--radius-md);padding:12px;margin-bottom:8px;background:var(--bg-secondary)" data-rig-idx="${i}">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
           <div style="flex:1;min-width:0;margin-right:8px">
-            <input type="text" class="proj-input" value="${esc(r.name||'')}" placeholder="Rig name — e.g. Sony FX6 Main" data-rig-field="${i},name" style="font-weight:500;margin-bottom:6px" />
+            <input type="text" class="proj-input" value="${esc(r.name||'')}" placeholder="${isCam?'Camera rig name — e.g. Sony FX6 Main':'Misc kit name — e.g. Audio bag'}" data-rig-field="${i},name" style="font-weight:500;margin-bottom:6px" />
             <textarea class="proj-textarea" placeholder="Notes — e.g. Remember 10mm lens" data-rig-field="${i},notes" style="min-height:36px;font-size:12px;font-style:italic">${esc(r.notes||'')}</textarea>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
-            <div style="text-align:right">
+            ${total > 0 ? `<div style="text-align:right">
               <div style="font-size:18px;font-weight:700;color:${pctColor}">${pct}%</div>
               <div style="font-size:10px;color:var(--text-tertiary)">${packed}/${total} packed</div>
-            </div>
+            </div>` : ''}
             <button class="row-btn" style="color:#c03020" data-rig-rem="${i}">×</button>
           </div>
         </div>
-        <div style="display:flex;gap:8px;align-items:center">
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;user-select:none">
+            <input type="checkbox" ${isCam?'checked':''} data-rig-camera-kit="${i}" style="width:14px;height:14px;cursor:pointer" />
+            <span style="color:var(--text-secondary)">Camera kit</span>
+            <span style="font-size:10px;color:var(--text-tertiary)">${isCam?'(full checklist)':'(simple list)'}</span>
+          </label>
           <button class="btn-secondary" data-rig-save-lib="${i}" style="font-size:11px">💾 Save to library</button>
           ${r.packed_at ? `<span style="font-size:11px;color:var(--text-tertiary)">Packed ${new Date(r.packed_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).replace(',',' ')}${r.packed_by?' by '+r.packed_by:''}</span>` : ''}
         </div>
@@ -1768,6 +1702,14 @@ export class ProjectsView {
           refreshRigs(); save()
         })
       })
+      overlay.querySelectorAll('[data-rig-camera-kit]').forEach(cb => {
+        cb.addEventListener('change', () => {
+          const i = +cb.dataset.rigCameraKit
+          if (!sh.shoot_camera_setups[i]) return
+          sh.shoot_camera_setups[i].is_camera_kit = cb.checked
+          refreshRigs(); save()
+        })
+      })
       overlay.querySelectorAll('[data-rig-save-lib]').forEach(btn => {
         btn.addEventListener('click', async () => {
           const i = +btn.dataset.rigSaveLib
@@ -1775,14 +1717,14 @@ export class ProjectsView {
           if (!rig?.name) { this.app.toast('Enter a rig name first'); return }
           try {
             const { createCameraSetup } = await import('../db/client.js')
-            await createCameraSetup(this.app.userId, { name: rig.name, notes: rig.notes || '' })
+            await createCameraSetup(this.app.userId, { name: rig.name, notes: rig.notes || '', is_camera_kit: rig.is_camera_kit !== false })
             this.app.toast(`"${rig.name}" saved to library ✓`)
           } catch(e) { console.error(e); this.app.toast('Save to library failed') }
         })
       })
     }
     overlay.querySelector('#se-rig-add-new')?.addEventListener('click', () => {
-      sh.shoot_camera_setups.push({ name:'', notes:'', bag:'', packed_by:'', packed_at:null, library_id:null, items:[] })
+      sh.shoot_camera_setups.push({ name:'', notes:'', bag:'', packed_by:'', packed_at:null, library_id:null, items:[], is_camera_kit:true })
       refreshRigs(); save()
     })
     overlay.querySelector('#se-rig-from-library')?.addEventListener('click', async () => {
@@ -1818,6 +1760,7 @@ export class ProjectsView {
             sh.shoot_camera_setups.push({
               name: src.name, notes: src.notes||'', bag:'', packed_by:'', packed_at:null,
               library_id: src.id, items: [],
+              is_camera_kit: src.is_camera_kit !== false,
             })
             picker.remove()
             refreshRigs(); save()
