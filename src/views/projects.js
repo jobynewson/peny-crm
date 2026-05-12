@@ -762,8 +762,7 @@ export class ProjectsView {
           if (span) span.style.cssText = el.checked ? 'font-size:13px;text-decoration:line-through;color:var(--text-tertiary)' : 'font-size:13px'
         })
       })
-    }
-   
+
       mc.querySelectorAll('[data-pv-shot]').forEach(el => {
         el.addEventListener('change', async () => {
           const [pid, i] = el.dataset.pvShot.split(',')
