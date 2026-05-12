@@ -337,7 +337,8 @@ export class App {
   render() {
     const showDetail = this.currentView === 'contacts'
     this.container.innerHTML = `
-      <div class="sidebar">
+      <div class="sidebar-overlay" id="sidebar-overlay"></div>
+      <div class="sidebar" id="app-sidebar">
         <div class="logo"><img src="/slate-logo.png" alt="Slate" /></div>
         <div class="nav-label">Main</div>
         ${[['dashboard','Dashboard',this.iconPipeline()],['contacts','Contacts',this.iconContacts()],['projects','Projects',this.iconProjects()],['budgets','Budgets',this.iconBudgets()]].map(([id,label,icon])=>`
@@ -353,8 +354,9 @@ export class App {
       </div>
       <div class="main">
         <div class="topbar">
+          <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Toggle navigation">${this.iconHamburger()}</button>
           <div class="topbar-title" id="view-title">${this.viewTitle()}</div>
-          <div id="topbar-actions" style="display:flex;gap:8px;align-items:center">${this.topbarSearch()}${this.topbarButton()}
+          <div id="topbar-actions" style="display:flex;gap:8px;align-items:center;flex-shrink:0">${this.topbarSearch()}${this.topbarButton()}
             <button class="theme-toggle" id="theme-toggle-btn" title="Toggle dark mode">${this.iconTheme()}</button>
             <button id="shortcut-hint" title="Keyboard shortcuts" style="width:32px;height:32px;border-radius:var(--radius-md);border:1px solid var(--border-light);background:transparent;color:var(--text-tertiary);font-size:13px;cursor:pointer;font-family:var(--font);display:flex;align-items:center;justify-content:center;flex-shrink:0">?</button>
           </div>
@@ -390,12 +392,29 @@ export class App {
     return ''
   }
 
+  _closeMobileSidebar() {
+    document.getElementById('app-sidebar')?.classList.remove('open')
+    document.getElementById('sidebar-overlay')?.classList.remove('open')
+  }
+
   bindNav() {
+    // Mobile sidebar toggle
+    const menuBtn  = this.container.querySelector('#mobile-menu-btn')
+    const sidebar  = this.container.querySelector('#app-sidebar')
+    const overlay  = this.container.querySelector('#sidebar-overlay')
+    if (menuBtn && sidebar && overlay) {
+      menuBtn.addEventListener('click', () => {
+        sidebar.classList.toggle('open')
+        overlay.classList.toggle('open')
+      })
+      overlay.addEventListener('click', () => this._closeMobileSidebar())
+    }
+
     this.container.querySelectorAll('.nav-item[data-view]').forEach(el => {
-      el.addEventListener('click', () => this.navigate(el.dataset.view))
+      el.addEventListener('click', () => { this._closeMobileSidebar(); this.navigate(el.dataset.view) })
     })
-    this.container.querySelector('#sign-out-btn')?.addEventListener('click', () => this.onSignOut())
-    this.container.querySelector('#dev-request-btn')?.addEventListener('click', () => this._openDevRequest())
+    this.container.querySelector('#sign-out-btn')?.addEventListener('click', () => { this._closeMobileSidebar(); this.onSignOut() })
+    this.container.querySelector('#dev-request-btn')?.addEventListener('click', () => { this._closeMobileSidebar(); this._openDevRequest() })
 
     // Dark mode toggle
     const toggleBtn = this.container.querySelector('#theme-toggle-btn')
@@ -1553,10 +1572,76 @@ export class App {
       .pdf-detail-total-row{display:flex;justify-content:space-between;padding:5px 0;font-size:12px;border-bottom:0.5px solid #f0efe9}.pdf-detail-total-row:last-child{border-bottom:none}
       .pdf-detail-total-row.grand{font-size:16px;font-weight:500;padding-top:12px}.pdf-detail-total-row .dk{color:#6b6b66}
       .pdf-detail-footer{margin-top:40px;display:flex;justify-content:space-between;font-size:9px;color:#c0c0b8;border-top:0.5px solid #e0dfda;padding-top:10px}
+
+      /* ── Mobile sidebar overlay ── */
+      .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:150;cursor:pointer}
+      .sidebar-overlay.open{display:block}
+      .mobile-menu-btn{display:none;width:36px;height:36px;border:none;background:transparent;color:var(--text-secondary);cursor:pointer;border-radius:var(--radius-md);align-items:center;justify-content:center;flex-shrink:0;padding:0;transition:background 0.12s,color 0.12s}
+      .mobile-menu-btn:hover{background:var(--bg-secondary);color:var(--text-primary)}
+
+      /* ── Responsive: ≤900px (tablet) ── */
+      @media(max-width:900px){
+        .stats-row{grid-template-columns:repeat(2,1fr)!important}
+        .kanban-wrap{grid-template-columns:repeat(3,minmax(200px,1fr))!important}
+        .sidebar{width:220px}
+      }
+
+      /* ── Responsive: ≤768px (mobile) ── */
+      @media(max-width:768px){
+        .mobile-menu-btn{display:flex}
+        .sidebar{
+          position:fixed;left:0;top:0;bottom:0;
+          z-index:200;
+          transform:translateX(-100%);
+          transition:transform 0.25s cubic-bezier(0.4,0,0.2,1);
+          width:240px!important;
+          box-shadow:none
+        }
+        .sidebar.open{transform:translateX(0);box-shadow:4px 0 24px rgba(0,0,0,0.3)}
+        .detail-panel{display:none!important}
+        .topbar{padding:0 12px!important;gap:6px}
+        .content{padding:16px!important}
+        .stats-row{grid-template-columns:repeat(2,1fr)!important}
+        .kanban-wrap{
+          display:flex!important;
+          overflow-x:auto;
+          gap:12px;
+          padding-bottom:12px;
+          scrollbar-width:thin;
+          -webkit-overflow-scrolling:touch
+        }
+        .kanban-col{min-width:210px;flex-shrink:0}
+        .field-row{grid-template-columns:1fr!important}
+        .budget-layout{flex-direction:column!important}
+        .budget-sidebar-panel{width:100%!important}
+        .proj-layout{flex-direction:column!important}
+        .proj-sidebar{width:100%!important}
+        .search-wrap input{width:130px!important}
+        .topbar-title{font-size:14px!important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        /* Contact table: show only Name + Actions columns */
+        .col-header{grid-template-columns:1fr 80px!important}
+        .col-header>*:nth-child(2),.col-header>*:nth-child(3),.col-header>*:nth-child(4){display:none!important}
+        .contact-row{grid-template-columns:1fr 80px!important}
+        .contact-row>*:nth-child(2),.contact-row>*:nth-child(3),.contact-row>*:nth-child(4){display:none!important}
+      }
+
+      /* ── Responsive: ≤480px (small mobile) ── */
+      @media(max-width:480px){
+        .stats-row{grid-template-columns:1fr!important}
+        .content{padding:12px!important}
+        .topbar{padding:0 10px!important;gap:4px}
+        .search-wrap{display:none}
+        #topbar-actions{gap:4px}
+        .topbar-title{font-size:13px!important}
+        .panel-header{padding:10px 14px!important;gap:4px}
+        .filter-pill{font-size:12px;padding:4px 8px}
+        .kanban-col{min-width:185px}
+      }
     `
     document.head.appendChild(style)
   }
 
+  iconHamburger() { return `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 4.5h14M2 9h14M2 13.5h14"/></svg>` }
   iconContacts() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="6" cy="5" r="2.5"/><path d="M1 14c0-2.8 2.2-4.5 5-4.5s5 1.7 5 4.5"/><path d="M11 3.5a2 2 0 0 1 0 4M15 14c0-2.4-1.5-3.8-4-4"/></svg>` }
   iconProjects() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 6h6M5 9h4"/></svg>` }
   iconBudgets()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 3h12v2H2zM2 7h9M2 11h7"/><circle cx="13" cy="11" r="2.2"/><path d="M13 9.8v1l.7.7"/></svg>` }
