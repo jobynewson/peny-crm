@@ -101,9 +101,9 @@
             if (d.done) {
               dueHTML = `<span class="deliv-due done-date">${fmtDate(d.due)}</span>`
             } else if (isOverdue) {
-              dueHTML = `<span class="deliv-due overdue">⚠ ${Math.abs(daysLeft)}d overdue</span>`
+              dueHTML = `<span class="deliv-due overdue">⚠ ${Math.abs(daysLeft)}d overdue · ${fmtDate(d.due)}</span>`
             } else if (isDueSoon) {
-              dueHTML = `<span class="deliv-due soon">⏰ ${daysLeft === 0 ? 'due today' : daysLeft + 'd left'}</span>`
+              dueHTML = `<span class="deliv-due soon">⏰ ${daysLeft === 0 ? 'due today' : daysLeft + 'd left'} · ${fmtDate(d.due)}</span>`
             } else {
               dueHTML = `<span class="deliv-due normal">${fmtDate(d.due)}</span>`
             }
