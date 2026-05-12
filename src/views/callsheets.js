@@ -755,7 +755,7 @@ export class CallSheetsView {
   exportPDF(s) {
     const project = this.app.projects.find(p => p.id === s.project_id)
     const settings = this.app.settings || {}
-    const LOGO = '/peny-logo.png'
+    const LOGO = '/slate-logo.png'
     const f = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
 
     const fmtDateLong = d => {
@@ -903,7 +903,7 @@ export class CallSheetsView {
     // ── Footer ─────────────────────────────────────────────────────────────────
     const footer = `
       <div style="margin-top:32px;padding-top:10px;border-top:0.5px solid #ddd;display:flex;justify-content:space-between;font-size:9px;color:#bbb">
-        <span>${f(settings.company_name||'Peny')}${settings.email?' · '+f(settings.email):''}</span>
+        <span>${f(settings.company_name||'Slate')}${settings.email?' · '+f(settings.email):''}</span>
         <span>Confidential — crew use only</span>
       </div>`
 

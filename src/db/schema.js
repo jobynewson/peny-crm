@@ -10,7 +10,7 @@ const timestamps = {
 export const workspace = pgTable('workspace', {
   id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
   owner_id:   text('owner_id').notNull().unique(),
-  name:       text('name').notNull().default('Peny'),
+  name:       text('name').notNull().default('Slate'),
   created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
@@ -18,7 +18,7 @@ export const workspace = pgTable('workspace', {
 export const settings = pgTable('settings', {
   id:              uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
   user_id:         text('user_id').notNull().unique(),
-  company_name:    text('company_name').notNull().default('Peny'),
+  company_name:    text('company_name').notNull().default('Slate'),
   email:           text('email'),
   phone:           text('phone'),
   website:         text('website'),

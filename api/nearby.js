@@ -33,7 +33,7 @@ export default async function handler(req, res) {
 
   const headers = {
     'Content-Type': 'application/x-www-form-urlencoded',
-    'User-Agent': 'PenyCRM/1.0 (production tool; contact@wearepeny.com)',
+    'User-Agent': 'SlateCRM/1.0',
   }
   const body = 'data=' + encodeURIComponent(query)
 
