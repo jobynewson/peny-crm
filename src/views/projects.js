@@ -758,16 +758,12 @@ export class ProjectsView {
           p.deliverables[+i].done = el.checked
           try { await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }) } catch(e) { console.error(e) }
           // Update line-through style
-          c        const span = el.nextElementSibling
+          const span = el.nextElementSibling
           if (span) span.style.cssText = el.checked ? 'font-size:13px;text-decoration:line-through;color:var(--text-tertiary)' : 'font-size:13px'
         })
       })
     }
-    if (tab === 'planning') {
-      bindPlanningTab(mc, p, this.app.userId)
-    }
- )
-      })
+   
       mc.querySelectorAll('[data-pv-shot]').forEach(el => {
         el.addEventListener('change', async () => {
           const [pid, i] = el.dataset.pvShot.split(',')
