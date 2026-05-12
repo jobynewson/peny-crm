@@ -67,7 +67,7 @@ function imgSrc(url) {
   if (!url) return ''
   // Private Vercel Blob URLs require auth headers — proxy them server-side
   if (url.includes('.private.blob.vercel-storage.com')) {
-    return `/api/blob-serve?url=${encodeURIComponent(url)}`
+    return `/api/blob?url=${encodeURIComponent(url)}`
   }
   return esc(url)
 }
@@ -173,7 +173,7 @@ export function bindPlanningTab(mc, p, userId) {
 
         // Fire-and-forget blob cleanup (don't block UI on failure)
         if (card?.type === 'image' && card.url) {
-          fetch(`/api/blob-delete?url=${encodeURIComponent(card.url)}`, { method: 'DELETE' })
+          fetch(`/api/blob?url=${encodeURIComponent(card.url)}`, { method: 'DELETE' })
             .catch(e => console.warn('Blob cleanup failed:', e))
         }
 
@@ -280,7 +280,7 @@ export function bindPlanningTab(mc, p, userId) {
         img.src = objectUrl
       })
 
-      const res = await fetch('/api/blob-upload', {
+      const res = await fetch('/api/blob', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
