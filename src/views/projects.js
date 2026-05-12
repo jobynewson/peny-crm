@@ -448,7 +448,7 @@ export class ProjectsView {
     const budgetIds = Array.isArray(p.budget_ids) ? p.budget_ids : []
     const linked = budgetIds.map(id => budgets.find(b => b.id === id)).filter(Boolean)
 
-    const sidebarCollapsed = localStorage.getItem('peny-sidebar-collapsed') === '1'
+    const sidebarCollapsed = localStorage.getItem('slate-sidebar-collapsed') === '1'
 
     const TABS = [
       { id: 'overview', label: '📋 Overview' },
@@ -514,7 +514,7 @@ export class ProjectsView {
       const sidebar = mc.querySelector('#proj-sidebar')
       const btn = mc.querySelector('#sidebar-toggle')
       const isCollapsed = sidebar?.classList.toggle('collapsed')
-      localStorage.setItem('peny-sidebar-collapsed', isCollapsed ? '1' : '0')
+      localStorage.setItem('slate-sidebar-collapsed', isCollapsed ? '1' : '0')
       if (btn) btn.textContent = isCollapsed ? '▷' : '◁'
       if (btn) btn.title = isCollapsed ? 'Show sidebar' : 'Hide sidebar'
     })
@@ -2494,7 +2494,7 @@ export class ProjectsView {
     const fmtDT   = s => { try { return new Date(s).toLocaleString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) } catch { return String(s) } }
 
     const studio = this.app.settings || {}
-    const logoUrl = studio.logo_url || '/peny-logo.png'
+    const logoUrl = studio.logo_url || '/slate-logo.png'
 
     // Cascade insurance: shoot → project → settings
     const insurer = {
@@ -3497,8 +3497,8 @@ export class ProjectsView {
     const today = new Date()
     const months = ['January','February','March','April','May','June','July','August','September','October','November','December']
     const dateStr = today.getDate()+' '+months[today.getMonth()]+' '+today.getFullYear()
-    const LOGO_WHITE = '/peny-logo-white.png'
-    const LOGO_BLACK = '/peny-logo.png'
+    const LOGO_WHITE = '/slate-logo-white.png'
+    const LOGO_BLACK = '/slate-logo.png'
     const periodLabel = { week:'week', month:'month', quarter:'quarter', half:'half year', year:'year' }
     const periodMult  = { week:4.33, month:1, quarter:1/3, half:1/6, year:1/12 }
     const gbpA = n => '£'+n.toLocaleString('en-GB',{minimumFractionDigits:0,maximumFractionDigits:2})
@@ -3529,7 +3529,7 @@ export class ProjectsView {
 
         <!-- Cover -->
         <div style="background:#1a1a18;min-height:100vh;padding:60px;display:flex;flex-direction:column;page-break-after:always;box-sizing:border-box">
-          <img src="${LOGO_WHITE}" alt="Peny" style="height:28px;width:auto;object-fit:contain;object-position:left;margin-bottom:auto" />
+          <img src="${LOGO_WHITE}" alt="Slate" style="height:28px;width:auto;object-fit:contain;object-position:left;margin-bottom:auto" />
           <div style="margin-top:auto;padding-top:80px">
             <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:16px">Retainer Proposal</div>
             <div style="font-size:36px;font-weight:600;color:#fff;line-height:1.15;margin-bottom:12px">${p.name}</div>
@@ -3563,7 +3563,7 @@ export class ProjectsView {
               <div style="font-size:10px;color:#a8a8a0;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Retainer — Scope of work</div>
               <div style="font-size:20px;font-weight:600">${p.name}</div>
             </div>
-            <img src="${LOGO_BLACK}" alt="Peny" style="height:20px;width:auto;object-fit:contain" />
+            <img src="${LOGO_BLACK}" alt="Slate" style="height:20px;width:auto;object-fit:contain" />
           </div>
 
           ${p.brief ? `<div style="font-size:13px;color:#4a4a44;line-height:1.7;margin-bottom:32px;padding:16px 18px;background:#f7f7f5;border-radius:6px">${p.brief}</div>` : ''}
