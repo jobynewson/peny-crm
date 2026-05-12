@@ -27,7 +27,7 @@ export default async function handler(req, res) {
       token,
       onBeforeGenerateToken: async (pathname) => ({
         allowedContentTypes: ALLOWED_TYPES,
-        maximumSizeInBytes: 20 * 1024 * 1024, // 20 MB
+        maximumSizeInBytes: 20 * 1024 * 1024,
       }),
       onUploadCompleted: async () => {},
     })

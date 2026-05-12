@@ -253,7 +253,7 @@ export function bindPlanningTab(mc, p, userId) {
       const pathname = `planning/${p.id || 'general'}/${Date.now()}-${safeName}`
 
       const { url } = await upload(pathname, file, {
-        access: 'public',
+        access: 'private',
         handleUploadUrl: '/api/blob-upload',
       })
       const card = { id: crypto.randomUUID(), type: 'image', url, alt: file.name, caption: '', created_at: Date.now() }
