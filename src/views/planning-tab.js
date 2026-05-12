@@ -1,6 +1,7 @@
 // src/views/planning-tab.js
 // Milanote-lite planning board: notes, images (Vercel Blob), and video links
 
+import { upload } from '@vercel/blob/client'
 import { updateProject } from '../db/client.js'
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
@@ -236,9 +237,8 @@ export function bindPlanningTab(mc, p, userId) {
     const file = e.target.files[0]
     if (!file) return
 
-    // 10 MB guard
-    if (file.size > 10 * 1024 * 1024) {
-      alert('Image is too large — please use a file under 10 MB.')
+    if (file.size > 20 * 1024 * 1024) {
+      alert('Image is too large — please use a file under 20 MB.')
       e.target.value = ''
       return
     }
@@ -249,38 +249,20 @@ export function bindPlanningTab(mc, p, userId) {
     btn.disabled = true
 
     try {
-      // Read as base64
-      const base64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result.split(',')[1])
-        reader.onerror = reject
-        reader.readAsDataURL(file)
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const pathname = `planning/${p.id || 'general'}/${Date.now()}-${safeName}`
+
+      const { url } = await upload(pathname, file, {
+        access: 'public',
+        handleUploadUrl: '/api/blob-upload',
       })
-
-      const res = await fetch('/api/blob-upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          base64,
-          filename: file.name,
-          contentType: file.type,
-          projectId: p.id,
-        }),
-      })
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err.error || 'Upload failed')
-      }
-
-      const { url } = await res.json()
       const card = { id: crypto.randomUUID(), type: 'image', url, alt: file.name, caption: '', created_at: Date.now() }
       p.planning_cards = [...getCards(), card]
       await saveCards()
       rerender()
     } catch (err) {
       console.error(err)
-      alert(`Image upload failed: ${err.message}\n\nCheck that BLOB_READ_WRITE_TOKEN is set in your .env.local`)
+      alert(`Image upload failed: ${err.message}`)
     } finally {
       btn.innerHTML = original
       btn.disabled = false
