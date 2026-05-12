@@ -758,9 +758,12 @@ export class ProjectsView {
           p.deliverables[+i].done = el.checked
           try { await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }) } catch(e) { console.error(e) }
           // Update line-through style
-          const span = el.nextElementSibling
+          c        const span = el.nextElementSibling
           if (span) span.style.cssText = el.checked ? 'font-size:13px;text-decoration:line-through;color:var(--text-tertiary)' : 'font-size:13px'
-        }    if (tab === 'planning') {
+        })
+      })
+    }
+    if (tab === 'planning') {
       bindPlanningTab(mc, p, this.app.userId)
     }
  )
