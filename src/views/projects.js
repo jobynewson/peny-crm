@@ -791,6 +791,9 @@ export class ProjectsView {
         el.addEventListener('click', () => this.app.openBudget(el.dataset.openBudget))
       })
     }
+    if (tab === 'planning') {
+      bindPlanningTab(mc, p, this.app.userId)
+    }
   }
 
   _bindSidebar(mc, p, linked) {
