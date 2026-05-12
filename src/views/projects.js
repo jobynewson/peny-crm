@@ -576,12 +576,33 @@ export class ProjectsView {
           </div>` : ''}
         </div>
         <div style="padding:0 14px">
-          ${delivs.map((d,i) => `
-            <div class="deliv-row" style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:0.5px solid var(--border-light)">
+          ${delivs.map((d,i) => {
+            const today2 = new Date(); today2.setHours(0,0,0,0)
+            const dueDate = d.due ? new Date(d.due) : null
+            const daysLeft = dueDate ? Math.round((dueDate - today2) / 86400000) : null
+            const isOverdue = !d.done && dueDate && daysLeft < 0
+            const isDueSoon = !d.done && dueDate && daysLeft >= 0 && daysLeft <= 3
+            const dueColour = isOverdue ? '#ef4444' : isDueSoon ? '#f59e0b' : 'var(--text-tertiary)'
+            const dueLabel = dueDate && !d.done
+              ? isOverdue ? `${Math.abs(daysLeft)}d overdue` : daysLeft === 0 ? 'due today' : `${daysLeft}d left`
+              : dueDate && d.done
+              ? new Date(d.due).toLocaleDateString('en-GB',{day:'numeric',month:'short'})
+              : ''
+            return `
+            <div class="deliv-row" style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:0.5px solid var(--border-light)${isOverdue?';background:rgba(239,68,68,0.04);border-radius:6px;margin:1px 0':''}">
               <input type="checkbox" ${d.done?'checked':''} data-pv-deliv="${p.id},${i}" style="width:15px;height:15px;cursor:pointer;flex-shrink:0" />
-              <span style="font-size:13px;${d.done?'text-decoration:line-through;color:var(--text-tertiary)':''}">${esc(d.text)}</span>
-            </div>`).join('')}
+              <span style="font-size:13px;flex:1;min-width:0;${d.done?'text-decoration:line-through;color:var(--text-tertiary)':''}">${esc(d.text)}</span>
+              ${dueLabel ? `<span style="font-size:11px;color:${dueColour};white-space:nowrap;flex-shrink:0;font-weight:${isOverdue||isDueSoon?'500':'400'}">${isOverdue?'⚠ ':isDueSoon?'⏰ ':''}${dueLabel}</span>` : ''}
+              ${d.link ? `<a href="${esc(d.link)}" target="_blank" rel="noopener" title="${esc(d.link)}" style="flex-shrink:0;font-size:11px;color:var(--accent);text-decoration:none;padding:2px 7px;border:0.5px solid rgba(74,144,217,0.3);border-radius:5px;white-space:nowrap" onmouseover="this.style.opacity='0.7'" onmouseout="this.style.opacity='1'">↗ Link</a>` : ''}
+            </div>`
+          }).join('')}
         </div>
+        ${this.app.permissions?.projects_edit ? `
+        <div style="padding:10px 14px 14px;border-top:0.5px solid var(--border-light);display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <input type="text" id="pv-new-deliv-text" placeholder="Add deliverable…" style="flex:1;min-width:120px;font-size:12px;padding:5px 8px;border:0.5px solid var(--border-light);border-radius:6px;background:transparent;color:var(--text-primary);font-family:var(--font);outline:none" />
+          <input type="date" id="pv-new-deliv-due" title="Due date" style="font-size:11px;padding:5px 7px;border:0.5px solid var(--border-light);border-radius:6px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none;flex-shrink:0" />
+          <button class="btn-secondary" id="pv-add-deliv" style="font-size:12px;white-space:nowrap">+ Add</button>
+        </div>` : ''}
       </div>
 
       ${crew.length ? `
@@ -776,6 +797,17 @@ export class ProjectsView {
       })
       mc.querySelector('#pv-reset-delivs')?.addEventListener('click', async () => {
         try { p.deliverables.forEach(d => d.done = false); await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }); this.renderViewer(mc) } catch(e) { console.error(e) }
+      })
+      mc.querySelector('#pv-add-deliv')?.addEventListener('click', async () => {
+        const textEl = mc.querySelector('#pv-new-deliv-text')
+        const dueEl  = mc.querySelector('#pv-new-deliv-due')
+        const text = textEl?.value.trim()
+        if (!text) { textEl?.focus(); return }
+        p.deliverables.push({ text, done: false, due: dueEl?.value || null })
+        try { await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }); this.renderViewer(mc) } catch(e) { console.error(e) }
+      })
+      mc.querySelector('#pv-new-deliv-text')?.addEventListener('keydown', e => {
+        if (e.key === 'Enter') mc.querySelector('#pv-add-deliv')?.click()
       })
     }
     if (tab === 'shoots') {
@@ -3710,6 +3742,8 @@ export class ProjectsView {
       <input type="date" class="deliverable-date" value="${d.due||''}" data-${pfx}deliv-due="${i}"
         title="Due date" style="width:120px;font-size:11px;padding:3px 6px;border:0.5px solid var(--border-light);border-radius:5px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none;flex-shrink:0" />
       ${dueLabel ? `<span style="font-size:10px;color:${dueColour};white-space:nowrap;flex-shrink:0;font-weight:${overdue||dueSoon?'500':'400'}">${overdue?'⚠ ':dueSoon?'⏰ ':''}${dueLabel}</span>` : ''}
+      <input type="url" class="deliverable-link-input" value="${esc(d.link||'')}" placeholder="Link (e.g. Frame.io…)" data-${pfx}deliv-link="${i}"
+        style="min-width:0;flex:0 1 160px;font-size:11px;padding:3px 6px;border:0.5px solid var(--border-light);border-radius:5px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none" />
       <button class="row-btn" style="color:#b03020;flex-shrink:0" data-${pfx}deliv-rem="${i}">×</button>
     </div>`
   }
@@ -3934,6 +3968,9 @@ export class ProjectsView {
     mc.querySelectorAll('[data-deliv-due]').forEach(el => {
       el.addEventListener('change', () => { p.deliverables[+el.dataset.delivDue].due = el.value || null; save(); this.renderEditor(mc) })
     })
+    mc.querySelectorAll('[data-deliv-link]').forEach(el => {
+      el.addEventListener('change', () => { p.deliverables[+el.dataset.delivLink].link = el.value.trim() || null; save() })
+    })
     mc.querySelectorAll('[data-deliv-rem]').forEach(el => {
       el.addEventListener('click', () => {
         if (p.deliverables.length <= 1) return
@@ -3952,6 +3989,12 @@ export class ProjectsView {
     })
     mc.querySelectorAll('[data-monthly-deliv-text]').forEach(el => {
       el.addEventListener('change', () => { p.monthly_deliverables[+el.dataset.monthlyDelivText].text = el.value; save() })
+    })
+    mc.querySelectorAll('[data-monthly-deliv-due]').forEach(el => {
+      el.addEventListener('change', () => { p.monthly_deliverables[+el.dataset.monthlyDelivDue].due = el.value || null; save(); this.renderEditor(mc) })
+    })
+    mc.querySelectorAll('[data-monthly-deliv-link]').forEach(el => {
+      el.addEventListener('change', () => { p.monthly_deliverables[+el.dataset.monthlyDelivLink].link = el.value.trim() || null; save() })
     })
     mc.querySelectorAll('[data-monthly-deliv-rem]').forEach(el => {
       el.addEventListener('click', () => {
