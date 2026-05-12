@@ -1,7 +1,6 @@
 // src/views/planning-tab.js
 // Milanote-lite planning board: notes, images (Vercel Blob), and video links
 
-import { upload } from '@vercel/blob/client'
 import { updateProject } from '../db/client.js'
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
@@ -249,13 +248,46 @@ export function bindPlanningTab(mc, p, userId) {
     btn.disabled = true
 
     try {
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-      const pathname = `planning/${p.id || 'general'}/${Date.now()}-${safeName}`
-
-      const { url } = await upload(pathname, file, {
-        access: 'private',
-        handleUploadUrl: '/api/blob-upload',
+      // Compress via Canvas: max 2000px on longest side, JPEG at 85%
+      // This keeps the base64 payload well under Vercel's 4.5 MB body limit.
+      const base64 = await new Promise((resolve, reject) => {
+        const img = new Image()
+        const objectUrl = URL.createObjectURL(file)
+        img.onload = () => {
+          URL.revokeObjectURL(objectUrl)
+          const MAX = 2000
+          let { width, height } = img
+          if (width > MAX || height > MAX) {
+            if (width > height) { height = Math.round(height * MAX / width); width = MAX }
+            else                { width  = Math.round(width  * MAX / height); height = MAX }
+          }
+          const canvas = document.createElement('canvas')
+          canvas.width = width; canvas.height = height
+          canvas.getContext('2d').drawImage(img, 0, 0, width, height)
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
+          resolve(dataUrl.split(',')[1])
+        }
+        img.onerror = reject
+        img.src = objectUrl
       })
+
+      const res = await fetch('/api/blob-upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          base64,
+          filename: file.name.replace(/\.[^.]+$/, '.jpg'),
+          contentType: 'image/jpeg',
+          projectId: p.id,
+        }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Upload failed')
+      }
+
+      const { url } = await res.json()
       const card = { id: crypto.randomUUID(), type: 'image', url, alt: file.name, caption: '', created_at: Date.now() }
       p.planning_cards = [...getCards(), card]
       await saveCards()
