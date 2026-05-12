@@ -63,12 +63,21 @@ function renderNoteCard(card) {
   `
 }
 
+function imgSrc(url) {
+  if (!url) return ''
+  // Private Vercel Blob URLs require auth headers — proxy them server-side
+  if (url.includes('.private.blob.vercel-storage.com')) {
+    return `/api/blob?url=${encodeURIComponent(url)}`
+  }
+  return esc(url)
+}
+
 function renderImageCard(card) {
   return `
     <div class="plan-card plan-card--image" data-card-id="${card.id}">
       <button class="plan-card-delete" data-delete="${card.id}" title="Remove">×</button>
       <div class="plan-image-wrap">
-        <img src="${esc(card.url)}" alt="${esc(card.alt || 'Planning image')}" loading="lazy" />
+        <img src="${imgSrc(card.url)}" alt="${esc(card.alt || 'Planning image')}" loading="lazy" />
       </div>
       <input
         class="plan-image-caption"
@@ -164,7 +173,7 @@ export function bindPlanningTab(mc, p, userId) {
 
         // Fire-and-forget blob cleanup (don't block UI on failure)
         if (card?.type === 'image' && card.url) {
-          fetch(`/api/blob-delete?url=${encodeURIComponent(card.url)}`, { method: 'DELETE' })
+          fetch(`/api/blob?url=${encodeURIComponent(card.url)}`, { method: 'DELETE' })
             .catch(e => console.warn('Blob cleanup failed:', e))
         }
 
@@ -236,9 +245,8 @@ export function bindPlanningTab(mc, p, userId) {
     const file = e.target.files[0]
     if (!file) return
 
-    // 10 MB guard
-    if (file.size > 10 * 1024 * 1024) {
-      alert('Image is too large — please use a file under 10 MB.')
+    if (file.size > 20 * 1024 * 1024) {
+      alert('Image is too large — please use a file under 20 MB.')
       e.target.value = ''
       return
     }
@@ -249,21 +257,36 @@ export function bindPlanningTab(mc, p, userId) {
     btn.disabled = true
 
     try {
-      // Read as base64
+      // Compress via Canvas: max 2000px on longest side, JPEG at 85%
+      // This keeps the base64 payload well under Vercel's 4.5 MB body limit.
       const base64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result.split(',')[1])
-        reader.onerror = reject
-        reader.readAsDataURL(file)
+        const img = new Image()
+        const objectUrl = URL.createObjectURL(file)
+        img.onload = () => {
+          URL.revokeObjectURL(objectUrl)
+          const MAX = 2000
+          let { width, height } = img
+          if (width > MAX || height > MAX) {
+            if (width > height) { height = Math.round(height * MAX / width); width = MAX }
+            else                { width  = Math.round(width  * MAX / height); height = MAX }
+          }
+          const canvas = document.createElement('canvas')
+          canvas.width = width; canvas.height = height
+          canvas.getContext('2d').drawImage(img, 0, 0, width, height)
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
+          resolve(dataUrl.split(',')[1])
+        }
+        img.onerror = reject
+        img.src = objectUrl
       })
 
-      const res = await fetch('/api/blob-upload', {
+      const res = await fetch('/api/blob', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           base64,
-          filename: file.name,
-          contentType: file.type,
+          filename: file.name.replace(/\.[^.]+$/, '.jpg'),
+          contentType: 'image/jpeg',
           projectId: p.id,
         }),
       })
@@ -280,7 +303,7 @@ export function bindPlanningTab(mc, p, userId) {
       rerender()
     } catch (err) {
       console.error(err)
-      alert(`Image upload failed: ${err.message}\n\nCheck that BLOB_READ_WRITE_TOKEN is set in your .env.local`)
+      alert(`Image upload failed: ${err.message}`)
     } finally {
       btn.innerHTML = original
       btn.disabled = false

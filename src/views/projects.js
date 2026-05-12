@@ -762,8 +762,7 @@ export class ProjectsView {
           if (span) span.style.cssText = el.checked ? 'font-size:13px;text-decoration:line-through;color:var(--text-tertiary)' : 'font-size:13px'
         })
       })
-    }
-   
+
       mc.querySelectorAll('[data-pv-shot]').forEach(el => {
         el.addEventListener('change', async () => {
           const [pid, i] = el.dataset.pvShot.split(',')
@@ -791,6 +790,9 @@ export class ProjectsView {
       mc.querySelectorAll('[data-open-budget]').forEach(el => {
         el.addEventListener('click', () => this.app.openBudget(el.dataset.openBudget))
       })
+    }
+    if (tab === 'planning') {
+      bindPlanningTab(mc, p, this.app.userId)
     }
   }
 
