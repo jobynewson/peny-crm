@@ -269,8 +269,8 @@ export function bindPlanningTab(mc, p, userId) {
       })
 
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err.error || 'Upload failed')
+        const body = await res.json().catch(() => ({}))
+        throw new Error([body.error, body.detail].filter(Boolean).join(': ') || 'Upload failed')
       }
 
       const { url } = await res.json()
@@ -280,7 +280,7 @@ export function bindPlanningTab(mc, p, userId) {
       rerender()
     } catch (err) {
       console.error(err)
-      alert(`Image upload failed: ${err.message}\n\nCheck that BLOB_READ_WRITE_TOKEN is set in your .env.local`)
+      alert(`Image upload failed: ${err.message}`)
     } finally {
       btn.innerHTML = original
       btn.disabled = false
