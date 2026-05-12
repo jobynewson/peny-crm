@@ -27,12 +27,20 @@
 
     .section-title { font-size:11px; text-transform:uppercase; letter-spacing:0.6px; color:var(--text-ter); margin-bottom:14px; font-weight:400 }
 
-    .deliv-row { display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:0.5px solid var(--border); font-size:14px }
+    .deliv-row { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:0.5px solid var(--border); font-size:14px; flex-wrap:wrap }
     .deliv-row:last-child { border-bottom:none }
     .deliv-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0 }
     .deliv-dot.done { background:var(--green) }
     .deliv-dot.pending { background:var(--border) }
+    .deliv-text { flex:1; min-width:0 }
     .deliv-text.done { text-decoration:line-through; color:var(--text-ter) }
+    .deliv-due { font-size:11px; white-space:nowrap; flex-shrink:0; padding:2px 7px; border-radius:20px; font-weight:500 }
+    .deliv-due.overdue { background:rgba(239,68,68,0.15); color:#ef4444 }
+    .deliv-due.soon { background:rgba(245,158,11,0.15); color:var(--amber) }
+    .deliv-due.normal { color:var(--text-ter); font-weight:400 }
+    .deliv-due.done-date { color:var(--text-ter); font-weight:400 }
+    .deliv-link { font-size:12px; color:var(--accent); text-decoration:none; padding:2px 8px; border:0.5px solid rgba(74,144,217,0.35); border-radius:5px; white-space:nowrap; flex-shrink:0 }
+    .deliv-link:hover { opacity:0.75 }
 
     .log-entry { padding:12px 0; border-bottom:0.5px solid var(--border) }
     .log-entry:last-child { border-bottom:none }
@@ -81,12 +89,33 @@
     // Update page title
     document.title = `${project.name} — Portal`
 
+    const today = new Date(); today.setHours(0,0,0,0)
     const delivHTML = deliverables.length
-      ? deliverables.map(d => `
-        <div class="deliv-row">
-          <div class="deliv-dot ${d.done?'done':'pending'}"></div>
-          <div class="deliv-text ${d.done?'done':''}">${esc(d.text)}</div>
-        </div>`).join('')
+      ? deliverables.map(d => {
+          const dueDate = d.due ? new Date(d.due) : null
+          const daysLeft = dueDate ? Math.round((dueDate - today) / 86400000) : null
+          const isOverdue = !d.done && dueDate && daysLeft < 0
+          const isDueSoon = !d.done && dueDate && daysLeft >= 0 && daysLeft <= 3
+          let dueHTML = ''
+          if (dueDate) {
+            if (d.done) {
+              dueHTML = `<span class="deliv-due done-date">${fmtDate(d.due)}</span>`
+            } else if (isOverdue) {
+              dueHTML = `<span class="deliv-due overdue">⚠ ${Math.abs(daysLeft)}d overdue</span>`
+            } else if (isDueSoon) {
+              dueHTML = `<span class="deliv-due soon">⏰ ${daysLeft === 0 ? 'due today' : daysLeft + 'd left'}</span>`
+            } else {
+              dueHTML = `<span class="deliv-due normal">${fmtDate(d.due)}</span>`
+            }
+          }
+          const linkHTML = d.link ? `<a href="${esc(d.link)}" target="_blank" rel="noopener" class="deliv-link">↗ Link</a>` : ''
+          return `
+          <div class="deliv-row${isOverdue?' style="background:rgba(239,68,68,0.05);border-radius:6px;padding:10px 8px"':''}">
+            <div class="deliv-dot ${d.done?'done':'pending'}"></div>
+            <div class="deliv-text ${d.done?'done':''}">${esc(d.text)}</div>
+            ${dueHTML}${linkHTML}
+          </div>`
+        }).join('')
       : `<div class="empty">No deliverables listed</div>`
 
     const logHTML = workLog.length
