@@ -569,11 +569,16 @@ export class ProjectsView {
       <div class="proj-panel">
         <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
           <span>Deliverables <span style="font-size:11px;color:var(--text-tertiary);font-weight:400">(${doneCount}/${delivs.length})</span></span>
-          ${this.app.permissions?.projects_edit ? `
-          <div style="display:flex;gap:6px">
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+            ${p.portal_token
+              ? `<button class="btn-cancel" id="pv-copy-portal" style="font-size:11px">Copy Client Portal Link</button>`
+              : this.app.permissions?.projects_edit
+                ? `<button class="btn-cancel" id="pv-gen-portal" style="font-size:11px">Create Portal Link</button>`
+                : ''}
+            ${this.app.permissions?.projects_edit ? `
             <button class="btn-cancel" id="pv-mark-all-done" style="font-size:11px">Mark all done</button>
-            <button class="btn-cancel" id="pv-reset-delivs" style="font-size:11px">Reset</button>
-          </div>` : ''}
+            <button class="btn-cancel" id="pv-reset-delivs" style="font-size:11px">Reset</button>` : ''}
+          </div>
         </div>
         <div style="padding:0 14px">
           ${delivs.map((d,i) => {
@@ -790,6 +795,19 @@ export class ProjectsView {
           p.shots[+i].done = el.checked
           try { await updateProject(this.app.userId, p.id, { shots: p.shots }) } catch(e) { console.error(e) }
         })
+      })
+      mc.querySelector('#pv-copy-portal')?.addEventListener('click', async e => {
+        const url = `${location.origin}/portal/${p.portal_token}`
+        await navigator.clipboard.writeText(url)
+        const btn = e.target; btn.textContent = '✓ Copied!'; setTimeout(() => btn.textContent = 'Copy Client Portal Link', 1500)
+      })
+      mc.querySelector('#pv-gen-portal')?.addEventListener('click', async () => {
+        const token = crypto.randomUUID().replace(/-/g,'').slice(0,24)
+        p.portal_token = token
+        const idx = this.app.projects.findIndex(x => x.id === p.id)
+        if (idx >= 0) this.app.projects[idx].portal_token = token
+        try { await updateProject(this.app.userId, p.id, { portal_token: token }) } catch(e) { console.error(e) }
+        this.renderViewer(mc)
       })
       mc.querySelector('#pv-mark-all-done')?.addEventListener('click', async () => {
         try { p.deliverables.forEach(d => { if(d.text) d.done = true }); await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }); this.renderViewer(mc); this.app.toast('All deliverables marked done') } catch(e) { console.error(e) }
@@ -3459,23 +3477,10 @@ export class ProjectsView {
           </div>
 
           <div class="proj-panel">
-            <div class="proj-panel-head">Client portal</div>
-            <div style="padding:12px 14px;display:flex;flex-direction:column;gap:10px">
-              <div>
-                <div class="proj-field-label">Frame.io review link</div>
-                <input type="url" class="proj-input" id="pe-frameio" value="${esc(p.frame_io_link||'')}" placeholder="https://app.frame.io/..." />
-              </div>
-              <div>
-                ${p.portal_token
-                  ? `<div class="proj-field-label">Portal link</div>
-                     <div style="display:flex;gap:6px;align-items:center">
-                       <input type="text" class="proj-input" readonly value="${location.origin}/portal/${p.portal_token}" style="font-size:11px;color:var(--text-secondary)" />
-                       <button class="btn-secondary" id="pe-copy-portal" style="white-space:nowrap;font-size:11px">Copy</button>
-                     </div>
-                     <button class="btn-cancel" id="pe-regen-portal" style="font-size:11px;margin-top:6px;width:100%">Regenerate link</button>`
-                  : `<button class="btn-primary" id="pe-gen-portal" style="font-size:12px;width:100%">Generate portal link</button>
-                     <div style="font-size:11px;color:var(--text-tertiary);margin-top:6px">Share with your client to give them a read-only view of deliverables and work log.</div>`}
-              </div>
+            <div class="proj-panel-head">Frame.io</div>
+            <div style="padding:12px 14px">
+              <div class="proj-field-label">Review link</div>
+              <input type="url" class="proj-input" id="pe-frameio" value="${esc(p.frame_io_link||'')}" placeholder="https://app.frame.io/..." />
             </div>
           </div>
 
@@ -3866,30 +3871,6 @@ export class ProjectsView {
     mc.querySelector('#pe-ins-email')?.addEventListener('change', e => { p.insurer_email   = e.target.value.trim() || null; save() })
     mc.querySelector('#pe-notes')?.addEventListener('change',   e => { p.notes   = e.target.value; save() })
     mc.querySelector('#pe-frameio')?.addEventListener('change', e => { p.frame_io_link = e.target.value.trim() || null; save() })
-
-    // Portal token generation
-    mc.querySelector('#pe-gen-portal')?.addEventListener('click', async () => {
-      const token = crypto.randomUUID().replace(/-/g,'').slice(0,24)
-      p.portal_token = token
-      const idx = this.app.projects.findIndex(x => x.id === p.id)
-      if (idx >= 0) this.app.projects[idx].portal_token = token
-      try { await updateProject(this.app.userId, p.id, { portal_token: token }) } catch(e) { console.error(e) }
-      this.renderEditor(mc)
-    })
-    mc.querySelector('#pe-regen-portal')?.addEventListener('click', async () => {
-      if (!confirm('Regenerate portal link? The old link will stop working.')) return
-      const token = crypto.randomUUID().replace(/-/g,'').slice(0,24)
-      p.portal_token = token
-      const idx = this.app.projects.findIndex(x => x.id === p.id)
-      if (idx >= 0) this.app.projects[idx].portal_token = token
-      try { await updateProject(this.app.userId, p.id, { portal_token: token }) } catch(e) { console.error(e) }
-      this.renderEditor(mc)
-    })
-    mc.querySelector('#pe-copy-portal')?.addEventListener('click', async e => {
-      const url = `${location.origin}/portal/${p.portal_token}`
-      await navigator.clipboard.writeText(url)
-      const btn = e.target; btn.textContent = '✓ Copied'; setTimeout(() => btn.textContent = 'Copy', 1500)
-    })
 
     // Project type toggle
     mc.querySelectorAll('[data-proj-type]').forEach(btn => {
