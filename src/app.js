@@ -62,8 +62,8 @@ export class App {
       const done     = requests.filter(r => r.done)
 
       overlay.innerHTML = `
-        <div style="background:var(--bg-primary);border:0.5px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:${isAdmin?'620px':'440px'};max-height:85vh;display:flex;flex-direction:column;overflow:hidden" onclick="event.stopPropagation()">
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:0.5px solid var(--border-light);flex-shrink:0">
+        <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:${isAdmin?'620px':'440px'};max-height:85vh;display:flex;flex-direction:column;overflow:hidden" onclick="event.stopPropagation()">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border-light);flex-shrink:0">
             <div>
               <div style="font-size:14px;font-weight:600">Dev request</div>
               <div style="font-size:11px;color:var(--text-tertiary);margin-top:1px">Suggest a feature or report an issue</div>
@@ -71,9 +71,9 @@ export class App {
             <button id="dev-req-close" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-tertiary);line-height:1;padding:4px">×</button>
           </div>
 
-          <div style="padding:20px;display:flex;flex-direction:column;gap:10px;flex-shrink:0;border-bottom:0.5px solid var(--border-light)">
+          <div style="padding:20px;display:flex;flex-direction:column;gap:10px;flex-shrink:0;border-bottom:1px solid var(--border-light)">
             <textarea id="dev-req-text" placeholder="Describe what you'd like added or changed…"
-              style="width:100%;min-height:90px;padding:10px 12px;font-size:13px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.5"></textarea>
+              style="width:100%;min-height:90px;padding:10px 12px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.5"></textarea>
             <div style="display:flex;justify-content:flex-end;gap:8px">
               <button class="btn-cancel" id="dev-req-cancel">Cancel</button>
               <button class="btn-primary" id="dev-req-submit">Submit request</button>
@@ -89,10 +89,10 @@ export class App {
             ${pending.length > 0 ? `
             <div style="padding:12px 20px 4px;display:flex;align-items:center;justify-content:space-between">
               <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Pending · ${pending.length}</div>
-              <button id="dev-req-copy" style="font-size:11px;color:var(--text-tertiary);background:none;border:0.5px solid var(--border-light);border-radius:5px;padding:3px 8px;cursor:pointer;font-family:var(--font)">Copy all</button>
+              <button id="dev-req-copy" style="font-size:11px;color:var(--text-tertiary);background:none;border:1px solid var(--border-light);border-radius:5px;padding:3px 8px;cursor:pointer;font-family:var(--font)">Copy all</button>
             </div>
             ${pending.map(r => `
-              <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 20px;border-bottom:0.5px solid var(--border-light)" data-rid="${r.id}">
+              <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 20px;border-bottom:1px solid var(--border-light)" data-rid="${r.id}">
                 <input type="checkbox" data-done-req="${r.id}" style="margin-top:2px;cursor:pointer;flex-shrink:0" />
                 <div style="flex:1;min-width:0">
                   <div style="font-size:13px;line-height:1.5">${esc(r.message)}</div>
@@ -104,7 +104,7 @@ export class App {
             ${done.length > 0 ? `
             <div style="padding:12px 20px 4px;font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Done · ${done.length}</div>
             ${done.map(r => `
-              <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 20px;border-bottom:0.5px solid var(--border-light);opacity:0.5" data-rid="${r.id}">
+              <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 20px;border-bottom:1px solid var(--border-light);opacity:0.5" data-rid="${r.id}">
                 <input type="checkbox" checked data-done-req="${r.id}" style="margin-top:2px;cursor:pointer;flex-shrink:0" />
                 <div style="flex:1;min-width:0">
                   <div style="font-size:13px;line-height:1.5;text-decoration:line-through">${esc(r.message)}</div>
@@ -212,18 +212,18 @@ export class App {
       const typeColour = { contact:'#a78bfa', project:'#4a90d9', budget:'#6ec96e' }
 
       overlay.innerHTML = `
-        <div style="background:var(--bg-primary);border:0.5px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:520px;overflow:hidden;cursor:default;box-shadow:0 20px 60px rgba(0,0,0,0.4)" onclick="event.stopPropagation()">
-          <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:0.5px solid var(--border-light)">
+        <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:520px;overflow:hidden;cursor:default;box-shadow:0 20px 60px rgba(0,0,0,0.4)" onclick="event.stopPropagation()">
+          <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border-light)">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--text-tertiary)" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
             <input id="search-input" placeholder="Search contacts, projects, budgets…" value="${esc(query)}"
               style="flex:1;background:transparent;border:none;outline:none;font-size:15px;color:var(--text-primary);font-family:var(--font)" autofocus />
-            <kbd style="font-size:11px;color:var(--text-tertiary);background:var(--bg-secondary);border:0.5px solid var(--border-light);border-radius:4px;padding:2px 6px">Esc</kbd>
+            <kbd style="font-size:11px;color:var(--text-tertiary);background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:4px;padding:2px 6px">Esc</kbd>
           </div>
           <div id="search-results" style="max-height:360px;overflow-y:auto">
             ${q.length === 0 ? `<div style="padding:24px;text-align:center;font-size:13px;color:var(--text-tertiary)">Start typing to search across all records</div>`
             : results.length === 0 ? `<div style="padding:24px;text-align:center;font-size:13px;color:var(--text-tertiary)">No results for "${esc(query)}"</div>`
             : results.map((r,i) => `
-              <div data-result="${i}" style="display:flex;align-items:center;gap:12px;padding:11px 16px;cursor:pointer;border-bottom:0.5px solid var(--border-light);transition:background 0.1s"
+              <div data-result="${i}" style="display:flex;align-items:center;gap:12px;padding:11px 16px;cursor:pointer;border-bottom:1px solid var(--border-light);transition:background 0.1s"
                 onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''">
                 <span style="font-size:16px;flex-shrink:0">${typeIcon[r.type]}</span>
                 <div style="flex:1;min-width:0">
@@ -233,7 +233,7 @@ export class App {
                 <span style="font-size:10px;color:${typeColour[r.type]};background:${typeColour[r.type]}22;border-radius:4px;padding:2px 7px;flex-shrink:0;text-transform:capitalize">${r.type}</span>
               </div>`).join('')}
           </div>
-          ${q.length > 0 && results.length > 0 ? `<div style="padding:8px 16px;font-size:11px;color:var(--text-tertiary);border-top:0.5px solid var(--border-light)">${results.length} result${results.length!==1?'s':''}</div>` : ''}
+          ${q.length > 0 && results.length > 0 ? `<div style="padding:8px 16px;font-size:11px;color:var(--text-tertiary);border-top:1px solid var(--border-light)">${results.length} result${results.length!==1?'s':''}</div>` : ''}
         </div>`
 
       // Input handler
@@ -424,7 +424,7 @@ export class App {
       overlay.id = 'shortcut-overlay'
       overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;cursor:pointer'
       overlay.innerHTML = `
-        <div style="background:var(--bg-primary);border:0.5px solid var(--border-med);border-radius:var(--radius-lg);padding:28px 32px;width:320px;cursor:default" onclick="event.stopPropagation()">
+        <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);padding:28px 32px;width:320px;cursor:default" onclick="event.stopPropagation()">
           <div style="font-size:13px;font-weight:600;margin-bottom:16px">Keyboard shortcuts</div>
           ${[
             ['⌘K', 'Search everything'],
@@ -432,8 +432,8 @@ export class App {
             ['Esc', 'Close modal / exit edit / go back'],
             ['⌘S', 'Save & close current editor'],
           ].map(([key,desc]) => `
-            <div style="display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:0.5px solid var(--border-light)">
-              <kbd style="font-size:11px;font-family:monospace;background:var(--bg-secondary);border:0.5px solid var(--border-med);border-radius:5px;padding:3px 8px;color:var(--text-secondary);white-space:nowrap">${key}</kbd>
+            <div style="display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid var(--border-light)">
+              <kbd style="font-size:11px;font-family:monospace;background:var(--bg-secondary);border:1px solid var(--border-med);border-radius:5px;padding:3px 8px;color:var(--text-secondary);white-space:nowrap">${key}</kbd>
               <span style="font-size:13px;color:var(--text-secondary)">${desc}</span>
             </div>`).join('')}
           <div style="margin-top:14px;font-size:11px;color:var(--text-tertiary);text-align:center">Click anywhere to close</div>
@@ -726,10 +726,10 @@ export class App {
         </div>
       </div>` : ''}
 
-      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px">${stages.map(st => {
+      <div class="kanban-wrap">${stages.map(st => {
         const col = regularProjects.filter(p => p.status === st)
-        return `<div>
-          <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:12px">${st} <span style="font-weight:500;color:var(--text-secondary)">${col.length}</span></div>
+        return `<div class="kanban-col">
+          <div class="kanban-col-head">${st} <span class="kanban-count">${col.length}</span></div>
           ${col.map(p => {
           const cl = this.contacts.find(c => c.id === p.client_id)
           const pipelineBudgets = (p.budget_ids || [])
@@ -779,7 +779,7 @@ export class App {
                   </label>`).join('')}
               </div>` : ''}
             ${pipelineBudgets.length ? `
-              <div style="margin-top:8px;padding-top:8px;border-top:0.5px solid var(--border-light);display:flex;flex-direction:column;gap:3px">
+              <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-light);display:flex;flex-direction:column;gap:3px">
                 ${pipelineBudgets.map(b => {
                   const tr2=parseFloat(b.travel_rate)||50
                   const n2=b.sections?b.sections.filter(s=>s.enabled).reduce((t,s)=>t+(s.lines||[]).reduce((lt,l)=>{const useDays=!!(l.useDays??(l.travelDays!==undefined));const d=parseFloat(l.days)||0,q=isNaN(parseFloat(l.qty))?1:parseFloat(l.qty),r=parseFloat(l.rate)||0,td=parseFloat(l.travelDays)||0,disc=Math.min(Math.max(parseFloat(l.discount)||0,0),100),gross=useDays?d*q*r+td*(tr2/100)*r:q*r;return lt+gross*(1-disc/100)},0),0):0
@@ -790,7 +790,7 @@ export class App {
                   </div>`
                 }).join('')}
                 ${pipelineBudgets.length > 1 ? `
-                  <div style="display:flex;justify-content:space-between;font-size:11px;margin-top:3px;padding-top:5px;border-top:0.5px solid var(--border-light)">
+                  <div style="display:flex;justify-content:space-between;font-size:11px;margin-top:3px;padding-top:5px;border-top:1px solid var(--border-light)">
                     <span style="color:var(--text-tertiary)">Combined</span>
                     <span style="font-weight:600;font-variant-numeric:tabular-nums">£${Math.round(combinedTotal).toLocaleString('en-GB')}</span>
                   </div>` : ''}
@@ -801,6 +801,7 @@ export class App {
       }).join('')}</div>`
 
     // Open project on title click
+
     mc.querySelectorAll('[data-open-pid]').forEach(el => {
       el.addEventListener('click', () => this.openProject(el.dataset.openPid))
     })
@@ -958,7 +959,7 @@ export class App {
               </div>` : ''}
               <div class="field">
                 <div class="field-label">Default H&amp;S boilerplate (used on call sheets)</div>
-                <textarea id="s-hs" style="width:100%;min-height:100px;padding:8px 11px;font-size:12px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.6" placeholder="e.g. No alcohol or non-prescription drugs during the working day. Only qualified personnel to handle hazardous equipment…">${s.hs_boilerplate??''}</textarea>
+                <textarea id="s-hs" style="width:100%;min-height:100px;padding:8px 11px;font-size:12px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.6" placeholder="e.g. No alcohol or non-prescription drugs during the working day. Only qualified personnel to handle hazardous equipment…">${s.hs_boilerplate??''}</textarea>
               </div>
             </div>
             <div><button class="btn-primary" id="settings-save-btn">Save settings</button></div>
@@ -986,7 +987,7 @@ export class App {
             <div class="field"><div class="field-label">Default invoicing email</div><input type="email" id="s-inv-email" value="${s.invoicing_email??''}" placeholder="e.g. finance@wearepeny.com" /></div>
             <div class="field">
               <div class="field-label">Invoicing boilerplate</div>
-              <textarea id="s-inv-boilerplate" style="width:100%;min-height:140px;padding:8px 11px;font-size:12px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.6" placeholder="In order to comply with HMRC regulations and for us to pay your invoice, please include the following:&#10;1. Correct Banking Information&#10;2. Dates worked and service provided&#10;3. Full name as registered with HMRC…">${s.invoicing_boilerplate??''}</textarea>
+              <textarea id="s-inv-boilerplate" style="width:100%;min-height:140px;padding:8px 11px;font-size:12px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.6" placeholder="In order to comply with HMRC regulations and for us to pay your invoice, please include the following:&#10;1. Correct Banking Information&#10;2. Dates worked and service provided&#10;3. Full name as registered with HMRC…">${s.invoicing_boilerplate??''}</textarea>
             </div>
             <div><button class="btn-primary" id="settings-save-btn-3">Save settings</button></div>
           </div>
@@ -998,7 +999,7 @@ export class App {
           <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
             <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Invite-only. New users receive an email invitation from Clerk and are assigned Member role by default.</div>
             <div style="display:flex;gap:8px">
-              <input type="email" id="invite-email" placeholder="colleague@email.com" style="flex:1;padding:8px 11px;font-size:13px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+              <input type="email" id="invite-email" placeholder="colleague@email.com" style="flex:1;padding:8px 11px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
               <button class="btn-primary" id="invite-btn">Send invite</button>
             </div>
             <div id="users-list"><div style="font-size:12px;color:var(--text-tertiary)">Loading users…</div></div>
@@ -1062,12 +1063,12 @@ export class App {
       el.innerHTML = `
         <div style="display:flex;flex-direction:column;gap:8px" id="tpl-sections">
           ${template.map((s, si) => `
-            <div style="border:0.5px solid var(--border-light);border-radius:var(--radius-md);overflow:hidden" data-tsi="${si}">
-              <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--bg-secondary);border-bottom:0.5px solid var(--border-light)">
+            <div style="border:1px solid var(--border-light);border-radius:var(--radius-md);overflow:hidden" data-tsi="${si}">
+              <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--bg-secondary);border-bottom:1px solid var(--border-light)">
                 <input type="text" value="${esc(s.code)}" data-tpl-code="${si}"
-                  style="width:48px;font-size:12px;font-weight:600;padding:4px 6px;border:0.5px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+                  style="width:48px;font-size:12px;font-weight:600;padding:4px 6px;border:1px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
                 <input type="text" value="${esc(s.label)}" data-tpl-label="${si}"
-                  style="flex:1;font-size:13px;padding:4px 8px;border:0.5px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+                  style="flex:1;font-size:13px;padding:4px 8px;border:1px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
                 <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-tertiary);cursor:pointer;white-space:nowrap">
                   <input type="checkbox" ${s.crew?'checked':''} data-tpl-crew="${si}" style="cursor:pointer" /> Crew section
                 </label>
@@ -1076,24 +1077,24 @@ export class App {
               <table style="width:100%;border-collapse:collapse">
                 <thead>
                   <tr style="background:var(--bg-secondary)">
-                    <th style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;padding:6px 8px;text-align:left;font-weight:400;border-bottom:0.5px solid var(--border-light)">Item name</th>
-                    <th style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;padding:6px 8px;text-align:right;font-weight:400;border-bottom:0.5px solid var(--border-light)">Default rate £</th>
-                    <th style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;padding:6px 4px;text-align:center;font-weight:400;border-bottom:0.5px solid var(--border-light)" title="Daily rate">Daily</th>
-                    <th style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;padding:6px 4px;text-align:center;font-weight:400;border-bottom:0.5px solid var(--border-light)" title="Track time">⏱</th>
-                    <th style="border-bottom:0.5px solid var(--border-light);width:28px"></th>
+                    <th style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;padding:6px 8px;text-align:left;font-weight:400;border-bottom:1px solid var(--border-light)">Item name</th>
+                    <th style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;padding:6px 8px;text-align:right;font-weight:400;border-bottom:1px solid var(--border-light)">Default rate £</th>
+                    <th style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;padding:6px 4px;text-align:center;font-weight:400;border-bottom:1px solid var(--border-light)" title="Daily rate">Daily</th>
+                    <th style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;padding:6px 4px;text-align:center;font-weight:400;border-bottom:1px solid var(--border-light)" title="Track time">⏱</th>
+                    <th style="border-bottom:1px solid var(--border-light);width:28px"></th>
                   </tr>
                 </thead>
                 <tbody>
                   ${(s.lines||[]).map((l, li) => `
-                    <tr style="border-bottom:0.5px solid var(--border-light)">
+                    <tr style="border-bottom:1px solid var(--border-light)">
                       <td style="padding:5px 8px">
                         <input type="text" value="${esc(l.item)}" data-tpl-item="${si},${li}"
-                          style="width:100%;font-size:13px;padding:5px 7px;border:0.5px solid var(--border-light);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+                          style="width:100%;font-size:13px;padding:5px 7px;border:1px solid var(--border-light);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
                       </td>
                       <td style="padding:5px 8px">
                         <input type="number" value="${l.rate??''}" placeholder="0" min="0"
                           data-tpl-rate="${si},${li}"
-                          style="width:80px;font-size:13px;padding:5px 7px;border:0.5px solid var(--border-light);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;text-align:right;display:block;margin-left:auto" />
+                          style="width:80px;font-size:13px;padding:5px 7px;border:1px solid var(--border-light);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;text-align:right;display:block;margin-left:auto" />
                       </td>
                       <td style="padding:5px 4px;text-align:center">
                         <input type="checkbox" ${l.useDays?'checked':''} data-tpl-usedays="${si},${li}" style="cursor:pointer" />
@@ -1108,7 +1109,7 @@ export class App {
                 </tbody>
               </table>
               <button data-tpl-add-line="${si}"
-                style="display:flex;align-items:center;gap:6px;padding:8px 12px;font-size:12px;color:var(--text-tertiary);cursor:pointer;border:none;border-top:0.5px solid var(--border-light);background:transparent;width:100%;text-align:left;font-family:var(--font);transition:background 0.1s,color 0.1s"
+                style="display:flex;align-items:center;gap:6px;padding:8px 12px;font-size:12px;color:var(--text-tertiary);cursor:pointer;border:none;border-top:1px solid var(--border-light);background:transparent;width:100%;text-align:left;font-family:var(--font);transition:background 0.1s,color 0.1s"
                 onmouseover="this.style.background='var(--bg-secondary)';this.style.color='var(--text-secondary)'"
                 onmouseout="this.style.background='transparent';this.style.color='var(--text-tertiary)'">
                 + add line item
@@ -1216,7 +1217,7 @@ export class App {
         const preset = ROLE_PRESETS[u.role] ?? ROLE_PRESETS.member
         const overrides = u.permissions ?? {}
         const isSelf = u.clerk_id === this.clerkUserId
-        return `<div style="border:0.5px solid var(--border-light);border-radius:var(--radius-md);padding:14px;margin-bottom:10px" data-uid="${u.id}">
+        return `<div style="border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px;margin-bottom:10px" data-uid="${u.id}">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
             <div style="flex:1">
               <div style="font-size:13px;font-weight:500">${u.name||'—'} ${isSelf?'<span style="font-size:10px;color:var(--text-tertiary)">(you)</span>':''}</div>
@@ -1241,7 +1242,7 @@ export class App {
           <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
             <div style="font-size:12px;color:var(--text-secondary);white-space:nowrap">Default crew role:</div>
             <input type="text" value="${u.default_role||''}" placeholder="e.g. Camera Operator" data-default-role="${u.id}"
-              style="flex:1;font-size:12px;padding:4px 8px;border:0.5px solid var(--border-light);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+              style="flex:1;font-size:12px;padding:4px 8px;border:1px solid var(--border-light);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
           </div>
           ${!isSelf ? `<div style="margin-top:10px;text-align:right"><button class="row-btn" data-save-user="${u.id}" style="font-size:11px">Save changes</button></div>` : ''}
         </div>`

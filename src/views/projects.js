@@ -246,7 +246,7 @@ export class ProjectsView {
                 <button id="pf-ai-toggle" class="btn-cancel" style="font-size:11px;padding:3px 8px">Paste text</button>
               </div>
               <div id="pf-ai-panel" style="display:none">
-                <textarea id="pf-ai-text" placeholder="Paste your email thread, brief, or any project info here…" style="width:100%;min-height:100px;padding:8px 10px;font-size:12px;border:0.5px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.5;margin-bottom:8px"></textarea>
+                <textarea id="pf-ai-text" placeholder="Paste your email thread, brief, or any project info here…" style="width:100%;min-height:100px;padding:8px 10px;font-size:12px;border:1px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.5;margin-bottom:8px"></textarea>
                 <button id="pf-ai-extract" class="btn-primary" style="font-size:12px;width:100%">✨ Extract project details</button>
               </div>
               <div id="pf-ai-status" style="font-size:11px;color:var(--text-tertiary);display:none"></div>
@@ -266,7 +266,7 @@ export class ProjectsView {
               <span style="font-size:11px;color:var(--accent)">+ Add new contact instead</span>
             </div>
 
-            <div id="pf-new-contact-panel" style="display:none;border:0.5px solid var(--border-med);border-radius:var(--radius-md);padding:14px;background:var(--bg-secondary);margin-bottom:4px">
+            <div id="pf-new-contact-panel" style="display:none;border:1px solid var(--border-med);border-radius:var(--radius-md);padding:14px;background:var(--bg-secondary);margin-bottom:4px">
               <div style="font-size:11px;font-weight:500;color:var(--text-secondary);margin-bottom:12px;text-transform:uppercase;letter-spacing:0.4px">New contact details</div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
                 <div class="field" style="margin:0"><div class="field-label">First name</div><input type="text" id="pf-nc-first" placeholder="First name" /></div>
@@ -280,7 +280,7 @@ export class ProjectsView {
             </div>
 
             <div id="pf-brief-field" style="display:none">
-              <div class="field"><div class="field-label">Brief</div><textarea id="pf-brief" style="width:100%;min-height:70px;padding:8px 10px;font-size:13px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.5"></textarea></div>
+              <div class="field"><div class="field-label">Brief</div><textarea id="pf-brief" style="width:100%;min-height:70px;padding:8px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.5"></textarea></div>
             </div>
 
             <div id="pf-shoot-fields" style="display:none">
@@ -475,7 +475,7 @@ export class ProjectsView {
 
       <div class="proj-layout">
         <div class="proj-main">
-          <div style="display:flex;align-items:center;gap:0;border-bottom:0.5px solid var(--border-light);margin-bottom:20px">
+          <div style="display:flex;align-items:center;gap:0;border-bottom:1px solid var(--border-light);margin-bottom:20px">
             <div class="proj-tab-bar" style="flex:1;border-bottom:none">
               ${TABS.map(t => `<button class="proj-tab ${t.id===tab?'active':''}" data-tab="${t.id}">${t.label}</button>`).join('')}
             </div>
@@ -594,7 +594,7 @@ export class ProjectsView {
               ? new Date(d.due).toLocaleDateString('en-GB',{day:'numeric',month:'short'})
               : ''
             return `
-            <div class="deliv-row" style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:0.5px solid var(--border-light)${isOverdue?';background:rgba(239,68,68,0.04);border-radius:6px;margin:1px 0':''}">
+            <div class="deliv-row" style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border-light)${isOverdue?';background:rgba(239,68,68,0.04);border-radius:6px;margin:1px 0':''}">
               <input type="checkbox" ${d.done?'checked':''} data-pv-deliv="${p.id},${i}" style="width:15px;height:15px;cursor:pointer;flex-shrink:0" />
               <span style="font-size:13px;flex:1;min-width:0;${d.done?'text-decoration:line-through;color:var(--text-tertiary)':''}">${esc(d.text)}</span>
               ${dueLabel ? `<span style="font-size:11px;color:${dueColour};white-space:nowrap;flex-shrink:0;font-weight:${isOverdue||isDueSoon?'500':'400'}">${isOverdue?'⚠ ':isDueSoon?'⏰ ':''}${dueLabel}</span>` : ''}
@@ -603,9 +603,9 @@ export class ProjectsView {
           }).join('')}
         </div>
         ${this.app.permissions?.projects_edit ? `
-        <div style="padding:10px 14px 14px;border-top:0.5px solid var(--border-light);display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-          <input type="text" id="pv-new-deliv-text" placeholder="Add deliverable…" style="flex:1;min-width:120px;font-size:12px;padding:5px 8px;border:0.5px solid var(--border-light);border-radius:6px;background:transparent;color:var(--text-primary);font-family:var(--font);outline:none" />
-          <input type="date" id="pv-new-deliv-due" title="Due date" style="font-size:11px;padding:5px 7px;border:0.5px solid var(--border-light);border-radius:6px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none;flex-shrink:0" />
+        <div style="padding:10px 14px 14px;border-top:1px solid var(--border-light);display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <input type="text" id="pv-new-deliv-text" placeholder="Add deliverable…" style="flex:1;min-width:120px;font-size:12px;padding:5px 8px;border:1px solid var(--border-light);border-radius:6px;background:transparent;color:var(--text-primary);font-family:var(--font);outline:none" />
+          <input type="date" id="pv-new-deliv-due" title="Due date" style="font-size:11px;padding:5px 7px;border:1px solid var(--border-light);border-radius:6px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none;flex-shrink:0" />
           <button class="btn-secondary" id="pv-add-deliv" style="font-size:12px;white-space:nowrap">+ Add</button>
         </div>` : ''}
       </div>
@@ -621,7 +621,7 @@ export class ProjectsView {
             return `<div style="margin:10px 0">
               <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">${label}</div>
               ${members.map(c => `
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:13px;border-bottom:0.5px solid var(--border-light)">
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:13px;border-bottom:1px solid var(--border-light)">
                   <span style="font-weight:500">${esc(c.name)}</span>
                   <div style="display:flex;gap:12px;align-items:center">
                     <span style="color:var(--text-tertiary);font-size:12px">${esc(c.role||'')}</span>
@@ -638,7 +638,7 @@ export class ProjectsView {
         <div class="proj-panel-head">Shot list</div>
         <div style="padding:0 14px">
           ${shots.map((s,i) => `
-            <div style="display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:0.5px solid var(--border-light)">
+            <div style="display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid var(--border-light)">
               <input type="checkbox" ${s.done?'checked':''} data-pv-shot="${p.id},${i}" style="width:15px;height:15px;cursor:pointer;flex-shrink:0;margin-top:1px" />
               <span style="font-size:13px">${esc(s.text)}</span>
             </div>`).join('')}
@@ -682,7 +682,7 @@ export class ProjectsView {
           const label = sh.name || sh.location_name || 'Untitled shoot'
           const statusColor = sh.status === 'sent' ? '#6ec96e' : 'var(--text-tertiary)'
           const gc = sh.general_call || dates[0]?.general_call || ''
-          return `<div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:var(--bg-secondary);border-radius:var(--radius-md);border:0.5px solid var(--border-light);margin-bottom:8px;cursor:pointer" data-open-shoot="${sh.id}">
+          return `<div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:var(--bg-secondary);border-radius:var(--radius-md);border:1px solid var(--border-light);margin-bottom:8px;cursor:pointer" data-open-shoot="${sh.id}">
             <div style="flex:1;min-width:0">
               <div style="font-size:14px;font-weight:500;margin-bottom:3px">${esc(label)}</div>
               <div style="font-size:12px;color:var(--text-tertiary)">${esc(d)}${esc(dEnd)}${gc?' · GC '+esc(gc):''}${sh.location_name?' · '+esc(sh.location_name):''}</div>
@@ -702,7 +702,7 @@ export class ProjectsView {
         ${this.app.permissions?.budgets_edit ? `<button class="btn-primary" id="pv-new-budget">+ Create budget</button>` : ''}
       </div>
       ${linked.length ? linked.map(b => `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:var(--bg-secondary);border-radius:var(--radius-md);border:0.5px solid var(--border-light);margin-bottom:8px;cursor:pointer" data-open-budget="${b.id}">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:var(--bg-secondary);border-radius:var(--radius-md);border:1px solid var(--border-light);margin-bottom:8px;cursor:pointer" data-open-budget="${b.id}">
           <div>
             <div style="font-size:14px;font-weight:500;margin-bottom:3px">${esc(b.name)}</div>
             ${b.signed_off ? '<div style="font-size:12px;color:#6ec96e">✓ Signed off</div>' : ''}
@@ -1019,7 +1019,7 @@ export class ProjectsView {
     const shareUrl = sh.shoot_token ? `${origin}/call/${sh.shoot_token}` : ''
 
     overlay.innerHTML = `
-      <div style="position:sticky;top:0;background:var(--bg-primary);border-bottom:0.5px solid var(--border-light);padding:10px 20px;display:flex;align-items:center;gap:12px;z-index:10">
+      <div style="position:sticky;top:0;background:var(--bg-primary);border-bottom:1px solid var(--border-light);padding:10px 20px;display:flex;align-items:center;gap:12px;z-index:10">
         <button class="btn-secondary" id="se-close" style="flex-shrink:0">← Back to project</button>
         <div style="flex:1;min-width:0">
           <input id="se-name" value="${esc(sh.name||'')}" placeholder="Shoot name — e.g. Day 1 Peak District" style="width:100%;background:transparent;border:none;outline:none;font-size:15px;font-weight:500;color:var(--text-primary);font-family:var(--font);padding:3px 0" />
@@ -1333,7 +1333,7 @@ export class ProjectsView {
   }
 
   _shootLocHTML(l, i) {
-    return `<div class="se-loc-row" style="border:0.5px solid var(--border-med);border-radius:var(--radius-md);padding:10px;margin-bottom:8px;background:var(--bg-secondary)" data-loc-idx="${i}">
+    return `<div class="se-loc-row" style="border:1px solid var(--border-med);border-radius:var(--radius-md);padding:10px;margin-bottom:8px;background:var(--bg-secondary)" data-loc-idx="${i}">
       <div style="display:flex;gap:6px;margin-bottom:6px">
         <input type="text" class="bl-in w" value="${esc(l.name||'')}" placeholder="Location name" data-loc-field="${i},name" style="flex:1;font-size:12px;padding:5px 8px" />
         <input type="time" class="bl-in w" value="${esc(l.move_time||'')}" placeholder="Move time" data-loc-field="${i},move_time" style="width:90px;font-size:12px;padding:5px 8px" />
@@ -1434,7 +1434,7 @@ export class ProjectsView {
     const allNames = (crew||[]).filter(c=>c.name).map(c=>c.name)
     const assigned = h.assigned_crew||[]
     const allAssigned = allNames.length > 0 && allNames.every(n => assigned.includes(n))
-    return `<div class="se-hotel-card" style="border:0.5px solid var(--border-med);border-radius:var(--radius-md);padding:12px;margin-bottom:8px;background:var(--bg-secondary)" data-hotel-idx="${i}">
+    return `<div class="se-hotel-card" style="border:1px solid var(--border-med);border-radius:var(--radius-md);padding:12px;margin-bottom:8px;background:var(--bg-secondary)" data-hotel-idx="${i}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
         <input type="text" class="proj-input" value="${esc(h.name||'')}" placeholder="Hotel name" data-hotel-field="${i},name" style="flex:1;margin-right:8px" />
         <button class="row-btn" style="color:#c03020;flex-shrink:0" data-hotel-rem="${i}">×</button>
@@ -1453,7 +1453,7 @@ export class ProjectsView {
       <div style="display:flex;flex-wrap:wrap;gap:6px" id="se-hotel-crew-${i}">
         ${allNames.map(name => {
           const checked = assigned.includes(name)
-          return `<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;background:var(--bg-primary);border:0.5px solid var(--border-med);border-radius:20px;padding:3px 10px">
+          return `<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;background:var(--bg-primary);border:1px solid var(--border-med);border-radius:20px;padding:3px 10px">
             <input type="checkbox" ${checked?'checked':''} data-hotel-crew="${i}" data-crew-name="${esc(name)}" style="cursor:pointer;width:12px;height:12px" />
             ${esc(name)}
           </label>`
@@ -1469,7 +1469,7 @@ export class ProjectsView {
       return `<div style="font-size:12px;color:var(--text-tertiary);padding:4px 0">No equipment categories added yet. Click <strong style="color:var(--text-primary)">+ Add category</strong> to start (e.g. Camera, Hard Drives, Misc, Catering).</div>`
     }
     return eq.map((e, i) => `
-      <div class="se-equip-card" style="border:0.5px solid var(--border-med);border-radius:var(--radius-md);padding:10px;margin-bottom:8px;background:var(--bg-secondary)" data-equip-idx="${i}">
+      <div class="se-equip-card" style="border:1px solid var(--border-med);border-radius:var(--radius-md);padding:10px;margin-bottom:8px;background:var(--bg-secondary)" data-equip-idx="${i}">
         <div style="display:grid;grid-template-columns:1fr 140px 28px;gap:6px;margin-bottom:6px">
           <input type="text" class="proj-input" value="${esc(e.category||'')}" placeholder="Category — e.g. Camera Equipment" data-equip-field="${i},category" style="font-size:13px;font-weight:500" />
           <input type="text" class="proj-input" value="${esc(e.supplier||'')}" placeholder="Supplied by — e.g. C/O Production" data-equip-field="${i},supplier" style="font-size:12px" />
@@ -1491,7 +1491,7 @@ export class ProjectsView {
       const total = totalItems(r), packed = packedItems(r)
       const pct = total > 0 ? Math.round(packed/total*100) : 0
       const pctColor = pct === 100 ? '#6ec96e' : pct > 50 ? '#f59e0b' : 'var(--text-tertiary)'
-      return `<div style="border:0.5px solid var(--border-med);border-radius:var(--radius-md);padding:12px;margin-bottom:8px;background:var(--bg-secondary)" data-rig-idx="${i}">
+      return `<div style="border:1px solid var(--border-med);border-radius:var(--radius-md);padding:12px;margin-bottom:8px;background:var(--bg-secondary)" data-rig-idx="${i}">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
           <div style="flex:1;min-width:0;margin-right:8px">
             <input type="text" class="proj-input" value="${esc(r.name||'')}" placeholder="${isCam?'Camera rig name — e.g. Sony FX6 Main':'Misc kit name — e.g. Audio bag'}" data-rig-field="${i},name" style="font-weight:500;margin-bottom:6px" />
@@ -1534,23 +1534,23 @@ export class ProjectsView {
         <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:800px">
           <thead>
             <tr style="background:var(--bg-secondary)">
-              <th style="padding:8px;text-align:left;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:0.5px solid var(--border-light);width:18%">Hazard</th>
-              <th style="padding:8px;text-align:left;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:0.5px solid var(--border-light);width:13%">Who at risk</th>
-              <th style="padding:8px;text-align:left;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:0.5px solid var(--border-light);width:18%">Existing controls</th>
-              <th style="padding:8px;text-align:center;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:0.5px solid var(--border-light)" title="Likelihood">L</th>
-              <th style="padding:8px;text-align:center;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:0.5px solid var(--border-light)" title="Severity">S</th>
-              <th style="padding:8px;text-align:center;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:0.5px solid var(--border-light)">Risk</th>
-              <th style="padding:8px;text-align:left;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:0.5px solid var(--border-light);width:18%">Additional controls</th>
-              <th style="padding:8px;text-align:center;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:0.5px solid var(--border-light)" title="Residual likelihood">rL</th>
-              <th style="padding:8px;text-align:center;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:0.5px solid var(--border-light)" title="Residual severity">rS</th>
-              <th style="padding:8px;text-align:center;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:0.5px solid var(--border-light)">Res.</th>
-              <th style="padding:8px;text-align:left;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:0.5px solid var(--border-light);width:10%">Owner</th>
-              <th style="padding:8px;border-bottom:0.5px solid var(--border-light);width:24px"></th>
+              <th style="padding:8px;text-align:left;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:1px solid var(--border-light);width:18%">Hazard</th>
+              <th style="padding:8px;text-align:left;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:1px solid var(--border-light);width:13%">Who at risk</th>
+              <th style="padding:8px;text-align:left;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:1px solid var(--border-light);width:18%">Existing controls</th>
+              <th style="padding:8px;text-align:center;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:1px solid var(--border-light)" title="Likelihood">L</th>
+              <th style="padding:8px;text-align:center;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:1px solid var(--border-light)" title="Severity">S</th>
+              <th style="padding:8px;text-align:center;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:1px solid var(--border-light)">Risk</th>
+              <th style="padding:8px;text-align:left;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:1px solid var(--border-light);width:18%">Additional controls</th>
+              <th style="padding:8px;text-align:center;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:1px solid var(--border-light)" title="Residual likelihood">rL</th>
+              <th style="padding:8px;text-align:center;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:1px solid var(--border-light)" title="Residual severity">rS</th>
+              <th style="padding:8px;text-align:center;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:1px solid var(--border-light)">Res.</th>
+              <th style="padding:8px;text-align:left;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);border-bottom:1px solid var(--border-light);width:10%">Owner</th>
+              <th style="padding:8px;border-bottom:1px solid var(--border-light);width:24px"></th>
             </tr>
           </thead>
           <tbody>
             ${hazards.map((h, i) => `
-              <tr style="border-bottom:0.5px solid var(--border-light);vertical-align:top">
+              <tr style="border-bottom:1px solid var(--border-light);vertical-align:top">
                 <td style="padding:6px 4px"><textarea class="bl-in w" data-ra-field="${i},hazard" style="width:100%;min-height:60px;font-size:11px;padding:4px 6px;resize:vertical">${esc(h.hazard||'')}</textarea></td>
                 <td style="padding:6px 4px"><textarea class="bl-in w" data-ra-field="${i},who_at_risk" style="width:100%;min-height:60px;font-size:11px;padding:4px 6px;resize:vertical">${esc(h.who_at_risk||'')}</textarea></td>
                 <td style="padding:6px 4px"><textarea class="bl-in w" data-ra-field="${i},existing_controls" style="width:100%;min-height:60px;font-size:11px;padding:4px 6px;resize:vertical">${esc(h.existing_controls||'')}</textarea></td>
@@ -1570,7 +1570,7 @@ export class ProjectsView {
       </div>
       <button class="add-line" id="se-ra-add" style="margin-top:10px">+ add hazard</button>
 
-      <div style="margin-top:16px;padding-top:14px;border-top:0.5px solid var(--border-light)">
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border-light)">
         <div class="proj-field-label" style="margin-bottom:6px">Assessment notes</div>
         <textarea class="proj-textarea" id="se-ra-notes" style="width:100%;min-height:50px;font-size:12px" placeholder="Overall assessment notes, contingencies, etc.">${esc(ra.notes||'')}</textarea>
       </div>
@@ -1788,13 +1788,13 @@ export class ProjectsView {
         picker.id = 'rig-lib-picker'
         picker.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px'
         picker.innerHTML = `<div style="background:var(--bg-primary);border-radius:var(--radius-lg);max-width:440px;width:100%;max-height:80vh;display:flex;flex-direction:column">
-          <div style="padding:14px 18px;border-bottom:0.5px solid var(--border-light);display:flex;justify-content:space-between;align-items:center">
+          <div style="padding:14px 18px;border-bottom:1px solid var(--border-light);display:flex;justify-content:space-between;align-items:center">
             <strong style="font-size:14px">Add rig from library</strong>
             <button id="rig-pick-close" class="row-btn">×</button>
           </div>
           <div style="padding:14px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:6px">
             ${library.map(r => `
-              <div data-pick-rig="${r.id}" style="padding:10px 12px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);cursor:pointer" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''">
+              <div data-pick-rig="${r.id}" style="padding:10px 12px;border:1px solid var(--border-med);border-radius:var(--radius-md);cursor:pointer" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''">
                 <div style="font-size:13px;font-weight:500">${esc(r.name)}</div>
                 ${r.notes ? `<div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">${esc(r.notes)}</div>` : ''}
               </div>`).join('')}
@@ -2178,7 +2178,7 @@ export class ProjectsView {
       const esc_ = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
       picker.innerHTML = `
         <div style="background:var(--bg-primary);border-radius:var(--radius-lg);max-width:500px;width:100%;max-height:80vh;display:flex;flex-direction:column">
-          <div style="padding:14px 18px;border-bottom:0.5px solid var(--border-light);display:flex;justify-content:space-between;align-items:center">
+          <div style="padding:14px 18px;border-bottom:1px solid var(--border-light);display:flex;justify-content:space-between;align-items:center">
             <strong style="font-size:14px">Copy risk assessment from another shoot</strong>
             <button id="ra-pick-close" class="row-btn">×</button>
           </div>
@@ -2187,7 +2187,7 @@ export class ProjectsView {
             ${available.map(s => {
               const hazardCount = Array.isArray(s.risk_assessment?.hazards) ? s.risk_assessment.hazards.length : 0
               const d = s.shoot_date ? new Date(s.shoot_date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : ''
-              return `<div class="ra-pick-item" data-pick-id="${s.id}" style="padding:10px 12px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);margin-bottom:6px;cursor:pointer" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''">
+              return `<div class="ra-pick-item" data-pick-id="${s.id}" style="padding:10px 12px;border:1px solid var(--border-med);border-radius:var(--radius-md);margin-bottom:6px;cursor:pointer" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''">
                 <div style="font-size:13px;font-weight:500">${esc_(s.name || s.location_name || 'Untitled shoot')}</div>
                 <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">${esc_(s.project_name)} · ${esc_(d)} · ${hazardCount} hazards</div>
               </div>`
@@ -2957,7 +2957,7 @@ export class ProjectsView {
         <div style="margin-top:14px">
           <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Recent entries</div>
           ${allEntries.slice(0,8).map(e => `
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:0.5px solid var(--border-light);font-size:12px" data-eid="${e.id}">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border-light);font-size:12px" data-eid="${e.id}">
               <div>
                 <span style="color:var(--text-primary)">${e.crew_name}</span>
                 <span style="color:var(--text-tertiary)"> · ${e.line_label}</span>
@@ -2986,7 +2986,7 @@ export class ProjectsView {
 
   _renderTrackingLink(mc, p, el) {
     const linkDiv = document.createElement('div')
-    linkDiv.style.cssText = 'margin-top:14px;padding-top:12px;border-top:0.5px solid var(--border-light)'
+    linkDiv.style.cssText = 'margin-top:14px;padding-top:12px;border-top:1px solid var(--border-light)'
     const appUrl = import.meta.env.VITE_APP_URL || window.location.origin
 
     // Quick log form for logged-in users
@@ -3027,24 +3027,24 @@ export class ProjectsView {
       <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Quick log time</div>
       <div style="display:flex;flex-direction:column;gap:6px">
         <div style="display:flex;gap:6px">
-          <select id="ql-crew" style="flex:1;font-size:12px;padding:5px 8px;border:0.5px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none">
+          <select id="ql-crew" style="flex:1;font-size:12px;padding:5px 8px;border:1px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none">
             ${crewOptions}
           </select>
           <input type="number" id="ql-hours" placeholder="Hours" min="0.5" max="24" step="0.5"
-            style="width:70px;font-size:12px;padding:5px 8px;border:0.5px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;text-align:right" />
+            style="width:70px;font-size:12px;padding:5px 8px;border:1px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;text-align:right" />
         </div>
-        <select id="ql-task" style="font-size:12px;padding:5px 8px;border:0.5px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none">
+        <select id="ql-task" style="font-size:12px;padding:5px 8px;border:1px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none">
           ${trackableLines.map(l => `<option value="${l.label}" data-bid="${l.budgetId||''}">${l.label}${l.budgetName?' ('+l.budgetName+')':''}</option>`).join('')}
         </select>
         <div style="display:flex;gap:6px">
           <input type="date" id="ql-date" value="${new Date().toISOString().split('T')[0]}" max="${new Date().toISOString().split('T')[0]}"
-            style="flex:1;font-size:12px;padding:5px 8px;border:0.5px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+            style="flex:1;font-size:12px;padding:5px 8px;border:1px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
           <button class="btn-primary" id="ql-submit" style="font-size:12px;padding:5px 14px;white-space:nowrap">Log</button>
         </div>
         <div id="ql-msg" style="font-size:11px;display:none"></div>
       </div>
 
-      <div style="margin-top:12px;padding-top:10px;border-top:0.5px solid var(--border-light)">`
+      <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border-light)">`
 
     el.appendChild(linkDiv)
 
@@ -3079,7 +3079,7 @@ export class ProjectsView {
       linkSection.innerHTML = `
         <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Public tracking link</div>
         <div style="display:flex;gap:6px;align-items:center">
-          <input type="text" value="${url}" readonly style="flex:1;font-size:10px;padding:5px 7px;background:var(--bg-secondary);border:0.5px solid var(--border-light);border-radius:6px;color:var(--text-secondary);font-family:monospace;cursor:pointer" onclick="this.select()" />
+          <input type="text" value="${url}" readonly style="flex:1;font-size:10px;padding:5px 7px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:6px;color:var(--text-secondary);font-family:monospace;cursor:pointer" onclick="this.select()" />
           <button class="row-btn" id="copy-track-link" style="font-size:10px;white-space:nowrap">Copy</button>
           <button class="row-btn" id="revoke-track-link" style="font-size:10px;color:#b03020;white-space:nowrap">Revoke</button>
         </div>`
@@ -3123,7 +3123,7 @@ export class ProjectsView {
         return
       }
       el.innerHTML = entries.map(e => `
-        <div style="padding:10px 0;border-bottom:0.5px solid var(--border-light)">
+        <div style="padding:10px 0;border-bottom:1px solid var(--border-light)">
           <div style="font-size:13px;line-height:1.6;white-space:pre-line;color:var(--text-primary)">${esc(e.note)}</div>
           <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px;display:flex;justify-content:space-between">
             <span>${fmtDate(e.entry_date)}${e.created_by?' · '+esc(e.created_by):''}</span>
@@ -3187,7 +3187,7 @@ export class ProjectsView {
         return d.toLocaleDateString('en-GB',{day:'numeric',month:'short'}) + ' ' + d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})
       }
       el.innerHTML = log.map(entry => `
-        <div style="padding:8px 0;border-bottom:0.5px solid var(--border-light);display:flex;gap:8px;align-items:flex-start">
+        <div style="padding:8px 0;border-bottom:1px solid var(--border-light);display:flex;gap:8px;align-items:flex-start">
           <div style="width:6px;height:6px;border-radius:50%;background:var(--border-strong);flex-shrink:0;margin-top:5px"></div>
           <div style="flex:1;min-width:0">
             <div style="font-size:12px;color:var(--text-primary);line-height:1.5">${entry.summary}</div>
@@ -3312,7 +3312,7 @@ export class ProjectsView {
               </div>`}
 
               <div style="margin-bottom:10px">
-                <div style="display:grid;grid-template-columns:1fr 60px 80px 90px 110px 28px;gap:6px;padding:5px 0;border-bottom:0.5px solid var(--border-light);margin-bottom:4px">
+                <div style="display:grid;grid-template-columns:1fr 60px 80px 90px 110px 28px;gap:6px;padding:5px 0;border-bottom:1px solid var(--border-light);margin-bottom:4px">
                   <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px">Item</div>
                   <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;text-align:right">Qty</div>
                   <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px">Unit</div>
@@ -3406,8 +3406,8 @@ export class ProjectsView {
             </div>
             <div style="padding:0 16px">
               ${(this._peCrewTab||'crew')==='crew' && this.app.allUsers?.length > 0 ? `
-              <div style="padding:10px 0;border-bottom:0.5px solid var(--border-light);display:flex;gap:8px;align-items:center">
-                <select id="pe-add-user-select" style="flex:1;font-size:12px;padding:5px 8px;border:0.5px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none">
+              <div style="padding:10px 0;border-bottom:1px solid var(--border-light);display:flex;gap:8px;align-items:center">
+                <select id="pe-add-user-select" style="flex:1;font-size:12px;padding:5px 8px;border:1px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none">
                   <option value="">+ Add team member…</option>
                   ${this.app.allUsers.filter(u => !crew.some(c => c.name === u.name)).map(u =>
                     `<option value="${esc(u.clerk_id)}" data-name="${esc(u.name)}" data-role="${esc(u.default_role||'')}">
@@ -3419,8 +3419,8 @@ export class ProjectsView {
               ${(this._peCrewTab||'crew')==='crew' ? (() => {
                 const subbies = (this.app.contacts||[]).filter(c => c.type === 'subcontractor' && c.status !== 'Retired' && !crew.some(cr => cr.name === (c.first_name+' '+c.last_name).trim()))
                 return subbies.length ? `
-                <div style="padding:10px 0;border-bottom:0.5px solid var(--border-light);display:flex;gap:8px;align-items:center">
-                  <select id="pe-add-sub-select" style="flex:1;font-size:12px;padding:5px 8px;border:0.5px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none">
+                <div style="padding:10px 0;border-bottom:1px solid var(--border-light);display:flex;gap:8px;align-items:center">
+                  <select id="pe-add-sub-select" style="flex:1;font-size:12px;padding:5px 8px;border:1px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none">
                     <option value="">+ Add subcontractor…</option>
                     ${subbies.map(c => {
                       const name = (c.first_name+' '+c.last_name).trim()
@@ -3430,7 +3430,7 @@ export class ProjectsView {
                   </select>
                 </div>` : ''
               })() : ''}
-              <div style="display:grid;grid-template-columns:1fr 1fr 40px;gap:8px;padding:6px 0;border-bottom:0.5px solid var(--border-light)">
+              <div style="display:grid;grid-template-columns:1fr 1fr 40px;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-light)">
                 <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Name</div>
                 <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Role</div>
                 <div></div>
@@ -3461,7 +3461,7 @@ export class ProjectsView {
                 </div>`).join('')}
               ${linked.length === 0 ? '<div style="font-size:12px;color:var(--text-tertiary)">No budgets linked yet</div>' : ''}
               ${unlinked.length ? `
-                <select id="pe-link-budget" style="font-size:12px;padding:5px 8px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);font-family:var(--font);background:var(--bg-primary);color:var(--text-primary);outline:none;margin-top:4px">
+                <select id="pe-link-budget" style="font-size:12px;padding:5px 8px;border:1px solid var(--border-med);border-radius:var(--radius-md);font-family:var(--font);background:var(--bg-primary);color:var(--text-primary);outline:none;margin-top:4px">
                   <option value="">+ link a budget…</option>
                   ${unlinked.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('')}
                 </select>` : ''}
@@ -3617,7 +3617,7 @@ export class ProjectsView {
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:9999'
     const defaultName = `${p.name} — ${new Date().toLocaleDateString('en-GB',{month:'short',year:'numeric'})}`
     overlay.innerHTML = `
-      <div style="background:var(--bg-primary);border:0.5px solid var(--border-med);border-radius:var(--radius-lg);padding:24px;width:400px" onclick="event.stopPropagation()">
+      <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);padding:24px;width:400px" onclick="event.stopPropagation()">
         <div style="font-size:14px;font-weight:600;margin-bottom:4px">Create budget from retainer</div>
         <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:16px">Retainer items will be mapped to budget line items.</div>
         <div class="field" style="margin-bottom:12px">
@@ -3747,10 +3747,10 @@ export class ProjectsView {
       <input type="checkbox" class="deliverable-check" ${d.done?'checked':''} data-${pfx}deliv-done="${i}" />
       <input type="text" class="deliverable-text" value="${esc(d.text)}" placeholder="${isMonthly ? 'e.g. Monthly edit, Social content...' : 'e.g. 90s hero film, 3x social cutdowns...'}" data-${pfx}deliv-text="${i}" />
       <input type="date" class="deliverable-date" value="${d.due||''}" data-${pfx}deliv-due="${i}"
-        title="Due date" style="width:120px;font-size:11px;padding:3px 6px;border:0.5px solid var(--border-light);border-radius:5px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none;flex-shrink:0" />
+        title="Due date" style="width:120px;font-size:11px;padding:3px 6px;border:1px solid var(--border-light);border-radius:5px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none;flex-shrink:0" />
       ${dueLabel ? `<span style="font-size:10px;color:${dueColour};white-space:nowrap;flex-shrink:0;font-weight:${overdue||dueSoon?'500':'400'}">${overdue?'⚠ ':dueSoon?'⏰ ':''}${dueLabel}</span>` : ''}
       <input type="url" class="deliverable-link-input" value="${esc(d.link||'')}" placeholder="Link (e.g. Frame.io…)" data-${pfx}deliv-link="${i}"
-        style="min-width:0;flex:0 1 160px;font-size:11px;padding:3px 6px;border:0.5px solid var(--border-light);border-radius:5px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none" />
+        style="min-width:0;flex:0 1 160px;font-size:11px;padding:3px 6px;border:1px solid var(--border-light);border-radius:5px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none" />
       <button class="row-btn" style="color:#b03020;flex-shrink:0" data-${pfx}deliv-rem="${i}">×</button>
     </div>`
   }
