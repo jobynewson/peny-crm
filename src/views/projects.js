@@ -482,7 +482,7 @@ export class ProjectsView {
             <button class="proj-sidebar-toggle" id="sidebar-toggle" title="${sidebarCollapsed?'Show sidebar':'Hide sidebar'}">${sidebarCollapsed?'▷':'◁'}</button>
           </div>
 
-          <div id="pv-tab-content">
+          <div id="pv-tab-content" style="display:flex;flex-direction:column;gap:12px">
             ${this._renderTab(tab, p, cl, linked)}
           </div>
         </div>
