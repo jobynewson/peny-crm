@@ -286,7 +286,15 @@ export class ContactsView {
     if (!c) return
     const dp = this.app.container.querySelector('#detail-panel')
     if (!dp) return
-    dp.innerHTML = this.detailHTML(c)
+    dp.innerHTML = `<button class="detail-close-btn" id="detail-close-btn"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 3L4 8l6 5"/></svg> Back</button>` + this.detailHTML(c)
+    dp.classList.add('open')
+    const backdrop = document.getElementById('detail-panel-backdrop')
+    if (backdrop) backdrop.classList.add('open')
+    dp.querySelector('#detail-close-btn')?.addEventListener('click', () => {
+      dp.classList.remove('open')
+      const b = document.getElementById('detail-panel-backdrop')
+      if (b) b.classList.remove('open')
+    })
     dp.querySelectorAll('[data-open-project]').forEach(el => {
       el.addEventListener('click', () => this.app.openProject(el.dataset.openProject))
     })

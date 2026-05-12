@@ -337,7 +337,7 @@ export class App {
   render() {
     const showDetail = this.currentView === 'contacts'
     this.container.innerHTML = `
-      <div class="sidebar">
+      <div class="sidebar" id="sidebar">
         <div class="logo"><img src="/peny-logo.png" alt="Peny" /></div>
         <div class="nav-label">Main</div>
         ${[['dashboard','Dashboard',this.iconPipeline()],['contacts','Contacts',this.iconContacts()],['projects','Projects',this.iconProjects()],['budgets','Budgets',this.iconBudgets()]].map(([id,label,icon])=>`
@@ -356,8 +356,10 @@ export class App {
           </div>
         </div>
       </div>
+      <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
       <div class="main">
         <div class="topbar">
+          <button class="hamburger-btn" id="hamburger-btn" title="Menu"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h12M2 8h12M2 12h12"/></svg></button>
           <div class="topbar-title" id="view-title">${this.viewTitle()}</div>
           <div id="topbar-actions" style="display:flex;gap:8px;align-items:center">${this.topbarSearch()}${this.topbarButton()}
             <button id="shortcut-hint" title="Keyboard shortcuts" style="width:24px;height:24px;border-radius:50%;border:0.5px solid var(--border-med);background:transparent;color:var(--text-tertiary);font-size:12px;cursor:pointer;font-family:var(--font);display:flex;align-items:center;justify-content:center;flex-shrink:0">?</button>
@@ -365,7 +367,7 @@ export class App {
         </div>
         <div class="content" id="main-content"></div>
       </div>
-      ${showDetail ? `<div class="detail-panel" id="detail-panel"><div class="detail-empty">Select a contact<br>to view details</div></div>` : ''}
+      ${showDetail ? `<div class="detail-panel-backdrop" id="detail-panel-backdrop"></div><div class="detail-panel" id="detail-panel"><div class="detail-empty">Select a contact<br>to view details</div></div>` : ''}
     `
     this.bindNav()
     this.renderCurrentView()
@@ -412,6 +414,26 @@ export class App {
         toggleBtn.innerHTML = this.iconTheme()
       })
     }
+
+    // Mobile: hamburger sidebar toggle
+    const hamburger = this.container.querySelector('#hamburger-btn')
+    const sidebar = this.container.querySelector('#sidebar')
+    const sidebarBackdrop = this.container.querySelector('#sidebar-backdrop')
+    hamburger?.addEventListener('click', () => {
+      sidebar.classList.toggle('open')
+      sidebarBackdrop.classList.toggle('open')
+    })
+    sidebarBackdrop?.addEventListener('click', () => {
+      sidebar.classList.remove('open')
+      sidebarBackdrop.classList.remove('open')
+    })
+
+    // Mobile: close detail panel backdrop
+    const detailBackdrop = this.container.querySelector('#detail-panel-backdrop')
+    detailBackdrop?.addEventListener('click', () => {
+      document.getElementById('detail-panel')?.classList.remove('open')
+      detailBackdrop.classList.remove('open')
+    })
 
     this.bindTopbarBtn()
     const search = this.container.querySelector('#contact-search')
@@ -1549,6 +1571,39 @@ export class App {
       .pdf-detail-total-row{display:flex;justify-content:space-between;padding:5px 0;font-size:12px;border-bottom:0.5px solid #f0efe9}.pdf-detail-total-row:last-child{border-bottom:none}
       .pdf-detail-total-row.grand{font-size:16px;font-weight:500;padding-top:12px}.pdf-detail-total-row .dk{color:#6b6b66}
       .pdf-detail-footer{margin-top:40px;display:flex;justify-content:space-between;font-size:9px;color:#c0c0b8;border-top:0.5px solid #e0dfda;padding-top:10px}
+      .hamburger-btn{display:none;width:32px;height:32px;border-radius:var(--radius-md);border:0.5px solid var(--border-light);background:transparent;color:var(--text-secondary);cursor:pointer;align-items:center;justify-content:center;flex-shrink:0;transition:background 0.12s,color 0.12s}
+      .hamburger-btn:hover{background:var(--bg-secondary);color:var(--text-primary)}
+      .sidebar-backdrop,.detail-panel-backdrop{display:none;position:fixed;inset:0}
+      .sidebar-backdrop{background:rgba(0,0,0,0.4);z-index:299}
+      .detail-panel-backdrop{background:rgba(0,0,0,0.3);z-index:199}
+      .sidebar-backdrop.open,.detail-panel-backdrop.open{display:block}
+      .detail-close-btn{display:none;align-items:center;gap:8px;padding:12px 20px;background:transparent;border:none;border-bottom:0.5px solid var(--border-light);font-size:13px;color:var(--text-secondary);cursor:pointer;font-family:var(--font);width:100%;text-align:left;transition:background 0.1s,color 0.1s}
+      .detail-close-btn:hover{background:var(--bg-secondary);color:var(--text-primary)}
+      @media(max-width:768px){
+        .hamburger-btn{display:flex}
+        .sidebar{position:fixed;top:0;left:0;height:100vh;z-index:300;transform:translateX(-100%);transition:transform 0.22s ease;box-shadow:4px 0 24px rgba(0,0,0,0.12)}
+        .sidebar.open{transform:translateX(0)}
+        .detail-panel{position:fixed;top:0;right:0;height:100vh;width:min(340px,100vw);z-index:200;transform:translateX(100%);transition:transform 0.22s ease;box-shadow:-4px 0 24px rgba(0,0,0,0.12)}
+        .detail-panel.open{transform:translateX(0)}
+        .detail-close-btn{display:flex}
+        .stats-row{grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px}
+        .content{padding:16px}
+        .topbar{padding:10px 14px;gap:8px}
+        .topbar-title{font-size:14px}
+        .search-wrap input{width:140px}
+        .contact-row,.col-header{grid-template-columns:1fr 70px!important}
+        .contact-row>*:nth-child(2),.contact-row>*:nth-child(3),.contact-row>*:nth-child(4),.col-header>*:nth-child(2),.col-header>*:nth-child(3),.col-header>*:nth-child(4){display:none}
+        .kanban-wrap{display:flex;overflow-x:auto;padding-bottom:8px;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch}
+        .kanban-col{flex-shrink:0;width:220px;scroll-snap-align:start}
+        .budget-layout{flex-direction:column}
+        .budget-sidebar-panel{width:100%!important}
+        .proj-layout{flex-direction:column}
+        .proj-sidebar{width:100%!important}
+        .field-row{grid-template-columns:1fr}
+        .modal{max-width:calc(100vw - 24px)}
+        .panel-header{gap:6px}
+        .bh-row{gap:8px}
+      }
     `
     document.head.appendChild(style)
   }
