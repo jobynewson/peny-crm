@@ -143,7 +143,7 @@ const totalsHTML = `<div class="q-totals">
 document.getElementById('root').innerHTML = `
   <div class="q-header">
     <div>
-      <img src="/peny-logo-white.png" alt="${esc(studio?.name||'')}" class="q-logo" onerror="this.style.display='none'" />
+      <img src="/slate-logo-white.png" alt="${esc(studio?.name||'')}" class="q-logo" onerror="this.style.display='none'" />
       <div class="q-title">${esc(budget.name)}</div>
       <div class="q-meta">Prepared${budget.prepared_by?' by '+esc(budget.prepared_by):''} · ${fmtDate(budget.created_at)}${client?' · For '+esc(client.company||client.name):''}</div>
     </div>
@@ -157,7 +157,7 @@ document.getElementById('root').innerHTML = `
   ${sectionsHTML}
   ${totalsHTML}
   ${budget.notes ? `<div class="q-notes">${esc(budget.notes)}</div>` : ''}
-  <div class="q-footer">Powered by Peny${studio?.website?' · '+esc(studio.website):''}</div>`
+  <div class="q-footer">Powered by Slate${studio?.website?' · '+esc(studio.website):''}</div>`
 </script>
 </body>
 </html>

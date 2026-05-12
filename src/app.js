@@ -28,7 +28,7 @@ export class App {
 
   mount(container) {
     this.container = container
-    const saved = localStorage.getItem('peny-theme') || 'dark'
+    const saved = localStorage.getItem('slate-theme') || 'dark'
     document.documentElement.setAttribute('data-theme', saved)
     this.injectGlobalStyles()
     this._restoreFromHash()   // parse URL before first render
@@ -338,7 +338,7 @@ export class App {
     const showDetail = this.currentView === 'contacts'
     this.container.innerHTML = `
       <div class="sidebar">
-        <div class="logo"><img src="/peny-logo.png" alt="Peny" /></div>
+        <div class="logo"><img src="/slate-logo.png" alt="Slate" /></div>
         <div class="nav-label">Main</div>
         ${[['dashboard','Dashboard',this.iconPipeline()],['contacts','Contacts',this.iconContacts()],['projects','Projects',this.iconProjects()],['budgets','Budgets',this.iconBudgets()]].map(([id,label,icon])=>`
           <div class="nav-item ${this.currentView===id?'active':''}" data-view="${id}">${icon} ${label}</div>`).join('')}
@@ -408,7 +408,7 @@ export class App {
         const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
         const next = isDark ? 'light' : 'dark'
         document.documentElement.setAttribute('data-theme', next)
-        localStorage.setItem('peny-theme', next)
+        localStorage.setItem('slate-theme', next)
         toggleBtn.innerHTML = this.iconTheme()
       })
     }
@@ -943,7 +943,7 @@ export class App {
           <div class="panel-header"><span class="panel-title">Company details</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
             <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">These details appear in quote PDFs and exports.</div>
-            <div class="field"><div class="field-label">Company name</div><input type="text" id="s-name" value="${s.company_name??''}" placeholder="Peny" /></div>
+            <div class="field"><div class="field-label">Company name</div><input type="text" id="s-name" value="${s.company_name??''}" placeholder="Slate" /></div>
             <div class="field-row">
               <div class="field"><div class="field-label">Email address</div><input type="email" id="s-email" value="${s.email??''}" /></div>
               <div class="field"><div class="field-label">Phone</div><input type="text" id="s-phone" value="${s.phone??''}" /></div>
@@ -987,7 +987,7 @@ export class App {
           <div class="panel-header"><span class="panel-title">Invoicing defaults (for crew call sheets)</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
             <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">The email and boilerplate shown to crew on call sheets so they know where to send invoices and what to include.</div>
-            <div class="field"><div class="field-label">Default invoicing email</div><input type="email" id="s-inv-email" value="${s.invoicing_email??''}" placeholder="e.g. finance@wearepeny.com" /></div>
+            <div class="field"><div class="field-label">Default invoicing email</div><input type="email" id="s-inv-email" value="${s.invoicing_email??''}" placeholder="e.g. finance@yourstudio.com" /></div>
             <div class="field">
               <div class="field-label">Invoicing boilerplate</div>
               <textarea id="s-inv-boilerplate" style="width:100%;min-height:140px;padding:8px 11px;font-size:12px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.6" placeholder="In order to comply with HMRC regulations and for us to pay your invoice, please include the following:&#10;1. Correct Banking Information&#10;2. Dates worked and service provided&#10;3. Full name as registered with HMRC…">${s.invoicing_boilerplate??''}</textarea>
@@ -1331,7 +1331,7 @@ export class App {
 
   async saveSettings(mc) {
     const data = {
-      company_name: mc.querySelector('#s-name')?.value.trim()||'Peny',
+      company_name: mc.querySelector('#s-name')?.value.trim()||'Slate',
       email:        mc.querySelector('#s-email')?.value.trim()||null,
       phone:        mc.querySelector('#s-phone')?.value.trim()||null,
       website:      mc.querySelector('#s-website')?.value.trim()||null,

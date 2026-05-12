@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Log Time — Peny</title>
+  <title>Log Time — Slate</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
     :root {
@@ -57,7 +57,7 @@
   </style>
 </head>
 <body>
-  <img src="/peny-logo-white.png" alt="Peny" class="logo" onerror="this.style.display='none'" />
+  <img src="/slate-logo-white.png" alt="Slate" class="logo" onerror="this.style.display='none'" />
   <div id="root"><div class="loading">Loading…</div></div>
 
   <script type="module">
@@ -68,8 +68,8 @@
     }
 
     // ── Persistence (improvements 1 & 2) ─────────────────────────────────────
-    const LS_NAME = 'peny_track_name_' + token
-    const LS_LAST = 'peny_track_last_' + token
+    const LS_NAME = 'slate_track_name_' + token
+    const LS_LAST = 'slate_track_last_' + token
     let savedName = localStorage.getItem(LS_NAME) || ''
     let lastEntry = null
     try { lastEntry = JSON.parse(localStorage.getItem(LS_LAST)) } catch {}

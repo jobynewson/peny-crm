@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Packing List — Peny</title>
+  <title>Packing List — Slate</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
     :root {
@@ -111,7 +111,7 @@
   <div class="save-toast" id="toast">✓ Saved</div>
 
   <script type="module">
-    const LENS_LIBRARY_KEY = 'peny-lens-library'
+    const LENS_LIBRARY_KEY = 'slate-lens-library'
 
     const DEFAULT_ITEMS = [
       { section: 'Camera' },
@@ -500,7 +500,7 @@
       const root = document.getElementById('root')
       root.innerHTML = `
         <div class="hero">
-          <img src="/peny-logo-white.png" class="logo" alt="Peny" onerror="this.style.display='none'" />
+          <img src="/slate-logo-white.png" class="logo" alt="Slate" onerror="this.style.display='none'" />
           <div class="hero-title">${esc(project.name)}${shoot.name?' — '+esc(shoot.name):''}</div>
           <div class="hero-name">Kit packing list</div>
           ${dateStr ? `<div class="hero-date">${esc(dateStr)}</div>` : ''}

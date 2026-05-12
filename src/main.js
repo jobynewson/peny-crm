@@ -10,7 +10,7 @@ async function bootstrap() {
   document.body.innerHTML = `
     <div id="auth">
       <div id="auth-inner">
-        <img src="/peny-logo.png" alt="Peny" id="auth-logo" />
+        <img src="/slate-logo.png" alt="Slate" id="auth-logo" />
         <div id="sign-in"></div>
       </div>
     </div>
