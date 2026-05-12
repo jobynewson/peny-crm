@@ -1488,7 +1488,7 @@ export class App {
       .kanban-add{border:1px dashed var(--border-med);border-radius:var(--radius-md);padding:9px 12px;font-size:12px;color:var(--text-tertiary);cursor:pointer;text-align:center;background:transparent;width:100%;font-family:var(--font);transition:background 0.1s,color 0.1s}
       .kanban-add:hover{background:var(--bg-secondary);color:var(--text-secondary)}
       .proj-layout{display:flex;gap:20px;align-items:flex-start}
-      .proj-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:16px}.proj-sidebar{width:240px;flex-shrink:0;display:flex;flex-direction:column;gap:12px;transition:width 0.2s,opacity 0.2s}
+      .proj-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:12px}.proj-sidebar{width:240px;flex-shrink:0;display:flex;flex-direction:column;gap:12px;transition:width 0.2s,opacity 0.2s}
       .proj-sidebar.collapsed{width:0;overflow:hidden;opacity:0;pointer-events:none}
       .proj-tab-bar{display:flex;gap:0;border-bottom:1px solid var(--border-light);margin-bottom:20px;overflow-x:auto;scrollbar-width:none}
       .proj-tab-bar::-webkit-scrollbar{display:none}
@@ -1498,8 +1498,8 @@ export class App {
       .proj-sidebar-toggle{background:none;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:4px 8px;font-size:12px;color:var(--text-tertiary);cursor:pointer;flex-shrink:0}
       .proj-sidebar-toggle:hover{color:var(--text-primary);border-color:var(--border-strong)}
       .proj-panel{background:var(--bg-primary);border:1px solid var(--border-light);border-radius:var(--radius-lg);overflow:hidden;box-shadow:0 1px 3px rgba(9,30,66,0.06)}
-      .proj-panel-head{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);padding:11px 16px;border-bottom:1px solid var(--border-light);display:flex;align-items:center;gap:8px}
-      .proj-panel-body{padding:16px;display:flex;flex-direction:column;gap:12px}
+      .proj-panel-head{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);padding:10px 14px;border-bottom:1px solid var(--border-light);display:flex;align-items:center;gap:8px}
+      .proj-panel-body{padding:14px;display:flex;flex-direction:column;gap:12px}
       .proj-field-label{font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.4px;font-weight:600}
       .proj-input{width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;transition:border 0.12s,box-shadow 0.12s}
       .proj-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(0,82,204,0.1)}

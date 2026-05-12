@@ -580,7 +580,7 @@ export class ProjectsView {
             <button class="btn-cancel" id="pv-reset-delivs" style="font-size:11px">Reset</button>` : ''}
           </div>
         </div>
-        <div style="padding:0 14px">
+        <div style="padding:12px 14px">
           ${delivs.map((d,i) => {
             const today2 = new Date(); today2.setHours(0,0,0,0)
             const dueDate = d.due ? new Date(d.due) : null
@@ -613,7 +613,7 @@ export class ProjectsView {
       ${crew.length ? `
       <div class="proj-panel">
         <div class="proj-panel-head">Key crew</div>
-        <div style="padding:0 14px">
+        <div style="padding:12px 14px">
           ${['crew','on_camera','client'].map(type => {
             const label = type==='on_camera'?'On Camera':type==='client'?'Client':'Crew'
             const members = crew.filter(c=>(c.crew_type||'crew')===type)
@@ -636,7 +636,7 @@ export class ProjectsView {
       ${shots.length ? `
       <div class="proj-panel">
         <div class="proj-panel-head">Shot list</div>
-        <div style="padding:0 14px">
+        <div style="padding:12px 14px">
           ${shots.map((s,i) => `
             <div style="display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid var(--border-light)">
               <input type="checkbox" ${s.done?'checked':''} data-pv-shot="${p.id},${i}" style="width:15px;height:15px;cursor:pointer;flex-shrink:0;margin-top:1px" />
@@ -647,21 +647,21 @@ export class ProjectsView {
 
       <div class="proj-panel">
         <div class="proj-panel-head">Work log</div>
-        <div id="pv-worklog" style="padding:0 14px">
+        <div id="pv-worklog" style="padding:12px 14px">
           <div style="font-size:11px;color:var(--text-tertiary);padding:10px 0">Loading…</div>
         </div>
       </div>
 
       <div class="proj-panel">
         <div class="proj-panel-head">Time tracking</div>
-        <div id="pv-time" style="padding:0 14px 14px">
+        <div id="pv-time" style="padding:12px 14px 14px">
           <div style="font-size:11px;color:var(--text-tertiary);padding:10px 0">Loading…</div>
         </div>
       </div>
 
       <div class="proj-panel">
         <div class="proj-panel-head">Activity</div>
-        <div id="pv-activity" style="padding:0 14px">
+        <div id="pv-activity" style="padding:12px 14px">
           <div style="font-size:11px;color:var(--text-tertiary);padding:10px 0">Loading…</div>
         </div>
       </div>`
@@ -751,7 +751,7 @@ export class ProjectsView {
 
       <div class="proj-panel">
         <div class="proj-panel-head">Approvals</div>
-        <div style="padding:0 14px" id="pv-approvals">
+        <div style="padding:12px 14px" id="pv-approvals">
           ${(p.approvals||[]).map((a,ai) => {
             const cls = a.status==='Approved'?'apv-approved':a.status==='Changes requested'?'apv-changes':'apv-pending'
             return `<div class="approval-row">
@@ -1126,7 +1126,7 @@ export class ProjectsView {
                   <div style="padding:14px" id="se-crew-list-${type}">
                     ${this._shootCrewSectionHTML(sh, type)}
                   </div>
-                  <div style="padding:0 14px 12px">
+                  <div style="padding:12px 14px 12px">
                     <textarea class="proj-textarea" data-crew-section-notes="${type}" placeholder="Section notes — e.g. Bob, Jane and Tom are joining us on Thursday" style="min-height:36px;font-size:12px;font-style:italic">${esc(notes)}</textarea>
                   </div>
                 </div>
@@ -3445,7 +3445,7 @@ export class ProjectsView {
 
           <div class="proj-panel">
             <div class="proj-panel-head">Approvals</div>
-            <div style="padding:0 14px" id="pe-approvals">
+            <div style="padding:12px 14px" id="pe-approvals">
               ${approvals.map((a,i) => this.approvalHTML(p.id, a, i)).join('')}
             </div>
             <button class="add-line" id="pe-add-approval">+ add stage</button>
