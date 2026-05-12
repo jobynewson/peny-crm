@@ -162,3 +162,235 @@ body {
   font-size: 13px;
   color: var(--text-tertiary);
 }
+/* ─── Planning Board ──────────────────────────────────────────────────────── */
+/* Paste this block anywhere in src/style.css                                  */
+
+.plan-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.plan-add-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font);
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  border: 0.5px solid var(--border-med);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.plan-add-btn:hover {
+  background: var(--bg-secondary);
+  border-color: var(--border-strong, #aaa);
+  color: var(--text-primary);
+}
+
+.plan-add-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.plan-add-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* Board grid */
+.plan-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+/* Empty state */
+.plan-empty {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+
+.plan-empty-icon {
+  font-size: 36px;
+  margin-bottom: 14px;
+}
+
+.plan-empty-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.plan-empty-sub {
+  font-size: 13px;
+  line-height: 1.6;
+  max-width: 300px;
+}
+
+/* Base card */
+.plan-card {
+  position: relative;
+  border-radius: var(--radius-md);
+  border: 0.5px solid var(--border-light);
+  background: var(--bg-primary);
+  overflow: hidden;
+  transition: box-shadow 0.15s;
+}
+
+.plan-card:hover {
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+
+.plan-card:hover .plan-card-delete {
+  opacity: 1;
+}
+
+/* Delete button */
+.plan-card-delete {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0,0,0,0.5);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.12s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.plan-card-delete:hover {
+  background: #c0392b;
+}
+
+/* Note card */
+.plan-card--note {
+  background: #fffdf0;
+  border-color: #e8e0c0;
+  min-height: 120px;
+}
+
+.plan-note-text {
+  display: block;
+  width: 100%;
+  min-height: 120px;
+  padding: 16px;
+  font-size: 13px;
+  line-height: 1.65;
+  font-family: var(--font);
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.plan-note-text::placeholder {
+  color: #bbb;
+}
+
+/* Image card */
+.plan-card--image {
+  background: var(--bg-secondary);
+}
+
+.plan-image-wrap {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background: var(--bg-secondary);
+}
+
+.plan-image-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.plan-image-caption {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-family: var(--font);
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-top: 0.5px solid var(--border-light);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.plan-image-caption::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* Video card */
+.plan-card--video {
+  background: #0a0a0a;
+  border-color: #222;
+}
+
+.plan-video-embed {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #111;
+}
+
+.plan-video-embed iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.plan-video-raw-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  padding: 20px;
+  color: #999;
+  font-size: 12px;
+  text-decoration: none;
+  word-break: break-all;
+  text-align: center;
+}
+
+.plan-card--video .plan-image-caption {
+  color: #aaa;
+  background: #0a0a0a;
+  border-top-color: #222;
+}
+
+.plan-card--video .plan-image-caption::placeholder {
+  color: #555;
+}

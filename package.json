@@ -12,6 +12,7 @@
     "@clerk/backend": "^3.2.3",
     "@clerk/clerk-js": "^5.0.0",
     "@neondatabase/serverless": "^0.9.0",
+    "@vercel/blob": "^2.3.3",
     "drizzle-orm": "^0.30.0"
   },
   "devDependencies": {

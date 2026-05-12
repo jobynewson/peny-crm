@@ -1,4 +1,5 @@
 import { createProject, updateProject, deleteProject, linkBudgetToProject, unlinkBudgetFromProject, logActivity, getActivityLog, getTimeEntries, setTrackToken, deleteTimeEntry, getWorkLog, addWorkLogEntry, deleteWorkLogEntry } from '../db/client.js'
+import { renderPlanningTab, bindPlanningTab } from './planning-tab.js'
 
 const STAGES = ['Enquiry','Pre-production','In Production','Post','Delivered']
 const RETAINER_STAGE = 'Retainer'
@@ -686,12 +687,7 @@ export class ProjectsView {
   }
 
   _renderTabPlanning(p) {
-    return `
-      <div style="text-align:center;padding:60px 20px;color:var(--text-tertiary)">
-        <div style="font-size:32px;margin-bottom:12px">🗂</div>
-        <div style="font-size:15px;font-weight:500;color:var(--text-secondary);margin-bottom:8px">Planning boards coming soon</div>
-        <div style="font-size:13px;line-height:1.6;max-width:320px;margin:0 auto">Moodboards, shot reference images, and visual planning tools will live here once Vercel Blob is set up.</div>
-      </div>`
+    return renderPlanningTab(p)
   }
 
   _renderTabFiles(p) {
@@ -764,7 +760,10 @@ export class ProjectsView {
           // Update line-through style
           const span = el.nextElementSibling
           if (span) span.style.cssText = el.checked ? 'font-size:13px;text-decoration:line-through;color:var(--text-tertiary)' : 'font-size:13px'
-        })
+        }    if (tab === 'planning') {
+      bindPlanningTab(mc, p, this.app.userId)
+    }
+ )
       })
       mc.querySelectorAll('[data-pv-shot]').forEach(el => {
         el.addEventListener('change', async () => {
