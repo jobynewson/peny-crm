@@ -63,12 +63,21 @@ function renderNoteCard(card) {
   `
 }
 
+function imgSrc(url) {
+  if (!url) return ''
+  // Private Vercel Blob URLs require auth headers — proxy them server-side
+  if (url.includes('.private.blob.vercel-storage.com')) {
+    return `/api/blob-serve?url=${encodeURIComponent(url)}`
+  }
+  return esc(url)
+}
+
 function renderImageCard(card) {
   return `
     <div class="plan-card plan-card--image" data-card-id="${card.id}">
       <button class="plan-card-delete" data-delete="${card.id}" title="Remove">×</button>
       <div class="plan-image-wrap">
-        <img src="${esc(card.url)}" alt="${esc(card.alt || 'Planning image')}" loading="lazy" />
+        <img src="${imgSrc(card.url)}" alt="${esc(card.alt || 'Planning image')}" loading="lazy" />
       </div>
       <input
         class="plan-image-caption"
