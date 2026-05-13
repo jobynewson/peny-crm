@@ -732,14 +732,19 @@ export class App {
     const sevenDaysLater = new Date(today); sevenDaysLater.setDate(sevenDaysLater.getDate() + 7); sevenDaysLater.setHours(23,59,59,999)
     const upcomingDeliverables = []
     for (const p of this.projects) {
-      const sources = [
-        ...(Array.isArray(p.deliverables) ? p.deliverables : []),
-        ...(p.is_retainer && Array.isArray(p.monthly_deliverables) ? p.monthly_deliverables : []),
-      ]
-      for (const d of sources) {
+      const delivsArr = Array.isArray(p.deliverables) ? p.deliverables : []
+      const monthlyArr = p.is_retainer && Array.isArray(p.monthly_deliverables) ? p.monthly_deliverables : []
+      for (let i = 0; i < delivsArr.length; i++) {
+        const d = delivsArr[i]
         if (!d.text || d.done || !d.due) continue
         const due = new Date(d.due)
-        if (due <= sevenDaysLater) upcomingDeliverables.push({ d, p, due })
+        if (due <= sevenDaysLater) upcomingDeliverables.push({ d, p, due, idx: i, src: 'deliverables' })
+      }
+      for (let i = 0; i < monthlyArr.length; i++) {
+        const d = monthlyArr[i]
+        if (!d.text || d.done || !d.due) continue
+        const due = new Date(d.due)
+        if (due <= sevenDaysLater) upcomingDeliverables.push({ d, p, due, idx: i, src: 'monthly_deliverables' })
       }
     }
     upcomingDeliverables.sort((a, b) => a.due - b.due)
@@ -846,7 +851,7 @@ export class App {
         </div>
         <div id="db-upcoming-body" style="display:${this._dbUpcomingOpen ? 'block' : 'none'}">
           <div class="db-proj-list">
-            ${upcomingDeliverables.map(({ d, p, due }) => {
+            ${upcomingDeliverables.map(({ d, p, due, idx, src }) => {
               const daysUntil = Math.round((due - today) / 86400000)
               const overdue = daysUntil < 0
               const dueToday = daysUntil === 0
@@ -858,6 +863,7 @@ export class App {
               const dueDateStr = due.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
               return `<div class="db-proj-row db-upcoming-row" style="cursor:default">
                 <div class="db-proj-header" style="cursor:default;gap:10px">
+                  <input type="checkbox" class="db-deliv-check" data-deliv-pid="${p.id}" data-deliv-idx="${idx}" data-deliv-src="${src}" style="cursor:pointer;flex-shrink:0;width:15px;height:15px" />
                   ${duePill}
                   <span style="font-size:11px;color:var(--text-tertiary);white-space:nowrap;flex-shrink:0">${dueDateStr}</span>
                   <span class="db-proj-name-label" style="flex:2">${esc(d.text)}</span>
@@ -1014,6 +1020,31 @@ export class App {
       body.style.display = this._dbUpcomingOpen ? 'block' : 'none'
       if (chevron) chevron.classList.toggle('db-chevron--open', this._dbUpcomingOpen)
       localStorage.setItem('db_upcoming_open', String(this._dbUpcomingOpen))
+    })
+
+    // --- Upcoming deliverable completion checkboxes ---
+    mc.querySelectorAll('.db-deliv-check').forEach(cb => {
+      cb.addEventListener('click', e => e.stopPropagation())
+      cb.addEventListener('change', async () => {
+        const p = this.projects.find(x => x.id === cb.dataset.delivPid)
+        if (!p) return
+        const idx = +cb.dataset.delivIdx
+        const src = cb.dataset.delivSrc
+        const arr = p[src]
+        if (!arr || !arr[idx]) return
+        arr[idx].done = cb.checked
+        const row = cb.closest('.db-upcoming-row')
+        if (row) {
+          row.style.opacity = cb.checked ? '0.45' : ''
+          const nameLabel = row.querySelector('.db-proj-name-label')
+          if (nameLabel) nameLabel.style.textDecoration = cb.checked ? 'line-through' : ''
+        }
+        try {
+          const { updateProject } = await import('./db/client.js')
+          await updateProject(this.userId, p.id, { [src]: arr })
+          this.toast(cb.checked ? '✓ Deliverable marked done' : 'Deliverable unmarked')
+        } catch(e) { console.error('Deliverable save failed:', e) }
+      })
     })
 
     // --- Enquiries collapse ---
