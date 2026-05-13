@@ -1998,8 +1998,8 @@ export class ProjectsView {
               }
             })
           }
-          refreshDates()
           save()
+          requestAnimationFrame(() => refreshDates())
         })
       })
       overlay.querySelectorAll('[data-date-rem]').forEach(btn => {
@@ -4030,7 +4030,7 @@ export class ProjectsView {
     })
 
     mc.querySelector('#pe-ret-fee')?.addEventListener('change',   e => { p.retainer_fee   = parseFloat(e.target.value)||null; save() })
-    mc.querySelector('#pe-ret-start')?.addEventListener('change', e => { p.retainer_start = e.target.value||null; save(); this.renderEditor(mc) })
+    mc.querySelector('#pe-ret-start')?.addEventListener('change', e => { p.retainer_start = e.target.value||null; save(); requestAnimationFrame(() => this.renderEditor(mc)) })
     mc.querySelector('#pe-ret-alert')?.addEventListener('change', e => { p.retainer_alert = parseFloat(e.target.value)||80; save() })
 
     // Retainer items
@@ -4073,7 +4073,7 @@ export class ProjectsView {
       el.addEventListener('change', () => { p.deliverables[+el.dataset.delivText].text = el.value; save() })
     })
     mc.querySelectorAll('[data-deliv-due]').forEach(el => {
-      el.addEventListener('change', () => { p.deliverables[+el.dataset.delivDue].due = el.value || null; save(); this.renderEditor(mc) })
+      el.addEventListener('change', () => { p.deliverables[+el.dataset.delivDue].due = el.value || null; save(); requestAnimationFrame(() => this.renderEditor(mc)) })
     })
     mc.querySelectorAll('[data-deliv-link]').forEach(el => {
       el.addEventListener('change', () => { p.deliverables[+el.dataset.delivLink].link = el.value.trim() || null; save() })
@@ -4101,7 +4101,7 @@ export class ProjectsView {
       el.addEventListener('change', () => { p.monthly_deliverables[+el.dataset.monthlyDelivText].text = el.value; save() })
     })
     mc.querySelectorAll('[data-monthly-deliv-due]').forEach(el => {
-      el.addEventListener('change', () => { p.monthly_deliverables[+el.dataset.monthlyDelivDue].due = el.value || null; save(); this.renderEditor(mc) })
+      el.addEventListener('change', () => { p.monthly_deliverables[+el.dataset.monthlyDelivDue].due = el.value || null; save(); requestAnimationFrame(() => this.renderEditor(mc)) })
     })
     mc.querySelectorAll('[data-monthly-deliv-link]').forEach(el => {
       el.addEventListener('change', () => { p.monthly_deliverables[+el.dataset.monthlyDelivLink].link = el.value.trim() || null; save() })

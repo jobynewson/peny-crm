@@ -734,7 +734,7 @@ export class BudgetsView {
         b.signed_off_at = null
         b.signed_off_by = null
       }
-      save(); this.renderEditor(mc)
+      save(); requestAnimationFrame(() => this.renderEditor(mc))
     })
     mc.querySelector('#be-preparedby')?.addEventListener('change', e => { b.prepared_by = e.target.value; save() })
     mc.querySelector('#be-email')?.addEventListener('change',      e => { b.quote_email = e.target.value; save() })
@@ -807,7 +807,7 @@ export class BudgetsView {
         l.useDays = el.checked
         if (!el.checked) { l.prepDays = 0; l.days = 0; l.travelDays = 0 }
         save()
-        this.renderEditor(mc)
+        requestAnimationFrame(() => this.renderEditor(mc))
       })
     })
 
