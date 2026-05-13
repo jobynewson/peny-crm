@@ -1,6 +1,7 @@
 {
   "crons": [
-    { "path": "/api/reminders", "schedule": "0 9 * * *" }
+    { "path": "/api/reminders?type=deliverables", "schedule": "0 9 * * *" },
+    { "path": "/api/reminders?type=notes", "schedule": "0 21 * * *" }
   ],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },

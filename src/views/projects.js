@@ -609,6 +609,10 @@ export class ProjectsView {
         <div style="padding:10px 14px 14px;border-top:1px solid var(--border-light);display:flex;gap:6px;align-items:center;flex-wrap:wrap">
           <input type="text" id="pv-new-deliv-text" placeholder="Add deliverable…" style="flex:1;min-width:120px;font-size:12px;padding:5px 8px;border:1px solid var(--border-light);border-radius:6px;background:transparent;color:var(--text-primary);font-family:var(--font);outline:none" />
           <input type="date" id="pv-new-deliv-due" title="Due date" style="font-size:11px;padding:5px 7px;border:1px solid var(--border-light);border-radius:6px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none;flex-shrink:0" />
+          <select id="pv-new-deliv-assignee" title="Assignee" style="font-size:11px;padding:5px 7px;border:1px solid var(--border-light);border-radius:6px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none;flex-shrink:0">
+            <option value="">Assignee…</option>
+            ${(this.app.allUsers||[]).map(u => `<option value="${esc(u.id)}">${esc(u.name||u.email)}</option>`).join('')}
+          </select>
           <button class="btn-secondary" id="pv-add-deliv" style="font-size:12px;white-space:nowrap">+ Add</button>
         </div>` : ''}
       </div>
@@ -819,11 +823,12 @@ export class ProjectsView {
         try { p.deliverables.forEach(d => d.done = false); await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }); this.renderViewer(mc) } catch(e) { console.error(e) }
       })
       mc.querySelector('#pv-add-deliv')?.addEventListener('click', async () => {
-        const textEl = mc.querySelector('#pv-new-deliv-text')
-        const dueEl  = mc.querySelector('#pv-new-deliv-due')
+        const textEl     = mc.querySelector('#pv-new-deliv-text')
+        const dueEl      = mc.querySelector('#pv-new-deliv-due')
+        const assigneeEl = mc.querySelector('#pv-new-deliv-assignee')
         const text = textEl?.value.trim()
         if (!text) { textEl?.focus(); return }
-        p.deliverables.push({ text, done: false, due: dueEl?.value || null })
+        p.deliverables.push({ text, done: false, due: dueEl?.value || null, assignee_id: assigneeEl?.value || null })
         try { await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }); this.renderViewer(mc) } catch(e) { console.error(e) }
       })
       mc.querySelector('#pv-new-deliv-text')?.addEventListener('keydown', e => {
