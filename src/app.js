@@ -589,10 +589,11 @@ export class App {
   }
 
   async renderDashboard(mc) {
-    const stages = ['Enquiry','Pre-production','In Production','Post','Delivered']
+    const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
     const retainers = this.projects.filter(p => p.is_retainer)
     const regularProjects = this.projects.filter(p => !p.is_retainer)
-    const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    const liveProjects = regularProjects.filter(p => ['Pre-production','In Production','Post'].includes(p.status))
+    const enquiryProjects = regularProjects.filter(p => p.status === 'Enquiry')
 
     if (!this.projects.length) {
       mc.innerHTML = `
@@ -677,20 +678,157 @@ export class App {
     const fyMonths = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
     const fyLabel = `${fyMonths[fyStart-1]} ${fyYear}–${fyMonths[fyStart-1]} ${fyYear+1}`
 
+    // --- Helpers for comments UI ---
+    const relTime = ts => {
+      const diff = Date.now() - new Date(ts).getTime()
+      const m = Math.floor(diff / 60000)
+      if (m < 1) return 'just now'
+      if (m < 60) return `${m}m ago`
+      const h = Math.floor(m / 60)
+      if (h < 24) return `${h}h ago`
+      const d = Math.floor(h / 24)
+      if (d < 7) return `${d}d ago`
+      return new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+    }
+    const initials = name => (name||'?').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
+    const avatarColors = ['#4a90d9','#6ec96e','#f59e0b','#a78bfa','#ef4444','#06b6d4','#ec4899']
+    const avatarColor = id => {
+      if (!id) return avatarColors[0]
+      let h = 0
+      for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) & 0x7fffffff
+      return avatarColors[h % avatarColors.length]
+    }
+    const statusColor = s => ({ 'Pre-production': '#4a90d9', 'In Production': '#6ec96e', 'Post': '#f59e0b' }[s] || '#8590A2')
+
+    // --- Init persisted open/pin state ---
+    if (!this._dbPinned) {
+      try { this._dbPinned = new Set(JSON.parse(localStorage.getItem('db_pinned') || '[]')) }
+      catch { this._dbPinned = new Set() }
+    }
+    if (this._dbEnqOpen === undefined) {
+      this._dbEnqOpen = localStorage.getItem('db_enq_open') !== 'false'
+    }
+
+    const renderComment = (c, pid) => {
+      const ini = initials(c.author_name || 'Unknown')
+      const col = avatarColor(c.author_id)
+      return `<div class="db-comment${c.resolved ? ' db-comment--resolved' : ''}" data-cid="${c.id}" data-pid="${pid}">
+        <div class="db-avatar" style="background:${col}">${ini}</div>
+        <div class="db-comment-body">
+          <div class="db-comment-meta">
+            <span class="db-comment-author">${esc(c.author_name || 'Unknown')}</span>
+            <span class="db-comment-time">${relTime(c.timestamp)}</span>
+            <label class="db-resolve-label" title="${c.resolved ? 'Mark unresolved' : 'Mark resolved'}">
+              <input type="checkbox" class="db-resolve-cb" data-resolve-pid="${pid}" data-resolve-cid="${c.id}" ${c.resolved ? 'checked' : ''}>
+              <span class="db-resolve-icon${c.resolved ? ' db-resolve-icon--done' : ''}">✓</span>
+            </label>
+          </div>
+          <div class="db-comment-text${c.resolved ? ' db-comment-text--resolved' : ''}">${esc(c.text)}</div>
+          <button class="db-action-link db-reply-btn" data-reply-pid="${pid}" data-reply-cid="${c.id}">Reply</button>
+          ${(c.replies||[]).length ? `<div class="db-replies">${(c.replies||[]).map(r => `
+            <div class="db-reply">
+              <div class="db-avatar db-avatar--sm" style="background:${avatarColor(r.author_id)}">${initials(r.author_name||'?')}</div>
+              <div>
+                <div class="db-comment-meta">
+                  <span class="db-comment-author">${esc(r.author_name||'Unknown')}</span>
+                  <span class="db-comment-time">${relTime(r.timestamp)}</span>
+                </div>
+                <div class="db-comment-text">${esc(r.text)}</div>
+              </div>
+            </div>`).join('')}</div>` : ''}
+          <div class="db-reply-form" id="db-rf-${pid}-${c.id}" style="display:none">
+            <textarea class="db-reply-input" placeholder="Reply…" rows="2"></textarea>
+            <button class="btn-secondary" style="font-size:11px;padding:4px 12px;align-self:flex-end" data-post-reply-pid="${pid}" data-post-reply-cid="${c.id}">Reply</button>
+          </div>
+        </div>
+      </div>`
+    }
+
+    const renderProjectRow = p => {
+      const cl = this.contacts.find(c => c.id === p.client_id)
+      const clientName = cl ? `${cl.first_name} ${cl.last_name}` : ''
+      const comments = (p.dashboard_comments || [])
+      const isOpen = this._dbPinned.has(p.id)
+      const col = statusColor(p.status)
+      const delivs = (p.deliverables||[]).filter(d => d.text)
+      const doneCount = delivs.filter(d => d.done).length
+      const unresolvedCount = comments.filter(c => !c.resolved).length
+      return `<div class="db-proj-row" data-pid="${p.id}">
+        <div class="db-proj-header" data-toggle-pid="${p.id}">
+          <span class="db-chevron${isOpen ? ' db-chevron--open' : ''}" data-chevron="${p.id}">▶</span>
+          <span class="db-status-dot" style="background:${col}"></span>
+          <span class="db-proj-name-label">${esc(p.name)}</span>
+          ${clientName ? `<span class="db-proj-client-label">${esc(clientName)}</span>` : ''}
+          ${delivs.length ? `<span class="db-badge" style="color:${doneCount===delivs.length?'#6ec96e':'var(--text-tertiary)'}">${doneCount}/${delivs.length} done</span>` : ''}
+          ${unresolvedCount ? `<span class="db-badge" style="color:#f59e0b">${unresolvedCount} open</span>` : ''}
+          <span class="db-status-pill" style="color:${col};background:${col}18;border-color:${col}30">${p.status}</span>
+          <button class="db-pin-btn${this._dbPinned.has(p.id) ? ' db-pin-btn--on' : ''}" data-pin-pid="${p.id}" title="${this._dbPinned.has(p.id) ? 'Unpin (panel stays open)' : 'Pin open'}">⊙</button>
+          <button class="db-action-link" style="font-size:11px;padding:3px 8px" data-open-pid="${p.id}">Open ↗</button>
+        </div>
+        <div class="db-proj-body" id="db-body-${p.id}" style="display:${isOpen ? 'block' : 'none'}">
+          <div class="db-thread" id="db-thread-${p.id}">
+            ${comments.length
+              ? comments.map(c => renderComment(c, p.id)).join('')
+              : `<div class="db-no-comments">No comments yet — start the thread below</div>`}
+          </div>
+          <div class="db-add-comment">
+            <textarea class="db-comment-input" id="db-ci-${p.id}" placeholder="Add a comment…" rows="2"></textarea>
+            <button class="btn-primary" style="font-size:12px;padding:5px 14px;align-self:flex-end;flex-shrink:0" data-post-comment="${p.id}">Post</button>
+          </div>
+        </div>
+      </div>`
+    }
+
+    const statCards = `
+      <div class="stat-card stat-card--sm"><div class="stat-label">Pipeline</div><div class="stat-value stat-value--sm">${gbp(pipelineValue + retainerPipelineVal)}</div><div class="stat-sub">${regularProjects.length} project${regularProjects.length!==1?'s':''}${retainerPipelineVal>0?' + '+retainers.filter(p=>p.status==='Enquiry').length+' retainer enquir'+(retainers.filter(p=>p.status==='Enquiry').length===1?'y':'ies'):''}</div></div>
+      <div class="stat-card stat-card--sm"><div class="stat-label">Awaiting invoice</div><div class="stat-value stat-value--sm" style="color:#6ec96e">${gbp(awaitingVal)}</div><div class="stat-sub">${awaitingInvoice.length} budget${awaitingInvoice.length!==1?'s':''}</div></div>
+      <div class="stat-card stat-card--sm"><div class="stat-label">Invoiced this month</div><div class="stat-value stat-value--sm" style="color:#4a90d9">${gbp(invoicedMonthVal)}</div><div class="stat-sub">${invoicedThisMonth.length} budget${invoicedThisMonth.length!==1?'s':''}</div></div>
+      <div class="stat-card stat-card--sm"><div class="stat-label">Invoiced this quarter</div><div class="stat-value stat-value--sm" style="color:#4a90d9">${gbp(invoicedQtrVal)}</div><div class="stat-sub">${invoicedThisQtr.length} budget${invoicedThisQtr.length!==1?'s':''}</div></div>
+      <div class="stat-card stat-card--sm"><div class="stat-label">Invoiced this FY</div><div class="stat-value stat-value--sm" style="color:#4a90d9">${gbp(invoicedFYVal)}</div><div class="stat-sub">${fyLabel}</div></div>
+      <div class="stat-card stat-card--sm"><div class="stat-label">Retainer MRR</div><div class="stat-value stat-value--sm" style="color:#a78bfa">${gbp(retainerMRR)}</div><div class="stat-sub">per month</div></div>`
+
     mc.innerHTML = `
-      <div class="stats-row" style="margin-bottom:20px">
-        <div class="stat-card"><div class="stat-label">Pipeline</div><div class="stat-value">${gbp(pipelineValue + retainerPipelineVal)}</div><div class="stat-sub">${regularProjects.length} project${regularProjects.length!==1?'s':''}${retainerPipelineVal>0?' + '+retainers.filter(p=>p.status==='Enquiry').length+' retainer enquir'+(retainers.filter(p=>p.status==='Enquiry').length===1?'y':'ies'):''}</div></div>
-        <div class="stat-card"><div class="stat-label">Awaiting invoice</div><div class="stat-value" style="color:#6ec96e">${gbp(awaitingVal)}</div><div class="stat-sub">${awaitingInvoice.length} budget${awaitingInvoice.length!==1?'s':''}</div></div>
-        <div class="stat-card"><div class="stat-label">Invoiced this month</div><div class="stat-value" style="color:#4a90d9">${gbp(invoicedMonthVal)}</div><div class="stat-sub">${invoicedThisMonth.length} budget${invoicedThisMonth.length!==1?'s':''}</div></div>
-        <div class="stat-card"><div class="stat-label">Invoiced this quarter</div><div class="stat-value" style="color:#4a90d9">${gbp(invoicedQtrVal)}</div><div class="stat-sub">${invoicedThisQtr.length} budget${invoicedThisQtr.length!==1?'s':''}</div></div>
-        <div class="stat-card"><div class="stat-label">Invoiced this FY</div><div class="stat-value" style="color:#4a90d9">${gbp(invoicedFYVal)}</div><div class="stat-sub">${fyLabel}</div></div>
-        <div class="stat-card"><div class="stat-label">Retainer MRR</div><div class="stat-value" style="color:#a78bfa">${gbp(retainerMRR)}</div><div class="stat-sub">per month</div></div>
+      <!-- Live Projects -->
+      <div style="margin-bottom:28px">
+        <div class="db-section-head">
+          <span class="db-section-dot" style="background:#6ec96e"></span>
+          Live Projects
+          <span class="db-section-count">${liveProjects.length}</span>
+        </div>
+        ${liveProjects.length
+          ? `<div class="db-proj-list">${liveProjects.map(renderProjectRow).join('')}</div>`
+          : `<div style="color:var(--text-tertiary);font-size:13px;padding:12px 0 4px">No live projects yet.</div>`}
       </div>
+
+      <!-- Enquiries -->
+      <div style="margin-bottom:28px">
+        <div class="db-section-head db-enq-toggle" id="db-enq-toggle" style="cursor:pointer;user-select:none">
+          <span class="db-section-dot" style="background:#f59e0b"></span>
+          Enquiries
+          <span class="db-section-count">${enquiryProjects.length}</span>
+          <span class="db-chevron${this._dbEnqOpen ? ' db-chevron--open' : ''}" style="margin-left:auto" id="db-enq-chevron">▶</span>
+        </div>
+        <div id="db-enq-body" style="display:${this._dbEnqOpen ? 'block' : 'none'}">
+          ${enquiryProjects.length ? `<div class="db-enq-list">
+            ${enquiryProjects.map(p => {
+              const cl = this.contacts.find(c => c.id === p.client_id)
+              return `<div class="db-enq-row" data-open-pid="${p.id}">
+                <span class="db-proj-name-label">${esc(p.name)}</span>
+                ${cl ? `<span class="db-proj-client-label">${esc(cl.first_name+' '+cl.last_name)}</span>` : ''}
+                ${p.brief ? `<span class="db-enq-brief">${esc(p.brief.slice(0,90))}${p.brief.length>90?'…':''}</span>` : ''}
+              </div>`
+            }).join('')}
+          </div>` : `<div style="color:var(--text-tertiary);font-size:13px;padding:8px 0">No enquiries.</div>`}
+        </div>
+      </div>
+
+      <!-- Retainers -->
       ${retainers.length ? `
-      <div style="margin-bottom:24px">
-        <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:12px;display:flex;align-items:center;gap:8px">
-          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#a78bfa;flex-shrink:0"></span>
-          Retainers <span style="font-weight:500;color:var(--text-secondary)">${retainers.length}</span>
+      <div style="margin-bottom:28px">
+        <div class="db-section-head">
+          <span class="db-section-dot" style="background:#a78bfa"></span>
+          Retainers
+          <span class="db-section-count">${retainers.length}</span>
         </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px" id="retainer-cards">
           ${retainers.map(p => {
@@ -745,131 +883,215 @@ export class App {
         </div>
       </div>` : ''}
 
-      <div class="kanban-wrap">${stages.map(st => {
-        const col = regularProjects.filter(p => p.status === st)
-        return `<div class="kanban-col">
-          <div class="kanban-col-head">${st} <span class="kanban-count">${col.length}</span></div>
-          ${col.map(p => {
-          const cl = this.contacts.find(c => c.id === p.client_id)
-          const pipelineBudgets = (p.budget_ids || [])
-            .map(id => this.budgets.find(b => b.id === id))
-            .filter(b => b && b.signed_off)
-          const combinedTotal = pipelineBudgets.reduce((sum, b) => {
-            const tr = parseFloat(b.travel_rate)||50
-            const n = b.sections ? b.sections.filter(s=>s.enabled).reduce((t,s)=>{
-              return t + (s.lines||[]).reduce((lt,l)=>{
-                const useDays=!!(l.useDays??(l.travelDays!==undefined))
-                const d=parseFloat(l.days)||0,q=isNaN(parseFloat(l.qty))?1:parseFloat(l.qty),r=parseFloat(l.rate)||0,td=parseFloat(l.travelDays)||0
-                const disc=Math.min(Math.max(parseFloat(l.discount)||0,0),100)
-                const gross=useDays?d*q*r+td*(tr/100)*r:q*r
-                return lt+gross*(1-disc/100)
-              },0)
-            },0) : 0
-            const afterFee = n + n*((parseFloat(b.markup)||0)/100)
-            const afterCustom = afterFee + afterFee*((parseFloat(b.custom_pct)||0)/100)
-            return sum + afterCustom + (b.vat ? afterCustom*0.2 : 0)
-          }, 0)
-          const delivs = (p.deliverables||[]).filter(d=>d.text)
-          // Compute allocated hours from linked budgets
-          const allocHours = (p.budget_ids||[]).reduce((sum, bid) => {
-            const b = this.budgets.find(x => x.id === bid)
-            if (!b) return sum
-            return sum + (b.sections||[]).filter(s=>s.enabled).reduce((ss, s) =>
-              ss + (s.lines||[]).filter(l=>l.track_time&&l.item).reduce((ls, l) => {
-                const d = parseFloat(l.days)||0, q = isNaN(parseFloat(l.qty))?1:parseFloat(l.qty)
-                return ls + (l.useDays ? Math.round(d*q*8) : Math.round(q*8))
-              }, 0), 0)
-          }, 0)
-          return `<div class="kanban-card" data-open-pid="${p.id}" style="cursor:pointer">
-            <div class="kanban-card-title">${p.name}</div>
-            <div class="kanban-card-client">${cl ? cl.first_name+' '+cl.last_name : 'No client'}</div>
-            ${allocHours > 0 ? `<div style="margin-top:6px;display:flex;align-items:center;gap:6px">
-              <div style="flex:1;height:4px;background:var(--bg-secondary);border-radius:2px;overflow:hidden">
-                <div style="height:100%;width:0%;background:#4a90d9;border-radius:2px" data-hours-bar="${p.id}"></div>
-              </div>
-              <span style="font-size:10px;color:var(--text-tertiary);white-space:nowrap" data-hours-label="${p.id}">— / ${allocHours}h</span>
-            </div>` : ''}
-            ${delivs.length ? `
-              <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
-                ${delivs.map((d,di) => `
-                  <label style="display:flex;align-items:baseline;gap:6px;font-size:11px;cursor:pointer;color:${d.done?'var(--text-tertiary)':'var(--text-secondary)'}">
-                    <input type="checkbox" ${d.done?'checked':''} data-deliv-pid="${p.id}" data-deliv-idx="${di}" style="cursor:pointer;flex-shrink:0;margin-top:1px" />
-                    <span style="${d.done?'text-decoration:line-through':''}">${d.text}</span>
-                  </label>`).join('')}
-              </div>` : ''}
-            ${pipelineBudgets.length ? `
-              <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-light);display:flex;flex-direction:column;gap:3px">
-                ${pipelineBudgets.map(b => {
-                  const tr2=parseFloat(b.travel_rate)||50
-                  const n2=b.sections?b.sections.filter(s=>s.enabled).reduce((t,s)=>t+(s.lines||[]).reduce((lt,l)=>{const useDays=!!(l.useDays??(l.travelDays!==undefined));const d=parseFloat(l.days)||0,q=isNaN(parseFloat(l.qty))?1:parseFloat(l.qty),r=parseFloat(l.rate)||0,td=parseFloat(l.travelDays)||0,disc=Math.min(Math.max(parseFloat(l.discount)||0,0),100),gross=useDays?d*q*r+td*(tr2/100)*r:q*r;return lt+gross*(1-disc/100)},0),0):0
-                  const ae=n2+n2*((parseFloat(b.markup)||0)/100),ac=ae+ae*((parseFloat(b.custom_pct)||0)/100),t=ac+(b.vat?ac*0.2:0)
-                  return `<div style="display:flex;justify-content:space-between;font-size:11px">
-                    <span style="color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">${b.name}</span>
-                    <span style="color:var(--text-primary);font-weight:500;font-variant-numeric:tabular-nums">£${Math.round(t).toLocaleString('en-GB')}</span>
-                  </div>`
-                }).join('')}
-                ${pipelineBudgets.length > 1 ? `
-                  <div style="display:flex;justify-content:space-between;font-size:11px;margin-top:3px;padding-top:5px;border-top:1px solid var(--border-light)">
-                    <span style="color:var(--text-tertiary)">Combined</span>
-                    <span style="font-weight:600;font-variant-numeric:tabular-nums">£${Math.round(combinedTotal).toLocaleString('en-GB')}</span>
-                  </div>` : ''}
-              </div>` : ''}
-          </div>`
-        }).join('')}
-        </div>`
-      }).join('')}</div>`
+      <!-- Financial Summary -->
+      <div style="padding-top:20px;border-top:1px solid var(--border-light)">
+        <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:10px">Financial overview</div>
+        <div class="stats-row">${statCards}</div>
+      </div>`
 
-    // Open project on title click
-
+    // --- Open project links ---
     mc.querySelectorAll('[data-open-pid]').forEach(el => {
-      el.addEventListener('click', () => this.openProject(el.dataset.openPid))
+      el.addEventListener('click', e => { e.stopPropagation(); this.openProject(el.dataset.openPid) })
     })
-    // Deliverable tick without opening the project
-    mc.querySelectorAll('[data-deliv-pid]').forEach(el => {
-      el.addEventListener('click', e => e.stopPropagation())
-      el.addEventListener('change', async () => {
-        const p = this.projects.find(x => x.id === el.dataset.delivPid)
-        if (!p) return
-        const idx = +el.dataset.delivIdx
-        p.deliverables[idx].done = el.checked
-        const label = el.closest('label')
-        if (label) {
-          label.style.color = el.checked ? 'var(--text-tertiary)' : 'var(--text-secondary)'
-          const span = label.querySelector('span')
-          if (span) span.style.textDecoration = el.checked ? 'line-through' : ''
+
+    // --- Accordion toggle ---
+    mc.querySelectorAll('[data-toggle-pid]').forEach(el => {
+      el.addEventListener('click', e => {
+        if (e.target.closest('[data-pin-pid]') || e.target.closest('[data-open-pid]')) return
+        const pid = el.dataset.togglePid
+        const body = mc.querySelector(`#db-body-${pid}`)
+        const chevron = mc.querySelector(`[data-chevron="${pid}"]`)
+        if (!body) return
+        const opening = body.style.display === 'none'
+        body.style.display = opening ? 'block' : 'none'
+        if (chevron) chevron.classList.toggle('db-chevron--open', opening)
+        if (!opening && this._dbPinned.has(pid)) {
+          this._dbPinned.delete(pid)
+          el.querySelector(`[data-pin-pid="${pid}"]`)?.classList.remove('db-pin-btn--on')
+          localStorage.setItem('db_pinned', JSON.stringify([...this._dbPinned]))
         }
-        try {
-          const { updateProject } = await import('./db/client.js')
-          await updateProject(this.userId, p.id, { deliverables: p.deliverables })
-          this.toast(el.checked ? '✓ Deliverable marked done' : 'Deliverable unmarked')
-        } catch(e) { console.error('Deliverable save failed:', e) }
       })
     })
 
-    // Load hours bars asynchronously
-    const projectsWithHours = regularProjects.filter(p =>
-      mc.querySelector(`[data-hours-bar="${p.id}"]`)
-    )
-    if (projectsWithHours.length > 0) {
-      const { getTimeEntries } = await import('./db/client.js')
-      for (const p of projectsWithHours) {
-        try {
-          const entries = await getTimeEntries(p.id)
-          const logged = entries.reduce((s, e) => s + parseFloat(e.hours), 0)
-          const allocHours = parseInt(mc.querySelector(`[data-hours-label="${p.id}"]`)?.textContent?.split('/')[1]) || 0
-          const bar = mc.querySelector(`[data-hours-bar="${p.id}"]`)
-          const label = mc.querySelector(`[data-hours-label="${p.id}"]`)
-          if (bar && allocHours > 0) {
-            const pct = Math.min(100, Math.round(logged / allocHours * 100))
-            bar.style.width = pct + '%'
-            bar.style.background = pct >= 100 ? '#6ec96e' : '#4a90d9'
-          }
-          if (label) label.textContent = `${logged.toFixed(1)} / ${allocHours}h`
-        } catch(e) { /* silent */ }
-      }
-    }
+    // --- Pin open ---
+    mc.querySelectorAll('[data-pin-pid]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation()
+        const pid = btn.dataset.pinPid
+        const body = mc.querySelector(`#db-body-${pid}`)
+        const chevron = mc.querySelector(`[data-chevron="${pid}"]`)
+        if (this._dbPinned.has(pid)) {
+          this._dbPinned.delete(pid)
+          btn.classList.remove('db-pin-btn--on')
+          btn.title = 'Pin open'
+        } else {
+          this._dbPinned.add(pid)
+          btn.classList.add('db-pin-btn--on')
+          btn.title = 'Unpin (panel stays open)'
+          if (body) { body.style.display = 'block' }
+          if (chevron) chevron.classList.add('db-chevron--open')
+        }
+        localStorage.setItem('db_pinned', JSON.stringify([...this._dbPinned]))
+      })
+    })
 
-    // Load retainer current-period hours
+    // --- Enquiries collapse ---
+    mc.querySelector('#db-enq-toggle')?.addEventListener('click', () => {
+      const body = mc.querySelector('#db-enq-body')
+      const chevron = mc.querySelector('#db-enq-chevron')
+      if (!body) return
+      this._dbEnqOpen = body.style.display === 'none'
+      body.style.display = this._dbEnqOpen ? 'block' : 'none'
+      if (chevron) chevron.classList.toggle('db-chevron--open', this._dbEnqOpen)
+      localStorage.setItem('db_enq_open', String(this._dbEnqOpen))
+    })
+
+    // --- Resolve comment ---
+    mc.querySelectorAll('.db-resolve-cb').forEach(cb => {
+      cb.addEventListener('change', async e => {
+        e.stopPropagation()
+        const pid = cb.dataset.resolvePid
+        const cid = cb.dataset.resolveCid
+        const p = this.projects.find(x => x.id === pid)
+        if (!p) return
+        const comments = (p.dashboard_comments || []).map(c =>
+          c.id === cid ? { ...c, resolved: cb.checked } : c
+        )
+        p.dashboard_comments = comments
+        const commentEl = cb.closest('.db-comment')
+        if (commentEl) {
+          commentEl.classList.toggle('db-comment--resolved', cb.checked)
+          const icon = commentEl.querySelector('.db-resolve-icon')
+          if (icon) icon.classList.toggle('db-resolve-icon--done', cb.checked)
+          const txt = commentEl.querySelector('.db-comment-text')
+          if (txt) txt.classList.toggle('db-comment-text--resolved', cb.checked)
+        }
+        try {
+          const { updateProject } = await import('./db/client.js')
+          await updateProject(this.userId, pid, { dashboard_comments: comments })
+        } catch(err) { console.error('Comment resolve failed:', err) }
+      })
+    })
+
+    // --- Reply toggle ---
+    mc.querySelectorAll('.db-reply-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation()
+        const form = mc.querySelector(`#db-rf-${btn.dataset.replyPid}-${btn.dataset.replyCid}`)
+        if (!form) return
+        const isOpen = form.style.display !== 'none'
+        form.style.display = isOpen ? 'none' : 'flex'
+        if (!isOpen) form.querySelector('textarea')?.focus()
+      })
+    })
+
+    // --- Post reply ---
+    mc.querySelectorAll('[data-post-reply-pid]').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation()
+        const pid = btn.dataset.postReplyPid
+        const cid = btn.dataset.postReplyCid
+        const form = mc.querySelector(`#db-rf-${pid}-${cid}`)
+        const ta = form?.querySelector('textarea')
+        const text = ta?.value?.trim()
+        if (!text) return
+        const p = this.projects.find(x => x.id === pid)
+        if (!p) return
+        const authorName = this.appUser?.name || this.user?.primaryEmailAddress?.emailAddress || 'You'
+        const reply = { id: crypto.randomUUID(), text, author_id: this.userId, author_name: authorName, timestamp: new Date().toISOString() }
+        const comments = (p.dashboard_comments || []).map(c =>
+          c.id === cid ? { ...c, replies: [...(c.replies||[]), reply] } : c
+        )
+        p.dashboard_comments = comments
+        ta.value = ''
+        form.style.display = 'none'
+        const thread = mc.querySelector(`#db-thread-${pid}`)
+        if (thread) {
+          const commentEl = thread.querySelector(`[data-cid="${cid}"]`)
+          let repliesEl = commentEl?.querySelector('.db-replies')
+          if (!repliesEl) {
+            repliesEl = document.createElement('div')
+            repliesEl.className = 'db-replies'
+            commentEl.querySelector('.db-comment-body')?.insertBefore(repliesEl, commentEl.querySelector('.db-reply-form'))
+          }
+          const replyDiv = document.createElement('div')
+          replyDiv.className = 'db-reply'
+          replyDiv.innerHTML = `
+            <div class="db-avatar db-avatar--sm" style="background:${avatarColor(reply.author_id)}">${initials(reply.author_name)}</div>
+            <div>
+              <div class="db-comment-meta">
+                <span class="db-comment-author">${esc(reply.author_name)}</span>
+                <span class="db-comment-time">just now</span>
+              </div>
+              <div class="db-comment-text">${esc(reply.text)}</div>
+            </div>`
+          repliesEl.appendChild(replyDiv)
+        }
+        try {
+          const { updateProject } = await import('./db/client.js')
+          await updateProject(this.userId, pid, { dashboard_comments: comments })
+        } catch(err) { console.error('Reply save failed:', err) }
+      })
+    })
+
+    // --- Post comment ---
+    mc.querySelectorAll('[data-post-comment]').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation()
+        const pid = btn.dataset.postComment
+        const ta = mc.querySelector(`#db-ci-${pid}`)
+        const text = ta?.value?.trim()
+        if (!text) return
+        const p = this.projects.find(x => x.id === pid)
+        if (!p) return
+        const authorName = this.appUser?.name || this.user?.primaryEmailAddress?.emailAddress || 'You'
+        const comment = { id: crypto.randomUUID(), text, author_id: this.userId, author_name: authorName, timestamp: new Date().toISOString(), resolved: false, replies: [] }
+        if (!p.dashboard_comments) p.dashboard_comments = []
+        p.dashboard_comments.push(comment)
+        ta.value = ''
+        const thread = mc.querySelector(`#db-thread-${pid}`)
+        if (thread) {
+          const noComments = thread.querySelector('.db-no-comments')
+          if (noComments) noComments.remove()
+          thread.insertAdjacentHTML('beforeend', renderComment(comment, pid))
+          // Re-attach listeners for the new comment's controls
+          thread.querySelectorAll('.db-resolve-cb').forEach(cb2 => {
+            if (cb2._bound) return
+            cb2._bound = true
+            cb2.addEventListener('change', async ev => {
+              ev.stopPropagation()
+              const p2 = this.projects.find(x => x.id === cb2.dataset.resolvePid)
+              if (!p2) return
+              const comments2 = (p2.dashboard_comments||[]).map(c =>
+                c.id === cb2.dataset.resolveCid ? { ...c, resolved: cb2.checked } : c
+              )
+              p2.dashboard_comments = comments2
+              cb2.closest('.db-comment')?.classList.toggle('db-comment--resolved', cb2.checked)
+              cb2.closest('.db-comment')?.querySelector('.db-resolve-icon')?.classList.toggle('db-resolve-icon--done', cb2.checked)
+              cb2.closest('.db-comment')?.querySelector('.db-comment-text')?.classList.toggle('db-comment-text--resolved', cb2.checked)
+              try {
+                const { updateProject } = await import('./db/client.js')
+                await updateProject(this.userId, cb2.dataset.resolvePid, { dashboard_comments: comments2 })
+              } catch {}
+            })
+          })
+          thread.querySelectorAll('.db-reply-btn:not([_bound])').forEach(rb => {
+            rb.setAttribute('_bound', '1')
+            rb.addEventListener('click', ev => {
+              ev.stopPropagation()
+              const form = mc.querySelector(`#db-rf-${rb.dataset.replyPid}-${rb.dataset.replyCid}`)
+              if (form) { const open = form.style.display !== 'none'; form.style.display = open ? 'none' : 'flex'; if (!open) form.querySelector('textarea')?.focus() }
+            })
+          })
+        }
+        try {
+          const { updateProject } = await import('./db/client.js')
+          await updateProject(this.userId, pid, { dashboard_comments: p.dashboard_comments })
+        } catch(err) { console.error('Comment save failed:', err) }
+      })
+    })
+
+    // --- Retainer hours bars (async) ---
     if (retainers.length > 0) {
       const { getTimeEntries } = await import('./db/client.js')
       for (const p of retainers) {
@@ -884,60 +1106,39 @@ export class App {
           const [periodStart, periodEnd] = this._retainerPeriod(p.retainer_start)
           const allEntries = await getTimeEntries(p.id)
           const entries = periodStart
-            ? allEntries.filter(e => {
-                const d = new Date(e.entry_date)
-                return d >= periodStart && d < periodEnd
-              })
+            ? allEntries.filter(e => { const d = new Date(e.entry_date); return d >= periodStart && d < periodEnd })
             : allEntries
           const logged = entries.reduce((s, e) => s + parseFloat(e.hours), 0)
           const hours = allocH
           const pct = Math.min(100, Math.round(logged / hours * 100))
-          const alertPct = parseFloat(p.retainer_alert) || 80
-
-          const alertEl = mc.querySelector(`[data-ret-alert="${p.id}"]`)
           const alertPctVal = parseFloat(p.retainer_alert) || 80
-
-          // Per-item bars
+          const alertEl = mc.querySelector(`[data-ret-alert="${p.id}"]`)
           const items = p.retainer_items || []
           if (items.length) {
-            const periodMult3 = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}
+            const pm3 = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}
             items.forEach((item, ii) => {
-              const mult = periodMult3[item.period||'month'] || 1
-              const allocH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
-              if (!allocH) return
-              const itemLogged = entries.filter(e => e.line_label === item.label).reduce((s,e) => s + parseFloat(e.hours), 0)
-              const iPct = Math.min(100, Math.round(itemLogged / allocH * 100))
-              const iColour = iPct >= 100 ? '#ef4444' : iPct >= alertPctVal ? '#f59e0b' : '#a78bfa'
+              const mult = pm3[item.period||'month'] || 1
+              const aH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
+              if (!aH) return
+              const iL = entries.filter(e => e.line_label === item.label).reduce((s,e) => s + parseFloat(e.hours), 0)
+              const iPct = Math.min(100, Math.round(iL / aH * 100))
+              const iCol = iPct >= 100 ? '#ef4444' : iPct >= alertPctVal ? '#f59e0b' : '#a78bfa'
               const bar = mc.querySelector(`[data-ret-item-bar="${p.id}-${ii}"]`)
               const lbl = mc.querySelector(`[data-ret-item-label="${p.id}-${ii}"]`)
-              if (bar) { bar.style.width = iPct + '%'; bar.style.background = iColour }
-              if (lbl) { lbl.textContent = `${itemLogged.toFixed(1)} / ${allocH}h`; lbl.style.color = iPct >= alertPctVal ? iColour : '' }
+              if (bar) { bar.style.width = iPct + '%'; bar.style.background = iCol }
+              if (lbl) { lbl.textContent = `${iL.toFixed(1)} / ${aH}h`; lbl.style.color = iPct >= alertPctVal ? iCol : '' }
             })
-            // Overall alert
             const colour = pct >= 100 ? '#ef4444' : pct >= alertPctVal ? '#f59e0b' : '#a78bfa'
-            if (alertEl && pct >= alertPctVal && pct < 100) {
-              alertEl.style.display = 'block'; alertEl.style.color = colour
-              alertEl.textContent = `⚠ ${pct}% used overall`
-            }
-            if (alertEl && pct >= 100) {
-              alertEl.style.display = 'block'; alertEl.style.color = colour
-              alertEl.textContent = `⚠ Over allocation by ${(logged - hours).toFixed(1)}h`
-            }
+            if (alertEl && pct >= alertPctVal && pct < 100) { alertEl.style.display='block'; alertEl.style.color=colour; alertEl.textContent=`⚠ ${pct}% used overall` }
+            if (alertEl && pct >= 100) { alertEl.style.display='block'; alertEl.style.color=colour; alertEl.textContent=`⚠ Over allocation by ${(logged-hours).toFixed(1)}h` }
           } else {
-            // Fallback: single bar
             const bar = mc.querySelector(`[data-ret-bar="${p.id}"]`)
             const label = mc.querySelector(`[data-ret-label="${p.id}"]`)
             const colour = pct >= 100 ? '#ef4444' : pct >= alertPctVal ? '#f59e0b' : '#a78bfa'
             if (bar) { bar.style.width = pct + '%'; bar.style.background = colour }
             if (label) { label.textContent = `${logged.toFixed(1)} / ${hours}h`; label.style.color = pct >= alertPctVal ? colour : '' }
-            if (alertEl && pct >= alertPctVal && pct < 100) {
-              alertEl.style.display = 'block'; alertEl.style.color = colour
-              alertEl.textContent = `⚠ ${pct}% used — ${(hours - logged).toFixed(1)}h remaining`
-            }
-            if (alertEl && pct >= 100) {
-              alertEl.style.display = 'block'; alertEl.style.color = colour
-              alertEl.textContent = `⚠ Over allocation by ${(logged - hours).toFixed(1)}h`
-            }
+            if (alertEl && pct >= alertPctVal && pct < 100) { alertEl.style.display='block'; alertEl.style.color=colour; alertEl.textContent=`⚠ ${pct}% used — ${(hours-logged).toFixed(1)}h remaining` }
+            if (alertEl && pct >= 100) { alertEl.style.display='block'; alertEl.style.color=colour; alertEl.textContent=`⚠ Over allocation by ${(logged-hours).toFixed(1)}h` }
           }
         } catch(e) { /* silent */ }
       }
@@ -1637,6 +1838,60 @@ export class App {
         .filter-pill{font-size:12px;padding:4px 8px}
         .kanban-col{min-width:185px}
       }
+
+      /* ── Dashboard redesign ── */
+      .db-section-head{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:10px;user-select:none}
+      .db-section-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0}
+      .db-section-count{font-size:11px;font-weight:600;color:var(--text-secondary);background:var(--bg-tertiary);border-radius:3px;padding:1px 7px}
+      .db-proj-list{display:flex;flex-direction:column;gap:0;border:1px solid var(--border-light);border-radius:var(--radius-lg);overflow:hidden;background:var(--bg-primary);box-shadow:0 1px 3px rgba(9,30,66,0.06)}
+      .db-proj-row{border-bottom:1px solid var(--border-light)}.db-proj-row:last-child{border-bottom:none}
+      .db-proj-header{display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;user-select:none;transition:background 0.12s;min-height:44px}
+      .db-proj-header:hover{background:var(--bg-secondary)}
+      .db-chevron{font-size:9px;color:var(--text-tertiary);transition:transform 0.18s;flex-shrink:0;line-height:1;display:inline-block}
+      .db-chevron--open{transform:rotate(90deg)}
+      .db-status-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+      .db-proj-name-label{font-size:13px;font-weight:500;color:var(--text-primary);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .db-proj-client-label{font-size:12px;color:var(--text-secondary);white-space:nowrap;flex-shrink:0}
+      .db-badge{font-size:10px;color:var(--text-tertiary);white-space:nowrap;flex-shrink:0}
+      .db-status-pill{font-size:10px;font-weight:500;padding:2px 7px;border-radius:3px;border:1px solid;white-space:nowrap;flex-shrink:0;letter-spacing:0.2px}
+      .db-pin-btn{background:none;border:1px solid transparent;border-radius:var(--radius-sm);padding:3px 6px;font-size:13px;color:var(--text-tertiary);cursor:pointer;flex-shrink:0;line-height:1;transition:color 0.12s,border-color 0.12s,background 0.12s}
+      .db-pin-btn:hover{color:var(--text-secondary);border-color:var(--border-med);background:var(--bg-secondary)}
+      .db-pin-btn--on{color:var(--accent)!important;border-color:var(--accent)!important;background:var(--accent-subtle)!important}
+      .db-proj-body{border-top:1px solid var(--border-light);background:var(--bg-secondary)}
+      .db-thread{display:flex;flex-direction:column;gap:0;padding:4px 0}
+      .db-no-comments{padding:16px 20px;font-size:12px;color:var(--text-tertiary);font-style:italic}
+      .db-comment{display:flex;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border-light);transition:background 0.1s}
+      .db-comment:last-child{border-bottom:none}
+      .db-comment--resolved{opacity:0.55}
+      .db-avatar{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;color:#fff;letter-spacing:0.3px}
+      .db-avatar--sm{width:22px;height:22px;font-size:9px}
+      .db-comment-body{flex:1;min-width:0}
+      .db-comment-meta{display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap}
+      .db-comment-author{font-size:12px;font-weight:600;color:var(--text-primary)}
+      .db-comment-time{font-size:11px;color:var(--text-tertiary)}
+      .db-resolve-label{display:inline-flex;align-items:center;gap:3px;cursor:pointer;margin-left:auto;flex-shrink:0}
+      .db-resolve-label input[type=checkbox]{position:absolute;opacity:0;width:0;height:0;pointer-events:none}
+      .db-resolve-icon{width:20px;height:20px;border:1.5px solid var(--border-med);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;color:transparent;transition:background 0.15s,border-color 0.15s,color 0.15s;flex-shrink:0}
+      .db-resolve-icon--done{background:#6ec96e;border-color:#6ec96e;color:#fff}
+      .db-resolve-label:hover .db-resolve-icon:not(.db-resolve-icon--done){border-color:var(--accent);color:var(--text-tertiary)}
+      .db-comment-text{font-size:13px;color:var(--text-primary);line-height:1.55;word-break:break-word}
+      .db-comment-text--resolved{color:var(--text-tertiary)}
+      .db-action-link{background:none;border:none;color:var(--text-tertiary);font-size:11px;cursor:pointer;padding:3px 0;font-family:var(--font);transition:color 0.1s;margin-top:4px;display:inline-block}
+      .db-action-link:hover{color:var(--accent)}
+      .db-replies{display:flex;flex-direction:column;gap:0;margin-top:8px;padding-left:2px;border-left:2px solid var(--border-light)}
+      .db-reply{display:flex;gap:8px;padding:7px 0 7px 10px;border-bottom:1px solid var(--border-light)}.db-reply:last-child{border-bottom:none}
+      .db-reply-form{display:flex;flex-direction:column;gap:6px;margin-top:8px;padding:8px;background:var(--bg-primary);border:1px solid var(--border-light);border-radius:var(--radius-md)}
+      .db-reply-input{width:100%;font-size:12px;padding:6px 9px;border:1px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;resize:none;transition:border 0.12s}
+      .db-reply-input:focus{border-color:var(--accent)}
+      .db-add-comment{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--border-light);background:var(--bg-primary)}
+      .db-comment-input{flex:1;font-size:12px;padding:7px 10px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);outline:none;resize:none;transition:border 0.12s,background 0.12s}
+      .db-comment-input:focus{border-color:var(--accent);background:var(--bg-primary)}
+      .db-enq-list{display:flex;flex-direction:column;gap:0;border:1px solid var(--border-light);border-radius:var(--radius-md);overflow:hidden;background:var(--bg-primary)}
+      .db-enq-row{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--border-light);cursor:pointer;transition:background 0.1s;flex-wrap:wrap}
+      .db-enq-row:last-child{border-bottom:none}.db-enq-row:hover{background:var(--bg-secondary)}
+      .db-enq-brief{font-size:11px;color:var(--text-tertiary);flex:1;min-width:100%;margin-top:2px}
+      .stat-card--sm{padding:11px 14px}
+      .stat-value--sm{font-size:18px;font-weight:600;letter-spacing:-0.3px}
     `
     document.head.appendChild(style)
   }
