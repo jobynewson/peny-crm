@@ -6,18 +6,19 @@ import { BudgetsView, budTotal } from './views/budgets.js'
 import { CallSheetsView } from './views/callsheets.js'
 
 export class App {
-  constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, onSignOut }) {
+  constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, onSignOut }) {
     this.userId      = userId
     this.clerkUserId = clerkUserId
     this.user        = user
     this.appUser     = appUser
     this.permissions = permissions
-    this.contacts = contacts ?? []
-    this.projects = projects ?? []
-    this.budgets  = budgets  ?? []
-    this.settings = settings ?? {}
-    this.allUsers = allUsers ?? []
-    this.onSignOut = onSignOut
+    this.contacts    = contacts ?? []
+    this.projects    = projects ?? []
+    this.budgets     = budgets  ?? []
+    this.settings    = settings ?? {}
+    this.allUsers    = allUsers ?? []
+    this.socialPosts = socialPosts ?? []
+    this.onSignOut   = onSignOut
     this.currentView = 'dashboard'
     this.contactsView    = new ContactsView(this)
     this.projectsView    = new ProjectsView(this)
@@ -898,72 +899,167 @@ export class App {
         </div>
       </div>
 
-      <!-- Retainers -->
-      ${retainers.length ? `
-      <div style="margin-bottom:28px">
-        <div class="db-section-head">
-          <span class="db-section-dot" style="background:#a78bfa"></span>
-          Retainers
-          <span class="db-section-count">${retainers.length}</span>
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px" id="retainer-cards">
-          ${retainers.map(p => {
-            const cl = this.contacts.find(c => c.id === p.client_id)
-            const periodMult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}
-            const calcHours = (p.retainer_items||[]).reduce((s,i) => {
-              const mult = periodMult[i.period||'month']||1
-              return s + (i.unit==='hours' ? (parseFloat(i.qty)||0)*mult : (parseFloat(i.qty)||0)*8*mult)
-            }, 0)
-            const hours = calcHours || (parseFloat(p.retainer_hours)||0)
-            const calcFee = (p.retainer_items||[]).reduce((s,i) => {
-              const mult = periodMult[i.period||'month']||1
-              return s + (parseFloat(i.rate)||0)*(parseFloat(i.qty)||0)*mult
-            }, 0)
-            const fee = p.retainer_fee_mode==='calculated' ? calcFee : (parseFloat(p.retainer_fee)||0)
-            return `<div class="kanban-card" style="border-left:3px solid #a78bfa;cursor:default" data-retainer="${p.id}">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
-                <div class="kanban-card-title" style="cursor:pointer" data-open-pid="${p.id}">${p.name}</div>
-                ${fee ? `<div style="font-size:12px;font-weight:600;color:#a78bfa;white-space:nowrap;margin-left:8px">£${fee.toLocaleString('en-GB')}/mo</div>` : ''}
-              </div>
-              <div class="kanban-card-client">${cl ? cl.first_name+' '+cl.last_name : 'No client'}</div>
-              ${(p.retainer_items||[]).length ? `
-                <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px" data-ret-items="${p.id}">
-                  ${(p.retainer_items||[]).map((item,ii) => {
-                    const mult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}[item.period||'month']||1
-                    const allocH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
-                    return allocH ? `
-                    <div>
-                      <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px">
-                        <span style="color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">${esc(item.label)}</span>
-                        <span data-ret-item-label="${p.id}-${ii}" style="color:var(--text-secondary);white-space:nowrap">— / ${allocH}h</span>
-                      </div>
-                      <div style="height:4px;background:var(--bg-secondary);border-radius:2px;overflow:hidden">
-                        <div style="height:100%;width:0%;border-radius:2px;transition:width 0.3s" data-ret-item-bar="${p.id}-${ii}"></div>
-                      </div>
-                    </div>` : ''
-                  }).join('')}
-                  <div data-ret-alert="${p.id}" style="font-size:10px;margin-top:2px;display:none"></div>
-                </div>` : hours ? `
-                <div style="margin-top:8px">
-                  <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px">
-                    <span style="color:var(--text-tertiary)">This month</span>
-                    <span style="color:var(--text-secondary)" data-ret-label="${p.id}">— / ${hours}h</span>
+      <!-- Retainers + Social Calendar row -->
+      <div style="display:flex;gap:20px;margin-bottom:28px;align-items:flex-start">
+
+        <!-- Retainers -->
+        ${retainers.length ? `
+        <div style="flex:1;min-width:0">
+          <div class="db-section-head">
+            <span class="db-section-dot" style="background:#a78bfa"></span>
+            Retainers
+            <span class="db-section-count">${retainers.length}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px" id="retainer-cards">
+            ${retainers.map(p => {
+              const cl = this.contacts.find(c => c.id === p.client_id)
+              const periodMult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}
+              const calcHours = (p.retainer_items||[]).reduce((s,i) => {
+                const mult = periodMult[i.period||'month']||1
+                return s + (i.unit==='hours' ? (parseFloat(i.qty)||0)*mult : (parseFloat(i.qty)||0)*8*mult)
+              }, 0)
+              const hours = calcHours || (parseFloat(p.retainer_hours)||0)
+              const calcFee = (p.retainer_items||[]).reduce((s,i) => {
+                const mult = periodMult[i.period||'month']||1
+                return s + (parseFloat(i.rate)||0)*(parseFloat(i.qty)||0)*mult
+              }, 0)
+              const fee = p.retainer_fee_mode==='calculated' ? calcFee : (parseFloat(p.retainer_fee)||0)
+              return `<div class="kanban-card" style="border-left:3px solid #a78bfa;cursor:default" data-retainer="${p.id}">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
+                  <div class="kanban-card-title" style="cursor:pointer" data-open-pid="${p.id}">${p.name}</div>
+                  ${fee ? `<div style="font-size:12px;font-weight:600;color:#a78bfa;white-space:nowrap;margin-left:8px">£${fee.toLocaleString('en-GB')}/mo</div>` : ''}
+                </div>
+                <div class="kanban-card-client">${cl ? cl.first_name+' '+cl.last_name : 'No client'}</div>
+                ${(p.retainer_items||[]).length ? `
+                  <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px" data-ret-items="${p.id}">
+                    ${(p.retainer_items||[]).map((item,ii) => {
+                      const mult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}[item.period||'month']||1
+                      const allocH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
+                      return allocH ? `
+                      <div>
+                        <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px">
+                          <span style="color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">${esc(item.label)}</span>
+                          <span data-ret-item-label="${p.id}-${ii}" style="color:var(--text-secondary);white-space:nowrap">— / ${allocH}h</span>
+                        </div>
+                        <div style="height:4px;background:var(--bg-secondary);border-radius:2px;overflow:hidden">
+                          <div style="height:100%;width:0%;border-radius:2px;transition:width 0.3s" data-ret-item-bar="${p.id}-${ii}"></div>
+                        </div>
+                      </div>` : ''
+                    }).join('')}
+                    <div data-ret-alert="${p.id}" style="font-size:10px;margin-top:2px;display:none"></div>
+                  </div>` : hours ? `
+                  <div style="margin-top:8px">
+                    <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px">
+                      <span style="color:var(--text-tertiary)">This month</span>
+                      <span style="color:var(--text-secondary)" data-ret-label="${p.id}">— / ${hours}h</span>
+                    </div>
+                    <div style="height:6px;background:var(--bg-secondary);border-radius:3px;overflow:hidden">
+                      <div style="height:100%;width:0%;border-radius:3px;transition:width 0.3s" data-ret-bar="${p.id}"></div>
+                    </div>
+                    <div data-ret-alert="${p.id}" style="font-size:10px;margin-top:4px;display:none"></div>
+                  </div>` : ''}
+              </div>`
+            }).join('')}
+          </div>
+        </div>` : ''}
+
+        <!-- Social Calendar -->
+        <div style="flex:1;min-width:0;max-width:420px">
+          <div class="db-section-head" style="justify-content:space-between">
+            <div style="display:flex;align-items:center;gap:6px">
+              <span class="db-section-dot" style="background:#34d399"></span>
+              Social calendar
+              ${this.socialPosts.filter(p => !p.completed).length ? `<span class="db-section-count">${this.socialPosts.filter(p => !p.completed).length}</span>` : ''}
+            </div>
+            <button class="db-action-link" id="social-add-btn" style="font-size:11px;padding:2px 8px;border:0.5px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-secondary)">+ add</button>
+          </div>
+
+          <!-- Add form (hidden by default) -->
+          <div id="social-add-form" style="display:none;background:var(--bg-secondary);border:0.5px solid var(--border-med);border-radius:var(--radius-md);padding:12px;margin-bottom:10px">
+            <input id="social-new-title" type="text" placeholder="Project / topic name" maxlength="200"
+              style="width:100%;padding:6px 10px;font-size:13px;border:0.5px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;margin-bottom:8px;box-sizing:border-box">
+            <textarea id="social-new-notes" placeholder="Notes (optional)" rows="2"
+              style="width:100%;padding:6px 10px;font-size:12px;border:0.5px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.4;margin-bottom:8px;box-sizing:border-box"></textarea>
+            <div style="display:flex;gap:8px;justify-content:flex-end">
+              <button class="btn-cancel" id="social-add-cancel" style="font-size:12px">Cancel</button>
+              <button class="btn-primary" id="social-add-save" style="font-size:12px">Add</button>
+            </div>
+          </div>
+
+          <!-- Post list -->
+          <div id="social-post-list" style="display:flex;flex-direction:column;gap:6px">
+            ${(() => {
+              const active = this.socialPosts.filter(p => !p.completed)
+              const done   = this.socialPosts.filter(p => p.completed)
+              const renderPost = (p) => `
+                <div class="social-post-row" data-social-id="${p.id}" style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:var(--bg-secondary);border:0.5px solid var(--border-light);border-radius:var(--radius-md);${p.completed ? 'opacity:0.45;' : ''}">
+                  <input type="checkbox" class="social-check" data-social-id="${p.id}" ${p.completed ? 'checked' : ''}
+                    style="margin-top:2px;flex-shrink:0;cursor:pointer;accent-color:#34d399">
+                  <div style="flex:1;min-width:0">
+                    <div style="font-size:13px;font-weight:500;${p.completed ? 'text-decoration:line-through;color:var(--text-tertiary)' : 'color:var(--text-primary)'};line-height:1.3;word-break:break-word">${esc(p.title)}</div>
+                    ${p.notes ? `<div style="font-size:11px;color:var(--text-tertiary);margin-top:3px;line-height:1.4;white-space:pre-wrap;word-break:break-word">${esc(p.notes)}</div>` : ''}
                   </div>
-                  <div style="height:6px;background:var(--bg-secondary);border-radius:3px;overflow:hidden">
-                    <div style="height:100%;width:0%;border-radius:3px;transition:width 0.3s" data-ret-bar="${p.id}"></div>
-                  </div>
-                  <div data-ret-alert="${p.id}" style="font-size:10px;margin-top:4px;display:none"></div>
-                </div>` : ''}
-            </div>`
-          }).join('')}
+                  <button class="social-delete-btn" data-social-id="${p.id}" title="Delete"
+                    style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:14px;line-height:1;padding:0 2px;opacity:0.4">×</button>
+                </div>`
+              if (!active.length && !done.length) {
+                return `<div style="color:var(--text-tertiary);font-size:13px;padding:8px 0">No post ideas yet. Hit + add to get started.</div>`
+              }
+              return active.map(renderPost).join('') + done.map(renderPost).join('')
+            })()}
+          </div>
         </div>
-      </div>` : ''}
+
+      </div>
 
       <!-- Financial Summary -->
       <div style="padding-top:20px;border-top:1px solid var(--border-light)">
         <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:10px">Financial overview</div>
         <div class="stats-row">${statCards}</div>
       </div>`
+
+    // --- Social calendar ---
+    mc.querySelector('#social-add-btn')?.addEventListener('click', () => {
+      const form = mc.querySelector('#social-add-form')
+      if (!form) return
+      form.style.display = form.style.display === 'none' ? 'block' : 'none'
+      if (form.style.display === 'block') mc.querySelector('#social-new-title')?.focus()
+    })
+    mc.querySelector('#social-add-cancel')?.addEventListener('click', () => {
+      mc.querySelector('#social-add-form').style.display = 'none'
+      mc.querySelector('#social-new-title').value = ''
+      mc.querySelector('#social-new-notes').value = ''
+    })
+    mc.querySelector('#social-add-save')?.addEventListener('click', async () => {
+      const titleEl = mc.querySelector('#social-new-title')
+      const notesEl = mc.querySelector('#social-new-notes')
+      const title = titleEl.value.trim()
+      if (!title) { titleEl.focus(); return }
+      const { createSocialPost } = await import('./db/client.js')
+      const post = await createSocialPost(this.userId, { title, notes: notesEl.value.trim() || null })
+      this.socialPosts = [post, ...this.socialPosts]
+      this.renderDashboard(mc)
+    })
+    mc.querySelectorAll('.social-check').forEach(cb => {
+      cb.addEventListener('change', async () => {
+        const id = cb.dataset.socialId
+        const { updateSocialPost } = await import('./db/client.js')
+        await updateSocialPost(this.userId, id, { completed: cb.checked })
+        const post = this.socialPosts.find(p => p.id === id)
+        if (post) post.completed = cb.checked
+        this.renderDashboard(mc)
+      })
+    })
+    mc.querySelectorAll('.social-delete-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.socialId
+        if (!confirm('Delete this post idea?')) return
+        const { deleteSocialPost } = await import('./db/client.js')
+        await deleteSocialPost(this.userId, id)
+        this.socialPosts = this.socialPosts.filter(p => p.id !== id)
+        this.renderDashboard(mc)
+      })
+    })
 
     // --- Open project links ---
     mc.querySelectorAll('[data-open-pid]').forEach(el => {

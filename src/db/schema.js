@@ -189,6 +189,18 @@ export const activity_log = pgTable('activity_log', {
   created_at:  timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+// ── Social calendar posts ─────────────────────────────────────────────────────
+export const social_posts = pgTable('social_posts', {
+  id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id:    text('user_id').notNull(),
+  title:      text('title').notNull(),
+  notes:      text('notes'),
+  completed:  boolean('completed').notNull().default(false),
+  sort_order: integer('sort_order').notNull().default(0),
+  created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updated_at: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 // ── Dev requests ──────────────────────────────────────────────────────────────
 export const dev_requests = pgTable('dev_requests', {
   id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
