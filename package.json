@@ -13,7 +13,8 @@
     "@clerk/clerk-js": "^5.0.0",
     "@neondatabase/serverless": "^0.9.0",
     "@vercel/blob": "^2.3.3",
-    "drizzle-orm": "^0.30.0"
+    "drizzle-orm": "^0.30.0",
+    "resend": "^6.12.3"
   },
   "devDependencies": {
     "drizzle-kit": "^0.21.0",
