@@ -358,12 +358,22 @@ export class App {
           <div class="topbar-title" id="view-title">${this.viewTitle()}</div>
           <div id="topbar-actions" style="display:flex;gap:8px;align-items:center;flex-shrink:0">${this.topbarSearch()}${this.topbarButton()}
             <button class="theme-toggle" id="theme-toggle-btn" title="Toggle dark mode">${this.iconTheme()}</button>
+            <button id="notes-panel-btn" title="My notes" style="width:32px;height:32px;border-radius:var(--radius-md);border:1px solid var(--border-light);background:transparent;color:var(--text-tertiary);font-size:15px;cursor:pointer;font-family:var(--font);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background 0.12s,color 0.12s,border-color 0.12s">✏</button>
             <button id="shortcut-hint" title="Keyboard shortcuts" style="width:32px;height:32px;border-radius:var(--radius-md);border:1px solid var(--border-light);background:transparent;color:var(--text-tertiary);font-size:13px;cursor:pointer;font-family:var(--font);display:flex;align-items:center;justify-content:center;flex-shrink:0">?</button>
           </div>
         </div>
         <div class="content" id="main-content"></div>
       </div>
       ${showDetail ? `<div class="detail-panel" id="detail-panel"><div class="detail-empty">Select a contact<br>to view details</div></div>` : ''}
+      <div class="notes-backdrop" id="notes-backdrop"></div>
+      <div class="notes-panel" id="notes-panel">
+        <div class="notes-panel-header">
+          <span class="notes-panel-title">My Notes</span>
+          <button class="btn-primary" id="notes-new-btn" style="font-size:12px;padding:5px 12px">+ New</button>
+          <button class="notes-close-btn" id="notes-close-btn" title="Close">✕</button>
+        </div>
+        <div class="notes-list" id="notes-list"><div class="notes-empty">No notes yet.<br>Hit + New to get started.</div></div>
+      </div>
     `
     this.bindNav()
     this.renderCurrentView()
@@ -434,6 +444,11 @@ export class App {
       search.value = this.contactsView.search
       search.addEventListener('input', e => { this.contactsView.search = e.target.value; this.contactsView.refreshList() })
     }
+
+    // Notes panel
+    this.container.querySelector('#notes-panel-btn')?.addEventListener('click', () => this._openNotesPanel())
+    this.container.querySelector('#notes-close-btn')?.addEventListener('click', () => this._closeNotesPanel())
+    this.container.querySelector('#notes-backdrop')?.addEventListener('click', () => this._closeNotesPanel())
 
     // Keyboard shortcut hint
     this.container.querySelector('#shortcut-hint')?.addEventListener('click', () => {
@@ -1143,6 +1158,121 @@ export class App {
         } catch(e) { /* silent */ }
       }
     }
+  }
+
+  // ── Notes panel ─────────────────────────────────────────────────────────────
+
+  _openNotesPanel() {
+    const panel = document.getElementById('notes-panel')
+    const backdrop = document.getElementById('notes-backdrop')
+    const btn = document.getElementById('notes-panel-btn')
+    if (!panel) return
+    panel.classList.add('notes-panel--open')
+    backdrop.classList.add('notes-backdrop--open')
+    if (btn) { btn.style.color = 'var(--accent)'; btn.style.borderColor = 'var(--accent)'; btn.style.background = 'var(--accent-subtle)' }
+    if (!this._notesLoaded) this._loadNotes()
+    else this._renderNotesList()
+  }
+
+  _closeNotesPanel() {
+    const panel = document.getElementById('notes-panel')
+    const backdrop = document.getElementById('notes-backdrop')
+    const btn = document.getElementById('notes-panel-btn')
+    if (!panel) return
+    panel.classList.remove('notes-panel--open')
+    backdrop.classList.remove('notes-backdrop--open')
+    if (btn) { btn.style.color = ''; btn.style.borderColor = ''; btn.style.background = '' }
+  }
+
+  async _loadNotes() {
+    const list = document.getElementById('notes-list')
+    if (list) list.innerHTML = `<div class="notes-empty" style="padding:20px;text-align:center;color:var(--text-tertiary);font-size:13px">Loading…</div>`
+    try {
+      const { getUserNotes } = await import('./db/client.js')
+      this._notes = await getUserNotes(this.clerkUserId)
+      this._notesLoaded = true
+      this._renderNotesList()
+      document.getElementById('notes-new-btn')?.addEventListener('click', () => this._newNote())
+    } catch(e) {
+      console.error('Failed to load notes:', e)
+      if (list) list.innerHTML = `<div class="notes-empty">Failed to load notes.</div>`
+    }
+  }
+
+  _renderNotesList() {
+    const list = document.getElementById('notes-list')
+    if (!list) return
+    if (!this._notes?.length) {
+      list.innerHTML = `<div class="notes-empty">No notes yet.<br>Hit + New to get started.</div>`
+      return
+    }
+    const relTime = ts => {
+      if (!ts) return ''
+      const diff = Date.now() - new Date(ts).getTime()
+      const m = Math.floor(diff / 60000)
+      if (m < 1) return 'just now'
+      if (m < 60) return `${m}m ago`
+      const h = Math.floor(m / 60)
+      if (h < 24) return `${h}h ago`
+      return new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+    }
+    list.innerHTML = this._notes.map(n => `
+      <div class="notes-card" data-note-id="${n.id}">
+        <input class="notes-title-input" data-note-id="${n.id}" value="${(n.title||'').replace(/"/g,'&quot;')}" placeholder="Untitled" />
+        <textarea class="notes-body-input" data-note-id="${n.id}" placeholder="Write something…" rows="4">${n.content||''}</textarea>
+        <div class="notes-card-footer">
+          <span class="notes-timestamp">${relTime(n.updated_at)}</span>
+          <button class="notes-delete-btn" data-delete-id="${n.id}" title="Delete note">Delete</button>
+        </div>
+      </div>`).join('')
+
+    list.querySelectorAll('.notes-title-input').forEach(input => {
+      input.addEventListener('blur', () => this._saveNote(input.dataset.noteId, { title: input.value }))
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); input.closest('.notes-card')?.querySelector('.notes-body-input')?.focus() } })
+    })
+    list.querySelectorAll('.notes-body-input').forEach(ta => {
+      ta.addEventListener('blur', () => this._saveNote(ta.dataset.noteId, { content: ta.value }))
+      ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px' })
+      ta.dispatchEvent(new Event('input'))
+    })
+    list.querySelectorAll('.notes-delete-btn').forEach(btn => {
+      btn.addEventListener('click', () => this._deleteNote(btn.dataset.deleteId))
+    })
+  }
+
+  async _newNote() {
+    try {
+      const { createUserNote } = await import('./db/client.js')
+      const note = await createUserNote(this.clerkUserId, { sort_order: 0 })
+      if (!this._notes) this._notes = []
+      this._notes.unshift(note)
+      this._renderNotesList()
+      const firstTitle = document.querySelector('.notes-title-input')
+      firstTitle?.focus()
+    } catch(e) { console.error('Failed to create note:', e) }
+  }
+
+  async _saveNote(id, data) {
+    try {
+      const { updateUserNote } = await import('./db/client.js')
+      const updated = await updateUserNote(this.clerkUserId, id, data)
+      if (updated && this._notes) {
+        const idx = this._notes.findIndex(n => n.id === id)
+        if (idx !== -1) this._notes[idx] = { ...this._notes[idx], ...updated }
+        const ts = document.querySelector(`.notes-card[data-note-id="${id}"] .notes-timestamp`)
+        if (ts) ts.textContent = 'just now'
+      }
+    } catch(e) { console.error('Failed to save note:', e) }
+  }
+
+  async _deleteNote(id) {
+    if (!confirm('Delete this note?')) return
+    try {
+      const { deleteUserNote } = await import('./db/client.js')
+      await deleteUserNote(this.clerkUserId, id)
+      this._notes = (this._notes || []).filter(n => n.id !== id)
+      this._renderNotesList()
+    } catch(e) { console.error('Failed to delete note:', e) }
   }
 
   renderSettings(mc) {
@@ -1892,6 +2022,29 @@ export class App {
       .db-enq-brief{font-size:11px;color:var(--text-tertiary);flex:1;min-width:100%;margin-top:2px}
       .stat-card--sm{padding:11px 14px}
       .stat-value--sm{font-size:18px;font-weight:600;letter-spacing:-0.3px}
+
+      /* ── Notes panel ── */
+      .notes-backdrop{display:none;position:fixed;inset:0;background:rgba(9,30,66,0.38);z-index:89;cursor:pointer;transition:opacity 0.2s}
+      .notes-backdrop--open{display:block}
+      .notes-panel{position:fixed;top:0;right:0;bottom:0;width:340px;background:var(--bg-primary);border-left:1px solid var(--border-light);box-shadow:-4px 0 24px rgba(9,30,66,0.12);z-index:90;display:flex;flex-direction:column;transform:translateX(100%);transition:transform 0.22s cubic-bezier(0.4,0,0.2,1)}
+      .notes-panel--open{transform:translateX(0)}
+      .notes-panel-header{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--border-light);flex-shrink:0}
+      .notes-panel-title{font-size:14px;font-weight:600;color:var(--text-primary);flex:1}
+      .notes-close-btn{background:none;border:none;color:var(--text-tertiary);font-size:16px;cursor:pointer;padding:4px 6px;line-height:1;border-radius:var(--radius-sm);transition:background 0.1s,color 0.1s}
+      .notes-close-btn:hover{background:var(--bg-tertiary);color:var(--text-primary)}
+      .notes-list{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+      .notes-empty{padding:40px 16px;text-align:center;color:var(--text-tertiary);font-size:13px;line-height:1.7}
+      .notes-card{background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);overflow:hidden;transition:box-shadow 0.15s,border-color 0.15s}
+      .notes-card:focus-within{border-color:var(--border-strong);box-shadow:0 2px 8px rgba(9,30,66,0.08)}
+      .notes-title-input{width:100%;padding:10px 12px 6px;font-size:13px;font-weight:600;color:var(--text-primary);background:transparent;border:none;outline:none;font-family:var(--font)}
+      .notes-title-input::placeholder{color:var(--text-tertiary);font-weight:400}
+      .notes-body-input{width:100%;padding:2px 12px 10px;font-size:13px;color:var(--text-primary);background:transparent;border:none;outline:none;resize:none;font-family:var(--font);line-height:1.6;min-height:72px;overflow:hidden}
+      .notes-body-input::placeholder{color:var(--text-tertiary)}
+      .notes-card-footer{display:flex;align-items:center;justify-content:space-between;padding:6px 12px 8px;border-top:1px solid var(--border-light)}
+      .notes-timestamp{font-size:11px;color:var(--text-tertiary)}
+      .notes-delete-btn{background:none;border:none;font-size:11px;color:var(--text-tertiary);cursor:pointer;padding:2px 6px;border-radius:var(--radius-sm);font-family:var(--font);transition:background 0.1s,color 0.1s}
+      .notes-delete-btn:hover{background:#fee2e2;color:#ef4444}
+      @media(max-width:480px){.notes-panel{width:100%}}
     `
     document.head.appendChild(style)
   }
