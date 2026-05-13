@@ -5,7 +5,7 @@ import * as schema from './schema.js'
 import {
   contacts, projects, budgets, settings, workspace,
   project_budgets, budget_versions, activity_log,
-  app_users, time_entries, user_notes,
+  app_users, time_entries, user_notes, social_posts,
 } from './schema.js'
 
 const sql = neon(import.meta.env.VITE_DATABASE_URL)
@@ -275,6 +275,30 @@ export async function deleteDevRequest(id) {
   return db.execute(sql`
     DELETE FROM dev_requests WHERE id = ${id}
   `)
+}
+
+// ── Social calendar ───────────────────────────────────────────────────────────
+export async function getSocialPosts(workspaceId) {
+  return db.select().from(social_posts)
+    .where(eq(social_posts.user_id, workspaceId))
+    .orderBy(social_posts.sort_order, social_posts.created_at)
+}
+export async function createSocialPost(workspaceId, data) {
+  const [post] = await db.insert(social_posts)
+    .values({ user_id: workspaceId, ...data })
+    .returning()
+  return post
+}
+export async function updateSocialPost(workspaceId, id, data) {
+  const [post] = await db.update(social_posts)
+    .set({ ...data, updated_at: new Date() })
+    .where(and(eq(social_posts.id, id), eq(social_posts.user_id, workspaceId)))
+    .returning()
+  return post
+}
+export async function deleteSocialPost(workspaceId, id) {
+  return db.delete(social_posts)
+    .where(and(eq(social_posts.id, id), eq(social_posts.user_id, workspaceId)))
 }
 
 // ── Work log ──────────────────────────────────────────────────────────────────
