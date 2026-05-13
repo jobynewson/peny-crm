@@ -3,7 +3,7 @@
 // Sends email digests to assignees with overdue or upcoming deliverables
 
 import { neon } from '@neondatabase/serverless'
-import { Resend } from 'resend'
+import nodemailer from 'nodemailer'
 
 export default async function handler(req, res) {
   // Protect the endpoint — Vercel cron sends this header automatically,
@@ -14,8 +14,14 @@ export default async function handler(req, res) {
   }
 
   const sql = neon(process.env.VITE_DATABASE_URL)
-  const resend = new Resend(process.env.RESEND_API_KEY)
-  const fromAddress = process.env.REMINDER_FROM_EMAIL || 'reminders@notifications.peny.app'
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.GMAIL_USER,
+      pass: process.env.GMAIL_APP_PASSWORD,
+    },
+  })
+  const fromAddress = process.env.GMAIL_USER
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -126,7 +132,7 @@ export default async function handler(req, res) {
       : `⏰ ${totalCount} deliverable${totalCount > 1 ? 's' : ''} due soon`
 
     try {
-      await resend.emails.send({
+      await transporter.sendMail({
         from: fromAddress,
         to: user.email,
         subject,
