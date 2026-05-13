@@ -5,7 +5,7 @@ import * as schema from './schema.js'
 import {
   contacts, projects, budgets, settings, workspace,
   project_budgets, budget_versions, activity_log,
-  app_users, time_entries,
+  app_users, time_entries, user_notes,
 } from './schema.js'
 
 const sql = neon(import.meta.env.VITE_DATABASE_URL)
@@ -574,4 +574,28 @@ export async function updateCameraSetup(id, userId, data) {
 export async function deleteCameraSetup(id, userId) {
   const { sql } = await import('drizzle-orm')
   return db.execute(sql`DELETE FROM camera_setups WHERE id = ${id} AND user_id = ${userId}`)
+}
+
+// ── User notes ────────────────────────────────────────────────────────────────
+export async function getUserNotes(clerkId) {
+  return db.select().from(user_notes)
+    .where(eq(user_notes.clerk_id, clerkId))
+    .orderBy(user_notes.sort_order, desc(user_notes.created_at))
+}
+export async function createUserNote(clerkId, data = {}) {
+  const [row] = await db.insert(user_notes)
+    .values({ clerk_id: clerkId, title: data.title ?? '', content: data.content ?? '', sort_order: data.sort_order ?? 0 })
+    .returning()
+  return row
+}
+export async function updateUserNote(clerkId, id, data) {
+  const [row] = await db.update(user_notes)
+    .set({ ...data, updated_at: new Date() })
+    .where(and(eq(user_notes.id, id), eq(user_notes.clerk_id, clerkId)))
+    .returning()
+  return row
+}
+export async function deleteUserNote(clerkId, id) {
+  return db.delete(user_notes)
+    .where(and(eq(user_notes.id, id), eq(user_notes.clerk_id, clerkId)))
 }

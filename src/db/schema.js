@@ -333,3 +333,14 @@ export const camera_setups = pgTable('camera_setups', {
   created_at:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updated_at:   timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
+
+// ── User notes (private per user, keyed by Clerk ID) ──────────────────────────
+export const user_notes = pgTable('user_notes', {
+  id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  clerk_id:   text('clerk_id').notNull(),
+  title:      text('title').notNull().default(''),
+  content:    text('content').notNull().default(''),
+  sort_order: integer('sort_order').notNull().default(0),
+  created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updated_at: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
