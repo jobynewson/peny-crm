@@ -100,7 +100,8 @@ export const projects = pgTable('projects', {
   insurer_address: text('insurer_address'),
   insurer_email:   text('insurer_email'),
   insurer_contact: text('insurer_contact'),
-  planning_cards:  jsonb('planning_cards').notNull().default([]),
+  planning_cards:      jsonb('planning_cards').notNull().default([]),
+  dashboard_comments:  jsonb('dashboard_comments').notNull().default([]),
   ...timestamps,
 })
 
