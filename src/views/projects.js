@@ -456,6 +456,7 @@ export class ProjectsView {
       { id: 'budget',   label: '💰 Budget' },
       { id: 'planning', label: '🗂 Planning' },
       { id: 'files',    label: '📁 Files' },
+      { id: 'notes',    label: '💬 Notes' },
     ].filter(t => !t.hide)
 
     mc.innerHTML = `
@@ -551,6 +552,7 @@ export class ProjectsView {
     if (tab === 'budget')   return this._renderTabBudget(p, linked)
     if (tab === 'planning') return this._renderTabPlanning(p)
     if (tab === 'files')    return this._renderTabFiles(p)
+    if (tab === 'notes')    return this._renderTabNotes(p)
     return ''
   }
 
@@ -732,6 +734,74 @@ export class ProjectsView {
       </div>`
   }
 
+  _renderTabNotes(p) {
+    const comments = p.dashboard_comments || []
+    const relTime = ts => {
+      const diff = Date.now() - new Date(ts).getTime()
+      const m = Math.floor(diff / 60000)
+      if (m < 1) return 'just now'
+      if (m < 60) return `${m}m ago`
+      const h = Math.floor(m / 60)
+      if (h < 24) return `${h}h ago`
+      const d = Math.floor(h / 24)
+      return d < 7 ? `${d}d ago` : new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+    }
+    const ini = name => (name||'?').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
+    const avatarColors = ['#4a90d9','#6ec96e','#f59e0b','#a78bfa','#ef4444','#06b6d4','#ec4899']
+    const avatarColor = id => {
+      if (!id) return avatarColors[0]
+      let h = 0
+      for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) & 0x7fffffff
+      return avatarColors[h % avatarColors.length]
+    }
+    const renderNote = c => `
+      <div class="db-comment${c.resolved ? ' db-comment--resolved' : ''}" data-note-cid="${c.id}" style="padding:12px 16px;border-bottom:1px solid var(--border-light)">
+        <div class="db-avatar" style="background:${avatarColor(c.author_id)}">${ini(c.author_name)}</div>
+        <div class="db-comment-body">
+          <div class="db-comment-meta">
+            <span class="db-comment-author">${esc(c.author_name||'Unknown')}</span>
+            <span class="db-comment-time">${relTime(c.timestamp)}</span>
+            <label class="db-resolve-label" title="${c.resolved ? 'Mark unresolved' : 'Mark resolved'}">
+              <input type="checkbox" class="pv-note-resolve" data-note-cid="${c.id}" ${c.resolved ? 'checked' : ''}>
+              <span class="db-resolve-icon${c.resolved ? ' db-resolve-icon--done' : ''}">✓</span>
+            </label>
+          </div>
+          <div class="db-comment-text${c.resolved ? ' db-comment-text--resolved' : ''}">${esc(c.text)}</div>
+          <button class="db-action-link pv-note-reply-btn" data-note-cid="${c.id}">Reply</button>
+          ${(c.replies||[]).length ? `<div class="db-replies">${(c.replies||[]).map(r => `
+            <div class="db-reply">
+              <div class="db-avatar db-avatar--sm" style="background:${avatarColor(r.author_id)}">${ini(r.author_name)}</div>
+              <div>
+                <div class="db-comment-meta">
+                  <span class="db-comment-author">${esc(r.author_name||'Unknown')}</span>
+                  <span class="db-comment-time">${relTime(r.timestamp)}</span>
+                </div>
+                <div class="db-comment-text">${esc(r.text)}</div>
+              </div>
+            </div>`).join('')}</div>` : ''}
+          <div class="db-reply-form" id="pv-rf-${c.id}" style="display:none">
+            <textarea class="db-reply-input" placeholder="Reply…" rows="2"></textarea>
+            <button class="btn-secondary" style="font-size:11px;padding:4px 12px;align-self:flex-end" data-note-post-reply="${c.id}">Reply</button>
+          </div>
+        </div>
+      </div>`
+    return `
+      <div class="proj-panel">
+        <div class="proj-panel-head">Notes</div>
+        <div class="proj-panel-body" style="padding:0">
+          <div id="pv-notes-thread">
+            ${comments.length
+              ? comments.map(renderNote).join('')
+              : `<div style="padding:20px 16px;font-size:13px;color:var(--text-tertiary)">No notes yet — add one below.</div>`}
+          </div>
+          <div class="db-add-comment" style="padding:12px 16px;border-top:1px solid var(--border-light)">
+            <textarea class="db-comment-input" id="pv-note-input" placeholder="Add a note…" rows="2"></textarea>
+            <button class="btn-primary" style="font-size:12px;padding:5px 14px;align-self:flex-end;flex-shrink:0" id="pv-note-post">Post</button>
+          </div>
+        </div>
+      </div>`
+  }
+
   _renderSidebar(p, linked) {
     const { contacts } = this.app
     const cl = contacts.find(c => c.id === p.client_id)
@@ -851,6 +921,62 @@ export class ProjectsView {
     }
     if (tab === 'planning') {
       bindPlanningTab(mc, p, this.app.userId)
+    }
+    if (tab === 'notes') {
+      const rerender = () => {
+        const content = mc.querySelector('#pv-tab-content')
+        if (content) { content.innerHTML = this._renderTab('notes', p, cl, linked); this._bindTabContent(mc, 'notes', p, cl, linked) }
+      }
+      mc.querySelector('#pv-note-post')?.addEventListener('click', async () => {
+        const ta = mc.querySelector('#pv-note-input')
+        const text = ta?.value?.trim()
+        if (!text) return
+        const authorName = this.app.appUser?.name || this.app.user?.primaryEmailAddress?.emailAddress || 'You'
+        const comment = { id: crypto.randomUUID(), text, author_id: this.app.userId, author_name: authorName, timestamp: new Date().toISOString(), resolved: false, replies: [] }
+        if (!p.dashboard_comments) p.dashboard_comments = []
+        p.dashboard_comments.push(comment)
+        try { const { updateProject } = await import('../db/client.js'); await updateProject(this.app.userId, p.id, { dashboard_comments: p.dashboard_comments }) } catch(e) { console.error(e) }
+        rerender()
+      })
+      mc.querySelector('#pv-note-input')?.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) mc.querySelector('#pv-note-post')?.click()
+      })
+      mc.querySelectorAll('.pv-note-resolve').forEach(cb => {
+        cb.addEventListener('change', async () => {
+          const cid = cb.dataset.noteCid
+          p.dashboard_comments = (p.dashboard_comments||[]).map(c => c.id === cid ? { ...c, resolved: cb.checked } : c)
+          const el = cb.closest('.db-comment')
+          el?.classList.toggle('db-comment--resolved', cb.checked)
+          el?.querySelector('.db-resolve-icon')?.classList.toggle('db-resolve-icon--done', cb.checked)
+          el?.querySelector('.db-comment-text')?.classList.toggle('db-comment-text--resolved', cb.checked)
+          try { const { updateProject } = await import('../db/client.js'); await updateProject(this.app.userId, p.id, { dashboard_comments: p.dashboard_comments }) } catch(e) { console.error(e) }
+        })
+      })
+      mc.querySelectorAll('.pv-note-reply-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const form = mc.querySelector(`#pv-rf-${btn.dataset.noteCid}`)
+          if (!form) return
+          const open = form.style.display !== 'none'
+          form.style.display = open ? 'none' : 'flex'
+          if (!open) form.querySelector('textarea')?.focus()
+        })
+      })
+      mc.querySelectorAll('[data-note-post-reply]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const ta = btn.closest('.db-reply-form')?.querySelector('textarea')
+          const text = ta?.value?.trim()
+          if (!text) return
+          const cid = btn.dataset.notePostReply
+          const authorName = this.app.appUser?.name || this.app.user?.primaryEmailAddress?.emailAddress || 'You'
+          const reply = { author_id: this.app.userId, author_name: authorName, text, timestamp: new Date().toISOString() }
+          const comment = (p.dashboard_comments||[]).find(c => c.id === cid)
+          if (!comment) return
+          if (!comment.replies) comment.replies = []
+          comment.replies.push(reply)
+          try { const { updateProject } = await import('../db/client.js'); await updateProject(this.app.userId, p.id, { dashboard_comments: p.dashboard_comments }) } catch(e) { console.error(e) }
+          rerender()
+        })
+      })
     }
   }
 
@@ -3277,22 +3403,7 @@ export class ProjectsView {
             </div>
           </div>
 
-          <div class="proj-panel">
-            <div class="proj-panel-head">Insurance</div>
-            <div class="proj-panel-body">
-              ${(() => {
-                const s = this.app.settings || {}
-                const hasDefault = s.default_insurer_name || s.default_insurer_address
-                return hasDefault ? `<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:10px;line-height:1.5">Leave blank to use studio default: <strong style="color:var(--text-secondary)">${esc(s.default_insurer_name||'')}</strong></div>` : `<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:10px;line-height:1.5">No studio default set — fill in here or set a default in Settings.</div>`
-              })()}
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-                <div><div class="proj-field-label">Insurer</div><input type="text" class="proj-input" id="pe-ins-name" value="${esc(p.insurer_name||'')}" placeholder="e.g. TYSERS" /></div>
-                <div><div class="proj-field-label">Contact name</div><input type="text" class="proj-input" id="pe-ins-contact" value="${esc(p.insurer_contact||'')}" placeholder="e.g. Amy Volino" /></div>
-              </div>
-              <div style="margin-top:8px"><div class="proj-field-label">Address</div><input type="text" class="proj-input" id="pe-ins-addr" value="${esc(p.insurer_address||'')}" placeholder="71 Fenchurch Street, London, EC3M 4BS" /></div>
-              <div style="margin-top:8px"><div class="proj-field-label">Email</div><input type="email" class="proj-input" id="pe-ins-email" value="${esc(p.insurer_email||'')}" placeholder="contact@insurer.com" /></div>
-            </div>
-          </div>` : ''}
+` : ''}
 
           <div class="proj-panel">
             <div class="proj-panel-head">
@@ -3882,10 +3993,6 @@ export class ProjectsView {
     })
     mc.querySelector('#pe-start')?.addEventListener('change',   e => { p.shoot_start = e.target.value || null; save() })
     mc.querySelector('#pe-end')?.addEventListener('change',     e => { p.shoot_end   = e.target.value || null; save() })
-    mc.querySelector('#pe-ins-name')?.addEventListener('change', e => { p.insurer_name    = e.target.value.trim() || null; save() })
-    mc.querySelector('#pe-ins-contact')?.addEventListener('change', e => { p.insurer_contact = e.target.value.trim() || null; save() })
-    mc.querySelector('#pe-ins-addr')?.addEventListener('change', e => { p.insurer_address = e.target.value.trim() || null; save() })
-    mc.querySelector('#pe-ins-email')?.addEventListener('change', e => { p.insurer_email   = e.target.value.trim() || null; save() })
     mc.querySelector('#pe-notes')?.addEventListener('change',   e => { p.notes   = e.target.value; save() })
     mc.querySelector('#pe-frameio')?.addEventListener('change', e => { p.frame_io_link = e.target.value.trim() || null; save() })
 
