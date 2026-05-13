@@ -593,10 +593,13 @@ export class ProjectsView {
               : dueDate && d.done
               ? new Date(d.due).toLocaleDateString('en-GB',{day:'numeric',month:'short'})
               : ''
+            const assignee = d.assignee_id ? (this.app.allUsers||[]).find(u => u.id === d.assignee_id) : null
+            const assigneeName = assignee ? (assignee.name || assignee.email.split('@')[0]) : null
             return `
             <div class="deliv-row" style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border-light)${isOverdue?';background:rgba(239,68,68,0.04);border-radius:6px;margin:1px 0':''}">
               <input type="checkbox" ${d.done?'checked':''} data-pv-deliv="${p.id},${i}" style="width:15px;height:15px;cursor:pointer;flex-shrink:0" />
               <span style="font-size:13px;flex:1;min-width:0;${d.done?'text-decoration:line-through;color:var(--text-tertiary)':''}">${esc(d.text)}</span>
+              ${assigneeName ? `<span style="font-size:11px;color:var(--text-tertiary);white-space:nowrap;flex-shrink:0;padding:2px 7px;border:0.5px solid var(--border-light);border-radius:5px" title="Assigned to ${esc(assigneeName)}">👤 ${esc(assigneeName)}</span>` : ''}
               ${dueLabel ? `<span style="font-size:11px;color:${dueColour};white-space:nowrap;flex-shrink:0;font-weight:${isOverdue||isDueSoon?'500':'400'}">${isOverdue?'⚠ ':isDueSoon?'⏰ ':''}${dueLabel}</span>` : ''}
               ${d.link ? `<a href="${esc(d.link)}" target="_blank" rel="noopener" title="${esc(d.link)}" style="flex-shrink:0;font-size:11px;color:var(--accent);text-decoration:none;padding:2px 7px;border:0.5px solid rgba(74,144,217,0.3);border-radius:5px;white-space:nowrap" onmouseover="this.style.opacity='0.7'" onmouseout="this.style.opacity='1'">↗ Link</a>` : ''}
             </div>`
@@ -606,6 +609,10 @@ export class ProjectsView {
         <div style="padding:10px 14px 14px;border-top:1px solid var(--border-light);display:flex;gap:6px;align-items:center;flex-wrap:wrap">
           <input type="text" id="pv-new-deliv-text" placeholder="Add deliverable…" style="flex:1;min-width:120px;font-size:12px;padding:5px 8px;border:1px solid var(--border-light);border-radius:6px;background:transparent;color:var(--text-primary);font-family:var(--font);outline:none" />
           <input type="date" id="pv-new-deliv-due" title="Due date" style="font-size:11px;padding:5px 7px;border:1px solid var(--border-light);border-radius:6px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none;flex-shrink:0" />
+          <select id="pv-new-deliv-assignee" title="Assignee" style="font-size:11px;padding:5px 7px;border:1px solid var(--border-light);border-radius:6px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none;flex-shrink:0">
+            <option value="">Assignee…</option>
+            ${(this.app.allUsers||[]).map(u => `<option value="${esc(u.id)}">${esc(u.name||u.email)}</option>`).join('')}
+          </select>
           <button class="btn-secondary" id="pv-add-deliv" style="font-size:12px;white-space:nowrap">+ Add</button>
         </div>` : ''}
       </div>
@@ -816,11 +823,12 @@ export class ProjectsView {
         try { p.deliverables.forEach(d => d.done = false); await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }); this.renderViewer(mc) } catch(e) { console.error(e) }
       })
       mc.querySelector('#pv-add-deliv')?.addEventListener('click', async () => {
-        const textEl = mc.querySelector('#pv-new-deliv-text')
-        const dueEl  = mc.querySelector('#pv-new-deliv-due')
+        const textEl     = mc.querySelector('#pv-new-deliv-text')
+        const dueEl      = mc.querySelector('#pv-new-deliv-due')
+        const assigneeEl = mc.querySelector('#pv-new-deliv-assignee')
         const text = textEl?.value.trim()
         if (!text) { textEl?.focus(); return }
-        p.deliverables.push({ text, done: false, due: dueEl?.value || null })
+        p.deliverables.push({ text, done: false, due: dueEl?.value || null, assignee_id: assigneeEl?.value || null })
         try { await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }); this.renderViewer(mc) } catch(e) { console.error(e) }
       })
       mc.querySelector('#pv-new-deliv-text')?.addEventListener('keydown', e => {
@@ -3743,12 +3751,21 @@ export class ProjectsView {
         ? `${Math.abs(daysUntil)}d overdue`
         : daysUntil === 0 ? 'due today' : `${daysUntil}d left`
       : ''
+    const users = this.app.allUsers || []
+    const assigneeOptions = [
+      `<option value="">Assignee…</option>`,
+      ...users.map(u => `<option value="${esc(u.id)}" ${d.assignee_id===u.id?'selected':''}>${esc(u.name||u.email)}</option>`)
+    ].join('')
     return `<div class="deliverable-row" data-di="${i}" style="${overdue?'background:rgba(239,68,68,0.04);border-radius:6px;margin:1px 0':''}">
       <input type="checkbox" class="deliverable-check" ${d.done?'checked':''} data-${pfx}deliv-done="${i}" />
       <input type="text" class="deliverable-text" value="${esc(d.text)}" placeholder="${isMonthly ? 'e.g. Monthly edit, Social content...' : 'e.g. 90s hero film, 3x social cutdowns...'}" data-${pfx}deliv-text="${i}" />
       <input type="date" class="deliverable-date" value="${d.due||''}" data-${pfx}deliv-due="${i}"
         title="Due date" style="width:120px;font-size:11px;padding:3px 6px;border:1px solid var(--border-light);border-radius:5px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none;flex-shrink:0" />
       ${dueLabel ? `<span style="font-size:10px;color:${dueColour};white-space:nowrap;flex-shrink:0;font-weight:${overdue||dueSoon?'500':'400'}">${overdue?'⚠ ':dueSoon?'⏰ ':''}${dueLabel}</span>` : ''}
+      <select data-${pfx}deliv-assignee="${i}" title="Assigned to"
+        style="min-width:0;flex:0 1 120px;font-size:11px;padding:3px 6px;border:1px solid var(--border-light);border-radius:5px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none">
+        ${assigneeOptions}
+      </select>
       <input type="url" class="deliverable-link-input" value="${esc(d.link||'')}" placeholder="Link (e.g. Frame.io…)" data-${pfx}deliv-link="${i}"
         style="min-width:0;flex:0 1 160px;font-size:11px;padding:3px 6px;border:1px solid var(--border-light);border-radius:5px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none" />
       <button class="row-btn" style="color:#b03020;flex-shrink:0" data-${pfx}deliv-rem="${i}">×</button>
@@ -3954,6 +3971,9 @@ export class ProjectsView {
     mc.querySelectorAll('[data-deliv-link]').forEach(el => {
       el.addEventListener('change', () => { p.deliverables[+el.dataset.delivLink].link = el.value.trim() || null; save() })
     })
+    mc.querySelectorAll('[data-deliv-assignee]').forEach(el => {
+      el.addEventListener('change', () => { p.deliverables[+el.dataset.delivAssignee].assignee_id = el.value || null; save() })
+    })
     mc.querySelectorAll('[data-deliv-rem]').forEach(el => {
       el.addEventListener('click', () => {
         if (p.deliverables.length <= 1) return
@@ -3978,6 +3998,9 @@ export class ProjectsView {
     })
     mc.querySelectorAll('[data-monthly-deliv-link]').forEach(el => {
       el.addEventListener('change', () => { p.monthly_deliverables[+el.dataset.monthlyDelivLink].link = el.value.trim() || null; save() })
+    })
+    mc.querySelectorAll('[data-monthly-deliv-assignee]').forEach(el => {
+      el.addEventListener('change', () => { p.monthly_deliverables[+el.dataset.monthlyDelivAssignee].assignee_id = el.value || null; save() })
     })
     mc.querySelectorAll('[data-monthly-deliv-rem]').forEach(el => {
       el.addEventListener('click', () => {

@@ -1220,6 +1220,14 @@ export class App {
       <div class="notes-card" data-note-id="${n.id}">
         <input class="notes-title-input" data-note-id="${n.id}" value="${(n.title||'').replace(/"/g,'&quot;')}" placeholder="Untitled" />
         <textarea class="notes-body-input" data-note-id="${n.id}" placeholder="Write something…" rows="4">${n.content||''}</textarea>
+        <div class="notes-card-meta" style="display:flex;align-items:center;gap:10px;padding:6px 0 2px;flex-wrap:wrap">
+          <input type="date" class="notes-due-input" data-note-id="${n.id}" value="${n.due_date||''}" title="Due date"
+            style="font-size:11px;padding:3px 7px;border:1px solid var(--border-light);border-radius:5px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none" />
+          <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-tertiary);cursor:pointer;user-select:none">
+            <input type="checkbox" class="notes-reminder-input" data-note-id="${n.id}" ${n.reminder?'checked':''} style="width:13px;height:13px;cursor:pointer" />
+            Remind me 36h before
+          </label>
+        </div>
         <div class="notes-card-footer">
           <span class="notes-timestamp">${relTime(n.updated_at)}</span>
           <button class="notes-delete-btn" data-delete-id="${n.id}" title="Delete note">Delete</button>
@@ -1234,6 +1242,12 @@ export class App {
       ta.addEventListener('blur', () => this._saveNote(ta.dataset.noteId, { content: ta.value }))
       ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px' })
       ta.dispatchEvent(new Event('input'))
+    })
+    list.querySelectorAll('.notes-due-input').forEach(input => {
+      input.addEventListener('change', () => this._saveNote(input.dataset.noteId, { due_date: input.value || null }))
+    })
+    list.querySelectorAll('.notes-reminder-input').forEach(cb => {
+      cb.addEventListener('change', () => this._saveNote(cb.dataset.noteId, { reminder: cb.checked }))
     })
     list.querySelectorAll('.notes-delete-btn').forEach(btn => {
       btn.addEventListener('click', () => this._deleteNote(btn.dataset.deleteId))

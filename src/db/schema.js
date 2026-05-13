@@ -341,6 +341,8 @@ export const user_notes = pgTable('user_notes', {
   title:      text('title').notNull().default(''),
   content:    text('content').notNull().default(''),
   sort_order: integer('sort_order').notNull().default(0),
+  due_date:   date('due_date'),
+  reminder:   boolean('reminder').notNull().default(false),
   created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updated_at: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
