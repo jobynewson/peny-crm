@@ -723,6 +723,26 @@ export class App {
     if (this._dbEnqOpen === undefined) {
       this._dbEnqOpen = localStorage.getItem('db_enq_open') !== 'false'
     }
+    if (this._dbUpcomingOpen === undefined) {
+      this._dbUpcomingOpen = localStorage.getItem('db_upcoming_open') !== 'false'
+    }
+
+    // --- Compute upcoming deliverables (due within 7 days, not done) ---
+    const today = new Date(); today.setHours(0,0,0,0)
+    const sevenDaysLater = new Date(today); sevenDaysLater.setDate(sevenDaysLater.getDate() + 7); sevenDaysLater.setHours(23,59,59,999)
+    const upcomingDeliverables = []
+    for (const p of this.projects) {
+      const sources = [
+        ...(Array.isArray(p.deliverables) ? p.deliverables : []),
+        ...(p.is_retainer && Array.isArray(p.monthly_deliverables) ? p.monthly_deliverables : []),
+      ]
+      for (const d of sources) {
+        if (!d.text || d.done || !d.due) continue
+        const due = new Date(d.due)
+        if (due <= sevenDaysLater) upcomingDeliverables.push({ d, p, due })
+      }
+    }
+    upcomingDeliverables.sort((a, b) => a.due - b.due)
 
     const renderComment = (c, pid) => {
       const ini = initials(c.author_name || 'Unknown')
@@ -814,6 +834,41 @@ export class App {
           ? `<div class="db-proj-list">${liveProjects.map(renderProjectRow).join('')}</div>`
           : `<div style="color:var(--text-tertiary);font-size:13px;padding:12px 0 4px">No live projects yet.</div>`}
       </div>
+
+      <!-- Upcoming Deliverables -->
+      ${upcomingDeliverables.length ? `
+      <div style="margin-bottom:28px">
+        <div class="db-section-head db-upcoming-toggle" id="db-upcoming-toggle" style="cursor:pointer;user-select:none">
+          <span class="db-section-dot" style="background:#ef4444"></span>
+          Upcoming Deliverables
+          <span class="db-section-count">${upcomingDeliverables.length}</span>
+          <span class="db-chevron${this._dbUpcomingOpen ? ' db-chevron--open' : ''}" style="margin-left:auto" id="db-upcoming-chevron">▶</span>
+        </div>
+        <div id="db-upcoming-body" style="display:${this._dbUpcomingOpen ? 'block' : 'none'}">
+          <div class="db-proj-list">
+            ${upcomingDeliverables.map(({ d, p, due }) => {
+              const daysUntil = Math.round((due - today) / 86400000)
+              const overdue = daysUntil < 0
+              const dueToday = daysUntil === 0
+              const duePill = overdue
+                ? `<span class="db-due-pill db-due-pill--overdue">${Math.abs(daysUntil)}d overdue</span>`
+                : dueToday
+                  ? `<span class="db-due-pill db-due-pill--today">Today</span>`
+                  : `<span class="db-due-pill">${daysUntil}d</span>`
+              const dueDateStr = due.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+              return `<div class="db-proj-row db-upcoming-row" style="cursor:default">
+                <div class="db-proj-header" style="cursor:default;gap:10px">
+                  ${duePill}
+                  <span style="font-size:11px;color:var(--text-tertiary);white-space:nowrap;flex-shrink:0">${dueDateStr}</span>
+                  <span class="db-proj-name-label" style="flex:2">${esc(d.text)}</span>
+                  <span class="db-proj-client-label" style="font-size:11px">${esc(p.name)}</span>
+                  <button class="db-action-link" style="font-size:11px;padding:3px 8px;flex-shrink:0" data-open-pid="${p.id}">Open ↗</button>
+                </div>
+              </div>`
+            }).join('')}
+          </div>
+        </div>
+      </div>` : ''}
 
       <!-- Enquiries -->
       <div style="margin-bottom:28px">
@@ -948,6 +1003,17 @@ export class App {
         }
         localStorage.setItem('db_pinned', JSON.stringify([...this._dbPinned]))
       })
+    })
+
+    // --- Upcoming deliverables collapse ---
+    mc.querySelector('#db-upcoming-toggle')?.addEventListener('click', () => {
+      const body = mc.querySelector('#db-upcoming-body')
+      const chevron = mc.querySelector('#db-upcoming-chevron')
+      if (!body) return
+      this._dbUpcomingOpen = body.style.display === 'none'
+      body.style.display = this._dbUpcomingOpen ? 'block' : 'none'
+      if (chevron) chevron.classList.toggle('db-chevron--open', this._dbUpcomingOpen)
+      localStorage.setItem('db_upcoming_open', String(this._dbUpcomingOpen))
     })
 
     // --- Enquiries collapse ---
@@ -1997,6 +2063,9 @@ export class App {
       .db-proj-name-label{font-size:13px;font-weight:500;color:var(--text-primary);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       .db-proj-client-label{font-size:12px;color:var(--text-secondary);white-space:nowrap;flex-shrink:0}
       .db-badge{font-size:10px;color:var(--text-tertiary);white-space:nowrap;flex-shrink:0}
+      .db-due-pill{font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;white-space:nowrap;flex-shrink:0;background:var(--bg-tertiary);color:var(--text-secondary)}
+      .db-due-pill--today{background:#f59e0b22;color:#f59e0b}
+      .db-due-pill--overdue{background:#ef444420;color:#ef4444}
       .db-status-pill{font-size:10px;font-weight:500;padding:2px 7px;border-radius:3px;border:1px solid;white-space:nowrap;flex-shrink:0;letter-spacing:0.2px}
       .db-pin-btn{background:none;border:1px solid transparent;border-radius:var(--radius-sm);padding:3px 6px;font-size:13px;color:var(--text-tertiary);cursor:pointer;flex-shrink:0;line-height:1;transition:color 0.12s,border-color 0.12s,background 0.12s}
       .db-pin-btn:hover{color:var(--text-secondary);border-color:var(--border-med);background:var(--bg-secondary)}
