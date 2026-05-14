@@ -991,10 +991,12 @@ export class App {
               const renderPost = (p) => `
                 <div class="social-post-row" data-social-id="${p.id}" style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:var(--bg-secondary);border:0.5px solid var(--border-light);border-radius:var(--radius-md);${p.completed ? 'opacity:0.45;' : ''}">
                   <input type="checkbox" class="social-check" data-social-id="${p.id}" ${p.completed ? 'checked' : ''}
-                    style="margin-top:2px;flex-shrink:0;cursor:pointer;accent-color:#34d399">
-                  <div style="flex:1;min-width:0">
-                    <div style="font-size:13px;font-weight:500;${p.completed ? 'text-decoration:line-through;color:var(--text-tertiary)' : 'color:var(--text-primary)'};line-height:1.3;word-break:break-word">${esc(p.title)}</div>
-                    ${p.notes ? `<div style="font-size:11px;color:var(--text-tertiary);margin-top:3px;line-height:1.4;white-space:pre-wrap;word-break:break-word">${esc(p.notes)}</div>` : ''}
+                    style="margin-top:3px;flex-shrink:0;cursor:pointer;accent-color:#34d399">
+                  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                    <input class="social-title-input" data-social-id="${p.id}" value="${esc(p.title)}" placeholder="Title"
+                      style="width:100%;background:transparent;border:none;outline:none;font-size:13px;font-weight:500;font-family:var(--font);padding:0;line-height:1.3;${p.completed ? 'text-decoration:line-through;color:var(--text-tertiary)' : 'color:var(--text-primary)'}">
+                    <textarea class="social-notes-input" data-social-id="${p.id}" placeholder="Add notes…" rows="1"
+                      style="width:100%;background:transparent;border:none;outline:none;font-size:11px;color:var(--text-tertiary);font-family:var(--font);resize:none;padding:0;line-height:1.4;overflow:hidden">${esc(p.notes||'')}</textarea>
                   </div>
                   <button class="social-delete-btn" data-social-id="${p.id}" title="Delete"
                     style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:14px;line-height:1;padding:0 2px;opacity:0.4">×</button>
@@ -1056,6 +1058,32 @@ export class App {
         this.socialPosts = this.socialPosts.filter(p => p.id !== id)
         this.renderDashboard(mc)
       })
+    })
+    mc.querySelectorAll('.social-title-input').forEach(input => {
+      input.addEventListener('blur', async () => {
+        const id = input.dataset.socialId
+        const title = input.value.trim()
+        const post = this.socialPosts.find(p => p.id === id)
+        if (!title) { input.value = post?.title || ''; return }
+        if (title === post?.title) return
+        const { updateSocialPost } = await import('./db/client.js')
+        await updateSocialPost(this.userId, id, { title })
+        if (post) post.title = title
+      })
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); input.blur() } })
+    })
+    mc.querySelectorAll('.social-notes-input').forEach(ta => {
+      ta.addEventListener('blur', async () => {
+        const id = ta.dataset.socialId
+        const notes = ta.value.trim() || null
+        const post = this.socialPosts.find(p => p.id === id)
+        if (notes === (post?.notes || null)) return
+        const { updateSocialPost } = await import('./db/client.js')
+        await updateSocialPost(this.userId, id, { notes })
+        if (post) post.notes = notes
+      })
+      ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px' })
+      ta.dispatchEvent(new Event('input'))
     })
 
     // --- Open project links ---
