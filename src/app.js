@@ -344,6 +344,13 @@ export class App {
         <div class="nav-label">Main</div>
         ${[['dashboard','Dashboard',this.iconPipeline()],['contacts','Contacts',this.iconContacts()],['projects','Projects',this.iconProjects()],['budgets','Budgets',this.iconBudgets()]].map(([id,label,icon])=>`
           <div class="nav-item ${this.currentView===id?'active':''}" data-view="${id}">${icon} ${label}</div>`).join('')}
+        <div class="sidebar-notes">
+          <div class="sidebar-notes-header">
+            <span class="sidebar-notes-title">Notes</span>
+            <button id="notes-new-btn" class="sidebar-notes-new-btn">+ New</button>
+          </div>
+          <div class="notes-list" id="notes-list"><div class="notes-empty">No notes yet.<br>Hit + New to get started.</div></div>
+        </div>
         <div class="nav-bottom">
           ${this.permissions.settings ? `<div class="nav-item" data-view="settings">${this.iconSettings()} Settings</div>` : ''}
           <div class="nav-item" id="dev-request-btn" style="color:#596773;font-size:13px">
@@ -359,25 +366,17 @@ export class App {
           <div class="topbar-title" id="view-title">${this.viewTitle()}</div>
           <div id="topbar-actions" style="display:flex;gap:8px;align-items:center;flex-shrink:0">${this.topbarSearch()}${this.topbarButton()}
             <button class="theme-toggle" id="theme-toggle-btn" title="Toggle dark mode">${this.iconTheme()}</button>
-            <button id="notes-panel-btn" title="My notes" style="width:32px;height:32px;border-radius:var(--radius-md);border:1px solid var(--border-light);background:transparent;color:var(--text-tertiary);font-size:15px;cursor:pointer;font-family:var(--font);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background 0.12s,color 0.12s,border-color 0.12s">✏</button>
             <button id="shortcut-hint" title="Keyboard shortcuts" style="width:32px;height:32px;border-radius:var(--radius-md);border:1px solid var(--border-light);background:transparent;color:var(--text-tertiary);font-size:13px;cursor:pointer;font-family:var(--font);display:flex;align-items:center;justify-content:center;flex-shrink:0">?</button>
           </div>
         </div>
         <div class="content" id="main-content"></div>
       </div>
       ${showDetail ? `<div class="detail-panel" id="detail-panel"><div class="detail-empty">Select a contact<br>to view details</div></div>` : ''}
-      <div class="notes-backdrop" id="notes-backdrop"></div>
-      <div class="notes-panel" id="notes-panel">
-        <div class="notes-panel-header">
-          <span class="notes-panel-title">My Notes</span>
-          <button class="btn-primary" id="notes-new-btn" style="font-size:12px;padding:5px 12px">+ New</button>
-          <button class="notes-close-btn" id="notes-close-btn" title="Close">✕</button>
-        </div>
-        <div class="notes-list" id="notes-list"><div class="notes-empty">No notes yet.<br>Hit + New to get started.</div></div>
-      </div>
     `
     this.bindNav()
     this.renderCurrentView()
+    if (this._notesLoaded) this._renderNotesList()
+    else this._loadNotes()
   }
 
   topbarSearch() {
@@ -446,10 +445,8 @@ export class App {
       search.addEventListener('input', e => { this.contactsView.search = e.target.value; this.contactsView.refreshList() })
     }
 
-    // Notes panel
-    this.container.querySelector('#notes-panel-btn')?.addEventListener('click', () => this._openNotesPanel())
-    this.container.querySelector('#notes-close-btn')?.addEventListener('click', () => this._closeNotesPanel())
-    this.container.querySelector('#notes-backdrop')?.addEventListener('click', () => this._closeNotesPanel())
+    // Notes new button
+    this.container.querySelector('#notes-new-btn')?.addEventListener('click', () => this._newNote())
 
     // Keyboard shortcut hint
     this.container.querySelector('#shortcut-hint')?.addEventListener('click', () => {
@@ -1353,29 +1350,7 @@ export class App {
     }
   }
 
-  // ── Notes panel ─────────────────────────────────────────────────────────────
-
-  _openNotesPanel() {
-    const panel = document.getElementById('notes-panel')
-    const backdrop = document.getElementById('notes-backdrop')
-    const btn = document.getElementById('notes-panel-btn')
-    if (!panel) return
-    panel.classList.add('notes-panel--open')
-    backdrop.classList.add('notes-backdrop--open')
-    if (btn) { btn.style.color = 'var(--accent)'; btn.style.borderColor = 'var(--accent)'; btn.style.background = 'var(--accent-subtle)' }
-    if (!this._notesLoaded) this._loadNotes()
-    else this._renderNotesList()
-  }
-
-  _closeNotesPanel() {
-    const panel = document.getElementById('notes-panel')
-    const backdrop = document.getElementById('notes-backdrop')
-    const btn = document.getElementById('notes-panel-btn')
-    if (!panel) return
-    panel.classList.remove('notes-panel--open')
-    backdrop.classList.remove('notes-backdrop--open')
-    if (btn) { btn.style.color = ''; btn.style.borderColor = ''; btn.style.background = '' }
-  }
+  // ── Notes sidebar ────────────────────────────────────────────────────────────
 
   async _loadNotes() {
     const list = document.getElementById('notes-list')
@@ -1385,7 +1360,6 @@ export class App {
       this._notes = await getUserNotes(this.clerkUserId)
       this._notesLoaded = true
       this._renderNotesList()
-      document.getElementById('notes-new-btn')?.addEventListener('click', () => this._newNote())
     } catch(e) {
       console.error('Failed to load notes:', e)
       if (list) list.innerHTML = `<div class="notes-empty">Failed to load notes.</div>`
@@ -1413,12 +1387,11 @@ export class App {
       <div class="notes-card" data-note-id="${n.id}">
         <input class="notes-title-input" data-note-id="${n.id}" value="${(n.title||'').replace(/"/g,'&quot;')}" placeholder="Untitled" />
         <textarea class="notes-body-input" data-note-id="${n.id}" placeholder="Write something…" rows="4">${n.content||''}</textarea>
-        <div class="notes-card-meta" style="display:flex;align-items:center;gap:10px;padding:6px 0 2px;flex-wrap:wrap">
-          <input type="date" class="notes-due-input" data-note-id="${n.id}" value="${n.due_date||''}" title="Due date"
-            style="font-size:11px;padding:3px 7px;border:1px solid var(--border-light);border-radius:5px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none" />
-          <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-tertiary);cursor:pointer;user-select:none">
-            <input type="checkbox" class="notes-reminder-input" data-note-id="${n.id}" ${n.reminder?'checked':''} style="width:13px;height:13px;cursor:pointer" />
-            Remind me 36h before
+        <div class="notes-card-meta" style="display:flex;align-items:center;gap:6px;padding:4px 10px 2px;flex-wrap:wrap">
+          <input type="date" class="notes-due-input" data-note-id="${n.id}" value="${n.due_date||''}" title="Due date" />
+          <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#596773;cursor:pointer;user-select:none">
+            <input type="checkbox" class="notes-reminder-input" data-note-id="${n.id}" ${n.reminder?'checked':''} style="width:12px;height:12px;cursor:pointer" />
+            Remind 36h before
           </label>
         </div>
         <div class="notes-card-footer">
@@ -1930,7 +1903,7 @@ export class App {
     const style = document.createElement('style')
     style.id = 'app-styles'
     style.textContent = `
-      .sidebar{width:240px;flex-shrink:0;background:#1D2125;display:flex;flex-direction:column}
+      .sidebar{width:260px;flex-shrink:0;background:#1D2125;display:flex;flex-direction:column}
       .logo{padding:14px 16px 14px;display:flex;align-items:center;border-bottom:1px solid rgba(255,255,255,0.06)}
       .logo img{height:28px;width:auto;display:block;filter:brightness(0) invert(1)}
       .nav-label{font-size:11px;color:#596773;text-transform:uppercase;letter-spacing:0.8px;padding:16px 16px 4px}
@@ -2132,7 +2105,7 @@ export class App {
           z-index:200;
           transform:translateX(-100%);
           transition:transform 0.25s cubic-bezier(0.4,0,0.2,1);
-          width:240px!important;
+          width:260px!important;
           box-shadow:none
         }
         .sidebar.open{transform:translateX(0);box-shadow:4px 0 24px rgba(0,0,0,0.3)}
@@ -2233,28 +2206,26 @@ export class App {
       .stat-card--sm{padding:11px 14px}
       .stat-value--sm{font-size:18px;font-weight:600;letter-spacing:-0.3px}
 
-      /* ── Notes panel ── */
-      .notes-backdrop{display:none;position:fixed;inset:0;background:rgba(9,30,66,0.38);z-index:89;cursor:pointer;transition:opacity 0.2s}
-      .notes-backdrop--open{display:block}
-      .notes-panel{position:fixed;top:0;right:0;bottom:0;width:340px;background:var(--bg-primary);border-left:1px solid var(--border-light);box-shadow:-4px 0 24px rgba(9,30,66,0.12);z-index:90;display:flex;flex-direction:column;transform:translateX(100%);transition:transform 0.22s cubic-bezier(0.4,0,0.2,1)}
-      .notes-panel--open{transform:translateX(0)}
-      .notes-panel-header{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--border-light);flex-shrink:0}
-      .notes-panel-title{font-size:14px;font-weight:600;color:var(--text-primary);flex:1}
-      .notes-close-btn{background:none;border:none;color:var(--text-tertiary);font-size:16px;cursor:pointer;padding:4px 6px;line-height:1;border-radius:var(--radius-sm);transition:background 0.1s,color 0.1s}
-      .notes-close-btn:hover{background:var(--bg-tertiary);color:var(--text-primary)}
-      .notes-list{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
-      .notes-empty{padding:40px 16px;text-align:center;color:var(--text-tertiary);font-size:13px;line-height:1.7}
-      .notes-card{background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);overflow:hidden;transition:box-shadow 0.15s,border-color 0.15s}
-      .notes-card:focus-within{border-color:var(--border-strong);box-shadow:0 2px 8px rgba(9,30,66,0.08)}
-      .notes-title-input{width:100%;padding:10px 12px 6px;font-size:13px;font-weight:600;color:var(--text-primary);background:transparent;border:none;outline:none;font-family:var(--font)}
-      .notes-title-input::placeholder{color:var(--text-tertiary);font-weight:400}
-      .notes-body-input{width:100%;padding:2px 12px 10px;font-size:13px;color:var(--text-primary);background:transparent;border:none;outline:none;resize:none;font-family:var(--font);line-height:1.6;min-height:72px;overflow:hidden}
-      .notes-body-input::placeholder{color:var(--text-tertiary)}
-      .notes-card-footer{display:flex;align-items:center;justify-content:space-between;padding:6px 12px 8px;border-top:1px solid var(--border-light)}
-      .notes-timestamp{font-size:11px;color:var(--text-tertiary)}
-      .notes-delete-btn{background:none;border:none;font-size:11px;color:var(--text-tertiary);cursor:pointer;padding:2px 6px;border-radius:var(--radius-sm);font-family:var(--font);transition:background 0.1s,color 0.1s}
-      .notes-delete-btn:hover{background:#fee2e2;color:#ef4444}
-      @media(max-width:480px){.notes-panel{width:100%}}
+      /* ── Sidebar notes ── */
+      .sidebar-notes{flex:1;display:flex;flex-direction:column;min-height:0;border-top:1px solid rgba(255,255,255,0.08);margin-top:8px}
+      .sidebar-notes-header{display:flex;align-items:center;padding:10px 16px 6px;flex-shrink:0}
+      .sidebar-notes-title{font-size:11px;color:#596773;text-transform:uppercase;letter-spacing:0.8px;flex:1}
+      .sidebar-notes-new-btn{font-size:11px;color:#B6C2CF;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:4px;padding:3px 8px;cursor:pointer;font-family:var(--font);transition:background 0.12s,color 0.12s}
+      .sidebar-notes-new-btn:hover{background:rgba(255,255,255,0.12);color:#fff}
+      .notes-list{flex:1;overflow-y:auto;padding:6px 8px 8px;display:flex;flex-direction:column;gap:8px}
+      .notes-empty{padding:24px 8px;text-align:center;color:#596773;font-size:12px;line-height:1.7}
+      .notes-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:var(--radius-md);overflow:hidden;transition:box-shadow 0.15s,border-color 0.15s}
+      .notes-card:focus-within{border-color:rgba(255,255,255,0.18);box-shadow:0 2px 8px rgba(0,0,0,0.2)}
+      .notes-title-input{width:100%;padding:8px 10px 4px;font-size:12px;font-weight:600;color:#C7D1DB;background:transparent;border:none;outline:none;font-family:var(--font)}
+      .notes-title-input::placeholder{color:#596773;font-weight:400}
+      .notes-body-input{width:100%;padding:2px 10px 8px;font-size:12px;color:#B6C2CF;background:transparent;border:none;outline:none;resize:none;font-family:var(--font);line-height:1.5;min-height:52px;overflow:hidden}
+      .notes-body-input::placeholder{color:#596773}
+      .notes-card-meta{padding:4px 10px 2px;flex-wrap:wrap;gap:6px}
+      .notes-due-input{font-size:11px;padding:2px 6px;border:1px solid rgba(255,255,255,0.1)!important;border-radius:4px;background:transparent;color:#596773!important;font-family:var(--font);outline:none}
+      .notes-card-footer{display:flex;align-items:center;justify-content:space-between;padding:5px 10px 7px;border-top:1px solid rgba(255,255,255,0.06)}
+      .notes-timestamp{font-size:11px;color:#596773}
+      .notes-delete-btn{background:none;border:none;font-size:11px;color:#596773;cursor:pointer;padding:2px 6px;border-radius:var(--radius-sm);font-family:var(--font);transition:background 0.1s,color 0.1s}
+      .notes-delete-btn:hover{background:rgba(239,68,68,0.15);color:#ef4444}
     `
     document.head.appendChild(style)
   }
