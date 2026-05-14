@@ -986,21 +986,31 @@ export class App {
           <!-- Post list -->
           <div id="social-post-list" style="display:flex;flex-direction:column;gap:6px">
             ${(() => {
+              if (!this.expandedSocialPosts) this.expandedSocialPosts = new Set()
               const active = this.socialPosts.filter(p => !p.completed)
               const done   = this.socialPosts.filter(p => p.completed)
-              const renderPost = (p) => `
-                <div class="social-post-row" data-social-id="${p.id}" style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:var(--bg-secondary);border:0.5px solid var(--border-light);border-radius:var(--radius-md);${p.completed ? 'opacity:0.45;' : ''}">
-                  <input type="checkbox" class="social-check" data-social-id="${p.id}" ${p.completed ? 'checked' : ''}
-                    style="margin-top:3px;flex-shrink:0;cursor:pointer;accent-color:#34d399">
-                  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+              const renderPost = (p) => {
+                const isOpen = this.expandedSocialPosts.has(p.id)
+                return `
+                <div class="social-post-row" data-social-id="${p.id}" style="background:var(--bg-secondary);border:0.5px solid var(--border-light);border-radius:var(--radius-md);overflow:hidden;${p.completed ? 'opacity:0.45;' : ''}">
+                  <div class="social-post-header" style="display:flex;align-items:center;gap:8px;padding:8px 10px">
+                    <input type="checkbox" class="social-check" data-social-id="${p.id}" ${p.completed ? 'checked' : ''}
+                      style="flex-shrink:0;cursor:pointer;accent-color:#34d399">
                     <input class="social-title-input" data-social-id="${p.id}" value="${esc(p.title)}" placeholder="Title"
-                      style="width:100%;background:transparent;border:none;outline:none;font-size:13px;font-weight:500;font-family:var(--font);padding:0;line-height:1.3;${p.completed ? 'text-decoration:line-through;color:var(--text-tertiary)' : 'color:var(--text-primary)'}">
-                    <textarea class="social-notes-input" data-social-id="${p.id}" placeholder="Add notes…" rows="1"
-                      style="width:100%;background:transparent;border:none;outline:none;font-size:11px;color:var(--text-tertiary);font-family:var(--font);resize:none;padding:0;line-height:1.4;overflow:hidden">${esc(p.notes||'')}</textarea>
+                      style="flex:1;min-width:0;background:transparent;border:none;outline:none;font-size:13px;font-weight:500;font-family:var(--font);padding:0;line-height:1.3;${p.completed ? 'text-decoration:line-through;color:var(--text-tertiary)' : 'color:var(--text-primary)'}">
+                    <button class="social-toggle-btn" data-social-id="${p.id}"
+                      style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:13px;line-height:1;padding:0 2px;opacity:0.55">${isOpen ? '▾' : '▸'}</button>
                   </div>
-                  <button class="social-delete-btn" data-social-id="${p.id}" title="Delete"
-                    style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:14px;line-height:1;padding:0 2px;opacity:0.4">×</button>
+                  <div class="social-post-body" data-social-id="${p.id}" style="display:${isOpen ? 'block' : 'none'};padding:0 10px 10px 28px">
+                    <textarea class="social-notes-input" data-social-id="${p.id}" placeholder="Add notes…" rows="2"
+                      style="width:100%;background:transparent;border:none;outline:none;font-size:11px;color:var(--text-tertiary);font-family:var(--font);resize:none;padding:0;line-height:1.4;overflow:hidden;box-sizing:border-box;margin-bottom:6px">${esc(p.notes||'')}</textarea>
+                    <div style="display:flex;justify-content:flex-end">
+                      <button class="social-delete-btn" data-social-id="${p.id}" title="Delete"
+                        style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:11px;line-height:1;padding:0;opacity:0.5">Delete</button>
+                    </div>
+                  </div>
                 </div>`
+              }
               if (!active.length && !done.length) {
                 return `<div style="color:var(--text-tertiary);font-size:13px;padding:8px 0">No post ideas yet. Hit + add to get started.</div>`
               }
@@ -1083,7 +1093,29 @@ export class App {
         if (post) post.notes = notes
       })
       ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px' })
-      ta.dispatchEvent(new Event('input'))
+      // only auto-size if the body is currently visible
+      if (ta.closest('.social-post-body')?.style.display !== 'none') {
+        ta.dispatchEvent(new Event('input'))
+      }
+    })
+    mc.querySelectorAll('.social-toggle-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.socialId
+        const body = mc.querySelector(`.social-post-body[data-social-id="${id}"]`)
+        if (!body) return
+        const isOpen = this.expandedSocialPosts.has(id)
+        if (isOpen) {
+          this.expandedSocialPosts.delete(id)
+          body.style.display = 'none'
+          btn.textContent = '▸'
+        } else {
+          this.expandedSocialPosts.add(id)
+          body.style.display = 'block'
+          btn.textContent = '▾'
+          const ta = body.querySelector('.social-notes-input')
+          if (ta) { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px' }
+        }
+      })
     })
 
     // --- Open project links ---
