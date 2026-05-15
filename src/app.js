@@ -884,14 +884,26 @@ export class App {
         </div>
         <div id="db-enq-body" style="display:${this._dbEnqOpen ? 'block' : 'none'}">
           ${enquiryProjects.length ? `<div class="db-enq-list">
-            ${enquiryProjects.map(p => {
-              const cl = this.contacts.find(c => c.id === p.client_id)
-              return `<div class="db-enq-row" data-open-pid="${p.id}">
-                <span class="db-proj-name-label">${esc(p.name)}</span>
-                ${cl ? `<span class="db-proj-client-label">${esc(cl.first_name+' '+cl.last_name)}</span>` : ''}
-                ${p.brief ? `<span class="db-enq-brief">${esc(p.brief.slice(0,90))}${p.brief.length>90?'…':''}</span>` : ''}
-              </div>`
-            }).join('')}
+            ${(() => {
+              if (!this.expandedEnquiries) this.expandedEnquiries = new Set()
+              return enquiryProjects.map(p => {
+                const cl = this.contacts.find(c => c.id === p.client_id)
+                const isOpen = this.expandedEnquiries.has(p.id)
+                return `<div class="db-enq-item" data-enq-id="${p.id}">
+                  <div class="db-enq-row" data-open-pid="${p.id}">
+                    <span class="db-proj-name-label">${esc(p.name)}</span>
+                    ${cl ? `<span class="db-proj-client-label">${esc(cl.first_name+' '+cl.last_name)}</span>` : ''}
+                    ${p.brief ? `<span class="db-enq-brief">${esc(p.brief.slice(0,90))}${p.brief.length>90?'…':''}</span>` : ''}
+                    <button class="db-enq-toggle-btn" data-enq-id="${p.id}" title="Notes"
+                      style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:13px;line-height:1;padding:0 2px;opacity:0.55;margin-left:auto">${isOpen ? '▾' : '▸'}</button>
+                  </div>
+                  <div class="db-enq-body" data-enq-id="${p.id}" style="display:${isOpen ? 'block' : 'none'};padding:0 14px 10px">
+                    <textarea class="db-enq-notes-input" data-enq-id="${p.id}" placeholder="Add notes…" rows="2"
+                      style="width:100%;background:transparent;border:none;outline:none;font-size:11px;color:var(--text-tertiary);font-family:var(--font);resize:none;padding:0;line-height:1.4;overflow:hidden;box-sizing:border-box">${esc(p.notes||'')}</textarea>
+                  </div>
+                </div>`
+              }).join('')
+            })()}
           </div>` : `<div style="color:var(--text-tertiary);font-size:13px;padding:8px 0">No enquiries.</div>`}
         </div>
       </div>
@@ -1209,6 +1221,45 @@ export class App {
       body.style.display = this._dbEnqOpen ? 'block' : 'none'
       if (chevron) chevron.classList.toggle('db-chevron--open', this._dbEnqOpen)
       localStorage.setItem('db_enq_open', String(this._dbEnqOpen))
+    })
+
+    // --- Enquiry notes toggle ---
+    if (!this.expandedEnquiries) this.expandedEnquiries = new Set()
+    mc.querySelectorAll('.db-enq-toggle-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation()
+        const id = btn.dataset.enqId
+        const body = mc.querySelector(`.db-enq-body[data-enq-id="${id}"]`)
+        if (!body) return
+        const isOpen = this.expandedEnquiries.has(id)
+        if (isOpen) {
+          this.expandedEnquiries.delete(id)
+          body.style.display = 'none'
+          btn.textContent = '▸'
+        } else {
+          this.expandedEnquiries.add(id)
+          body.style.display = 'block'
+          btn.textContent = '▾'
+          const ta = body.querySelector('.db-enq-notes-input')
+          if (ta) { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; ta.focus() }
+        }
+      })
+    })
+    mc.querySelectorAll('.db-enq-notes-input').forEach(ta => {
+      ta.addEventListener('click', e => e.stopPropagation())
+      ta.addEventListener('blur', async () => {
+        const id = ta.dataset.enqId
+        const notes = ta.value.trim() || null
+        const project = this.projects.find(x => x.id === id)
+        if (notes === (project?.notes || null)) return
+        const { updateProject } = await import('./db/client.js')
+        await updateProject(this.userId, id, { notes })
+        if (project) project.notes = notes
+      })
+      ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px' })
+      if (ta.closest('.db-enq-body')?.style.display !== 'none') {
+        ta.dispatchEvent(new Event('input'))
+      }
     })
 
     // --- Resolve comment ---
@@ -2299,8 +2350,9 @@ export class App {
       .db-comment-input{flex:1;font-size:12px;padding:7px 10px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);outline:none;resize:none;transition:border 0.12s,background 0.12s}
       .db-comment-input:focus{border-color:var(--accent);background:var(--bg-primary)}
       .db-enq-list{display:flex;flex-direction:column;gap:0;border:1px solid var(--border-light);border-radius:var(--radius-md);overflow:hidden;background:var(--bg-primary)}
-      .db-enq-row{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--border-light);cursor:pointer;transition:background 0.1s;flex-wrap:wrap}
-      .db-enq-row:last-child{border-bottom:none}.db-enq-row:hover{background:var(--bg-secondary)}
+      .db-enq-item{border-bottom:1px solid var(--border-light)}.db-enq-item:last-child{border-bottom:none}
+      .db-enq-row{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;transition:background 0.1s;flex-wrap:wrap}
+      .db-enq-row:hover{background:var(--bg-secondary)}
       .db-enq-brief{font-size:11px;color:var(--text-tertiary);flex:1;min-width:100%;margin-top:2px}
       .stat-card--sm{padding:11px 14px}
       .stat-value--sm{font-size:18px;font-weight:600;letter-spacing:-0.3px}
