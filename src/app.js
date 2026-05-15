@@ -2272,7 +2272,7 @@ export class App {
       .sidebar-notes-title{font-size:11px;color:#596773;text-transform:uppercase;letter-spacing:0.8px;flex:1}
       .sidebar-notes-new-btn{font-size:11px;color:#B6C2CF;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:4px;padding:3px 8px;cursor:pointer;font-family:var(--font);transition:background 0.12s,color 0.12s}
       .sidebar-notes-new-btn:hover{background:rgba(255,255,255,0.12);color:#fff}
-      .notes-list{flex:1;overflow-y:auto;padding:6px 8px 8px;display:flex;flex-direction:column;gap:8px}
+      .notes-list{flex:1;min-height:0;overflow-y:auto;padding:6px 8px 8px;display:flex;flex-direction:column;gap:8px}
       .notes-empty{padding:24px 8px;text-align:center;color:#596773;font-size:12px;line-height:1.7}
       .notes-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:var(--radius-md);overflow:hidden;transition:box-shadow 0.15s,border-color 0.15s}
       .notes-card:focus-within{border-color:rgba(255,255,255,0.18);box-shadow:0 2px 8px rgba(0,0,0,0.2)}
