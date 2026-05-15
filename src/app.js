@@ -1443,26 +1443,63 @@ export class App {
       if (h < 24) return `${h}h ago`
       return new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
     }
-    list.innerHTML = this._notes.map(n => `
-      <div class="notes-card" data-note-id="${n.id}">
-        <input class="notes-title-input" data-note-id="${n.id}" value="${(n.title||'').replace(/"/g,'&quot;')}" placeholder="Untitled" />
-        <textarea class="notes-body-input" data-note-id="${n.id}" placeholder="Write something…" rows="4">${n.content||''}</textarea>
-        <div class="notes-card-meta" style="display:flex;align-items:center;gap:6px;padding:4px 10px 2px;flex-wrap:wrap">
-          <input type="date" class="notes-due-input" data-note-id="${n.id}" value="${n.due_date||''}" title="Due date" />
-          <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#596773;cursor:pointer;user-select:none">
-            <input type="checkbox" class="notes-reminder-input" data-note-id="${n.id}" ${n.reminder?'checked':''} style="width:12px;height:12px;cursor:pointer" />
-            Remind 36h before
-          </label>
+    if (!this._openNoteIds) this._openNoteIds = new Set()
+    const chevron = `<svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5l3 3 3-3"/></svg>`
+    list.innerHTML = this._notes.map(n => {
+      const isOpen = this._openNoteIds.has(n.id)
+      return `
+      <div class="notes-card${isOpen?' open':''}" data-note-id="${n.id}">
+        <div class="notes-card-header" data-toggle-id="${n.id}">
+          <input class="notes-title-input" data-note-id="${n.id}" value="${(n.title||'').replace(/"/g,'&quot;')}" placeholder="Untitled" />
+          <button class="notes-card-toggle" data-toggle-id="${n.id}" aria-label="Toggle note" aria-expanded="${isOpen}">${chevron}</button>
         </div>
-        <div class="notes-card-footer">
-          <span class="notes-timestamp">${relTime(n.updated_at)}</span>
-          <button class="notes-delete-btn" data-delete-id="${n.id}" title="Delete note">Delete</button>
+        <div class="notes-card-body">
+          <textarea class="notes-body-input" data-note-id="${n.id}" placeholder="Write something…" rows="4">${n.content||''}</textarea>
+          <div class="notes-card-meta" style="display:flex;align-items:center;gap:6px;padding:4px 10px 2px;flex-wrap:wrap">
+            <input type="date" class="notes-due-input" data-note-id="${n.id}" value="${n.due_date||''}" title="Due date" />
+            <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#596773;cursor:pointer;user-select:none">
+              <input type="checkbox" class="notes-reminder-input" data-note-id="${n.id}" ${n.reminder?'checked':''} style="width:12px;height:12px;cursor:pointer" />
+              Remind 36h before
+            </label>
+          </div>
+          <div class="notes-card-footer">
+            <span class="notes-timestamp">${relTime(n.updated_at)}</span>
+            <button class="notes-delete-btn" data-delete-id="${n.id}" title="Delete note">Delete</button>
+          </div>
         </div>
-      </div>`).join('')
+      </div>`
+    }).join('')
+
+    const toggleNote = (id) => {
+      const card = list.querySelector(`.notes-card[data-note-id="${id}"]`)
+      if (!card) return
+      const isOpen = this._openNoteIds.has(id)
+      if (isOpen) { this._openNoteIds.delete(id); card.classList.remove('open') }
+      else { this._openNoteIds.add(id); card.classList.add('open') }
+      const btn = card.querySelector('.notes-card-toggle')
+      if (btn) btn.setAttribute('aria-expanded', String(!isOpen))
+      if (!isOpen) {
+        const ta = card.querySelector('.notes-body-input')
+        if (ta) { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px' }
+      }
+    }
+    list.querySelectorAll('.notes-card-header').forEach(header => {
+      header.addEventListener('click', e => {
+        if (e.target.closest('.notes-title-input')) return
+        toggleNote(header.dataset.toggleId)
+      })
+    })
 
     list.querySelectorAll('.notes-title-input').forEach(input => {
       input.addEventListener('blur', () => this._saveNote(input.dataset.noteId, { title: input.value }))
-      input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); input.closest('.notes-card')?.querySelector('.notes-body-input')?.focus() } })
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          const id = input.dataset.noteId
+          if (!this._openNoteIds.has(id)) toggleNote(id)
+          input.closest('.notes-card')?.querySelector('.notes-body-input')?.focus()
+        }
+      })
     })
     list.querySelectorAll('.notes-body-input').forEach(ta => {
       ta.addEventListener('blur', () => this._saveNote(ta.dataset.noteId, { content: ta.value }))
@@ -1485,6 +1522,8 @@ export class App {
       const { createUserNote } = await import('./db/client.js')
       const note = await createUserNote(this.clerkUserId, { sort_order: 0 })
       if (!this._notes) this._notes = []
+      if (!this._openNoteIds) this._openNoteIds = new Set()
+      this._openNoteIds.add(note.id)
       this._notes.unshift(note)
       this._renderNotesList()
       const firstTitle = document.querySelector('.notes-title-input')
@@ -2272,13 +2311,25 @@ export class App {
       .sidebar-notes-title{font-size:11px;color:#596773;text-transform:uppercase;letter-spacing:0.8px;flex:1}
       .sidebar-notes-new-btn{font-size:11px;color:#B6C2CF;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:4px;padding:3px 8px;cursor:pointer;font-family:var(--font);transition:background 0.12s,color 0.12s}
       .sidebar-notes-new-btn:hover{background:rgba(255,255,255,0.12);color:#fff}
-      .notes-list{flex:1;min-height:0;overflow-y:auto;padding:6px 8px 8px;display:flex;flex-direction:column;gap:8px}
+      .notes-list{flex:1;min-height:0;overflow-y:auto;padding:6px 8px 8px;display:flex;flex-direction:column;gap:6px;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.16) transparent}
+      .notes-list::-webkit-scrollbar{width:8px}
+      .notes-list::-webkit-scrollbar-track{background:transparent}
+      .notes-list::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.14);border-radius:4px;border:2px solid transparent;background-clip:padding-box}
+      .notes-list::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.24);border:2px solid transparent;background-clip:padding-box}
       .notes-empty{padding:24px 8px;text-align:center;color:#596773;font-size:12px;line-height:1.7}
-      .notes-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:var(--radius-md);overflow:hidden;flex-shrink:0;transition:box-shadow 0.15s,border-color 0.15s}
+      .notes-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:var(--radius-md);overflow:hidden;flex-shrink:0;transition:box-shadow 0.15s,border-color 0.15s,background 0.12s}
+      .notes-card:hover{background:rgba(255,255,255,0.06)}
       .notes-card:focus-within{border-color:rgba(255,255,255,0.18);box-shadow:0 2px 8px rgba(0,0,0,0.2)}
-      .notes-title-input{width:100%;padding:8px 10px 4px;font-size:12px;font-weight:600;color:#C7D1DB;background:transparent;border:none;outline:none;font-family:var(--font)}
+      .notes-card-header{display:flex;align-items:center;gap:4px;cursor:pointer;padding-right:6px}
+      .notes-card-toggle{display:flex;align-items:center;justify-content:center;width:22px;height:22px;background:transparent;border:none;color:#596773;cursor:pointer;border-radius:4px;flex-shrink:0;padding:0;transition:color 0.12s,background 0.12s}
+      .notes-card-toggle:hover{color:#B6C2CF;background:rgba(255,255,255,0.06)}
+      .notes-card-toggle svg{transition:transform 0.18s ease}
+      .notes-card.open .notes-card-toggle svg{transform:rotate(180deg)}
+      .notes-card-body{display:none}
+      .notes-card.open .notes-card-body{display:block;border-top:1px solid rgba(255,255,255,0.06)}
+      .notes-title-input{flex:1;min-width:0;width:100%;padding:8px 4px 8px 10px;font-size:12px;font-weight:600;color:#C7D1DB;background:transparent;border:none;outline:none;font-family:var(--font);text-overflow:ellipsis;cursor:text}
       .notes-title-input::placeholder{color:#596773;font-weight:400}
-      .notes-body-input{width:100%;padding:2px 10px 8px;font-size:12px;color:#B6C2CF;background:transparent;border:none;outline:none;resize:none;font-family:var(--font);line-height:1.5;min-height:52px;overflow:hidden}
+      .notes-body-input{width:100%;padding:8px 10px 8px;font-size:12px;color:#B6C2CF;background:transparent;border:none;outline:none;resize:none;font-family:var(--font);line-height:1.5;min-height:52px;overflow:hidden}
       .notes-body-input::placeholder{color:#596773}
       .notes-card-meta{padding:4px 10px 2px;flex-wrap:wrap;gap:6px}
       .notes-due-input{font-size:11px;padding:2px 6px;border:1px solid rgba(255,255,255,0.1)!important;border-radius:4px;background:transparent;color:#596773!important;font-family:var(--font);outline:none}
