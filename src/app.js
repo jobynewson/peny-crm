@@ -2274,7 +2274,7 @@ export class App {
       .sidebar-notes-new-btn:hover{background:rgba(255,255,255,0.12);color:#fff}
       .notes-list{flex:1;min-height:0;overflow-y:auto;padding:6px 8px 8px;display:flex;flex-direction:column;gap:8px}
       .notes-empty{padding:24px 8px;text-align:center;color:#596773;font-size:12px;line-height:1.7}
-      .notes-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:var(--radius-md);overflow:hidden;transition:box-shadow 0.15s,border-color 0.15s}
+      .notes-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:var(--radius-md);overflow:hidden;flex-shrink:0;transition:box-shadow 0.15s,border-color 0.15s}
       .notes-card:focus-within{border-color:rgba(255,255,255,0.18);box-shadow:0 2px 8px rgba(0,0,0,0.2)}
       .notes-title-input{width:100%;padding:8px 10px 4px;font-size:12px;font-weight:600;color:#C7D1DB;background:transparent;border:none;outline:none;font-family:var(--font)}
       .notes-title-input::placeholder{color:#596773;font-weight:400}
