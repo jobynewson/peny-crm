@@ -493,7 +493,7 @@ export class App {
   }
 
   navigate(view) {
-    if (view !== 'dashboard') { clearInterval(this._cdInterval); this._cdInterval = null }
+    if (view !== 'dashboard') { clearInterval(this._cdInterval); this._cdInterval = null; document.getElementById('cd-confetti-layer')?.remove() }
     this.currentView = view
     this.projectsView.currentId = null
     this.projectsView.editingId = null
@@ -2119,14 +2119,13 @@ export class App {
         if (!wrapper.querySelector('.cd-widget--celebrate')) {
           wrapper.innerHTML = `
             <div class="cd-widget cd-widget--celebrate" style="animation:cd-bg-shift 4s ease infinite alternate">
-              <div class="cd-confetti-layer" id="cd-confetti-layer"></div>
               <div class="cd-name">${esc(ct.name)}</div>
               <div class="cd-celebrate-body">
                 <div class="cd-done-msg">🎉 It's a wrap! 🎉</div>
                 <div class="cd-done-sub">The deadline has passed — nice work, everyone.</div>
               </div>
             </div>`
-          this._startConfetti(wrapper.querySelector('#cd-confetti-layer'))
+          this._startConfetti()
         }
       } else {
         clearInterval(this._cdInterval)
@@ -2139,24 +2138,29 @@ export class App {
     this._cdInterval = setInterval(update, 1000)
   }
 
-  _startConfetti(layer) {
-    if (!layer) return
+  _startConfetti() {
+    document.getElementById('cd-confetti-layer')?.remove()
+    const layer = document.createElement('div')
+    layer.id = 'cd-confetti-layer'
+    layer.className = 'cd-confetti-layer'
+    document.body.appendChild(layer)
+
     const COLORS = ['#f59e0b','#ef4444','#10b981','#3b82f6','#8b5cf6','#ec4899','#f97316','#06b6d4','#fbbf24','#a3e635']
     const spawn = () => {
       if (!document.contains(layer)) { clearInterval(confettiTimer); return }
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 8; i++) {
         const el = document.createElement('div')
         el.className = 'cd-confetti-piece'
-        const size = 6 + Math.random() * 9
-        const dur  = 1.6 + Math.random() * 1.4
+        const size = 7 + Math.random() * 10
+        const dur  = 2.5 + Math.random() * 2
         el.style.cssText = `left:${Math.random()*100}%;width:${size}px;height:${size*(0.4+Math.random()*0.8)}px;background:${COLORS[Math.floor(Math.random()*COLORS.length)]};animation-duration:${dur}s`
         layer.appendChild(el)
         setTimeout(() => el.remove(), dur * 1000 + 100)
       }
     }
     spawn()
-    const confettiTimer = setInterval(spawn, 280)
-    setTimeout(() => clearInterval(confettiTimer), 30000)
+    const confettiTimer = setInterval(spawn, 220)
+    setTimeout(() => { clearInterval(confettiTimer); setTimeout(() => layer.remove(), 3000) }, 30000)
   }
 
   async _saveBudgetTemplate(template) {
@@ -2533,7 +2537,7 @@ export class App {
       .cd-celebrate-body{display:flex;flex-direction:column;align-items:center;gap:8px;padding:8px 0}
       .cd-done-msg{font-size:34px;font-weight:700;color:#fff;animation:cd-pulse 1.4s ease-in-out infinite alternate;text-shadow:0 0 24px rgba(255,220,80,0.7);letter-spacing:-0.5px}
       .cd-done-sub{font-size:13px;color:rgba(255,255,255,0.65);letter-spacing:0.3px}
-      .cd-confetti-layer{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+      .cd-confetti-layer{position:fixed;inset:0;overflow:hidden;pointer-events:none;z-index:9999}
       .cd-confetti-piece{position:absolute;top:-14px;border-radius:2px;animation:cd-fall linear forwards}
       @keyframes cd-bg-shift{
         0%{background:linear-gradient(135deg,#1a0533 0%,#0a1a3d 50%,#001a10 100%)}
@@ -2543,7 +2547,7 @@ export class App {
         100%{background:linear-gradient(135deg,#0a1a3d 0%,#1a2800 50%,#3d0a1a 100%)}
       }
       @keyframes cd-pulse{0%{transform:scale(1);opacity:0.9}100%{transform:scale(1.07);opacity:1}}
-      @keyframes cd-fall{0%{transform:translateY(0) rotate(0deg);opacity:1}100%{transform:translateY(220px) rotate(720deg);opacity:0}}
+      @keyframes cd-fall{0%{transform:translateY(0) rotate(0deg);opacity:1}100%{transform:translateY(110vh) rotate(720deg);opacity:0}}
     `
     document.head.appendChild(style)
   }
