@@ -618,6 +618,75 @@ export class App {
     return [start, end]
   }
 
+  async _loadDbTimeSection(mc, project) {
+    const el = mc.querySelector(`#db-time-${project.id}`)
+    if (!el) return
+
+    const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+
+    // Build trackable lines from linked budgets
+    const trackableLines = []
+    const budgetIds = Array.isArray(project.budget_ids) ? project.budget_ids : []
+    for (const bid of budgetIds) {
+      const b = this.budgets.find(x => x.id === bid)
+      if (!b) continue
+      for (const s of (b.sections || [])) {
+        if (!s.enabled) continue
+        for (const l of (s.lines || [])) {
+          if (!l.track_time || !l.item) continue
+          const days = parseFloat(l.days) || 0
+          const qty  = isNaN(parseFloat(l.qty)) ? 1 : parseFloat(l.qty)
+          const allocHours = days > 0 ? Math.round(days * qty * 8) : Math.round(qty * 8)
+          trackableLines.push({ label: l.item, allocHours })
+        }
+      }
+    }
+
+    if (!trackableLines.length) {
+      el.style.display = 'none'
+      return
+    }
+
+    try {
+      const { getTimeEntries } = await import('./db/client.js')
+      const entries = await getTimeEntries(project.id)
+
+      const totalLogged = entries.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+      const totalAlloc  = trackableLines.reduce((s, l) => s + l.allocHours, 0)
+      const pct = totalAlloc > 0 ? Math.min(100, Math.round(totalLogged / totalAlloc * 100)) : 0
+      const barColour = pct >= 100 ? '#6ec96e' : pct >= 80 ? '#f59e0b' : '#4a90d9'
+
+      const byLine = {}
+      entries.forEach(e => { byLine[e.line_label] = (byLine[e.line_label] || 0) + parseFloat(e.hours || 0) })
+
+      el.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px">
+          <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Time tracked</div>
+          <div style="font-size:11px;font-weight:500;color:${pct >= 80 ? barColour : 'var(--text-tertiary)'}">
+            ${totalLogged.toFixed(1)} / ${totalAlloc}h
+          </div>
+        </div>
+        <div style="height:5px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden;margin-bottom:8px">
+          <div style="height:100%;width:${pct}%;background:${barColour};border-radius:3px;transition:width 0.3s"></div>
+        </div>
+        ${trackableLines.length > 1 ? trackableLines.map(l => {
+          const logged = byLine[l.label] || 0
+          const lPct = l.allocHours > 0 ? Math.min(100, Math.round(logged / l.allocHours * 100)) : 0
+          return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span style="font-size:11px;color:var(--text-secondary);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.label)}</span>
+            <div style="width:80px;height:3px;background:var(--bg-tertiary);border-radius:2px;flex-shrink:0">
+              <div style="height:100%;width:${lPct}%;background:${lPct>=100?'#6ec96e':'#4a90d9'};border-radius:2px"></div>
+            </div>
+            <span style="font-size:10px;color:var(--text-tertiary);flex-shrink:0;width:52px;text-align:right">${logged.toFixed(1)}/${l.allocHours}h</span>
+          </div>`
+        }).join('') : ''}`
+
+    } catch(e) {
+      console.error(e)
+      el.innerHTML = '<div style="font-size:11px;color:var(--text-tertiary)">Could not load time data</div>'
+    }
+  }
+
   async renderDashboard(mc) {
     clearInterval(this._cdInterval)
     this._cdInterval = null
@@ -824,6 +893,39 @@ export class App {
           <button class="db-action-link" style="font-size:11px;padding:3px 8px" data-open-pid="${p.id}">Open ↗</button>
         </div>
         <div class="db-proj-body" id="db-body-${p.id}" style="display:${isOpen ? 'block' : 'none'}">
+
+          ${(() => {
+            if (!delivs.length) return ''
+            const sorted = [...delivs.map((d,i)=>({...d,_i:i}))].sort((a,b) => {
+              if (a.done !== b.done) return a.done ? 1 : -1
+              if (a.due && b.due) return new Date(a.due) - new Date(b.due)
+              return a.due ? -1 : 1
+            })
+            const todayMs = new Date().setHours(0,0,0,0)
+            return `<div style="padding:10px 16px 10px;border-bottom:1px solid var(--border-light)">
+              <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:7px">Deliverables · ${doneCount}/${delivs.length}</div>
+              ${sorted.map(d => {
+                const daysUntil = d.due ? Math.round((new Date(d.due + 'T00:00:00') - todayMs) / 86400000) : null
+                const duePill = daysUntil === null ? ''
+                  : daysUntil < 0  ? `<span class="db-due-pill db-due-pill--overdue" style="font-size:9px;padding:1px 5px">${Math.abs(daysUntil)}d late</span>`
+                  : daysUntil === 0 ? `<span class="db-due-pill db-due-pill--today" style="font-size:9px;padding:1px 5px">Today</span>`
+                  : `<span class="db-due-pill" style="font-size:9px;padding:1px 5px">${new Date(d.due + 'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</span>`
+                const assignee = d.assignee_id ? this.allUsers.find(u => u.id === d.assignee_id) : null
+                return `<div style="display:flex;align-items:center;gap:7px;padding:3px 0;${d.done ? 'opacity:0.45;' : ''}">
+                  <input type="checkbox" class="db-inline-deliv-check" data-deliv-pid="${p.id}" data-deliv-idx="${d._i}" data-deliv-src="deliverables"
+                    ${d.done ? 'checked' : ''} style="cursor:pointer;flex-shrink:0;width:13px;height:13px;accent-color:var(--accent)">
+                  <span style="flex:1;font-size:12px;color:var(--text-primary);line-height:1.3;${d.done ? 'text-decoration:line-through;' : ''}">${esc(d.text)}</span>
+                  ${duePill}
+                  ${assignee ? `<span style="font-size:10px;color:var(--text-tertiary);flex-shrink:0">${esc(assignee.name || assignee.email)}</span>` : ''}
+                </div>`
+              }).join('')}
+            </div>`
+          })()}
+
+          <div id="db-time-${p.id}" style="padding:10px 16px;border-bottom:1px solid var(--border-light)">
+            <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Time tracked — loading…</div>
+          </div>
+
           <div class="db-thread" id="db-thread-${p.id}">
             ${comments.length
               ? comments.map(c => renderComment(c, p.id)).join('')
@@ -1078,6 +1180,10 @@ export class App {
         const opening = body.style.display === 'none'
         body.style.display = opening ? 'block' : 'none'
         if (chevron) chevron.classList.toggle('db-chevron--open', opening)
+        if (opening) {
+          const proj = this.projects.find(p => p.id === pid)
+          if (proj) this._loadDbTimeSection(mc, proj)
+        }
         if (!opening && this._dbPinned.has(pid)) {
           this._dbPinned.delete(pid)
           el.querySelector(`[data-pin-pid="${pid}"]`)?.classList.remove('db-pin-btn--on')
@@ -1085,6 +1191,12 @@ export class App {
         }
       })
     })
+
+    // Load time sections for already-open (pinned) projects
+    for (const pid of this._dbPinned) {
+      const proj = this.projects.find(p => p.id === pid)
+      if (proj) this._loadDbTimeSection(mc, proj)
+    }
 
     // --- Pin open ---
     mc.querySelectorAll('[data-pin-pid]').forEach(btn => {
@@ -1120,6 +1232,35 @@ export class App {
     })
 
     // --- Upcoming deliverable completion checkboxes ---
+    // Inline deliverable checkboxes inside the project accordion
+    mc.querySelectorAll('.db-inline-deliv-check').forEach(cb => {
+      cb.addEventListener('click', e => e.stopPropagation())
+      cb.addEventListener('change', async () => {
+        const p = this.projects.find(x => x.id === cb.dataset.delivPid)
+        if (!p) return
+        const arr = p[cb.dataset.delivSrc]
+        const idx = +cb.dataset.delivIdx
+        if (!arr?.[idx]) return
+        arr[idx].done = cb.checked
+        const row = cb.closest('[style*="display:flex"]')
+        if (row) {
+          row.style.opacity = cb.checked ? '0.45' : ''
+          const span = row.querySelector('span[style*="flex:1"]')
+          if (span) span.style.textDecoration = cb.checked ? 'line-through' : ''
+        }
+        // Update the header badge
+        const allDelivs = (p.deliverables || []).filter(d => d.text)
+        const nowDone = allDelivs.filter(d => d.done).length
+        const badge = mc.querySelector(`[data-pid="${p.id}"] .db-badge`)
+        if (badge) badge.textContent = `${nowDone}/${allDelivs.length} done`
+        try {
+          const { updateProject } = await import('./db/client.js')
+          await updateProject(this.userId, p.id, { [cb.dataset.delivSrc]: arr })
+          this.toast(cb.checked ? '✓ Done' : 'Unmarked')
+        } catch(e) { console.error(e) }
+      })
+    })
+
     mc.querySelectorAll('.db-deliv-check').forEach(cb => {
       cb.addEventListener('click', e => e.stopPropagation())
       cb.addEventListener('change', async () => {
