@@ -493,6 +493,7 @@ export class App {
   }
 
   navigate(view) {
+    if (view !== 'dashboard') { clearInterval(this._cdInterval); this._cdInterval = null }
     this.currentView = view
     this.projectsView.currentId = null
     this.projectsView.editingId = null
@@ -602,6 +603,8 @@ export class App {
   }
 
   async renderDashboard(mc) {
+    clearInterval(this._cdInterval)
+    this._cdInterval = null
     const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
     const retainers = this.projects.filter(p => p.is_retainer)
     const regularProjects = this.projects.filter(p => !p.is_retainer)
@@ -620,6 +623,7 @@ export class App {
         this.navigate('projects')
         setTimeout(() => document.querySelector('#topbar-btn')?.click(), 50)
       })
+      this._mountCountdownWidget(mc)
       return
     }
 
@@ -1038,6 +1042,8 @@ export class App {
         <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:10px">Financial overview</div>
         <div class="stats-row">${statCards}</div>
       </div>`
+
+    this._mountCountdownWidget(mc)
 
     // --- Social calendar ---
     mc.querySelector('#social-add-btn')?.addEventListener('click', () => {
@@ -1686,6 +1692,20 @@ export class App {
           </div>
         </div>` : ''}
 
+        ${isAdmin ? `
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Dashboard countdown timer</span></div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Pin a countdown to the top of the Dashboard — great for project wrap dates or big deadlines. For 24 hours after the deadline, a celebration kicks off.</div>
+            <div class="field"><div class="field-label">Timer label</div><input type="text" id="s-cd-name" value="${s.countdown_timer?.name??''}" placeholder="e.g. Project Falcon wrap" /></div>
+            <div class="field"><div class="field-label">Target date &amp; time</div><input type="datetime-local" id="s-cd-target" value="${s.countdown_timer?.target??''}" style="color-scheme:var(--color-scheme,light)" /></div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button class="btn-primary" id="settings-save-cd-btn">Save timer</button>
+              ${s.countdown_timer ? `<button class="btn-cancel" id="settings-clear-cd-btn">Remove timer</button>` : ''}
+            </div>
+          </div>
+        </div>` : ''}
+
         <div class="panel">
           <div class="panel-header"><span class="panel-title">Account</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:10px">
@@ -1719,6 +1739,8 @@ export class App {
     mc.querySelector('#settings-save-btn-2')?.addEventListener('click', () => this.saveSettings(mc))
     mc.querySelector('#settings-save-btn-3')?.addEventListener('click', () => this.saveSettings(mc))
     mc.querySelector('#signout-settings')?.addEventListener('click', () => this.onSignOut())
+    mc.querySelector('#settings-save-cd-btn')?.addEventListener('click', () => this._saveCountdownTimer(mc))
+    mc.querySelector('#settings-clear-cd-btn')?.addEventListener('click', () => this._clearCountdownTimer(mc))
 
     if (isAdmin) {
       this._loadUsersPanel(mc)
@@ -2024,9 +2046,117 @@ export class App {
       default_insurer_contact: mc.querySelector('#s-ins-contact')?.value.trim()||null,
       invoicing_email:         mc.querySelector('#s-inv-email')?.value.trim()||null,
       invoicing_boilerplate:   mc.querySelector('#s-inv-boilerplate')?.value.trim()||null,
+      countdown_timer:         this.settings?.countdown_timer ?? null,
     }
     try { const [updated] = await upsertSettings(this.userId, data); this.settings = updated; this.toast('Settings saved') }
     catch (e) { console.error(e); this.toast('Error saving settings') }
+  }
+
+  async _saveCountdownTimer(mc) {
+    const name   = mc.querySelector('#s-cd-name')?.value.trim()
+    const target = mc.querySelector('#s-cd-target')?.value
+    if (!name || !target) { this.toast('Please fill in both fields'); return }
+    const data = { ...this.settings, countdown_timer: { name, target } }
+    try {
+      const [updated] = await upsertSettings(this.userId, data)
+      this.settings = updated
+      this.toast('Timer saved')
+      this.renderSettings(mc)
+    } catch (e) { console.error(e); this.toast('Error saving timer') }
+  }
+
+  async _clearCountdownTimer(mc) {
+    const data = { ...this.settings, countdown_timer: null }
+    try {
+      const [updated] = await upsertSettings(this.userId, data)
+      this.settings = updated
+      this.toast('Timer removed')
+      this.renderSettings(mc)
+    } catch (e) { console.error(e); this.toast('Error removing timer') }
+  }
+
+  _mountCountdownWidget(mc) {
+    clearInterval(this._cdInterval)
+    this._cdInterval = null
+
+    const ct = this.settings?.countdown_timer
+    if (!ct?.name || !ct?.target) return
+
+    const target = new Date(ct.target)
+    if (isNaN(target.getTime())) return
+
+    const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    const wrapper = document.createElement('div')
+    wrapper.id = 'cd-widget-wrap'
+    mc.prepend(wrapper)
+
+    const update = () => {
+      const now = Date.now()
+      const diff = target.getTime() - now
+      const sinceEnd = now - target.getTime()
+
+      if (diff > 0) {
+        const totalSecs = Math.floor(diff / 1000)
+        const days  = Math.floor(totalSecs / 86400)
+        const hours = Math.floor((totalSecs % 86400) / 3600)
+        const mins  = Math.floor((totalSecs % 3600) / 60)
+        const secs  = totalSecs % 60
+        const pad = n => String(n).padStart(2, '0')
+        wrapper.innerHTML = `
+          <div class="cd-widget">
+            <div class="cd-name">${esc(ct.name)}</div>
+            <div class="cd-units">
+              <div class="cd-unit"><div class="cd-num">${days}</div><div class="cd-lbl">days</div></div>
+              <div class="cd-sep">:</div>
+              <div class="cd-unit"><div class="cd-num">${pad(hours)}</div><div class="cd-lbl">hours</div></div>
+              <div class="cd-sep">:</div>
+              <div class="cd-unit"><div class="cd-num">${pad(mins)}</div><div class="cd-lbl">min</div></div>
+              <div class="cd-sep">:</div>
+              <div class="cd-unit"><div class="cd-num">${pad(secs)}</div><div class="cd-lbl">sec</div></div>
+            </div>
+          </div>`
+      } else if (sinceEnd < 86400000) {
+        if (!wrapper.querySelector('.cd-widget--celebrate')) {
+          wrapper.innerHTML = `
+            <div class="cd-widget cd-widget--celebrate" style="animation:cd-bg-shift 4s ease infinite alternate">
+              <div class="cd-confetti-layer" id="cd-confetti-layer"></div>
+              <div class="cd-name">${esc(ct.name)}</div>
+              <div class="cd-celebrate-body">
+                <div class="cd-done-msg">🎉 It's a wrap! 🎉</div>
+                <div class="cd-done-sub">The deadline has passed — nice work, everyone.</div>
+              </div>
+            </div>`
+          this._startConfetti(wrapper.querySelector('#cd-confetti-layer'))
+        }
+      } else {
+        clearInterval(this._cdInterval)
+        this._cdInterval = null
+        wrapper.remove()
+      }
+    }
+
+    update()
+    this._cdInterval = setInterval(update, 1000)
+  }
+
+  _startConfetti(layer) {
+    if (!layer) return
+    const COLORS = ['#f59e0b','#ef4444','#10b981','#3b82f6','#8b5cf6','#ec4899','#f97316','#06b6d4','#fbbf24','#a3e635']
+    const spawn = () => {
+      if (!document.contains(layer)) { clearInterval(confettiTimer); return }
+      for (let i = 0; i < 4; i++) {
+        const el = document.createElement('div')
+        el.className = 'cd-confetti-piece'
+        const size = 6 + Math.random() * 9
+        const dur  = 1.6 + Math.random() * 1.4
+        el.style.cssText = `left:${Math.random()*100}%;width:${size}px;height:${size*(0.4+Math.random()*0.8)}px;background:${COLORS[Math.floor(Math.random()*COLORS.length)]};animation-duration:${dur}s`
+        layer.appendChild(el)
+        setTimeout(() => el.remove(), dur * 1000 + 100)
+      }
+    }
+    spawn()
+    const confettiTimer = setInterval(spawn, 280)
+    setTimeout(() => clearInterval(confettiTimer), 30000)
   }
 
   async _saveBudgetTemplate(template) {
@@ -2389,6 +2519,31 @@ export class App {
       .notes-timestamp{font-size:11px;color:#596773}
       .notes-delete-btn{background:none;border:none;font-size:11px;color:#596773;cursor:pointer;padding:2px 6px;border-radius:var(--radius-sm);font-family:var(--font);transition:background 0.1s,color 0.1s}
       .notes-delete-btn:hover{background:rgba(239,68,68,0.15);color:#ef4444}
+
+      /* ── Countdown widget ── */
+      .cd-widget{background:var(--bg-primary);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:28px 24px 24px;margin-bottom:24px;text-align:center;box-shadow:0 1px 3px rgba(9,30,66,0.06);position:relative;overflow:hidden}
+      .cd-name{font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:16px}
+      .cd-units{display:flex;align-items:center;justify-content:center;gap:4px}
+      .cd-unit{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:76px}
+      .cd-num{font-size:54px;font-weight:700;letter-spacing:-2px;color:var(--text-primary);line-height:1;font-variant-numeric:tabular-nums}
+      .cd-lbl{font-size:10px;text-transform:uppercase;letter-spacing:1.2px;color:var(--text-tertiary);font-weight:600}
+      .cd-sep{font-size:42px;font-weight:300;color:var(--border-strong);line-height:1;padding-bottom:14px;user-select:none}
+      .cd-widget--celebrate{border-color:transparent!important;color:#fff}
+      .cd-widget--celebrate .cd-name{color:rgba(255,255,255,0.75)}
+      .cd-celebrate-body{display:flex;flex-direction:column;align-items:center;gap:8px;padding:8px 0}
+      .cd-done-msg{font-size:34px;font-weight:700;color:#fff;animation:cd-pulse 1.4s ease-in-out infinite alternate;text-shadow:0 0 24px rgba(255,220,80,0.7);letter-spacing:-0.5px}
+      .cd-done-sub{font-size:13px;color:rgba(255,255,255,0.65);letter-spacing:0.3px}
+      .cd-confetti-layer{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+      .cd-confetti-piece{position:absolute;top:-14px;border-radius:2px;animation:cd-fall linear forwards}
+      @keyframes cd-bg-shift{
+        0%{background:linear-gradient(135deg,#1a0533 0%,#0a1a3d 50%,#001a10 100%)}
+        25%{background:linear-gradient(135deg,#1a2800 0%,#3d1500 50%,#001a3d 100%)}
+        50%{background:linear-gradient(135deg,#001a3d 0%,#1a0533 50%,#1a2800 100%)}
+        75%{background:linear-gradient(135deg,#3d1500 0%,#001a10 50%,#1a0533 100%)}
+        100%{background:linear-gradient(135deg,#0a1a3d 0%,#1a2800 50%,#3d0a1a 100%)}
+      }
+      @keyframes cd-pulse{0%{transform:scale(1);opacity:0.9}100%{transform:scale(1.07);opacity:1}}
+      @keyframes cd-fall{0%{transform:translateY(0) rotate(0deg);opacity:1}100%{transform:translateY(220px) rotate(720deg);opacity:0}}
     `
     document.head.appendChild(style)
   }
