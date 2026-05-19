@@ -35,6 +35,8 @@ export const settings = pgTable('settings', {
   // Invoicing boilerplate
   invoicing_email:        text('invoicing_email'),
   invoicing_boilerplate:  text('invoicing_boilerplate'),
+  // Dashboard countdown timer
+  countdown_timer: jsonb('countdown_timer'),
   ...timestamps,
 })
 
