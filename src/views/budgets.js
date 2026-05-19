@@ -229,7 +229,7 @@ export class BudgetsView {
         ...l,
         prepDays: 0,
         days: 0,
-        qty: l.qty ?? 0,
+        qty: 0,
         notes: '',
         travelDays: 0,
       }))
