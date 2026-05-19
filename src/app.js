@@ -673,6 +673,8 @@ export class App {
           class="stt-hours" />
         <button id="stt-log" class="stt-btn">Log</button>
       </div>
+      <input id="stt-note" type="text" placeholder="Notes (optional)" maxlength="300"
+        class="stt-select" style="margin-top:5px" />
       <div id="stt-msg" style="font-size:10px;min-height:14px;margin-top:4px;color:#596773"></div>`
   }
 
@@ -729,6 +731,7 @@ export class App {
       const pid   = projectSel?.value
       const task  = taskSel?.value
       const hours = parseFloat(hoursInput?.value)
+      const note  = wrap.querySelector('#stt-note')?.value?.trim() || null
 
       if (!pid)               return showMsg('Select a project', '#f59e0b')
       if (!task)              return showMsg('Select a task', '#f59e0b')
@@ -743,8 +746,10 @@ export class App {
       logBtn.textContent = '…'
       try {
         const { createTimeEntry } = await import('./db/client.js')
-        await createTimeEntry({ project_id: pid, budget_id: budgetId, line_label: task, crew_name: name, hours, entry_date: date, note: null })
+        await createTimeEntry({ project_id: pid, budget_id: budgetId, line_label: task, crew_name: name, hours, entry_date: date, note })
         hoursInput.value = ''
+        const noteInput = wrap.querySelector('#stt-note')
+        if (noteInput) noteInput.value = ''
         logBtn.textContent = '✓'
         showMsg(`${hours}h logged`, '#6ec96e')
         setTimeout(() => { if (logBtn) logBtn.textContent = 'Log' }, 1200)

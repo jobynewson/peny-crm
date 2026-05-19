@@ -3170,11 +3170,11 @@ export class ProjectsView {
         <select id="ql-task" style="font-size:12px;padding:5px 8px;border:1px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none">
           ${trackableLines.map(l => `<option value="${l.label}" data-bid="${l.budgetId||''}">${l.label}${l.budgetName?' ('+l.budgetName+')':''}</option>`).join('')}
         </select>
-        <div style="display:flex;gap:6px">
-          <input type="date" id="ql-date" value="${new Date().toISOString().split('T')[0]}" max="${new Date().toISOString().split('T')[0]}"
-            style="flex:1;font-size:12px;padding:5px 8px;border:1px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
-          <button class="btn-primary" id="ql-submit" style="font-size:12px;padding:5px 14px;white-space:nowrap">Log</button>
-        </div>
+        <input type="date" id="ql-date" value="${new Date().toISOString().split('T')[0]}" max="${new Date().toISOString().split('T')[0]}"
+          style="font-size:12px;padding:5px 8px;border:1px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+        <input type="text" id="ql-note" placeholder="Notes (optional)" maxlength="300"
+          style="font-size:12px;padding:5px 8px;border:1px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+        <button class="btn-primary" id="ql-submit" style="font-size:12px;padding:5px 14px;white-space:nowrap;align-self:flex-start">Log</button>
         <div id="ql-msg" style="font-size:11px;display:none"></div>
       </div>
 
@@ -3190,6 +3190,7 @@ export class ProjectsView {
       const lineLabel = taskEl?.value
       const budgetId = taskEl?.selectedOptions[0]?.dataset.bid || null
       const date = linkDiv.querySelector('#ql-date')?.value
+      const note = linkDiv.querySelector('#ql-note')?.value?.trim() || null
       const msgEl = linkDiv.querySelector('#ql-msg')
 
       if (!crewName || !hours || hours <= 0 || !lineLabel) {
@@ -3198,9 +3199,10 @@ export class ProjectsView {
       }
       try {
         const { addTimeEntry } = await import('../db/client.js')
-        await addTimeEntry({ project_id: p.id, budget_id: budgetId||null, line_label: lineLabel, crew_name: crewName, hours, entry_date: date, note: null })
+        await addTimeEntry({ project_id: p.id, budget_id: budgetId||null, line_label: lineLabel, crew_name: crewName, hours, entry_date: date, note })
         if (msgEl) { msgEl.style.display='block'; msgEl.style.color='#6ec96e'; msgEl.textContent=`✓ ${hours}h logged` }
         linkDiv.querySelector('#ql-hours').value = ''
+        if (linkDiv.querySelector('#ql-note')) linkDiv.querySelector('#ql-note').value = ''
         setTimeout(() => { if (msgEl) msgEl.style.display='none' }, 3000)
         this._loadTimePanel(mc, p)
       } catch(e) { console.error(e); if (msgEl) { msgEl.style.display='block'; msgEl.style.color='#e07070'; msgEl.textContent='Error logging time' } }
