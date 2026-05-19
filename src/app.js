@@ -4,26 +4,29 @@ import { ContactsView } from './views/contacts.js'
 import { ProjectsView } from './views/projects.js'
 import { BudgetsView, budTotal } from './views/budgets.js'
 import { CallSheetsView } from './views/callsheets.js'
+import { MarketingView } from './views/marketing.js'
 
 export class App {
-  constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, onSignOut }) {
-    this.userId      = userId
-    this.clerkUserId = clerkUserId
-    this.user        = user
-    this.appUser     = appUser
-    this.permissions = permissions
-    this.contacts    = contacts ?? []
-    this.projects    = projects ?? []
-    this.budgets     = budgets  ?? []
-    this.settings    = settings ?? {}
-    this.allUsers    = allUsers ?? []
-    this.socialPosts = socialPosts ?? []
-    this.onSignOut   = onSignOut
-    this.currentView = 'dashboard'
+  constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, onSignOut }) {
+    this.userId         = userId
+    this.clerkUserId    = clerkUserId
+    this.user           = user
+    this.appUser        = appUser
+    this.permissions    = permissions
+    this.contacts       = contacts ?? []
+    this.projects       = projects ?? []
+    this.budgets        = budgets  ?? []
+    this.settings       = settings ?? {}
+    this.allUsers       = allUsers ?? []
+    this.socialPosts    = socialPosts ?? []
+    this.marketingCards = marketingCards ?? []
+    this.onSignOut      = onSignOut
+    this.currentView    = 'dashboard'
     this.contactsView    = new ContactsView(this)
     this.projectsView    = new ProjectsView(this)
     this.budgetsView     = new BudgetsView(this)
     this.callSheetsView  = new CallSheetsView(this)
+    this.marketingView   = new MarketingView(this)
     window.app = this
   }
 
@@ -342,7 +345,7 @@ export class App {
       <div class="sidebar" id="app-sidebar">
         <div class="logo"><img src="/slate-logo.png" alt="Slate" /></div>
         <div class="nav-label">Main</div>
-        ${[['dashboard','Dashboard',this.iconPipeline()],['contacts','Contacts',this.iconContacts()],['projects','Projects',this.iconProjects()],['budgets','Budgets',this.iconBudgets()]].map(([id,label,icon])=>`
+        ${[['dashboard','Dashboard',this.iconPipeline()],['contacts','Contacts',this.iconContacts()],['projects','Projects',this.iconProjects()],['budgets','Budgets',this.iconBudgets()],['marketing','Marketing',this.iconMarketing()]].map(([id,label,icon])=>`
           <div class="nav-item ${this.currentView===id?'active':''}" data-view="${id}">${icon} ${label}</div>`).join('')}
         <div class="sidebar-notes">
           <div class="sidebar-notes-header">
@@ -398,6 +401,9 @@ export class App {
       if (!this.projectsView.currentId) return p.projects_edit ? `<button class="btn-primary" id="topbar-btn">+ New project</button>` : ''
       if (this.projectsView.editingId) return `<button class="btn-secondary" id="topbar-btn">← All projects</button>`
       return ''
+    }
+    if (this.currentView === 'marketing') {
+      return `<button class="btn-primary" id="topbar-btn">+ New card</button>`
     }
     return ''
   }
@@ -489,6 +495,9 @@ export class App {
         if (this.projectsView.editingId) { this.projectsView.editingId = null; this.render() }
         else if (!this.projectsView.currentId) this.projectsView.openNewModal(null, null, mc)
       }
+      else if (this.currentView === 'marketing') {
+        this.marketingView.openCardModal(null, this.marketingView.activeTab === 'kanban' ? 'ideas' : 'ideas')
+      }
     })
   }
 
@@ -514,7 +523,7 @@ export class App {
     if (!hash) return
     const parts = hash.split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard']
+    const validViews = ['contacts','projects','budgets','settings','dashboard','marketing']
     if (!validViews.includes(view)) return
     this.currentView = view
     if (view === 'projects' && id) {
@@ -534,7 +543,7 @@ export class App {
     const hash = location.hash.slice(1)
     const parts = (hash || 'dashboard').split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard']
+    const validViews = ['contacts','projects','budgets','settings','dashboard','marketing']
     if (!validViews.includes(view)) { this.currentView = 'dashboard'; this.render(); return }
 
     this.currentView = view
@@ -562,6 +571,8 @@ export class App {
       this.budgetsView.render(mc)
     } else if (this.currentView === 'callsheets') {
       this.callSheetsView.renderList(mc, this.callSheetsView.currentProjectId)
+    } else if (this.currentView === 'marketing') {
+      this.marketingView.render(mc)
     } else if (this.currentView === 'dashboard') {
       this.renderDashboard(mc)
     } else {
@@ -572,7 +583,7 @@ export class App {
   viewTitle() {
     if (this.currentView === 'projects' && this.projectsView?.currentId) return this.projects.find(p=>p.id===this.projectsView.currentId)?.name ?? 'Project'
     if (this.currentView === 'budgets'  && this.budgetsView?.currentId)  return this.budgets.find(b=>b.id===this.budgetsView.currentId)?.name  ?? 'Budget'
-    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',settings:'Settings'}[this.currentView] ?? ''
+    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',settings:'Settings',marketing:'Marketing'}[this.currentView] ?? ''
   }
 
   updateTitle() {
@@ -976,64 +987,55 @@ export class App {
           </div>
         </div>` : ''}
 
-        <!-- Social Calendar -->
-        <div style="flex:1;min-width:0;max-width:420px">
-          <div class="db-section-head" style="justify-content:space-between">
-            <div style="display:flex;align-items:center;gap:6px">
-              <span class="db-section-dot" style="background:#34d399"></span>
-              Social calendar
-              ${this.socialPosts.filter(p => !p.completed).length ? `<span class="db-section-count">${this.socialPosts.filter(p => !p.completed).length}</span>` : ''}
-            </div>
-            <button class="db-action-link" id="social-add-btn" style="font-size:11px;padding:2px 8px;border:0.5px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-secondary)">+ add</button>
-          </div>
+        <!-- Marketing Tasks Coming Due -->
+        ${(() => {
+          const todayMs = new Date().setHours(0,0,0,0)
+          const sevenDaysMs = todayMs + 7 * 86400000
+          const myTasks = []
+          for (const card of (this.marketingCards || [])) {
+            for (const st of (card.sub_tasks || [])) {
+              if (st.done || !st.due_date || st.owner_id !== this.clerkUserId) continue
+              const dueMs = new Date(st.due_date + 'T00:00:00').getTime()
+              if (dueMs <= sevenDaysMs) myTasks.push({ st, card, dueMs })
+            }
+          }
+          myTasks.sort((a, b) => a.dueMs - b.dueMs)
 
-          <!-- Add form (hidden by default) -->
-          <div id="social-add-form" style="display:none;background:var(--bg-secondary);border:0.5px solid var(--border-med);border-radius:var(--radius-md);padding:12px;margin-bottom:10px">
-            <input id="social-new-title" type="text" placeholder="Project / topic name" maxlength="200"
-              style="width:100%;padding:6px 10px;font-size:13px;border:0.5px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;margin-bottom:8px;box-sizing:border-box">
-            <textarea id="social-new-notes" placeholder="Notes (optional)" rows="2"
-              style="width:100%;padding:6px 10px;font-size:12px;border:0.5px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.4;margin-bottom:8px;box-sizing:border-box"></textarea>
-            <div style="display:flex;gap:8px;justify-content:flex-end">
-              <button class="btn-cancel" id="social-add-cancel" style="font-size:12px">Cancel</button>
-              <button class="btn-primary" id="social-add-save" style="font-size:12px">Add</button>
-            </div>
-          </div>
+          if (!myTasks.length) return ''
 
-          <!-- Post list -->
-          <div id="social-post-list" style="display:flex;flex-direction:column;gap:6px">
-            ${(() => {
-              if (!this.expandedSocialPosts) this.expandedSocialPosts = new Set()
-              const active = this.socialPosts.filter(p => !p.completed)
-              const done   = this.socialPosts.filter(p => p.completed)
-              const renderPost = (p) => {
-                const isOpen = this.expandedSocialPosts.has(p.id)
-                return `
-                <div class="social-post-row" data-social-id="${p.id}" style="background:var(--bg-secondary);border:0.5px solid var(--border-light);border-radius:var(--radius-md);overflow:hidden;${p.completed ? 'opacity:0.45;' : ''}">
-                  <div class="social-post-header" style="display:flex;align-items:center;gap:8px;padding:8px 10px">
-                    <input type="checkbox" class="social-check" data-social-id="${p.id}" ${p.completed ? 'checked' : ''}
-                      style="flex-shrink:0;cursor:pointer;accent-color:#34d399">
-                    <input class="social-title-input" data-social-id="${p.id}" value="${esc(p.title)}" placeholder="Title"
-                      style="flex:1;min-width:0;background:transparent;border:none;outline:none;font-size:13px;font-weight:500;font-family:var(--font);padding:0;line-height:1.3;${p.completed ? 'text-decoration:line-through;color:var(--text-tertiary)' : 'color:var(--text-primary)'}">
-                    <button class="social-toggle-btn" data-social-id="${p.id}"
-                      style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:13px;line-height:1;padding:0 2px;opacity:0.55">${isOpen ? '▾' : '▸'}</button>
-                  </div>
-                  <div class="social-post-body" data-social-id="${p.id}" style="display:${isOpen ? 'block' : 'none'};padding:0 10px 10px 28px">
-                    <textarea class="social-notes-input" data-social-id="${p.id}" placeholder="Add notes…" rows="2"
-                      style="width:100%;background:transparent;border:none;outline:none;font-size:11px;color:var(--text-tertiary);font-family:var(--font);resize:none;padding:0;line-height:1.4;overflow:hidden;box-sizing:border-box;margin-bottom:6px">${esc(p.notes||'')}</textarea>
-                    <div style="display:flex;justify-content:flex-end">
-                      <button class="social-delete-btn" data-social-id="${p.id}" title="Delete"
-                        style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:11px;line-height:1;padding:0;opacity:0.5">Delete</button>
-                    </div>
-                  </div>
-                </div>`
-              }
-              if (!active.length && !done.length) {
-                return `<div style="color:var(--text-tertiary);font-size:13px;padding:8px 0">No post ideas yet. Hit + add to get started.</div>`
-              }
-              return active.map(renderPost).join('') + done.map(renderPost).join('')
-            })()}
-          </div>
-        </div>
+          const duePillClass = (ms) => {
+            const d = Math.round((ms - todayMs) / 86400000)
+            if (d < 0) return 'db-due-pill--overdue'
+            if (d === 0) return 'db-due-pill--today'
+            return ''
+          }
+          const dueLabel = (ms) => {
+            const d = Math.round((ms - todayMs) / 86400000)
+            if (d < 0) return `${Math.abs(d)}d overdue`
+            if (d === 0) return 'Today'
+            return new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+          }
+
+          return `<div style="flex:1;min-width:0;max-width:420px">
+            <div class="db-section-head" style="justify-content:space-between">
+              <div style="display:flex;align-items:center;gap:6px">
+                <span class="db-section-dot" style="background:#a78bfa"></span>
+                Marketing Tasks Coming Due
+                <span class="db-section-count">${myTasks.length}</span>
+              </div>
+              <button class="db-action-link" id="db-mkt-view-all" style="font-size:11px;padding:2px 8px;border:0.5px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-secondary)">View all ↗</button>
+            </div>
+            <div class="db-proj-list" style="border-radius:var(--radius-md)">
+              ${myTasks.map(({ st, card, dueMs }) => `
+              <div class="db-proj-row" style="display:flex;align-items:center;gap:8px;padding:9px 14px;min-height:unset">
+                <span class="db-due-pill ${duePillClass(dueMs)}">${dueLabel(dueMs)}</span>
+                <span class="db-proj-name-label" style="flex:1">${esc(st.text)}</span>
+                <span class="db-proj-client-label" style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(card.title)}</span>
+                <button class="db-action-link db-mkt-open-card" data-card-id="${card.id}" style="font-size:11px;padding:2px 6px;flex-shrink:0">Open ↗</button>
+              </div>`).join('')}
+            </div>
+          </div>`
+        })()}
 
       </div>
 
@@ -1045,94 +1047,13 @@ export class App {
 
     this._mountCountdownWidget(mc)
 
-    // --- Social calendar ---
-    mc.querySelector('#social-add-btn')?.addEventListener('click', () => {
-      const form = mc.querySelector('#social-add-form')
-      if (!form) return
-      form.style.display = form.style.display === 'none' ? 'block' : 'none'
-      if (form.style.display === 'block') mc.querySelector('#social-new-title')?.focus()
-    })
-    mc.querySelector('#social-add-cancel')?.addEventListener('click', () => {
-      mc.querySelector('#social-add-form').style.display = 'none'
-      mc.querySelector('#social-new-title').value = ''
-      mc.querySelector('#social-new-notes').value = ''
-    })
-    mc.querySelector('#social-add-save')?.addEventListener('click', async () => {
-      const titleEl = mc.querySelector('#social-new-title')
-      const notesEl = mc.querySelector('#social-new-notes')
-      const title = titleEl.value.trim()
-      if (!title) { titleEl.focus(); return }
-      const { createSocialPost } = await import('./db/client.js')
-      const post = await createSocialPost(this.userId, { title, notes: notesEl.value.trim() || null })
-      this.socialPosts = [post, ...this.socialPosts]
-      this.renderDashboard(mc)
-    })
-    mc.querySelectorAll('.social-check').forEach(cb => {
-      cb.addEventListener('change', async () => {
-        const id = cb.dataset.socialId
-        const { updateSocialPost } = await import('./db/client.js')
-        await updateSocialPost(this.userId, id, { completed: cb.checked })
-        const post = this.socialPosts.find(p => p.id === id)
-        if (post) post.completed = cb.checked
-        this.renderDashboard(mc)
-      })
-    })
-    mc.querySelectorAll('.social-delete-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const id = btn.dataset.socialId
-        if (!confirm('Delete this post idea?')) return
-        const { deleteSocialPost } = await import('./db/client.js')
-        await deleteSocialPost(this.userId, id)
-        this.socialPosts = this.socialPosts.filter(p => p.id !== id)
-        this.renderDashboard(mc)
-      })
-    })
-    mc.querySelectorAll('.social-title-input').forEach(input => {
-      input.addEventListener('blur', async () => {
-        const id = input.dataset.socialId
-        const title = input.value.trim()
-        const post = this.socialPosts.find(p => p.id === id)
-        if (!title) { input.value = post?.title || ''; return }
-        if (title === post?.title) return
-        const { updateSocialPost } = await import('./db/client.js')
-        await updateSocialPost(this.userId, id, { title })
-        if (post) post.title = title
-      })
-      input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); input.blur() } })
-    })
-    mc.querySelectorAll('.social-notes-input').forEach(ta => {
-      ta.addEventListener('blur', async () => {
-        const id = ta.dataset.socialId
-        const notes = ta.value.trim() || null
-        const post = this.socialPosts.find(p => p.id === id)
-        if (notes === (post?.notes || null)) return
-        const { updateSocialPost } = await import('./db/client.js')
-        await updateSocialPost(this.userId, id, { notes })
-        if (post) post.notes = notes
-      })
-      ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px' })
-      // only auto-size if the body is currently visible
-      if (ta.closest('.social-post-body')?.style.display !== 'none') {
-        ta.dispatchEvent(new Event('input'))
-      }
-    })
-    mc.querySelectorAll('.social-toggle-btn').forEach(btn => {
+    // --- Marketing tasks coming due ---
+    mc.querySelector('#db-mkt-view-all')?.addEventListener('click', () => this.navigate('marketing'))
+    mc.querySelectorAll('.db-mkt-open-card').forEach(btn => {
       btn.addEventListener('click', () => {
-        const id = btn.dataset.socialId
-        const body = mc.querySelector(`.social-post-body[data-social-id="${id}"]`)
-        if (!body) return
-        const isOpen = this.expandedSocialPosts.has(id)
-        if (isOpen) {
-          this.expandedSocialPosts.delete(id)
-          body.style.display = 'none'
-          btn.textContent = '▸'
-        } else {
-          this.expandedSocialPosts.add(id)
-          body.style.display = 'block'
-          btn.textContent = '▾'
-          const ta = body.querySelector('.social-notes-input')
-          if (ta) { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px' }
-        }
+        const cardId = btn.dataset.cardId
+        this.marketingView.pendingOpenCardId = cardId
+        this.navigate('marketing')
       })
     })
 
@@ -2554,6 +2475,7 @@ export class App {
 
   iconHamburger() { return `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 4.5h14M2 9h14M2 13.5h14"/></svg>` }
   iconContacts() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="6" cy="5" r="2.5"/><path d="M1 14c0-2.8 2.2-4.5 5-4.5s5 1.7 5 4.5"/><path d="M11 3.5a2 2 0 0 1 0 4M15 14c0-2.4-1.5-3.8-4-4"/></svg>` }
+  iconMarketing() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1 8c0 0 2-5 7-5s7 5 7 5-2 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>` }
   iconProjects() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 6h6M5 9h4"/></svg>` }
   iconBudgets()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 3h12v2H2zM2 7h9M2 11h7"/><circle cx="13" cy="11" r="2.2"/><path d="M13 9.8v1l.7.7"/></svg>` }
   iconPipeline() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1" y="4" width="4" height="9" rx="1"/><rect x="6" y="6" width="4" height="7" rx="1"/><rect x="11" y="8" width="4" height="5" rx="1"/></svg>` }

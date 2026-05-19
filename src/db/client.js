@@ -5,7 +5,7 @@ import * as schema from './schema.js'
 import {
   contacts, projects, budgets, settings, workspace,
   project_budgets, budget_versions, activity_log,
-  app_users, time_entries, user_notes, social_posts,
+  app_users, time_entries, user_notes, social_posts, marketing_cards,
 } from './schema.js'
 
 const sql = neon(import.meta.env.VITE_DATABASE_URL)
@@ -622,4 +622,28 @@ export async function updateUserNote(clerkId, id, data) {
 export async function deleteUserNote(clerkId, id) {
   return db.delete(user_notes)
     .where(and(eq(user_notes.id, id), eq(user_notes.clerk_id, clerkId)))
+}
+
+// ── Marketing cards ───────────────────────────────────────────────────────────
+export async function getMarketingCards(workspaceId) {
+  return db.select().from(marketing_cards)
+    .where(eq(marketing_cards.user_id, workspaceId))
+    .orderBy(marketing_cards.sort_order, desc(marketing_cards.created_at))
+}
+export async function createMarketingCard(workspaceId, data) {
+  const [card] = await db.insert(marketing_cards)
+    .values({ user_id: workspaceId, ...data })
+    .returning()
+  return card
+}
+export async function updateMarketingCard(workspaceId, id, data) {
+  const [card] = await db.update(marketing_cards)
+    .set({ ...data, updated_at: new Date() })
+    .where(and(eq(marketing_cards.id, id), eq(marketing_cards.user_id, workspaceId)))
+    .returning()
+  return card
+}
+export async function deleteMarketingCard(workspaceId, id) {
+  return db.delete(marketing_cards)
+    .where(and(eq(marketing_cards.id, id), eq(marketing_cards.user_id, workspaceId)))
 }
