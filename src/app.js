@@ -357,7 +357,7 @@ export class App {
           <div class="notes-list" id="notes-list"><div class="notes-empty">No notes yet.<br>Hit + New to get started.</div></div>
         </div>
         <div class="nav-bottom">
-          <div class="nav-item ${this.currentView==='timetrack'?'active':''}" data-view="timetrack">${this.iconTimeTrack()} Time tracker</div>
+          <div class="sidebar-tt" id="sidebar-tt">${this._renderSidebarTT()}</div>
           ${this.permissions.settings ? `<div class="nav-item" data-view="settings">${this.iconSettings()} Settings</div>` : ''}
           <div class="nav-item" id="dev-request-btn" style="color:#596773;font-size:13px">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v4M8 11v.5"/></svg>
@@ -448,6 +448,7 @@ export class App {
     }
 
     this.bindTopbarBtn()
+    this._bindSidebarTT()
     const search = this.container.querySelector('#contact-search')
     if (search) {
       search.value = this.contactsView.search
@@ -616,6 +617,159 @@ export class App {
     if (start > now) start = new Date(Date.UTC(y, m - 1, day))
     const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, day))
     return [start, end]
+  }
+
+  // ── Sidebar quick-log widget ─────────────────────────────────────────────────
+
+  _sttTrackableLines(project) {
+    if (!project) return []
+    const lines = []
+    if (project.is_retainer && (project.retainer_items || []).length) {
+      for (const item of project.retainer_items) {
+        if (item.label) lines.push({ label: item.label, budgetId: null })
+      }
+    } else {
+      for (const bid of (project.budget_ids || [])) {
+        const b = this.budgets.find(x => x.id === bid)
+        if (!b) continue
+        for (const s of (b.sections || [])) {
+          if (!s.enabled) continue
+          for (const l of (s.lines || [])) {
+            if (!l.track_time || !l.item) continue
+            lines.push({ label: l.item, budgetId: b.id })
+          }
+        }
+      }
+    }
+    return lines
+  }
+
+  _renderSidebarTT() {
+    const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
+    const savedPid  = localStorage.getItem('tt-project-id') || ''
+    const savedTask = localStorage.getItem('tt-task-label') || ''
+    const projects  = this.projects || []
+    const project   = projects.find(p => p.id === savedPid) || null
+    const lines     = this._sttTrackableLines(project)
+
+    return `
+      <div style="font-size:10px;color:#596773;text-transform:uppercase;letter-spacing:0.7px;margin-bottom:8px;display:flex;align-items:center;gap:5px">
+        ${this.iconTimeTrack()} Time
+      </div>
+      <select id="stt-project" class="stt-select">
+        <option value="">Project…</option>
+        ${projects.map(p => `<option value="${p.id}"${p.id === savedPid ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}
+      </select>
+      <select id="stt-task" class="stt-select" ${!lines.length ? 'disabled' : ''}>
+        ${!project
+          ? '<option value="">Task…</option>'
+          : lines.length
+            ? lines.map(l => `<option value="${esc(l.label)}"${l.label === savedTask ? ' selected' : ''}>${esc(l.label)}</option>`).join('')
+            : '<option value="">No tracked lines</option>'
+        }
+      </select>
+      <div style="display:flex;gap:5px;margin-top:5px">
+        <input id="stt-hours" type="number" min="0.5" max="24" step="0.5" placeholder="hrs"
+          class="stt-hours" />
+        <button id="stt-log" class="stt-btn">Log</button>
+      </div>
+      <div id="stt-msg" style="font-size:10px;min-height:14px;margin-top:4px;color:#596773"></div>`
+  }
+
+  _bindSidebarTT() {
+    const wrap = document.getElementById('sidebar-tt')
+    if (!wrap) return
+
+    const projectSel = wrap.querySelector('#stt-project')
+    const taskSel    = wrap.querySelector('#stt-task')
+    const hoursInput = wrap.querySelector('#stt-hours')
+    const logBtn     = wrap.querySelector('#stt-log')
+    const msgEl      = wrap.querySelector('#stt-msg')
+
+    const showMsg = (text, color = '#596773', ms = 2500) => {
+      if (!msgEl) return
+      msgEl.style.color = color
+      msgEl.textContent = text
+      clearTimeout(this._sttMsgTimer)
+      this._sttMsgTimer = setTimeout(() => { if (msgEl) msgEl.textContent = '' }, ms)
+    }
+
+    const updateTasks = (project) => {
+      if (!taskSel) return
+      const lines = this._sttTrackableLines(project)
+      const saved = localStorage.getItem('tt-task-label') || ''
+      if (!project) {
+        taskSel.innerHTML = '<option value="">Task…</option>'
+        taskSel.disabled = true
+      } else if (!lines.length) {
+        taskSel.innerHTML = '<option value="">No tracked lines</option>'
+        taskSel.disabled = true
+      } else {
+        taskSel.innerHTML = lines.map(l => {
+          const v = String(l.label ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')
+          return `<option value="${v}"${l.label === saved ? ' selected' : ''}>${v}</option>`
+        }).join('')
+        taskSel.disabled = false
+      }
+    }
+
+    projectSel?.addEventListener('change', () => {
+      const pid = projectSel.value
+      localStorage.setItem('tt-project-id', pid)
+      if (!pid) localStorage.removeItem('tt-task-label')
+      const proj = this.projects.find(p => p.id === pid) || null
+      updateTasks(proj)
+    })
+
+    taskSel?.addEventListener('change', () => {
+      localStorage.setItem('tt-task-label', taskSel.value)
+    })
+
+    logBtn?.addEventListener('click', async () => {
+      const pid   = projectSel?.value
+      const task  = taskSel?.value
+      const hours = parseFloat(hoursInput?.value)
+
+      if (!pid)               return showMsg('Select a project', '#f59e0b')
+      if (!task)              return showMsg('Select a task', '#f59e0b')
+      if (!hours || hours <= 0 || hours > 24) return showMsg('Enter valid hours', '#f59e0b')
+
+      const project  = this.projects.find(p => p.id === pid)
+      const budgetId = project ? (this._sttTrackableLines(project).find(l => l.label === task)?.budgetId ?? null) : null
+      const name     = this.appUser?.name || this.user?.primaryEmailAddress?.emailAddress || 'Unknown'
+      const date     = new Date().toISOString().slice(0, 10)
+
+      logBtn.disabled = true
+      logBtn.textContent = '…'
+      try {
+        const { createTimeEntry } = await import('./db/client.js')
+        await createTimeEntry({ project_id: pid, budget_id: budgetId, line_label: task, crew_name: name, hours, entry_date: date, note: null })
+        hoursInput.value = ''
+        logBtn.textContent = '✓'
+        showMsg(`${hours}h logged`, '#6ec96e')
+        setTimeout(() => { if (logBtn) logBtn.textContent = 'Log' }, 1200)
+        this.toast(`${hours}h logged`)
+
+        // Refresh the dashboard time section if it's visible
+        const timeEl = document.getElementById(`db-time-${pid}`)
+        if (timeEl && project) {
+          const mc = document.getElementById('main-content')
+          if (mc) this._loadDbTimeSection(mc, project)
+        }
+      } catch(e) {
+        console.error(e)
+        logBtn.textContent = 'Log'
+        showMsg('Error logging', '#ef4444')
+      } finally {
+        logBtn.disabled = false
+        if (logBtn.textContent === '…') logBtn.textContent = 'Log'
+      }
+    })
+
+    // Enter on hours → log
+    hoursInput?.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); logBtn?.click() }
+    })
   }
 
   async _loadDbTimeSection(mc, project) {
@@ -2263,6 +2417,15 @@ export class App {
       .nav-item.active{background:#1868DB;color:#ffffff;font-weight:500}
       .nav-item svg{opacity:0.75;flex-shrink:0}.nav-item.active svg{opacity:1}
       .nav-bottom{margin-top:auto;border-top:1px solid rgba(255,255,255,0.08);padding:8px 0}
+      .sidebar-tt{padding:10px 14px 6px;border-bottom:1px solid rgba(255,255,255,0.08)}
+      .stt-select{width:100%;padding:5px 8px;font-size:12px;background:#2C333A;border:1px solid rgba(255,255,255,0.1);border-radius:4px;color:#B6C2CF;font-family:var(--font);outline:none;cursor:pointer;margin-bottom:5px;appearance:none;-webkit-appearance:none;display:block}
+      .stt-select:focus{border-color:#1868DB}
+      .stt-select:disabled{opacity:0.45;cursor:default}
+      .stt-hours{flex:0 0 52px;padding:5px 6px;font-size:12px;background:#2C333A;border:1px solid rgba(255,255,255,0.1);border-radius:4px;color:#B6C2CF;font-family:var(--font);outline:none;text-align:center;width:52px}
+      .stt-hours:focus{border-color:#1868DB}
+      .stt-btn{flex:1;padding:5px 10px;font-size:12px;font-weight:600;background:#1868DB;color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:var(--font);transition:background 0.12s;white-space:nowrap}
+      .stt-btn:hover:not(:disabled){background:#0052CC}
+      .stt-btn:disabled{opacity:0.6;cursor:default}
       .main{flex:1;display:flex;flex-direction:column;min-width:0}
       .topbar{background:var(--bg-primary);border-bottom:1px solid var(--border-light);padding:0 24px;height:52px;display:flex;align-items:center;gap:12px;flex-shrink:0}
       .topbar-title{font-size:15px;font-weight:600;color:var(--text-primary);flex:1;letter-spacing:-0.1px}
