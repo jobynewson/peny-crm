@@ -348,6 +348,21 @@ export const camera_setups = pgTable('camera_setups', {
   updated_at:   timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+// ── Marketing cards ───────────────────────────────────────────────────────────
+export const marketing_cards = pgTable('marketing_cards', {
+  id:            uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id:       text('user_id').notNull(),
+  title:         text('title').notNull(),
+  card_type:     text('card_type').notNull().default('ad-hoc'),
+  status:        text('status').notNull().default('ideas'),
+  lead_owner_id: text('lead_owner_id'),
+  due_date:      date('due_date'),
+  notes:         text('notes'),
+  sub_tasks:     jsonb('sub_tasks').notNull().default([]),
+  sort_order:    integer('sort_order').notNull().default(0),
+  ...timestamps,
+})
+
 // ── User notes (private per user, keyed by Clerk ID) ──────────────────────────
 export const user_notes = pgTable('user_notes', {
   id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
