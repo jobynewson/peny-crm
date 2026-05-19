@@ -170,8 +170,8 @@ export class TimeTrackView {
       if (submitBtn) submitBtn.disabled = true
 
       try {
-        const { createTimeEntry } = await import('../db/client.js')
-        await createTimeEntry({
+        const { addTimeEntry } = await import('../db/client.js')
+        await addTimeEntry({
           project_id:  projectId,
           budget_id:   budgetId,
           line_label:  task,

@@ -745,8 +745,8 @@ export class App {
       logBtn.disabled = true
       logBtn.textContent = '…'
       try {
-        const { createTimeEntry } = await import('./db/client.js')
-        await createTimeEntry({ project_id: pid, budget_id: budgetId, line_label: task, crew_name: name, hours, entry_date: date, note })
+        const { addTimeEntry } = await import('./db/client.js')
+        await addTimeEntry({ project_id: pid, budget_id: budgetId, line_label: task, crew_name: name, hours, entry_date: date, note })
         hoursInput.value = ''
         const noteInput = wrap.querySelector('#stt-note')
         if (noteInput) noteInput.value = ''
