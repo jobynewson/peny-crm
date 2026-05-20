@@ -237,6 +237,10 @@ export async function updateAppUser(id, data) {
     .returning()
 }
 
+export async function deleteAppUser(id) {
+  return db.delete(app_users).where(eq(app_users.id, id))
+}
+
 // ── Time tracking ─────────────────────────────────────────────────────────────
 export async function getTimeEntries(projectId) {
   return db.select().from(time_entries)

@@ -2131,7 +2131,7 @@ export class App {
     const el = mc.querySelector('#users-list')
     if (!el) return
     try {
-      const { getAllAppUsers, updateAppUser, ROLE_PRESETS } = await import('./db/client.js')
+      const { getAllAppUsers, updateAppUser, deleteAppUser, ROLE_PRESETS } = await import('./db/client.js')
       const users = await getAllAppUsers()
       const PERM_KEYS = ['contacts_view','contacts_edit','projects_view','projects_edit','budgets_view','budgets_edit','settings']
       const PERM_LABELS = {
@@ -2172,7 +2172,10 @@ export class App {
             <input type="text" value="${u.default_role||''}" placeholder="e.g. Camera Operator" data-default-role="${u.id}"
               style="flex:1;font-size:12px;padding:4px 8px;border:1px solid var(--border-light);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
           </div>
-          ${!isSelf ? `<div style="margin-top:10px;text-align:right"><button class="row-btn" data-save-user="${u.id}" style="font-size:11px">Save changes</button></div>` : ''}
+          ${!isSelf ? `<div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
+            <button class="row-btn" data-remove-user="${u.id}" data-remove-name="${u.name||u.email}" style="font-size:11px;color:var(--red,#e05252);border-color:var(--red,#e05252)">Remove user</button>
+            <button class="row-btn" data-save-user="${u.id}" style="font-size:11px">Save changes</button>
+          </div>` : ''}
         </div>`
       }).join('')
 
@@ -2213,6 +2216,20 @@ export class App {
             this.toast('User updated')
             this._loadUsersPanel(mc)
           } catch(e) { console.error(e); this.toast('Error saving user') }
+        })
+      })
+      // Remove user
+      el.querySelectorAll('[data-remove-user]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const uid = btn.dataset.removeUser
+          const name = btn.dataset.removeName
+          if (!confirm(`Remove ${name} from the workspace? They will lose access immediately.`)) return
+          try {
+            await deleteAppUser(uid)
+            this.allUsers = (this.allUsers ?? []).filter(x => x.id !== uid)
+            this.toast('User removed')
+            this._loadUsersPanel(mc)
+          } catch(e) { console.error(e); this.toast('Error removing user') }
         })
       })
     } catch(e) { console.error(e); el.innerHTML = '<div style="font-size:12px;color:var(--text-tertiary)">Could not load users</div>' }
