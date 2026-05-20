@@ -105,6 +105,9 @@ export class StoryPlannerView {
     const plan = this.plan || { title: '', blocks: [] }
     const blocks = plan.blocks || []
     const totalMins = blocks.reduce((s, b) => s + (parseFloat(b.duration_mins) || 0), 0)
+    const attachedProject = plan.project_id
+      ? (this.app.projects || []).find(p => p.id === plan.project_id)
+      : null
 
     mc.innerHTML = `
       <div style="max-width:700px;padding:24px 20px">
@@ -120,11 +123,30 @@ export class StoryPlannerView {
           </div>
         </div>
 
-        <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:20px;padding-left:2px">
-          ${blocks.length} block${blocks.length !== 1 ? 's' : ''}
-          ${totalMins > 0
-            ? ` · <span style="color:var(--text-secondary)">${fmtDuration(totalMins)} total (${fmtTimecode(totalMins)})</span>`
-            : ' · No duration set yet'}
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+          <div style="font-size:12px;color:var(--text-tertiary)">
+            ${blocks.length} block${blocks.length !== 1 ? 's' : ''}
+            ${totalMins > 0
+              ? ` · <span style="color:var(--text-secondary)">${fmtDuration(totalMins)} total (${fmtTimecode(totalMins)})</span>`
+              : ' · No duration set yet'}
+          </div>
+          <div style="height:12px;width:0.5px;background:var(--border-light);flex-shrink:0"></div>
+          ${attachedProject ? `
+            <div style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text-secondary)">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 6h6M5 9h4"/></svg>
+              <button id="sp-attach-btn" style="background:none;border:none;cursor:pointer;color:var(--text-secondary);font-size:12px;font-family:var(--font);padding:0"
+                onmouseover="this.style.color='var(--text-primary)'" onmouseout="this.style.color='var(--text-secondary)'">${esc(attachedProject.name)}</button>
+              <button id="sp-detach-btn" style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:14px;line-height:1;padding:0 1px"
+                title="Detach from project" onmouseover="this.style.color='#e07070'" onmouseout="this.style.color='var(--text-tertiary)'">×</button>
+            </div>
+          ` : `
+            <button id="sp-attach-btn"
+              style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:12px;font-family:var(--font);padding:0;display:flex;align-items:center;gap:4px"
+              onmouseover="this.style.color='var(--text-secondary)'" onmouseout="this.style.color='var(--text-tertiary)'">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 6h6M5 9h4"/></svg>
+              Attach to project
+            </button>
+          `}
         </div>
 
         <div id="sp-blocks-list">
@@ -133,6 +155,9 @@ export class StoryPlannerView {
             : `<div style="border:1.5px dashed var(--border-light);border-radius:var(--radius-md);padding:48px 24px;text-align:center;color:var(--text-tertiary);font-size:13px">
                 Add your first block to build the story timeline
                </div>`}
+          <div id="sp-drop-end" style="display:none;height:40px;border:1.5px dashed transparent;border-radius:var(--radius-md);margin-top:4px;align-items:center;justify-content:center;font-size:12px;color:transparent;transition:border-color 0.15s,color 0.15s">
+            ↓ Move to end
+          </div>
         </div>
 
         ${blocks.length > 4 ? `
@@ -155,7 +180,7 @@ export class StoryPlannerView {
       const newTitle = titleInput.value.trim() || plan.title
       if (newTitle !== plan.title) {
         this.plan.title = newTitle
-        try { await updateStoryPlan(this.app.userId, this.currentPlanId, { title: newTitle, blocks: this.plan.blocks }) }
+        try { await updateStoryPlan(this.app.userId, this.currentPlanId, { title: newTitle, blocks: this.plan.blocks, project_id: this.plan.project_id || null }) }
         catch(e) { console.error(e) }
         const idx = (this.plans || []).findIndex(p => p.id === this.currentPlanId)
         if (idx !== -1) this.plans[idx].title = newTitle
@@ -167,6 +192,13 @@ export class StoryPlannerView {
     mc.querySelector('#sp-add-block-btm')?.addEventListener('click', () => this._openBlockModal(mc))
     mc.querySelector('#sp-export-btn')?.addEventListener('click', () => {
       this._showExportMenu(mc.querySelector('#sp-export-btn'))
+    })
+
+    mc.querySelector('#sp-attach-btn')?.addEventListener('click', () => this._openAttachProjectPicker(mc))
+    mc.querySelector('#sp-detach-btn')?.addEventListener('click', async () => {
+      this.plan.project_id = null
+      await this._savePlan()
+      this._renderEditorHTML(mc)
     })
 
     mc.querySelectorAll('[data-sp-block-edit]').forEach(el => {
@@ -233,24 +265,34 @@ export class StoryPlannerView {
     const list = mc.querySelector('#sp-blocks-list')
     if (!list) return
     let dragSrcId = null
+    const endZone = list.querySelector('#sp-drop-end')
+
+    const clearIndicators = () => {
+      list.querySelectorAll('.sp-block').forEach(c => c.style.boxShadow = '')
+      if (endZone) { endZone.style.borderColor = 'transparent'; endZone.style.color = 'transparent' }
+    }
 
     list.querySelectorAll('.sp-block').forEach(card => {
       card.addEventListener('dragstart', e => {
         dragSrcId = card.dataset.id
         e.dataTransfer.effectAllowed = 'move'
         e.dataTransfer.setData('text/plain', card.dataset.id)
-        setTimeout(() => { card.style.opacity = '0.4' }, 0)
+        setTimeout(() => {
+          card.style.opacity = '0.4'
+          if (endZone) endZone.style.display = 'flex'
+        }, 0)
       })
       card.addEventListener('dragend', () => {
         card.style.opacity = ''
-        list.querySelectorAll('.sp-block').forEach(c => c.style.boxShadow = '')
+        clearIndicators()
+        if (endZone) endZone.style.display = 'none'
         dragSrcId = null
       })
       card.addEventListener('dragover', e => {
         e.preventDefault()
         e.dataTransfer.dropEffect = 'move'
         if (card.dataset.id !== dragSrcId) {
-          list.querySelectorAll('.sp-block').forEach(c => c.style.boxShadow = '')
+          clearIndicators()
           card.style.boxShadow = '0 -3px 0 0 var(--accent,#4a90d9)'
         }
       })
@@ -259,7 +301,8 @@ export class StoryPlannerView {
       })
       card.addEventListener('drop', async e => {
         e.preventDefault()
-        list.querySelectorAll('.sp-block').forEach(c => c.style.boxShadow = '')
+        clearIndicators()
+        if (endZone) endZone.style.display = 'none'
         if (!dragSrcId || card.dataset.id === dragSrcId) return
         const blocks = this.plan.blocks
         const si = blocks.findIndex(b => b.id === dragSrcId)
@@ -271,6 +314,33 @@ export class StoryPlannerView {
         this._renderEditorHTML(mc)
       })
     })
+
+    if (endZone) {
+      endZone.addEventListener('dragover', e => {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        clearIndicators()
+        endZone.style.borderColor = 'var(--accent,#4a90d9)'
+        endZone.style.color = 'var(--accent,#4a90d9)'
+      })
+      endZone.addEventListener('dragleave', () => {
+        endZone.style.borderColor = 'transparent'
+        endZone.style.color = 'transparent'
+      })
+      endZone.addEventListener('drop', async e => {
+        e.preventDefault()
+        clearIndicators()
+        endZone.style.display = 'none'
+        if (!dragSrcId) return
+        const blocks = this.plan.blocks
+        const si = blocks.findIndex(b => b.id === dragSrcId)
+        if (si === -1) return
+        const [moved] = blocks.splice(si, 1)
+        blocks.push(moved)
+        await this._savePlan()
+        this._renderEditorHTML(mc)
+      })
+    }
   }
 
   // ── Block modal ───────────────────────────────────────────────────────────
@@ -501,6 +571,7 @@ export class StoryPlannerView {
     const updated = await updateStoryPlan(this.app.userId, this.currentPlanId, {
       title: this.plan.title,
       blocks: this.plan.blocks || [],
+      project_id: this.plan.project_id || null,
     })
     if (updated && this.plans) {
       const idx = this.plans.findIndex(p => p.id === this.currentPlanId)
@@ -508,11 +579,59 @@ export class StoryPlannerView {
     }
   }
 
-  openNewPlanModal(mc) {
-    this._openNewPlanModal(mc)
+  _openAttachProjectPicker(mc) {
+    const existing = document.getElementById('sp-proj-picker')
+    if (existing) { existing.remove(); return }
+    const btn = mc.querySelector('#sp-attach-btn')
+    if (!btn) return
+    const rect = btn.getBoundingClientRect()
+    const projects = (this.app.projects || []).filter(p => !p.is_retainer).sort((a, b) => a.name.localeCompare(b.name))
+
+    const picker = document.createElement('div')
+    picker.id = 'sp-proj-picker'
+    picker.style.cssText = `position:fixed;top:${rect.bottom + 4}px;left:${rect.left}px;background:var(--bg-primary);border:0.5px solid var(--border-med);border-radius:var(--radius-md);z-index:9999;overflow:hidden;min-width:220px;max-width:300px;max-height:320px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,0.2)`
+
+    picker.innerHTML = `
+      <div style="padding:8px 12px;border-bottom:0.5px solid var(--border-light);font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Attach to project</div>
+      ${this.plan.project_id ? `
+        <div id="spp-detach" style="padding:9px 14px;cursor:pointer;font-size:13px;color:#e07070;display:flex;align-items:center;gap:8px;border-bottom:0.5px solid var(--border-light)"
+          onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''">
+          Remove attachment
+        </div>
+      ` : ''}
+      ${projects.length === 0
+        ? `<div style="padding:16px;font-size:13px;color:var(--text-tertiary);text-align:center">No projects yet</div>`
+        : projects.map(p => `
+          <div data-spp-proj="${p.id}" style="padding:9px 14px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px;${this.plan.project_id === p.id ? 'color:var(--accent,#4a90d9);font-weight:500' : ''}"
+            onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''">
+            ${this.plan.project_id === p.id ? '✓ ' : ''}${esc(p.name)}
+          </div>`).join('')}
+    `
+
+    picker.querySelector('#spp-detach')?.addEventListener('click', async () => {
+      this.plan.project_id = null
+      picker.remove()
+      await this._savePlan()
+      this._renderEditorHTML(mc)
+    })
+    picker.querySelectorAll('[data-spp-proj]').forEach(el => {
+      el.addEventListener('click', async () => {
+        this.plan.project_id = el.dataset.sppProj
+        picker.remove()
+        await this._savePlan()
+        this._renderEditorHTML(mc)
+      })
+    })
+
+    document.body.appendChild(picker)
+    setTimeout(() => document.addEventListener('click', () => picker.remove(), { once: true }), 10)
   }
 
-  _openNewPlanModal(mc) {
+  openNewPlanModal(mc, projectId = null) {
+    this._openNewPlanModal(mc, projectId)
+  }
+
+  _openNewPlanModal(mc, projectId = null) {
     const overlay = document.createElement('div')
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
     overlay.innerHTML = `
@@ -538,7 +657,7 @@ export class StoryPlannerView {
       const btn = overlay.querySelector('#np-create')
       btn.disabled = true; btn.textContent = 'Creating…'
       try {
-        const plan = await createStoryPlan(this.app.userId, { title, blocks: [] })
+        const plan = await createStoryPlan(this.app.userId, { title, blocks: [], project_id: projectId || null })
         if (!this.plans) this.plans = []
         this.plans.unshift(plan)
         overlay.remove()

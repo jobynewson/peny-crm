@@ -365,10 +365,11 @@ export const marketing_cards = pgTable('marketing_cards', {
 
 // ── Story Planner ─────────────────────────────────────────────────────────────
 export const story_plans = pgTable('story_plans', {
-  id:      uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
-  user_id: text('user_id').notNull(),
-  title:   text('title').notNull(),
-  blocks:  jsonb('blocks').notNull().default([]),
+  id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id:    text('user_id').notNull(),
+  project_id: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
+  title:      text('title').notNull(),
+  blocks:     jsonb('blocks').notNull().default([]),
   ...timestamps,
 })
 

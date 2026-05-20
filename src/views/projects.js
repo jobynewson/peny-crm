@@ -451,12 +451,13 @@ export class ProjectsView {
     const sidebarCollapsed = localStorage.getItem('slate-sidebar-collapsed') === '1'
 
     const TABS = [
-      { id: 'overview', label: '📋 Overview' },
-      { id: 'shoots',   label: '🎬 Shoots', hide: (p.project_type||'full_service') === 'post_production' },
-      { id: 'budget',   label: '💰 Budget' },
-      { id: 'planning', label: '🗂 Planning' },
-      { id: 'files',    label: '📁 Files' },
-      { id: 'notes',    label: '💬 Notes' },
+      { id: 'overview',     label: '📋 Overview' },
+      { id: 'shoots',       label: '🎬 Shoots', hide: (p.project_type||'full_service') === 'post_production' },
+      { id: 'budget',       label: '💰 Budget' },
+      { id: 'planning',     label: '🗂 Planning' },
+      { id: 'files',        label: '📁 Files' },
+      { id: 'notes',        label: '💬 Notes' },
+      { id: 'story-plans',  label: '🎬 Story Plans' },
     ].filter(t => !t.hide)
 
     mc.innerHTML = `
@@ -533,6 +534,9 @@ export class ProjectsView {
       this._loadWorkLog(mc, p)
       this._loadTimePanel(mc, p)
     }
+    if (tab === 'story-plans') {
+      this._loadStoryPlansForProject(mc, p)
+    }
   }
 
   _renderTab(tab, p, cl, linked) {
@@ -547,12 +551,13 @@ export class ProjectsView {
         <div style="font-size:13px;color:var(--text-primary);line-height:1.6">${value}</div>
       </div>` : ''
 
-    if (tab === 'overview') return this._renderTabOverview(p, cl, delivs, crew, shots, doneCount, field)
-    if (tab === 'shoots')   return this._renderTabShoots(p)
-    if (tab === 'budget')   return this._renderTabBudget(p, linked)
-    if (tab === 'planning') return this._renderTabPlanning(p)
-    if (tab === 'files')    return this._renderTabFiles(p)
-    if (tab === 'notes')    return this._renderTabNotes(p)
+    if (tab === 'overview')    return this._renderTabOverview(p, cl, delivs, crew, shots, doneCount, field)
+    if (tab === 'shoots')      return this._renderTabShoots(p)
+    if (tab === 'budget')      return this._renderTabBudget(p, linked)
+    if (tab === 'planning')    return this._renderTabPlanning(p)
+    if (tab === 'files')       return this._renderTabFiles(p)
+    if (tab === 'notes')       return this._renderTabNotes(p)
+    if (tab === 'story-plans') return this._renderTabStoryPlans(p)
     return ''
   }
 
@@ -732,6 +737,20 @@ export class ProjectsView {
         <div style="font-size:15px;font-weight:500;color:var(--text-secondary);margin-bottom:8px">Files coming soon</div>
         <div style="font-size:13px;line-height:1.6;max-width:320px;margin:0 auto">Contracts, release forms, risk assessment exports, and other project files will live here.</div>
       </div>`
+  }
+
+  _renderTabStoryPlans(p) {
+    return `
+      <div class="proj-panel">
+        <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
+          Story Plans
+          <button id="pv-sp-new" class="btn-secondary" style="font-size:12px;padding:4px 10px">+ New plan</button>
+        </div>
+        <div id="pv-sp-list" style="padding:12px 14px">
+          <div style="font-size:13px;color:var(--text-tertiary)">Loading…</div>
+        </div>
+      </div>
+    `
   }
 
   _renderTabNotes(p) {
@@ -978,6 +997,17 @@ export class ProjectsView {
         })
       })
     }
+    if (tab === 'story-plans') {
+      mc.querySelector('#pv-sp-new')?.addEventListener('click', () => {
+        const spView = this.app.storyPlannerView
+        if (!spView) return
+        const mainContent = document.getElementById('main-content')
+        if (!mainContent) return
+        spView.plans = null
+        this.app.navigate('story-planner')
+        setTimeout(() => spView.openNewPlanModal(document.getElementById('main-content'), p.id), 100)
+      })
+    }
   }
 
   _bindSidebar(mc, p, linked) {
@@ -1046,6 +1076,61 @@ export class ProjectsView {
         this.app.toast('Project deleted')
       } catch (e) { console.error(e); this.app.toast('Error deleting project') }
     })
+  }
+
+  async _loadStoryPlansForProject(mc, p) {
+    const listEl = mc.querySelector('#pv-sp-list')
+    if (!listEl) return
+    try {
+      const { getStoryPlans } = await import('../db/client.js')
+      const allPlans = await getStoryPlans(this.app.userId)
+      const plans = allPlans.filter(plan => plan.project_id === p.id)
+
+      if (!plans.length) {
+        listEl.innerHTML = `<div style="font-size:13px;color:var(--text-tertiary);padding:8px 0">No story plans attached to this project yet.</div>`
+        return
+      }
+
+      const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      listEl.innerHTML = plans.map(plan => {
+        const blocks = plan.blocks || []
+        const totalMins = blocks.reduce((s, b) => s + (parseFloat(b.duration_mins) || 0), 0)
+        const fmtDur = m => {
+          if (m <= 0) return ''
+          if (m < 1) return `${Math.round(m * 60)}s`
+          const h = Math.floor(m / 60), rem = Math.floor(m % 60)
+          return h > 0 ? `${h}h${rem > 0 ? ' ' + rem + 'm' : ''}` : `${rem}m`
+        }
+        return `
+          <div data-pv-sp-open="${plan.id}"
+            style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--bg-tertiary);border:0.5px solid var(--border-light);border-radius:var(--radius-sm);margin-bottom:6px;cursor:pointer;transition:border-color 0.15s"
+            onmouseover="this.style.borderColor='var(--border-strong)'" onmouseout="this.style.borderColor='var(--border-light)'">
+            <div>
+              <div style="font-size:13px;font-weight:500">${esc(plan.title)}</div>
+              <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">
+                ${blocks.length} block${blocks.length !== 1 ? 's' : ''}${totalMins > 0 ? ' · ' + fmtDur(totalMins) : ''}
+              </div>
+            </div>
+            <span style="font-size:12px;color:var(--accent,#4a90d9);flex-shrink:0">Open →</span>
+          </div>
+        `
+      }).join('')
+
+      listEl.querySelectorAll('[data-pv-sp-open]').forEach(el => {
+        el.addEventListener('click', () => {
+          const spView = this.app.storyPlannerView
+          if (!spView) return
+          const planId = el.dataset.pvSpOpen
+          const plan = plans.find(p => p.id === planId)
+          spView.currentPlanId = planId
+          spView.plan = plan || { id: planId, title: 'Plan', blocks: [] }
+          this.app.navigate('story-planner')
+        })
+      })
+    } catch(e) {
+      console.error(e)
+      if (listEl) listEl.innerHTML = `<div style="font-size:13px;color:var(--text-tertiary)">Error loading plans</div>`
+    }
   }
 
   async _loadShoots(mc, p) {
