@@ -363,6 +363,16 @@ export const marketing_cards = pgTable('marketing_cards', {
   ...timestamps,
 })
 
+// ── Story Planner ─────────────────────────────────────────────────────────────
+export const story_plans = pgTable('story_plans', {
+  id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id:    text('user_id').notNull(),
+  project_id: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
+  title:      text('title').notNull(),
+  blocks:     jsonb('blocks').notNull().default([]),
+  ...timestamps,
+})
+
 // ── User notes (private per user, keyed by Clerk ID) ──────────────────────────
 export const user_notes = pgTable('user_notes', {
   id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),

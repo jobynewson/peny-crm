@@ -4,6 +4,7 @@ import { ContactsView } from './views/contacts.js'
 import { ProjectsView } from './views/projects.js'
 import { BudgetsView, budTotal } from './views/budgets.js'
 import { CallSheetsView } from './views/callsheets.js'
+import { StoryPlannerView } from './views/story-planner.js'
 import { MarketingView } from './views/marketing.js'
 import { TimeTrackView } from './views/timetrack.js'
 
@@ -27,6 +28,7 @@ export class App {
     this.projectsView    = new ProjectsView(this)
     this.budgetsView     = new BudgetsView(this)
     this.callSheetsView  = new CallSheetsView(this)
+    this.storyPlannerView = new StoryPlannerView(this)
     this.marketingView   = new MarketingView(this)
     this.timeTrackView   = new TimeTrackView(this)
     window.app = this
@@ -347,7 +349,7 @@ export class App {
       <div class="sidebar" id="app-sidebar">
         <div class="logo"><img src="/slate-logo.png" alt="Slate" /></div>
         <div class="nav-label">Main</div>
-        ${[['dashboard','Dashboard',this.iconPipeline()],['contacts','Contacts',this.iconContacts()],['projects','Projects',this.iconProjects()],['budgets','Budgets',this.iconBudgets()],['marketing','Marketing',this.iconMarketing()]].map(([id,label,icon])=>`
+        ${[['dashboard','Dashboard',this.iconPipeline()],['contacts','Contacts',this.iconContacts()],['projects','Projects',this.iconProjects()],['budgets','Budgets',this.iconBudgets()],['marketing','Marketing',this.iconMarketing()],['story-planner','Story Planner',this.iconStoryPlanner()]].map(([id,label,icon])=>`
           <div class="nav-item ${this.currentView===id?'active':''}" data-view="${id}">${icon} ${label}</div>`).join('')}
         <div class="sidebar-notes">
           <div class="sidebar-notes-header">
@@ -407,6 +409,9 @@ export class App {
     }
     if (this.currentView === 'marketing') {
       return `<button class="btn-primary" id="topbar-btn">+ New card</button>`
+    }
+    if (this.currentView === 'story-planner' && !this.storyPlannerView?.currentPlanId) {
+      return `<button class="btn-primary" id="topbar-btn">+ New plan</button>`
     }
     return ''
   }
@@ -502,6 +507,9 @@ export class App {
       else if (this.currentView === 'marketing') {
         this.marketingView.openCardModal(null, this.marketingView.activeTab === 'kanban' ? 'ideas' : 'ideas')
       }
+      else if (this.currentView === 'story-planner') {
+        this.storyPlannerView.openNewPlanModal(document.getElementById('main-content'))
+      }
     })
   }
 
@@ -512,6 +520,8 @@ export class App {
     this.projectsView.editingId = null
     this.budgetsView.currentId  = null
     this.budgetsView.editingId  = null
+    this.storyPlannerView.currentPlanId = null
+    this.storyPlannerView.plan = null
     history.pushState({ view }, '', `#${view}`)
     this.render()
   }
@@ -527,7 +537,7 @@ export class App {
     if (!hash) return
     const parts = hash.split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','marketing','timetrack']
+    const validViews = ['contacts','projects','budgets','settings','dashboard','marketing','timetrack','story-planner']
     if (!validViews.includes(view)) return
     this.currentView = view
     if (view === 'projects' && id) {
@@ -547,7 +557,7 @@ export class App {
     const hash = location.hash.slice(1)
     const parts = (hash || 'dashboard').split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','marketing','timetrack']
+    const validViews = ['contacts','projects','budgets','settings','dashboard','marketing','timetrack','story-planner']
     if (!validViews.includes(view)) { this.currentView = 'dashboard'; this.render(); return }
 
     this.currentView = view
@@ -575,6 +585,8 @@ export class App {
       this.budgetsView.render(mc)
     } else if (this.currentView === 'callsheets') {
       this.callSheetsView.renderList(mc, this.callSheetsView.currentProjectId)
+    } else if (this.currentView === 'story-planner') {
+      this.storyPlannerView.render(mc)
     } else if (this.currentView === 'marketing') {
       this.marketingView.render(mc)
     } else if (this.currentView === 'timetrack') {
@@ -589,7 +601,7 @@ export class App {
   viewTitle() {
     if (this.currentView === 'projects' && this.projectsView?.currentId) return this.projects.find(p=>p.id===this.projectsView.currentId)?.name ?? 'Project'
     if (this.currentView === 'budgets'  && this.budgetsView?.currentId)  return this.budgets.find(b=>b.id===this.budgetsView.currentId)?.name  ?? 'Budget'
-    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',settings:'Settings',marketing:'Marketing',timetrack:'Time tracker'}[this.currentView] ?? ''
+    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',settings:'Settings',marketing:'Marketing',timetrack:'Time tracker','story-planner':'Story Planner'}[this.currentView] ?? ''
   }
 
   updateTitle() {
@@ -2811,6 +2823,7 @@ export class App {
   iconProjects() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 6h6M5 9h4"/></svg>` }
   iconBudgets()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 3h12v2H2zM2 7h9M2 11h7"/><circle cx="13" cy="11" r="2.2"/><path d="M13 9.8v1l.7.7"/></svg>` }
   iconPipeline() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1" y="4" width="4" height="9" rx="1"/><rect x="6" y="6" width="4" height="7" rx="1"/><rect x="11" y="8" width="4" height="5" rx="1"/></svg>` }
+  iconStoryPlanner() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="2" width="13" height="3.5" rx="0.8"/><rect x="1.5" y="6.5" width="13" height="3.5" rx="0.8"/><rect x="1.5" y="11" width="8" height="3.5" rx="0.8"/></svg>` }
   iconSettings() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M11.4 4.6l-1.4 1.4M4.6 11.4l-1.4 1.4"/></svg>` }
   iconSignOut()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M10 11l4-4-4-4M14 8H6"/></svg>` }
   iconTheme() {
