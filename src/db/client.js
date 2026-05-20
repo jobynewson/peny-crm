@@ -6,6 +6,7 @@ import {
   contacts, projects, budgets, settings, workspace,
   project_budgets, budget_versions, activity_log,
   app_users, time_entries, user_notes, social_posts, marketing_cards,
+  story_plans,
 } from './schema.js'
 
 const sql = neon(import.meta.env.VITE_DATABASE_URL)
@@ -27,6 +28,16 @@ export async function runMigrations() {
       sort_order    INTEGER NOT NULL DEFAULT 0,
       created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS story_plans (
+      id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id    TEXT NOT NULL,
+      title      TEXT NOT NULL,
+      blocks     JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `
 }
@@ -670,4 +681,28 @@ export async function updateMarketingCard(workspaceId, id, data) {
 export async function deleteMarketingCard(workspaceId, id) {
   return db.delete(marketing_cards)
     .where(and(eq(marketing_cards.id, id), eq(marketing_cards.user_id, workspaceId)))
+}
+
+// ── Story Planner ─────────────────────────────────────────────────────────────
+export async function getStoryPlans(workspaceId) {
+  return db.select().from(story_plans)
+    .where(eq(story_plans.user_id, workspaceId))
+    .orderBy(desc(story_plans.created_at))
+}
+export async function createStoryPlan(workspaceId, data) {
+  const [plan] = await db.insert(story_plans)
+    .values({ user_id: workspaceId, title: data.title, blocks: data.blocks ?? [] })
+    .returning()
+  return plan
+}
+export async function updateStoryPlan(workspaceId, id, data) {
+  const [plan] = await db.update(story_plans)
+    .set({ ...data, updated_at: new Date() })
+    .where(and(eq(story_plans.id, id), eq(story_plans.user_id, workspaceId)))
+    .returning()
+  return plan
+}
+export async function deleteStoryPlan(workspaceId, id) {
+  return db.delete(story_plans)
+    .where(and(eq(story_plans.id, id), eq(story_plans.user_id, workspaceId)))
 }
