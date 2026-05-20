@@ -175,7 +175,7 @@ export class MarketingView {
             <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:120px">
               <label style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Type</label>
               <select id="mkt-type" style="font-size:13px;padding:5px 8px;border:1px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);outline:none">
-                ${CARD_TYPES.map(t => `<option value="${t.id}"${(card?.card_type||'ad-hoc') === t.id ? ' selected' : ''}>${t.label}</option>`).join('')}
+                ${CARD_TYPES.map(t => `<option value="${t.id}"${localType === t.id ? ' selected' : ''}>${t.label}</option>`).join('')}
               </select>
             </div>
             <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:140px">
