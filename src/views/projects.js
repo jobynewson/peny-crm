@@ -534,9 +534,6 @@ export class ProjectsView {
       this._loadWorkLog(mc, p)
       this._loadTimePanel(mc, p)
     }
-    if (tab === 'story-plans') {
-      this._loadStoryPlansForProject(mc, p)
-    }
   }
 
   _renderTab(tab, p, cl, linked) {
@@ -1001,12 +998,11 @@ export class ProjectsView {
       mc.querySelector('#pv-sp-new')?.addEventListener('click', () => {
         const spView = this.app.storyPlannerView
         if (!spView) return
-        const mainContent = document.getElementById('main-content')
-        if (!mainContent) return
         spView.plans = null
         this.app.navigate('story-planner')
         setTimeout(() => spView.openNewPlanModal(document.getElementById('main-content'), p.id), 100)
       })
+      this._loadStoryPlansForProject(mc, p)
     }
   }
 
