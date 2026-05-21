@@ -1319,7 +1319,7 @@ export class ProjectsView {
               </div>
               <div class="bsec-body">
                 <div style="padding:14px" id="se-locs-list">
-                  ${sh.locations.map((l,i) => this._shootLocHTML(l, i)).join('') || '<div style="font-size:12px;color:var(--text-tertiary)">No additional locations</div>'}
+                  ${sh.locations.map((l,i) => this._shootLocHTML(l, i, sh)).join('') || '<div style="font-size:12px;color:var(--text-tertiary)">No additional locations</div>'}
                 </div>
               </div>
             </div>
@@ -1559,9 +1559,16 @@ export class ProjectsView {
     this._renderShootCrewLinks(overlay, sh)
   }
 
-  _shootLocHTML(l, i) {
+  _shootLocHTML(l, i, sh) {
+    const dates = sh ? (Array.isArray(sh.shoot_dates) ? sh.shoot_dates.filter(d => d.date) : []) : []
+    const fmtDateShort = d => new Date(d).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})
+    const dateSelect = dates.length > 1 ? `<select class="bl-in" data-loc-field="${i},date" style="font-size:12px;padding:5px 8px;width:130px;flex-shrink:0">
+        <option value="">All days</option>
+        ${dates.map(d => `<option value="${d.date}" ${l.date===d.date?'selected':''}>${esc(fmtDateShort(d.date))}</option>`).join('')}
+      </select>` : ''
     return `<div class="se-loc-row" style="border:1px solid var(--border-med);border-radius:var(--radius-md);padding:10px;margin-bottom:8px;background:var(--bg-secondary)" data-loc-idx="${i}">
-      <div style="display:flex;gap:6px;margin-bottom:6px">
+      <div style="display:flex;gap:6px;margin-bottom:6px;align-items:center">
+        ${dateSelect}
         <input type="text" class="bl-in w" value="${esc(l.name||'')}" placeholder="Location name" data-loc-field="${i},name" style="flex:1;font-size:12px;padding:5px 8px" />
         <input type="time" class="bl-in w" value="${esc(l.move_time||'')}" placeholder="Move time" data-loc-field="${i},move_time" style="width:90px;font-size:12px;padding:5px 8px" />
         <button class="row-btn" style="color:#c03020" data-loc-rem="${i}">×</button>
@@ -2073,6 +2080,8 @@ export class ProjectsView {
       const schedList = overlay.querySelector('#se-sched-list')
       if (schedList) schedList.innerHTML = sh.schedule.map((r,i) => this._shootSchedHTML(r, i, sh)).join('') || '<div style="font-size:12px;color:var(--text-tertiary)">No schedule yet</div>'
       this._bindShootSched(overlay, sh, save)
+      // Additional locations date selectors also depend on shoot dates
+      this._refreshShootLocs(overlay, sh, save)
     }
     const bindDateList = () => {
       overlay.querySelectorAll('[data-date-field]').forEach(el => {
@@ -2590,7 +2599,7 @@ export class ProjectsView {
   }
   _refreshShootLocs(overlay, sh, save) {
     const el = overlay.querySelector('#se-locs-list')
-    el.innerHTML = sh.locations.map((l,i) => this._shootLocHTML(l,i)).join('') || '<div style="font-size:12px;color:var(--text-tertiary)">No additional locations</div>'
+    el.innerHTML = sh.locations.map((l,i) => this._shootLocHTML(l,i,sh)).join('') || '<div style="font-size:12px;color:var(--text-tertiary)">No additional locations</div>'
     this._bindShootLocs(overlay, sh, save)
   }
 
