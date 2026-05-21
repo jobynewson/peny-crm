@@ -78,15 +78,20 @@ export async function runMigrations() {
       updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `
+  await sql`ALTER TABLE team_calendar_entries ADD COLUMN IF NOT EXISTS end_date DATE`
   await sql`
     CREATE TABLE IF NOT EXISTS post_production_schedules (
       id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
       user_id    TEXT NOT NULL,
       project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      start_date DATE,
+      end_date   DATE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `
+  await sql`ALTER TABLE post_production_schedules ADD COLUMN IF NOT EXISTS start_date DATE`
+  await sql`ALTER TABLE post_production_schedules ADD COLUMN IF NOT EXISTS end_date DATE`
   await sql`
     CREATE TABLE IF NOT EXISTS pps_phases (
       id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -878,4 +883,24 @@ export async function updatePpsPhase(id, data) {
 }
 export async function deletePpsPhase(id) {
   return db.delete(pps_phases).where(eq(pps_phases.id, id))
+}
+export async function updatePpsScheduleDates(id, data) {
+  const [row] = await db.update(post_production_schedules)
+    .set({ ...data, updated_at: new Date() })
+    .where(eq(post_production_schedules.id, id))
+    .returning()
+  return row
+}
+
+// ── Shoots (lightweight — for calendar auto-populate) ─────────────────────────
+export async function getShootsForCalendar(workspaceId) {
+  const { sql: sq } = await import('drizzle-orm')
+  return db.execute(sq`
+    SELECT s.id, s.project_id, s.name, s.shoot_date, s.shoot_dates, s.crew,
+           p.name AS project_name
+    FROM shoots s
+    JOIN projects p ON p.id = s.project_id
+    WHERE s.user_id = ${workspaceId}
+    ORDER BY s.shoot_date NULLS LAST
+  `).then(r => r.rows ?? r)
 }

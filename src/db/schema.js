@@ -379,6 +379,7 @@ export const team_calendar_entries = pgTable('team_calendar_entries', {
   user_id:      text('user_id').notNull(),
   assignee_id:  uuid('assignee_id').notNull().references(() => app_users.id, { onDelete: 'cascade' }),
   entry_date:   date('entry_date').notNull(),
+  end_date:     date('end_date'),
   entry_type:   text('entry_type').notNull().default('other'),
   label:        text('label').notNull(),
   color:        text('color'),
@@ -396,6 +397,8 @@ export const post_production_schedules = pgTable('post_production_schedules', {
   id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
   user_id:    text('user_id').notNull(),
   project_id: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  start_date: date('start_date'),
+  end_date:   date('end_date'),
   ...timestamps,
 })
 

@@ -38,132 +38,162 @@ export class PostProductionView {
     }
   }
 
+  // ── Main content ──────────────────────────────────────────────────────────────
+
   _renderPpsContent(container, pps, project) {
     const phases = pps.phases || []
-    const hasAnyDates = phases.some(ph => ph.start_date || ph.end_date)
+    const hasPortal = !!project.portal_token
+    const portalCount = phases.filter(p => p.show_in_portal).length
 
     container.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
-        <div>
-          <div style="font-size:14px;font-weight:600">Post Production Schedule</div>
-          <div style="font-size:12px;color:var(--text-tertiary);margin-top:2px">${phases.length} phase${phases.length !== 1 ? 's' : ''}${hasAnyDates ? ' · ' + this._scheduleSummary(phases) : ''}</div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          ${project.portal_token ? `<span style="font-size:11px;color:var(--text-tertiary)">${phases.filter(p => p.show_in_portal).length} visible in portal</span>` : ''}
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+          <div>
+            <div style="font-size:14px;font-weight:600;margin-bottom:2px">Post Production Schedule</div>
+            <div style="font-size:12px;color:var(--text-tertiary)">${phases.length} phase${phases.length !== 1 ? 's' : ''}${hasPortal && portalCount ? ` · ${portalCount} visible in portal` : ''}</div>
+          </div>
           <button class="btn-primary" id="pps-add-phase">+ Add phase</button>
         </div>
-      </div>
 
-      ${hasAnyDates ? `
-      <div id="pps-gantt" style="margin-bottom:20px">
-        ${this._renderGantt(phases)}
-      </div>` : ''}
-
-      <div id="pps-phase-list">
-        ${this._renderPhaseList(phases, pps.id, project)}
-      </div>`
-
-    this._bindPpsContent(container, pps, project)
-  }
-
-  _scheduleSummary(phases) {
-    const dates = phases.flatMap(ph => [ph.start_date, ph.end_date]).filter(Boolean).sort()
-    if (!dates.length) return ''
-    const start = new Date(dates[0]).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-    const end   = new Date(dates[dates.length - 1]).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-    return `${start} – ${end}`
-  }
-
-  _renderGantt(phases) {
-    const withDates = phases.filter(ph => ph.start_date && ph.end_date)
-    if (!withDates.length) return ''
-
-    const allDates = withDates.flatMap(ph => [new Date(ph.start_date), new Date(ph.end_date)])
-    const minDate  = new Date(Math.min(...allDates.map(d => d.getTime())))
-    const maxDate  = new Date(Math.max(...allDates.map(d => d.getTime())))
-    const totalMs  = maxDate - minDate || 1
-    const today    = new Date(); today.setHours(0, 0, 0, 0)
-
-    const todayPct = Math.max(0, Math.min(100, ((today - minDate) / totalMs) * 100))
-    const showTodayLine = today >= minDate && today <= maxDate
-
-    const fmtShort = d => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-
-    return `
-      <div style="background:var(--bg-secondary);border-radius:var(--radius-md);padding:16px;overflow-x:auto">
-        <div style="min-width:500px">
-          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-tertiary);margin-bottom:8px">
-            <span>${fmtShort(minDate)}</span>
-            <span>${fmtShort(maxDate)}</span>
+        <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <span style="font-size:11px;color:var(--text-tertiary);font-weight:500;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap">Schedule range</span>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <input type="date" id="pps-master-start" value="${pps.start_date || ''}" style="padding:5px 9px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);color-scheme:dark" />
+            <span style="color:var(--text-tertiary);font-size:13px">→</span>
+            <input type="date" id="pps-master-end" value="${pps.end_date || ''}" style="padding:5px 9px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);color-scheme:dark" />
+            <button id="pps-save-dates" class="btn-primary" style="padding:5px 12px;font-size:12px">Save</button>
           </div>
-          <div style="position:relative">
-            ${showTodayLine ? `<div style="position:absolute;top:0;bottom:0;left:${todayPct.toFixed(1)}%;width:1px;background:rgba(74,144,217,0.5);z-index:2;pointer-events:none"></div>` : ''}
-            ${withDates.map(ph => {
-              const start  = new Date(ph.start_date)
-              const end    = new Date(ph.end_date)
-              const left   = ((start - minDate) / totalMs * 100).toFixed(1)
-              const width  = Math.max(0.5, ((end - start) / totalMs * 100)).toFixed(1)
-              const days   = Math.round((end - start) / 86400000) + 1
-              return `
-                <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
-                  <div style="flex:0 0 140px;font-size:11px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right">${esc(ph.name)}</div>
-                  <div style="flex:1;position:relative;height:20px">
-                    <div style="position:absolute;left:${left}%;width:${width}%;height:100%;background:${ph.color || '#C47E3A'};border-radius:3px;display:flex;align-items:center;padding:0 6px;overflow:hidden;min-width:4px" title="${esc(ph.name)}: ${fmtShort(ph.start_date)} – ${fmtShort(ph.end_date)} (${days}d)">
-                      <span style="font-size:10px;color:rgba(255,255,255,0.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${days}d</span>
-                    </div>
-                  </div>
-                </div>`
-            }).join('')}
-          </div>
-          ${showTodayLine ? `<div style="display:flex;align-items:center;gap:4px;margin-top:6px;font-size:10px;color:rgba(74,144,217,0.8)">
-            <div style="width:12px;height:1px;background:rgba(74,144,217,0.5)"></div> Today
-          </div>` : ''}
+        </div>
+
+        <div id="pps-grid-wrap">
+          ${this._renderGrid(pps, phases, hasPortal)}
         </div>
       </div>`
+
+    this._bindContent(container, pps, project)
   }
 
-  _renderPhaseList(phases, scheduleId, project) {
+  // ── Grid (date rows × phase columns) ─────────────────────────────────────────
+
+  _renderGrid(pps, phases, hasPortal) {
+    if (!pps.start_date || !pps.end_date) {
+      return `<div style="padding:28px;text-align:center;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md)">
+        <div style="font-size:13px;color:var(--text-tertiary)">Set a schedule range above to see the phase grid</div>
+      </div>`
+    }
     if (!phases.length) {
-      return `<div style="font-size:13px;color:var(--text-tertiary);text-align:center;padding:24px 0">No phases yet — click <strong style="color:var(--text-primary)">+ Add phase</strong> above.</div>`
+      return `<div style="padding:28px;text-align:center;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md)">
+        <div style="font-size:13px;color:var(--text-tertiary)">Add phases to populate the schedule grid</div>
+      </div>`
     }
 
-    const hasPortal = !!project.portal_token
-    const fmtD = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—'
+    const start = new Date(pps.start_date + 'T00:00:00')
+    const end   = new Date(pps.end_date   + 'T00:00:00')
+    if (end < start) {
+      return `<div style="padding:16px;font-size:13px;color:var(--text-tertiary)">End date must be after start date.</div>`
+    }
+
+    const days = []
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      days.push(new Date(d))
+    }
+    if (days.length > 366) {
+      return `<div style="padding:16px;font-size:13px;color:var(--text-tertiary)">Schedule range too large — please narrow to under one year.</div>`
+    }
+
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+    // Build per-phase active-day sets and "first visible day in range" markers
+    const phaseData = phases.map(ph => {
+      if (!ph.start_date || !ph.end_date) return { active: new Set(), firstDay: null }
+      const ps = new Date(ph.start_date + 'T00:00:00')
+      const pe = new Date(ph.end_date   + 'T00:00:00')
+      const active = new Set()
+      for (let d = new Date(ps); d <= pe; d.setDate(d.getDate() + 1)) {
+        active.add(d.toISOString().slice(0, 10))
+      }
+      // First day of phase that's within the master range
+      let firstDay = null
+      for (const d of days) {
+        const ds = d.toISOString().slice(0, 10)
+        if (active.has(ds)) { firstDay = ds; break }
+      }
+      return { active, firstDay }
+    })
+
+    const CELL_W = 82
+    const abbr = s => s.length > 13 ? s.slice(0, 11) + '…' : s
 
     return `
-      <div style="border:1px solid var(--border-light);border-radius:var(--radius-md);overflow:hidden">
-        <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <div style="overflow-x:auto;border:1px solid var(--border-light);border-radius:var(--radius-md)">
+        <table style="border-collapse:collapse;font-size:12px;min-width:${90 + phases.length * CELL_W + 36}px">
           <thead>
-            <tr style="background:var(--bg-secondary)">
-              <th style="padding:8px 12px;text-align:left;font-weight:500;font-size:11px;color:var(--text-tertiary)">Phase</th>
-              <th style="padding:8px 12px;text-align:left;font-weight:500;font-size:11px;color:var(--text-tertiary);white-space:nowrap">Start</th>
-              <th style="padding:8px 12px;text-align:left;font-weight:500;font-size:11px;color:var(--text-tertiary);white-space:nowrap">End</th>
-              <th style="padding:8px 12px;text-align:center;font-weight:500;font-size:11px;color:var(--text-tertiary);white-space:nowrap">Dur.</th>
-              ${hasPortal ? `<th style="padding:8px 12px;text-align:center;font-weight:500;font-size:11px;color:var(--text-tertiary)">Portal</th>` : ''}
-              <th style="padding:8px 12px;text-align:right;font-weight:500;font-size:11px;color:var(--text-tertiary)"></th>
+            <tr style="background:var(--bg-secondary);border-bottom:2px solid var(--border-light)">
+              <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:400;color:var(--text-tertiary);width:90px;white-space:nowrap;position:sticky;left:0;background:var(--bg-secondary);z-index:2;border-right:1px solid var(--border-light)">Date</th>
+              ${phases.map((ph, pi) => {
+                const { active, firstDay } = phaseData[pi]
+                const hasDates = ph.start_date && ph.end_date
+                const days_ = hasDates
+                  ? Math.round((new Date(ph.end_date) - new Date(ph.start_date)) / 86400000) + 1
+                  : null
+                return `<th class="pps-phase-header" data-phase-id="${ph.id}"
+                  style="padding:8px 6px;text-align:center;cursor:pointer;width:${CELL_W}px;min-width:${CELL_W}px;max-width:${CELL_W}px;border-left:1px solid var(--border-light)"
+                  title="Click to edit · ${esc(ph.name)}${hasDates ? ' · ' + days_ + ' days' : ''}">
+                  <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+                    <div style="width:10px;height:10px;border-radius:50%;background:${ph.color || '#C47E3A'};flex-shrink:0"></div>
+                    <div style="font-size:10px;font-weight:600;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:${CELL_W - 12}px;text-transform:uppercase;letter-spacing:0.3px">${esc(abbr(ph.name))}</div>
+                    <div style="font-size:9px;color:var(--text-tertiary);white-space:nowrap">${hasDates ? days_ + 'd' : 'no dates'}</div>
+                  </div>
+                </th>`
+              }).join('')}
+              <th style="width:36px;min-width:36px;border-left:1px solid var(--border-light)">
+                <div style="display:flex;align-items:center;justify-content:center">
+                  <button id="pps-add-phase-col" title="Add phase" style="background:none;border:1px solid var(--border-light);color:var(--text-tertiary);border-radius:4px;width:22px;height:22px;cursor:pointer;font-size:16px;line-height:1;padding:0;display:flex;align-items:center;justify-content:center">+</button>
+                </div>
+              </th>
             </tr>
           </thead>
           <tbody>
-            ${phases.map((ph, i) => {
-              const days = (ph.start_date && ph.end_date)
-                ? Math.round((new Date(ph.end_date) - new Date(ph.start_date)) / 86400000) + 1
-                : null
-              return `<tr style="border-top:1px solid var(--border-light);${i % 2 ? 'background:var(--bg-secondary)' : ''}">
-                <td style="padding:9px 12px">
-                  <div style="display:flex;align-items:center;gap:8px">
-                    <div style="width:10px;height:10px;border-radius:50%;flex-shrink:0;background:${ph.color || '#C47E3A'}"></div>
-                    <span style="font-weight:500">${esc(ph.name)}</span>
+            ${days.map(d => {
+              const ds = d.toISOString().slice(0, 10)
+              const dow = DOW[d.getDay()]
+              const isWeekend = d.getDay() === 0 || d.getDay() === 6
+              const isToday = d.getTime() === today.getTime()
+              const isMonthStart = d.getDate() === 1
+
+              const dateBg = isToday
+                ? 'rgba(74,144,217,0.08)'
+                : isWeekend
+                  ? 'var(--bg-secondary)'
+                  : 'var(--bg-primary)'
+
+              const dateLabel = `${d.getDate()} ${MON[d.getMonth()]}`
+              const monthLabel = isMonthStart
+                ? `<div style="font-size:9px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;margin-top:1px">${MON[d.getMonth()]} ${d.getFullYear()}</div>`
+                : ''
+
+              return `<tr style="border-bottom:1px solid var(--border-light);opacity:${isWeekend ? '0.5' : '1'}${isToday ? ';outline:1px solid rgba(74,144,217,0.25);outline-offset:-1px' : ''}">
+                <td style="padding:3px 12px;white-space:nowrap;font-size:11px;position:sticky;left:0;background:${dateBg};z-index:1;border-right:1px solid var(--border-light)">
+                  <div style="display:flex;align-items:baseline;gap:5px">
+                    <span style="color:var(--text-tertiary);font-size:10px;width:24px;flex-shrink:0">${dow}</span>
+                    <span style="color:${isToday ? 'var(--accent)' : 'var(--text-secondary)'};font-weight:${isToday ? '700' : '400'}">${dateLabel}</span>
                   </div>
+                  ${monthLabel}
                 </td>
-                <td style="padding:9px 12px;color:var(--text-secondary)">${fmtD(ph.start_date)}</td>
-                <td style="padding:9px 12px;color:var(--text-secondary)">${fmtD(ph.end_date)}</td>
-                <td style="padding:9px 12px;text-align:center;color:var(--text-tertiary)">${days ? days + 'd' : '—'}</td>
-                ${hasPortal ? `<td style="padding:9px 12px;text-align:center">
-                  <input type="checkbox" class="pps-portal-toggle" data-phase-id="${ph.id}" ${ph.show_in_portal ? 'checked' : ''} style="cursor:pointer;accent-color:var(--accent)" title="${ph.show_in_portal ? 'Visible in client portal' : 'Hidden from client portal'}" />
-                </td>` : ''}
-                <td style="padding:9px 12px;text-align:right">
-                  <button class="db-action-link pps-edit-phase" data-phase-id="${ph.id}" style="font-size:11px;padding:2px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);background:var(--bg-secondary)">Edit</button>
-                </td>
+                ${phases.map((ph, pi) => {
+                  const { active, firstDay } = phaseData[pi]
+                  const isActive = active.has(ds)
+                  const isFirst  = firstDay === ds
+                  if (!isActive) return `<td style="border-left:1px solid var(--border-light)"></td>`
+                  const rgba25 = _hexRgba(ph.color || '#C47E3A', 0.22)
+                  const rgba55 = _hexRgba(ph.color || '#C47E3A', 0.55)
+                  return `<td style="border-left:2px solid ${rgba55};background:${rgba25};padding:2px 6px">
+                    ${isFirst ? `<div style="font-size:9px;font-weight:700;color:${ph.color || '#C47E3A'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:${CELL_W - 12}px;text-transform:uppercase;letter-spacing:0.3px" title="${esc(ph.name)}">${esc(ph.name)}</div>` : ''}
+                  </td>`
+                }).join('')}
+                <td style="border-left:1px solid var(--border-light)"></td>
               </tr>`
             }).join('')}
           </tbody>
@@ -171,28 +201,54 @@ export class PostProductionView {
       </div>`
   }
 
-  _bindPpsContent(container, pps, project) {
+  // ── Event binding ─────────────────────────────────────────────────────────────
+
+  _bindContent(container, pps, project) {
+    const hasPortal = !!project.portal_token
+
     container.querySelector('#pps-add-phase')?.addEventListener('click', () => {
       this._openPhaseModal(null, pps, project, container)
     })
 
-    container.querySelectorAll('.pps-edit-phase').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const phase = (pps.phases || []).find(ph => ph.id === btn.dataset.phaseId)
+    container.querySelector('#pps-save-dates')?.addEventListener('click', async () => {
+      const btn = container.querySelector('#pps-save-dates')
+      const startVal = container.querySelector('#pps-master-start')?.value || null
+      const endVal   = container.querySelector('#pps-master-end')?.value   || null
+      if (btn) btn.textContent = 'Saving…'
+      try {
+        const { updatePpsScheduleDates } = await import('../db/client.js')
+        await updatePpsScheduleDates(pps.id, { start_date: startVal, end_date: endVal })
+        pps.start_date = startVal
+        pps.end_date   = endVal
+        const gridWrap = container.querySelector('#pps-grid-wrap')
+        if (gridWrap) {
+          gridWrap.innerHTML = this._renderGrid(pps, pps.phases || [], hasPortal)
+          this._bindGrid(container, pps, project)
+        }
+        if (btn) btn.textContent = '✓ Saved'
+        setTimeout(() => { if (btn && btn.textContent === '✓ Saved') btn.textContent = 'Save' }, 1500)
+      } catch (e) {
+        console.error(e)
+        if (btn) btn.textContent = 'Error'
+        setTimeout(() => { if (btn) btn.textContent = 'Save' }, 1500)
+      }
+    })
+
+    this._bindGrid(container, pps, project)
+  }
+
+  _bindGrid(container, pps, project) {
+    container.querySelectorAll('.pps-phase-header').forEach(th => {
+      th.addEventListener('mouseenter', () => { th.style.background = 'var(--bg-secondary)' })
+      th.addEventListener('mouseleave', () => { th.style.background = '' })
+      th.addEventListener('click', () => {
+        const phase = (pps.phases || []).find(ph => ph.id === th.dataset.phaseId)
         if (phase) this._openPhaseModal(phase, pps, project, container)
       })
     })
 
-    container.querySelectorAll('.pps-portal-toggle').forEach(cb => {
-      cb.addEventListener('change', async () => {
-        const phaseId = cb.dataset.phaseId
-        try {
-          const { updatePpsPhase } = await import('../db/client.js')
-          const updated = await updatePpsPhase(phaseId, { show_in_portal: cb.checked })
-          const ph = (pps.phases || []).find(p => p.id === phaseId)
-          if (ph) ph.show_in_portal = cb.checked
-        } catch (e) { console.error(e); cb.checked = !cb.checked }
-      })
+    container.querySelector('#pps-add-phase-col')?.addEventListener('click', () => {
+      this._openPhaseModal(null, pps, project, container)
     })
   }
 
@@ -204,72 +260,71 @@ export class PostProductionView {
     overlay.id = 'pps-phase-modal'
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(9,30,66,0.54);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px 16px'
 
-    const selColor = phase?.color || '#C47E3A'
+    let selColor = phase?.color || '#C47E3A'
 
-    const renderModal = (color = selColor) => {
-      const colorSwatches = PRESET_COLORS.map(c =>
-        `<div class="pps-swatch${color === c ? ' pps-swatch--sel' : ''}" data-color="${c}"
-          style="width:22px;height:22px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${color === c ? '#fff' : 'transparent'};flex-shrink:0;transition:border 0.1s"></div>`
+    const render = () => {
+      const swatches = PRESET_COLORS.map(c =>
+        `<div class="pps-sw${selColor === c ? ' pps-sw-sel' : ''}" data-c="${c}"
+          style="width:22px;height:22px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${selColor === c ? '#fff' : 'transparent'};flex-shrink:0"></div>`
       ).join('')
 
       overlay.innerHTML = `
         <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:420px" onclick="event.stopPropagation()">
           <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border-light)">
             <div style="font-size:14px;font-weight:600">${phase ? 'Edit phase' : 'Add phase'}</div>
-            <button id="pps-m-close" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-tertiary);padding:2px 6px;line-height:1">×</button>
+            <button id="ppsm-x" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-tertiary);padding:2px 6px;line-height:1">×</button>
           </div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
             <div>
-              <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">Phase name <span style="color:#ef4444">*</span></div>
-              <input type="text" id="pps-m-name" value="${esc(phase?.name || '')}" placeholder="e.g. Hero — Edit" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font)" />
+              <label style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px">Phase name <span style="color:#ef4444">*</span></label>
+              <input type="text" id="ppsm-name" value="${esc(phase?.name || '')}" placeholder="e.g. V1 Edits" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font)" />
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
               <div>
-                <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">Start date</div>
-                <input type="date" id="pps-m-start" value="${phase?.start_date || ''}" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);color-scheme:dark" />
+                <label style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px">Start date</label>
+                <input type="date" id="ppsm-start" value="${phase?.start_date || ''}" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);color-scheme:dark" />
               </div>
               <div>
-                <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">End date</div>
-                <input type="date" id="pps-m-end" value="${phase?.end_date || ''}" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);color-scheme:dark" />
+                <label style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px">End date</label>
+                <input type="date" id="ppsm-end" value="${phase?.end_date || ''}" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);color-scheme:dark" />
               </div>
             </div>
             <div>
-              <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Colour</div>
-              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${colorSwatches}</div>
+              <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:7px">Colour</div>
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${swatches}</div>
             </div>
             ${project.portal_token ? `
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
-              <input type="checkbox" id="pps-m-portal" ${phase?.show_in_portal ? 'checked' : ''} style="cursor:pointer;accent-color:var(--accent)" />
+              <input type="checkbox" id="ppsm-portal" ${phase?.show_in_portal ? 'checked' : ''} style="cursor:pointer;accent-color:var(--accent)" />
               Show in client portal
             </label>` : ''}
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-              ${phase ? `<button id="pps-m-delete" class="btn-cancel" style="color:#ef4444;border-color:rgba(239,68,68,0.35)">Delete</button>` : '<div></div>'}
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:4px">
+              ${phase ? `<button id="ppsm-del" class="btn-cancel" style="color:#ef4444;border-color:rgba(239,68,68,0.35)">Delete</button>` : '<div></div>'}
               <div style="display:flex;gap:8px">
-                <button id="pps-m-cancel" class="btn-cancel">Cancel</button>
-                <button id="pps-m-save" class="btn-primary">${phase ? 'Save changes' : 'Add phase'}</button>
+                <button id="ppsm-cancel" class="btn-cancel">Cancel</button>
+                <button id="ppsm-save" class="btn-primary">${phase ? 'Save changes' : 'Add phase'}</button>
               </div>
             </div>
           </div>
         </div>`
 
-      overlay.querySelectorAll('.pps-swatch').forEach(sw => {
-        sw.addEventListener('click', () => renderModal(sw.dataset.color))
+      overlay.querySelectorAll('.pps-sw').forEach(sw => {
+        sw.addEventListener('click', () => { selColor = sw.dataset.c; render() })
       })
+      overlay.querySelector('#ppsm-x')?.addEventListener('click',      () => overlay.remove())
+      overlay.querySelector('#ppsm-cancel')?.addEventListener('click', () => overlay.remove())
 
-      overlay.querySelector('#pps-m-close')?.addEventListener('click', () => overlay.remove())
-      overlay.querySelector('#pps-m-cancel')?.addEventListener('click', () => overlay.remove())
-
-      overlay.querySelector('#pps-m-save')?.addEventListener('click', async () => {
-        const name = overlay.querySelector('#pps-m-name')?.value.trim()
-        if (!name) { overlay.querySelector('#pps-m-name')?.focus(); return }
-        const btn = overlay.querySelector('#pps-m-save')
+      overlay.querySelector('#ppsm-save')?.addEventListener('click', async () => {
+        const name = overlay.querySelector('#ppsm-name')?.value.trim()
+        if (!name) { overlay.querySelector('#ppsm-name')?.focus(); return }
+        const btn = overlay.querySelector('#ppsm-save')
         if (btn) btn.textContent = 'Saving…'
         const data = {
           name,
-          start_date:     overlay.querySelector('#pps-m-start')?.value || null,
-          end_date:       overlay.querySelector('#pps-m-end')?.value   || null,
-          color:          overlay.querySelector('.pps-swatch--sel')?.dataset.color || '#C47E3A',
-          show_in_portal: overlay.querySelector('#pps-m-portal')?.checked ?? false,
+          start_date:     overlay.querySelector('#ppsm-start')?.value || null,
+          end_date:       overlay.querySelector('#ppsm-end')?.value   || null,
+          color:          selColor,
+          show_in_portal: overlay.querySelector('#ppsm-portal')?.checked ?? false,
         }
         try {
           const { createPpsPhase, updatePpsPhase } = await import('../db/client.js')
@@ -290,7 +345,7 @@ export class PostProductionView {
         }
       })
 
-      overlay.querySelector('#pps-m-delete')?.addEventListener('click', async () => {
+      overlay.querySelector('#ppsm-del')?.addEventListener('click', async () => {
         if (!phase || !confirm('Delete this phase?')) return
         try {
           const { deletePpsPhase } = await import('../db/client.js')
@@ -302,9 +357,16 @@ export class PostProductionView {
       })
     }
 
-    renderModal()
+    render()
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
     document.body.appendChild(overlay)
-    setTimeout(() => overlay.querySelector('#pps-m-name')?.focus(), 50)
+    setTimeout(() => overlay.querySelector('#ppsm-name')?.focus(), 50)
   }
+}
+
+function _hexRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r},${g},${b},${alpha})`
 }
