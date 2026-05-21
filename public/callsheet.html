@@ -102,6 +102,7 @@
     document.title = `${project.name} — Call Sheet`
 
     const dates = Array.isArray(sheet.shoot_dates) ? sheet.shoot_dates.filter(d=>d.date).sort((a,b)=>a.date<b.date?-1:1) : []
+    const showCallTimes = sheet.show_call_times !== false
     const hotels = Array.isArray(sheet.hotels) ? sheet.hotels.filter(h=>h.name) : []
     const equipment = Array.isArray(sheet.equipment) ? sheet.equipment.filter(e=>e.category) : []
     const csNotes = sheet.crew_section_notes || {}
@@ -109,7 +110,7 @@
 
     // ── Hero ──────────────────────────────────────────────────────────────────
     const dateDisplay = dates.length > 1
-      ? dates.map(d => `<div>${esc(fmtDateShort(d.date))}${d.general_call?` &middot; GC <strong>${esc(d.general_call)}</strong>`:''}</div>`).join('')
+      ? `${esc(fmtDateShort(dates[0].date))} &rarr; ${esc(fmtDateShort(dates[dates.length-1].date))}`
       : esc(fmtDate(dates[0]?.date || sheet.date))
 
     const heroHTML = (() => {
@@ -288,7 +289,7 @@
         ${filtered.map(c => {
           const callTimes = c.call_times && typeof c.call_times === 'object' ? c.call_times : {}
           let timeBlock = ''
-          if (type === 'crew' || type === 'on_camera') {
+          if (showCallTimes && (type === 'crew' || type === 'on_camera')) {
             if (multi) {
               timeBlock = `<div style="flex-shrink:0;text-align:right">
                 ${dates.map(d => {

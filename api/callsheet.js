@@ -117,6 +117,7 @@ export default async function handler(req, res) {
       insurer,
       invoicing,
       sheet_token: sh.shoot_token,
+      show_call_times: sh.show_call_times,
     },
     project: { name: sh.project_name, brief: sh.project_brief },
     client:  sh.first_name ? { name: projectClientName, company: sh.company } : null,
