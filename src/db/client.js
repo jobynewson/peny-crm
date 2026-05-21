@@ -6,7 +6,7 @@ import {
   contacts, projects, budgets, settings, workspace,
   project_budgets, budget_versions, activity_log,
   app_users, time_entries, user_notes, social_posts, marketing_cards,
-  story_plans,
+  story_plans, credentials,
 } from './schema.js'
 
 const sql = neon(import.meta.env.VITE_DATABASE_URL)
@@ -42,6 +42,21 @@ export async function runMigrations() {
   `
   await sql`
     ALTER TABLE story_plans ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES projects(id) ON DELETE SET NULL
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS credentials (
+      id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id    TEXT NOT NULL,
+      program    TEXT NOT NULL,
+      login      TEXT,
+      password   TEXT,
+      url        TEXT,
+      notes      TEXT,
+      category   TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
   `
 }
 
@@ -708,4 +723,29 @@ export async function updateStoryPlan(workspaceId, id, data) {
 export async function deleteStoryPlan(workspaceId, id) {
   return db.delete(story_plans)
     .where(and(eq(story_plans.id, id), eq(story_plans.user_id, workspaceId)))
+}
+
+
+// ── Credentials (password manager) ───────────────────────────────────────────
+export async function getCredentials(workspaceId) {
+  return db.select().from(credentials)
+    .where(eq(credentials.user_id, workspaceId))
+    .orderBy(credentials.sort_order, credentials.program)
+}
+export async function createCredential(workspaceId, data) {
+  const [row] = await db.insert(credentials)
+    .values({ user_id: workspaceId, ...data })
+    .returning()
+  return row
+}
+export async function updateCredential(workspaceId, id, data) {
+  const [row] = await db.update(credentials)
+    .set({ ...data, updated_at: new Date() })
+    .where(and(eq(credentials.id, id), eq(credentials.user_id, workspaceId)))
+    .returning()
+  return row
+}
+export async function deleteCredential(workspaceId, id) {
+  return db.delete(credentials)
+    .where(and(eq(credentials.id, id), eq(credentials.user_id, workspaceId)))
 }

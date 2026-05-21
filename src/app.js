@@ -7,6 +7,7 @@ import { CallSheetsView } from './views/callsheets.js'
 import { StoryPlannerView } from './views/story-planner.js'
 import { MarketingView } from './views/marketing.js'
 import { TimeTrackView } from './views/timetrack.js'
+import { PasswordManagerView } from './views/password-manager.js'
 
 export class App {
   constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, onSignOut }) {
@@ -30,7 +31,8 @@ export class App {
     this.callSheetsView  = new CallSheetsView(this)
     this.storyPlannerView = new StoryPlannerView(this)
     this.marketingView   = new MarketingView(this)
-    this.timeTrackView   = new TimeTrackView(this)
+    this.timeTrackView        = new TimeTrackView(this)
+    this.passwordManagerView  = new PasswordManagerView(this)
     window.app = this
   }
 
@@ -360,6 +362,7 @@ export class App {
         </div>
         <div class="nav-bottom">
           <div class="sidebar-tt" id="sidebar-tt">${this._renderSidebarTT()}</div>
+          <div class="nav-item ${this.currentView==='password-manager'?'active':''}" data-view="password-manager">${this.iconPasswordManager()} Passwords</div>
           ${this.permissions.settings ? `<div class="nav-item" data-view="settings">${this.iconSettings()} Settings</div>` : ''}
           <div class="nav-item" id="dev-request-btn" style="color:#596773;font-size:13px">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v4M8 11v.5"/></svg>
@@ -415,6 +418,7 @@ export class App {
     }
     return ''
   }
+
 
   _closeMobileSidebar() {
     document.getElementById('app-sidebar')?.classList.remove('open')
@@ -537,7 +541,7 @@ export class App {
     if (!hash) return
     const parts = hash.split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','marketing','timetrack','story-planner']
+    const validViews = ['contacts','projects','budgets','settings','dashboard','marketing','timetrack','story-planner','password-manager']
     if (!validViews.includes(view)) return
     this.currentView = view
     if (view === 'projects' && id) {
@@ -557,7 +561,7 @@ export class App {
     const hash = location.hash.slice(1)
     const parts = (hash || 'dashboard').split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','marketing','timetrack','story-planner']
+    const validViews = ['contacts','projects','budgets','settings','dashboard','marketing','timetrack','story-planner','password-manager']
     if (!validViews.includes(view)) { this.currentView = 'dashboard'; this.render(); return }
 
     this.currentView = view
@@ -591,6 +595,8 @@ export class App {
       this.marketingView.render(mc)
     } else if (this.currentView === 'timetrack') {
       this.timeTrackView.render(mc)
+    } else if (this.currentView === 'password-manager') {
+      this.passwordManagerView.render(mc)
     } else if (this.currentView === 'dashboard') {
       this.renderDashboard(mc)
     } else {
@@ -601,7 +607,7 @@ export class App {
   viewTitle() {
     if (this.currentView === 'projects' && this.projectsView?.currentId) return this.projects.find(p=>p.id===this.projectsView.currentId)?.name ?? 'Project'
     if (this.currentView === 'budgets'  && this.budgetsView?.currentId)  return this.budgets.find(b=>b.id===this.budgetsView.currentId)?.name  ?? 'Budget'
-    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',settings:'Settings',marketing:'Marketing',timetrack:'Time tracker','story-planner':'Story Planner'}[this.currentView] ?? ''
+    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',settings:'Settings',marketing:'Marketing',timetrack:'Time tracker','story-planner':'Story Planner','password-manager':'Passwords'}[this.currentView] ?? ''
   }
 
   updateTitle() {
@@ -2825,6 +2831,7 @@ export class App {
   iconPipeline() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1" y="4" width="4" height="9" rx="1"/><rect x="6" y="6" width="4" height="7" rx="1"/><rect x="11" y="8" width="4" height="5" rx="1"/></svg>` }
   iconStoryPlanner() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="2" width="13" height="3.5" rx="0.8"/><rect x="1.5" y="6.5" width="13" height="3.5" rx="0.8"/><rect x="1.5" y="11" width="8" height="3.5" rx="0.8"/></svg>` }
   iconSettings() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M11.4 4.6l-1.4 1.4M4.6 11.4l-1.4 1.4"/></svg>` }
+  iconPasswordManager() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/><circle cx="8" cy="11" r="1" fill="currentColor" stroke="none"/></svg>` }
   iconSignOut()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M10 11l4-4-4-4M14 8H6"/></svg>` }
   iconTheme() {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark'

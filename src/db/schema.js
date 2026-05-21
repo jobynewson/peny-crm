@@ -373,6 +373,20 @@ export const story_plans = pgTable('story_plans', {
   ...timestamps,
 })
 
+// ── Credentials (password manager) ───────────────────────────────────────────
+export const credentials = pgTable('credentials', {
+  id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id:    text('user_id').notNull(),
+  program:    text('program').notNull(),
+  login:      text('login'),
+  password:   text('password'),
+  url:        text('url'),
+  notes:      text('notes'),
+  category:   text('category'),
+  sort_order: integer('sort_order').notNull().default(0),
+  ...timestamps,
+})
+
 // ── User notes (private per user, keyed by Clerk ID) ──────────────────────────
 export const user_notes = pgTable('user_notes', {
   id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
