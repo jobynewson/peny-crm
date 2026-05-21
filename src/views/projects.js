@@ -1258,6 +1258,14 @@ export class ProjectsView {
               </div>
               <div class="bsec-body">
                 <div style="padding:14px">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap">
+                    <span style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;flex-shrink:0">Date range</span>
+                    <input type="date" id="se-range-start" class="proj-input" style="font-size:12px;padding:5px 8px;width:140px" title="Start date" />
+                    <span style="font-size:12px;color:var(--text-secondary);flex-shrink:0">+</span>
+                    <input type="number" id="se-range-length" class="proj-input" min="1" max="60" placeholder="Days" style="font-size:12px;padding:5px 8px;width:65px" title="Shoot length in days" />
+                    <span style="font-size:12px;color:var(--text-secondary);flex-shrink:0">days</span>
+                    <button class="btn-secondary" id="se-gen-range" style="font-size:11px;padding:3px 10px">Fill dates</button>
+                  </div>
                   <div id="se-dates-list">${this._shootDatesHTML(sh)}</div>
                 </div>
               </div>
@@ -2103,6 +2111,23 @@ export class ProjectsView {
       refreshDates()
       save()
     })
+    overlay.querySelector('#se-gen-range')?.addEventListener('click', () => {
+      const startVal = overlay.querySelector('#se-range-start')?.value
+      const lengthVal = parseInt(overlay.querySelector('#se-range-length')?.value, 10)
+      if (!startVal) { this.app.toast('Enter a start date'); return }
+      if (!lengthVal || lengthVal < 1) { this.app.toast('Enter number of days (min 1)'); return }
+      const newDates = []
+      for (let i = 0; i < lengthVal; i++) {
+        const d = new Date(startVal)
+        d.setDate(d.getDate() + i)
+        const iso = d.toISOString().split('T')[0]
+        const existing = sh.shoot_dates.find(x => String(x.date).split('T')[0] === iso)
+        newDates.push(existing || { date: iso, general_call: '' })
+      }
+      sh.shoot_dates = newDates
+      refreshDates()
+      save()
+    })
     bindDateList()
 
     // Fill blanks with general call (per-day, fills any blank crew call time for that day with that day's general call)
@@ -2154,8 +2179,9 @@ export class ProjectsView {
           if (d.results?.[0]) { lat=d.results[0].latitude; lng=d.results[0].longitude }
         }
         if (!lat) { this.app.toast('Could not find location'); btn.disabled=false; btn.textContent='🌤 Fetch'; return }
-        const wx = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max,weathercode&timezone=Europe%2FLondon&start_date=${date}&end_date=${date}`).then(r=>r.json())
+        const wx = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max,weathercode&timezone=auto&start_date=${date}&end_date=${date}`).then(r=>r.json())
         const d = wx.daily
+        if (!d || !d.weathercode) { this.app.toast('No weather data for that date/location'); btn.disabled=false; btn.textContent='🌤 Fetch'; return }
         const codeDesc = { 0:'Clear', 1:'Mainly clear', 2:'Partly cloudy', 3:'Overcast', 45:'Fog', 48:'Fog', 51:'Light drizzle', 53:'Drizzle', 55:'Heavy drizzle', 61:'Light rain', 63:'Rain', 65:'Heavy rain', 71:'Light snow', 73:'Snow', 75:'Heavy snow', 80:'Rain showers', 81:'Rain showers', 82:'Heavy rain showers', 95:'Thunderstorm' }
         const txt = `${codeDesc[d.weathercode[0]]||'Mixed'} · ${Math.round(d.temperature_2m_min[0])}–${Math.round(d.temperature_2m_max[0])}°C · Wind ${Math.round(d.windspeed_10m_max[0])}km/h · Rain ${d.precipitation_probability_max[0]}%`
         overlay.querySelector('#se-weather').value = txt
