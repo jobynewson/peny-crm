@@ -4,26 +4,33 @@ import { ContactsView } from './views/contacts.js'
 import { ProjectsView } from './views/projects.js'
 import { BudgetsView, budTotal } from './views/budgets.js'
 import { CallSheetsView } from './views/callsheets.js'
+import { StoryPlannerView } from './views/story-planner.js'
+import { MarketingView } from './views/marketing.js'
+import { TimeTrackView } from './views/timetrack.js'
 
 export class App {
-  constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, onSignOut }) {
-    this.userId      = userId
-    this.clerkUserId = clerkUserId
-    this.user        = user
-    this.appUser     = appUser
-    this.permissions = permissions
-    this.contacts    = contacts ?? []
-    this.projects    = projects ?? []
-    this.budgets     = budgets  ?? []
-    this.settings    = settings ?? {}
-    this.allUsers    = allUsers ?? []
-    this.socialPosts = socialPosts ?? []
-    this.onSignOut   = onSignOut
-    this.currentView = 'dashboard'
+  constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, onSignOut }) {
+    this.userId         = userId
+    this.clerkUserId    = clerkUserId
+    this.user           = user
+    this.appUser        = appUser
+    this.permissions    = permissions
+    this.contacts       = contacts ?? []
+    this.projects       = projects ?? []
+    this.budgets        = budgets  ?? []
+    this.settings       = settings ?? {}
+    this.allUsers       = allUsers ?? []
+    this.socialPosts    = socialPosts ?? []
+    this.marketingCards = marketingCards ?? []
+    this.onSignOut      = onSignOut
+    this.currentView    = 'dashboard'
     this.contactsView    = new ContactsView(this)
     this.projectsView    = new ProjectsView(this)
     this.budgetsView     = new BudgetsView(this)
     this.callSheetsView  = new CallSheetsView(this)
+    this.storyPlannerView = new StoryPlannerView(this)
+    this.marketingView   = new MarketingView(this)
+    this.timeTrackView   = new TimeTrackView(this)
     window.app = this
   }
 
@@ -342,7 +349,7 @@ export class App {
       <div class="sidebar" id="app-sidebar">
         <div class="logo"><img src="/slate-logo.png" alt="Slate" /></div>
         <div class="nav-label">Main</div>
-        ${[['dashboard','Dashboard',this.iconPipeline()],['contacts','Contacts',this.iconContacts()],['projects','Projects',this.iconProjects()],['budgets','Budgets',this.iconBudgets()]].map(([id,label,icon])=>`
+        ${[['dashboard','Dashboard',this.iconPipeline()],['contacts','Contacts',this.iconContacts()],['projects','Projects',this.iconProjects()],['budgets','Budgets',this.iconBudgets()],['marketing','Marketing',this.iconMarketing()],['story-planner','Story Planner',this.iconStoryPlanner()]].map(([id,label,icon])=>`
           <div class="nav-item ${this.currentView===id?'active':''}" data-view="${id}">${icon} ${label}</div>`).join('')}
         <div class="sidebar-notes">
           <div class="sidebar-notes-header">
@@ -352,6 +359,7 @@ export class App {
           <div class="notes-list" id="notes-list"><div class="notes-empty">No notes yet.<br>Hit + New to get started.</div></div>
         </div>
         <div class="nav-bottom">
+          <div class="sidebar-tt" id="sidebar-tt">${this._renderSidebarTT()}</div>
           ${this.permissions.settings ? `<div class="nav-item" data-view="settings">${this.iconSettings()} Settings</div>` : ''}
           <div class="nav-item" id="dev-request-btn" style="color:#596773;font-size:13px">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v4M8 11v.5"/></svg>
@@ -399,6 +407,12 @@ export class App {
       if (this.projectsView.editingId) return `<button class="btn-secondary" id="topbar-btn">← All projects</button>`
       return ''
     }
+    if (this.currentView === 'marketing') {
+      return `<button class="btn-primary" id="topbar-btn">+ New card</button>`
+    }
+    if (this.currentView === 'story-planner' && !this.storyPlannerView?.currentPlanId) {
+      return `<button class="btn-primary" id="topbar-btn">+ New plan</button>`
+    }
     return ''
   }
 
@@ -439,6 +453,7 @@ export class App {
     }
 
     this.bindTopbarBtn()
+    this._bindSidebarTT()
     const search = this.container.querySelector('#contact-search')
     if (search) {
       search.value = this.contactsView.search
@@ -489,15 +504,24 @@ export class App {
         if (this.projectsView.editingId) { this.projectsView.editingId = null; this.render() }
         else if (!this.projectsView.currentId) this.projectsView.openNewModal(null, null, mc)
       }
+      else if (this.currentView === 'marketing') {
+        this.marketingView.openCardModal(null, this.marketingView.activeTab === 'kanban' ? 'ideas' : 'ideas')
+      }
+      else if (this.currentView === 'story-planner') {
+        this.storyPlannerView.openNewPlanModal(document.getElementById('main-content'))
+      }
     })
   }
 
   navigate(view) {
+    if (view !== 'dashboard') { clearInterval(this._cdInterval); this._cdInterval = null; document.getElementById('cd-confetti-layer')?.remove() }
     this.currentView = view
     this.projectsView.currentId = null
     this.projectsView.editingId = null
     this.budgetsView.currentId  = null
     this.budgetsView.editingId  = null
+    this.storyPlannerView.currentPlanId = null
+    this.storyPlannerView.plan = null
     history.pushState({ view }, '', `#${view}`)
     this.render()
   }
@@ -513,7 +537,7 @@ export class App {
     if (!hash) return
     const parts = hash.split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard']
+    const validViews = ['contacts','projects','budgets','settings','dashboard','marketing','timetrack','story-planner']
     if (!validViews.includes(view)) return
     this.currentView = view
     if (view === 'projects' && id) {
@@ -533,7 +557,7 @@ export class App {
     const hash = location.hash.slice(1)
     const parts = (hash || 'dashboard').split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard']
+    const validViews = ['contacts','projects','budgets','settings','dashboard','marketing','timetrack','story-planner']
     if (!validViews.includes(view)) { this.currentView = 'dashboard'; this.render(); return }
 
     this.currentView = view
@@ -561,6 +585,12 @@ export class App {
       this.budgetsView.render(mc)
     } else if (this.currentView === 'callsheets') {
       this.callSheetsView.renderList(mc, this.callSheetsView.currentProjectId)
+    } else if (this.currentView === 'story-planner') {
+      this.storyPlannerView.render(mc)
+    } else if (this.currentView === 'marketing') {
+      this.marketingView.render(mc)
+    } else if (this.currentView === 'timetrack') {
+      this.timeTrackView.render(mc)
     } else if (this.currentView === 'dashboard') {
       this.renderDashboard(mc)
     } else {
@@ -571,7 +601,7 @@ export class App {
   viewTitle() {
     if (this.currentView === 'projects' && this.projectsView?.currentId) return this.projects.find(p=>p.id===this.projectsView.currentId)?.name ?? 'Project'
     if (this.currentView === 'budgets'  && this.budgetsView?.currentId)  return this.budgets.find(b=>b.id===this.budgetsView.currentId)?.name  ?? 'Budget'
-    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',settings:'Settings'}[this.currentView] ?? ''
+    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',settings:'Settings',marketing:'Marketing',timetrack:'Time tracker','story-planner':'Story Planner'}[this.currentView] ?? ''
   }
 
   updateTitle() {
@@ -601,7 +631,236 @@ export class App {
     return [start, end]
   }
 
+  // ── Sidebar quick-log widget ─────────────────────────────────────────────────
+
+  _sttTrackableLines(project) {
+    if (!project) return []
+    const lines = []
+    if (project.is_retainer && (project.retainer_items || []).length) {
+      for (const item of project.retainer_items) {
+        if (item.label) lines.push({ label: item.label, budgetId: null })
+      }
+    } else {
+      for (const bid of (project.budget_ids || [])) {
+        const b = this.budgets.find(x => x.id === bid)
+        if (!b) continue
+        for (const s of (b.sections || [])) {
+          if (!s.enabled) continue
+          for (const l of (s.lines || [])) {
+            if (!l.track_time || !l.item) continue
+            lines.push({ label: l.item, budgetId: b.id })
+          }
+        }
+      }
+    }
+    return lines
+  }
+
+  _renderSidebarTT() {
+    const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
+    const savedPid  = localStorage.getItem('tt-project-id') || ''
+    const savedTask = localStorage.getItem('tt-task-label') || ''
+    const projects  = this.projects || []
+    const project   = projects.find(p => p.id === savedPid) || null
+    const lines     = this._sttTrackableLines(project)
+
+    return `
+      <div style="font-size:10px;color:#596773;text-transform:uppercase;letter-spacing:0.7px;margin-bottom:8px;display:flex;align-items:center;gap:5px">
+        ${this.iconTimeTrack()} Time
+      </div>
+      <select id="stt-project" class="stt-select">
+        <option value="">Project…</option>
+        ${projects.map(p => `<option value="${p.id}"${p.id === savedPid ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}
+      </select>
+      <select id="stt-task" class="stt-select" ${!lines.length ? 'disabled' : ''}>
+        ${!project
+          ? '<option value="">Task…</option>'
+          : lines.length
+            ? lines.map(l => `<option value="${esc(l.label)}"${l.label === savedTask ? ' selected' : ''}>${esc(l.label)}</option>`).join('')
+            : '<option value="">No tracked lines</option>'
+        }
+      </select>
+      <div style="display:flex;gap:5px;margin-top:5px">
+        <input id="stt-hours" type="number" min="0.5" max="24" step="0.5" placeholder="hrs"
+          class="stt-hours" />
+        <button id="stt-log" class="stt-btn">Log</button>
+      </div>
+      <input id="stt-note" type="text" placeholder="Notes (optional)" maxlength="300"
+        class="stt-select" style="margin-top:5px" />
+      <div id="stt-msg" style="font-size:10px;min-height:14px;margin-top:4px;color:#596773"></div>`
+  }
+
+  _bindSidebarTT() {
+    const wrap = document.getElementById('sidebar-tt')
+    if (!wrap) return
+
+    const projectSel = wrap.querySelector('#stt-project')
+    const taskSel    = wrap.querySelector('#stt-task')
+    const hoursInput = wrap.querySelector('#stt-hours')
+    const logBtn     = wrap.querySelector('#stt-log')
+    const msgEl      = wrap.querySelector('#stt-msg')
+
+    const showMsg = (text, color = '#596773', ms = 2500) => {
+      if (!msgEl) return
+      msgEl.style.color = color
+      msgEl.textContent = text
+      clearTimeout(this._sttMsgTimer)
+      this._sttMsgTimer = setTimeout(() => { if (msgEl) msgEl.textContent = '' }, ms)
+    }
+
+    const updateTasks = (project) => {
+      if (!taskSel) return
+      const lines = this._sttTrackableLines(project)
+      const saved = localStorage.getItem('tt-task-label') || ''
+      if (!project) {
+        taskSel.innerHTML = '<option value="">Task…</option>'
+        taskSel.disabled = true
+      } else if (!lines.length) {
+        taskSel.innerHTML = '<option value="">No tracked lines</option>'
+        taskSel.disabled = true
+      } else {
+        taskSel.innerHTML = lines.map(l => {
+          const v = String(l.label ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')
+          return `<option value="${v}"${l.label === saved ? ' selected' : ''}>${v}</option>`
+        }).join('')
+        taskSel.disabled = false
+      }
+    }
+
+    projectSel?.addEventListener('change', () => {
+      const pid = projectSel.value
+      localStorage.setItem('tt-project-id', pid)
+      if (!pid) localStorage.removeItem('tt-task-label')
+      const proj = this.projects.find(p => p.id === pid) || null
+      updateTasks(proj)
+    })
+
+    taskSel?.addEventListener('change', () => {
+      localStorage.setItem('tt-task-label', taskSel.value)
+    })
+
+    logBtn?.addEventListener('click', async () => {
+      const pid   = projectSel?.value
+      const task  = taskSel?.value
+      const hours = parseFloat(hoursInput?.value)
+      const note  = wrap.querySelector('#stt-note')?.value?.trim() || null
+
+      if (!pid)               return showMsg('Select a project', '#f59e0b')
+      if (!task)              return showMsg('Select a task', '#f59e0b')
+      if (!hours || hours <= 0 || hours > 24) return showMsg('Enter valid hours', '#f59e0b')
+
+      const project  = this.projects.find(p => p.id === pid)
+      const budgetId = project ? (this._sttTrackableLines(project).find(l => l.label === task)?.budgetId ?? null) : null
+      const name     = this.appUser?.name || this.user?.primaryEmailAddress?.emailAddress || 'Unknown'
+      const date     = new Date().toISOString().slice(0, 10)
+
+      logBtn.disabled = true
+      logBtn.textContent = '…'
+      try {
+        const { addTimeEntry } = await import('./db/client.js')
+        await addTimeEntry({ project_id: pid, budget_id: budgetId, line_label: task, crew_name: name, hours, entry_date: date, note })
+        hoursInput.value = ''
+        const noteInput = wrap.querySelector('#stt-note')
+        if (noteInput) noteInput.value = ''
+        logBtn.textContent = '✓'
+        showMsg(`${hours}h logged`, '#6ec96e')
+        setTimeout(() => { if (logBtn) logBtn.textContent = 'Log' }, 1200)
+        this.toast(`${hours}h logged`)
+
+        // Refresh the dashboard time section if it's visible
+        const timeEl = document.getElementById(`db-time-${pid}`)
+        if (timeEl && project) {
+          const mc = document.getElementById('main-content')
+          if (mc) this._loadDbTimeSection(mc, project)
+        }
+      } catch(e) {
+        console.error(e)
+        logBtn.textContent = 'Log'
+        showMsg('Error logging', '#ef4444')
+      } finally {
+        logBtn.disabled = false
+        if (logBtn.textContent === '…') logBtn.textContent = 'Log'
+      }
+    })
+
+    // Enter on hours → log
+    hoursInput?.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); logBtn?.click() }
+    })
+  }
+
+  async _loadDbTimeSection(mc, project) {
+    const el = mc.querySelector(`#db-time-${project.id}`)
+    if (!el) return
+
+    const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+
+    // Build trackable lines from linked budgets
+    const trackableLines = []
+    const budgetIds = Array.isArray(project.budget_ids) ? project.budget_ids : []
+    for (const bid of budgetIds) {
+      const b = this.budgets.find(x => x.id === bid)
+      if (!b) continue
+      for (const s of (b.sections || [])) {
+        if (!s.enabled) continue
+        for (const l of (s.lines || [])) {
+          if (!l.track_time || !l.item) continue
+          const days = parseFloat(l.days) || 0
+          const qty  = isNaN(parseFloat(l.qty)) ? 1 : parseFloat(l.qty)
+          const allocHours = days > 0 ? Math.round(days * qty * 8) : Math.round(qty * 8)
+          trackableLines.push({ label: l.item, allocHours })
+        }
+      }
+    }
+
+    if (!trackableLines.length) {
+      el.style.display = 'none'
+      return
+    }
+
+    try {
+      const { getTimeEntries } = await import('./db/client.js')
+      const entries = await getTimeEntries(project.id)
+
+      const totalLogged = entries.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+      const totalAlloc  = trackableLines.reduce((s, l) => s + l.allocHours, 0)
+      const pct = totalAlloc > 0 ? Math.min(100, Math.round(totalLogged / totalAlloc * 100)) : 0
+      const barColour = pct >= 100 ? '#6ec96e' : pct >= 80 ? '#f59e0b' : '#4a90d9'
+
+      const byLine = {}
+      entries.forEach(e => { byLine[e.line_label] = (byLine[e.line_label] || 0) + parseFloat(e.hours || 0) })
+
+      el.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px">
+          <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Time tracked</div>
+          <div style="font-size:11px;font-weight:500;color:${pct >= 80 ? barColour : 'var(--text-tertiary)'}">
+            ${totalLogged.toFixed(1)} / ${totalAlloc}h
+          </div>
+        </div>
+        <div style="height:5px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden;margin-bottom:8px">
+          <div style="height:100%;width:${pct}%;background:${barColour};border-radius:3px;transition:width 0.3s"></div>
+        </div>
+        ${trackableLines.length > 1 ? trackableLines.map(l => {
+          const logged = byLine[l.label] || 0
+          const lPct = l.allocHours > 0 ? Math.min(100, Math.round(logged / l.allocHours * 100)) : 0
+          return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span style="font-size:11px;color:var(--text-secondary);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.label)}</span>
+            <div style="width:80px;height:3px;background:var(--bg-tertiary);border-radius:2px;flex-shrink:0">
+              <div style="height:100%;width:${lPct}%;background:${lPct>=100?'#6ec96e':'#4a90d9'};border-radius:2px"></div>
+            </div>
+            <span style="font-size:10px;color:var(--text-tertiary);flex-shrink:0;width:52px;text-align:right">${logged.toFixed(1)}/${l.allocHours}h</span>
+          </div>`
+        }).join('') : ''}`
+
+    } catch(e) {
+      console.error(e)
+      el.innerHTML = '<div style="font-size:11px;color:var(--text-tertiary)">Could not load time data</div>'
+    }
+  }
+
   async renderDashboard(mc) {
+    clearInterval(this._cdInterval)
+    this._cdInterval = null
     const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
     const retainers = this.projects.filter(p => p.is_retainer)
     const regularProjects = this.projects.filter(p => !p.is_retainer)
@@ -620,6 +879,7 @@ export class App {
         this.navigate('projects')
         setTimeout(() => document.querySelector('#topbar-btn')?.click(), 50)
       })
+      this._mountCountdownWidget(mc)
       return
     }
 
@@ -804,6 +1064,39 @@ export class App {
           <button class="db-action-link" style="font-size:11px;padding:3px 8px" data-open-pid="${p.id}">Open ↗</button>
         </div>
         <div class="db-proj-body" id="db-body-${p.id}" style="display:${isOpen ? 'block' : 'none'}">
+
+          ${(() => {
+            if (!delivs.length) return ''
+            const sorted = [...delivs.map((d,i)=>({...d,_i:i}))].sort((a,b) => {
+              if (a.done !== b.done) return a.done ? 1 : -1
+              if (a.due && b.due) return new Date(a.due) - new Date(b.due)
+              return a.due ? -1 : 1
+            })
+            const todayMs = new Date().setHours(0,0,0,0)
+            return `<div style="padding:10px 16px 10px;border-bottom:1px solid var(--border-light)">
+              <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:7px">Deliverables · ${doneCount}/${delivs.length}</div>
+              ${sorted.map(d => {
+                const daysUntil = d.due ? Math.round((new Date(d.due + 'T00:00:00') - todayMs) / 86400000) : null
+                const duePill = daysUntil === null ? ''
+                  : daysUntil < 0  ? `<span class="db-due-pill db-due-pill--overdue" style="font-size:9px;padding:1px 5px">${Math.abs(daysUntil)}d late</span>`
+                  : daysUntil === 0 ? `<span class="db-due-pill db-due-pill--today" style="font-size:9px;padding:1px 5px">Today</span>`
+                  : `<span class="db-due-pill" style="font-size:9px;padding:1px 5px">${new Date(d.due + 'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</span>`
+                const assignee = d.assignee_id ? this.allUsers.find(u => u.id === d.assignee_id) : null
+                return `<div style="display:flex;align-items:center;gap:7px;padding:3px 0;${d.done ? 'opacity:0.45;' : ''}">
+                  <input type="checkbox" class="db-inline-deliv-check" data-deliv-pid="${p.id}" data-deliv-idx="${d._i}" data-deliv-src="deliverables"
+                    ${d.done ? 'checked' : ''} style="cursor:pointer;flex-shrink:0;width:13px;height:13px;accent-color:var(--accent)">
+                  <span style="flex:1;font-size:12px;color:var(--text-primary);line-height:1.3;${d.done ? 'text-decoration:line-through;' : ''}">${esc(d.text)}</span>
+                  ${duePill}
+                  ${assignee ? `<span style="font-size:10px;color:var(--text-tertiary);flex-shrink:0">${esc(assignee.name || assignee.email)}</span>` : ''}
+                </div>`
+              }).join('')}
+            </div>`
+          })()}
+
+          <div id="db-time-${p.id}" style="padding:10px 16px;border-bottom:1px solid var(--border-light)">
+            <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Time tracked — loading…</div>
+          </div>
+
           <div class="db-thread" id="db-thread-${p.id}">
             ${comments.length
               ? comments.map(c => renderComment(c, p.id)).join('')
@@ -972,64 +1265,55 @@ export class App {
           </div>
         </div>` : ''}
 
-        <!-- Social Calendar -->
-        <div style="flex:1;min-width:0;max-width:420px">
-          <div class="db-section-head" style="justify-content:space-between">
-            <div style="display:flex;align-items:center;gap:6px">
-              <span class="db-section-dot" style="background:#34d399"></span>
-              Social calendar
-              ${this.socialPosts.filter(p => !p.completed).length ? `<span class="db-section-count">${this.socialPosts.filter(p => !p.completed).length}</span>` : ''}
-            </div>
-            <button class="db-action-link" id="social-add-btn" style="font-size:11px;padding:2px 8px;border:0.5px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-secondary)">+ add</button>
-          </div>
+        <!-- Marketing Tasks Coming Due -->
+        ${(() => {
+          const todayMs = new Date().setHours(0,0,0,0)
+          const sevenDaysMs = todayMs + 7 * 86400000
+          const myTasks = []
+          for (const card of (this.marketingCards || [])) {
+            for (const st of (card.sub_tasks || [])) {
+              if (st.done || !st.due_date || st.owner_id !== this.clerkUserId) continue
+              const dueMs = new Date(st.due_date + 'T00:00:00').getTime()
+              if (dueMs <= sevenDaysMs) myTasks.push({ st, card, dueMs })
+            }
+          }
+          myTasks.sort((a, b) => a.dueMs - b.dueMs)
 
-          <!-- Add form (hidden by default) -->
-          <div id="social-add-form" style="display:none;background:var(--bg-secondary);border:0.5px solid var(--border-med);border-radius:var(--radius-md);padding:12px;margin-bottom:10px">
-            <input id="social-new-title" type="text" placeholder="Project / topic name" maxlength="200"
-              style="width:100%;padding:6px 10px;font-size:13px;border:0.5px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;margin-bottom:8px;box-sizing:border-box">
-            <textarea id="social-new-notes" placeholder="Notes (optional)" rows="2"
-              style="width:100%;padding:6px 10px;font-size:12px;border:0.5px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.4;margin-bottom:8px;box-sizing:border-box"></textarea>
-            <div style="display:flex;gap:8px;justify-content:flex-end">
-              <button class="btn-cancel" id="social-add-cancel" style="font-size:12px">Cancel</button>
-              <button class="btn-primary" id="social-add-save" style="font-size:12px">Add</button>
-            </div>
-          </div>
+          if (!myTasks.length) return ''
 
-          <!-- Post list -->
-          <div id="social-post-list" style="display:flex;flex-direction:column;gap:6px">
-            ${(() => {
-              if (!this.expandedSocialPosts) this.expandedSocialPosts = new Set()
-              const active = this.socialPosts.filter(p => !p.completed)
-              const done   = this.socialPosts.filter(p => p.completed)
-              const renderPost = (p) => {
-                const isOpen = this.expandedSocialPosts.has(p.id)
-                return `
-                <div class="social-post-row" data-social-id="${p.id}" style="background:var(--bg-secondary);border:0.5px solid var(--border-light);border-radius:var(--radius-md);overflow:hidden;${p.completed ? 'opacity:0.45;' : ''}">
-                  <div class="social-post-header" style="display:flex;align-items:center;gap:8px;padding:8px 10px">
-                    <input type="checkbox" class="social-check" data-social-id="${p.id}" ${p.completed ? 'checked' : ''}
-                      style="flex-shrink:0;cursor:pointer;accent-color:#34d399">
-                    <input class="social-title-input" data-social-id="${p.id}" value="${esc(p.title)}" placeholder="Title"
-                      style="flex:1;min-width:0;background:transparent;border:none;outline:none;font-size:13px;font-weight:500;font-family:var(--font);padding:0;line-height:1.3;${p.completed ? 'text-decoration:line-through;color:var(--text-tertiary)' : 'color:var(--text-primary)'}">
-                    <button class="social-toggle-btn" data-social-id="${p.id}"
-                      style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:13px;line-height:1;padding:0 2px;opacity:0.55">${isOpen ? '▾' : '▸'}</button>
-                  </div>
-                  <div class="social-post-body" data-social-id="${p.id}" style="display:${isOpen ? 'block' : 'none'};padding:0 10px 10px 28px">
-                    <textarea class="social-notes-input" data-social-id="${p.id}" placeholder="Add notes…" rows="2"
-                      style="width:100%;background:transparent;border:none;outline:none;font-size:11px;color:var(--text-tertiary);font-family:var(--font);resize:none;padding:0;line-height:1.4;overflow:hidden;box-sizing:border-box;margin-bottom:6px">${esc(p.notes||'')}</textarea>
-                    <div style="display:flex;justify-content:flex-end">
-                      <button class="social-delete-btn" data-social-id="${p.id}" title="Delete"
-                        style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:11px;line-height:1;padding:0;opacity:0.5">Delete</button>
-                    </div>
-                  </div>
-                </div>`
-              }
-              if (!active.length && !done.length) {
-                return `<div style="color:var(--text-tertiary);font-size:13px;padding:8px 0">No post ideas yet. Hit + add to get started.</div>`
-              }
-              return active.map(renderPost).join('') + done.map(renderPost).join('')
-            })()}
-          </div>
-        </div>
+          const duePillClass = (ms) => {
+            const d = Math.round((ms - todayMs) / 86400000)
+            if (d < 0) return 'db-due-pill--overdue'
+            if (d === 0) return 'db-due-pill--today'
+            return ''
+          }
+          const dueLabel = (ms) => {
+            const d = Math.round((ms - todayMs) / 86400000)
+            if (d < 0) return `${Math.abs(d)}d overdue`
+            if (d === 0) return 'Today'
+            return new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+          }
+
+          return `<div style="flex:1;min-width:0;max-width:420px">
+            <div class="db-section-head" style="justify-content:space-between">
+              <div style="display:flex;align-items:center;gap:6px">
+                <span class="db-section-dot" style="background:#a78bfa"></span>
+                Marketing Tasks Coming Due
+                <span class="db-section-count">${myTasks.length}</span>
+              </div>
+              <button class="db-action-link" id="db-mkt-view-all" style="font-size:11px;padding:2px 8px;border:0.5px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-secondary)">View all ↗</button>
+            </div>
+            <div class="db-proj-list" style="border-radius:var(--radius-md)">
+              ${myTasks.map(({ st, card, dueMs }) => `
+              <div class="db-proj-row" style="display:flex;align-items:center;gap:8px;padding:9px 14px;min-height:unset">
+                <span class="db-due-pill ${duePillClass(dueMs)}">${dueLabel(dueMs)}</span>
+                <span class="db-proj-name-label" style="flex:1">${esc(st.text)}</span>
+                <span class="db-proj-client-label" style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(card.title)}</span>
+                <button class="db-action-link db-mkt-open-card" data-card-id="${card.id}" style="font-size:11px;padding:2px 6px;flex-shrink:0">Open ↗</button>
+              </div>`).join('')}
+            </div>
+          </div>`
+        })()}
 
       </div>
 
@@ -1039,94 +1323,15 @@ export class App {
         <div class="stats-row">${statCards}</div>
       </div>`
 
-    // --- Social calendar ---
-    mc.querySelector('#social-add-btn')?.addEventListener('click', () => {
-      const form = mc.querySelector('#social-add-form')
-      if (!form) return
-      form.style.display = form.style.display === 'none' ? 'block' : 'none'
-      if (form.style.display === 'block') mc.querySelector('#social-new-title')?.focus()
-    })
-    mc.querySelector('#social-add-cancel')?.addEventListener('click', () => {
-      mc.querySelector('#social-add-form').style.display = 'none'
-      mc.querySelector('#social-new-title').value = ''
-      mc.querySelector('#social-new-notes').value = ''
-    })
-    mc.querySelector('#social-add-save')?.addEventListener('click', async () => {
-      const titleEl = mc.querySelector('#social-new-title')
-      const notesEl = mc.querySelector('#social-new-notes')
-      const title = titleEl.value.trim()
-      if (!title) { titleEl.focus(); return }
-      const { createSocialPost } = await import('./db/client.js')
-      const post = await createSocialPost(this.userId, { title, notes: notesEl.value.trim() || null })
-      this.socialPosts = [post, ...this.socialPosts]
-      this.renderDashboard(mc)
-    })
-    mc.querySelectorAll('.social-check').forEach(cb => {
-      cb.addEventListener('change', async () => {
-        const id = cb.dataset.socialId
-        const { updateSocialPost } = await import('./db/client.js')
-        await updateSocialPost(this.userId, id, { completed: cb.checked })
-        const post = this.socialPosts.find(p => p.id === id)
-        if (post) post.completed = cb.checked
-        this.renderDashboard(mc)
-      })
-    })
-    mc.querySelectorAll('.social-delete-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const id = btn.dataset.socialId
-        if (!confirm('Delete this post idea?')) return
-        const { deleteSocialPost } = await import('./db/client.js')
-        await deleteSocialPost(this.userId, id)
-        this.socialPosts = this.socialPosts.filter(p => p.id !== id)
-        this.renderDashboard(mc)
-      })
-    })
-    mc.querySelectorAll('.social-title-input').forEach(input => {
-      input.addEventListener('blur', async () => {
-        const id = input.dataset.socialId
-        const title = input.value.trim()
-        const post = this.socialPosts.find(p => p.id === id)
-        if (!title) { input.value = post?.title || ''; return }
-        if (title === post?.title) return
-        const { updateSocialPost } = await import('./db/client.js')
-        await updateSocialPost(this.userId, id, { title })
-        if (post) post.title = title
-      })
-      input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); input.blur() } })
-    })
-    mc.querySelectorAll('.social-notes-input').forEach(ta => {
-      ta.addEventListener('blur', async () => {
-        const id = ta.dataset.socialId
-        const notes = ta.value.trim() || null
-        const post = this.socialPosts.find(p => p.id === id)
-        if (notes === (post?.notes || null)) return
-        const { updateSocialPost } = await import('./db/client.js')
-        await updateSocialPost(this.userId, id, { notes })
-        if (post) post.notes = notes
-      })
-      ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px' })
-      // only auto-size if the body is currently visible
-      if (ta.closest('.social-post-body')?.style.display !== 'none') {
-        ta.dispatchEvent(new Event('input'))
-      }
-    })
-    mc.querySelectorAll('.social-toggle-btn').forEach(btn => {
+    this._mountCountdownWidget(mc)
+
+    // --- Marketing tasks coming due ---
+    mc.querySelector('#db-mkt-view-all')?.addEventListener('click', () => this.navigate('marketing'))
+    mc.querySelectorAll('.db-mkt-open-card').forEach(btn => {
       btn.addEventListener('click', () => {
-        const id = btn.dataset.socialId
-        const body = mc.querySelector(`.social-post-body[data-social-id="${id}"]`)
-        if (!body) return
-        const isOpen = this.expandedSocialPosts.has(id)
-        if (isOpen) {
-          this.expandedSocialPosts.delete(id)
-          body.style.display = 'none'
-          btn.textContent = '▸'
-        } else {
-          this.expandedSocialPosts.add(id)
-          body.style.display = 'block'
-          btn.textContent = '▾'
-          const ta = body.querySelector('.social-notes-input')
-          if (ta) { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px' }
-        }
+        const cardId = btn.dataset.cardId
+        this.marketingView.pendingOpenCardId = cardId
+        this.navigate('marketing')
       })
     })
 
@@ -1146,6 +1351,10 @@ export class App {
         const opening = body.style.display === 'none'
         body.style.display = opening ? 'block' : 'none'
         if (chevron) chevron.classList.toggle('db-chevron--open', opening)
+        if (opening) {
+          const proj = this.projects.find(p => p.id === pid)
+          if (proj) this._loadDbTimeSection(mc, proj)
+        }
         if (!opening && this._dbPinned.has(pid)) {
           this._dbPinned.delete(pid)
           el.querySelector(`[data-pin-pid="${pid}"]`)?.classList.remove('db-pin-btn--on')
@@ -1153,6 +1362,12 @@ export class App {
         }
       })
     })
+
+    // Load time sections for already-open (pinned) projects
+    for (const pid of this._dbPinned) {
+      const proj = this.projects.find(p => p.id === pid)
+      if (proj) this._loadDbTimeSection(mc, proj)
+    }
 
     // --- Pin open ---
     mc.querySelectorAll('[data-pin-pid]').forEach(btn => {
@@ -1188,6 +1403,35 @@ export class App {
     })
 
     // --- Upcoming deliverable completion checkboxes ---
+    // Inline deliverable checkboxes inside the project accordion
+    mc.querySelectorAll('.db-inline-deliv-check').forEach(cb => {
+      cb.addEventListener('click', e => e.stopPropagation())
+      cb.addEventListener('change', async () => {
+        const p = this.projects.find(x => x.id === cb.dataset.delivPid)
+        if (!p) return
+        const arr = p[cb.dataset.delivSrc]
+        const idx = +cb.dataset.delivIdx
+        if (!arr?.[idx]) return
+        arr[idx].done = cb.checked
+        const row = cb.closest('[style*="display:flex"]')
+        if (row) {
+          row.style.opacity = cb.checked ? '0.45' : ''
+          const span = row.querySelector('span[style*="flex:1"]')
+          if (span) span.style.textDecoration = cb.checked ? 'line-through' : ''
+        }
+        // Update the header badge
+        const allDelivs = (p.deliverables || []).filter(d => d.text)
+        const nowDone = allDelivs.filter(d => d.done).length
+        const badge = mc.querySelector(`[data-pid="${p.id}"] .db-badge`)
+        if (badge) badge.textContent = `${nowDone}/${allDelivs.length} done`
+        try {
+          const { updateProject } = await import('./db/client.js')
+          await updateProject(this.userId, p.id, { [cb.dataset.delivSrc]: arr })
+          this.toast(cb.checked ? '✓ Done' : 'Unmarked')
+        } catch(e) { console.error(e) }
+      })
+    })
+
     mc.querySelectorAll('.db-deliv-check').forEach(cb => {
       cb.addEventListener('click', e => e.stopPropagation())
       cb.addEventListener('change', async () => {
@@ -1686,6 +1930,20 @@ export class App {
           </div>
         </div>` : ''}
 
+        ${isAdmin ? `
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Dashboard countdown timer</span></div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Pin a countdown to the top of the Dashboard — great for project wrap dates or big deadlines. For 24 hours after the deadline, a celebration kicks off.</div>
+            <div class="field"><div class="field-label">Timer label</div><input type="text" id="s-cd-name" value="${s.countdown_timer?.name??''}" placeholder="e.g. Project Falcon wrap" /></div>
+            <div class="field"><div class="field-label">Target date &amp; time</div><input type="datetime-local" id="s-cd-target" value="${s.countdown_timer?.target??''}" style="color-scheme:var(--color-scheme,light)" /></div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button class="btn-primary" id="settings-save-cd-btn">Save timer</button>
+              ${s.countdown_timer ? `<button class="btn-cancel" id="settings-clear-cd-btn">Remove timer</button>` : ''}
+            </div>
+          </div>
+        </div>` : ''}
+
         <div class="panel">
           <div class="panel-header"><span class="panel-title">Account</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:10px">
@@ -1719,6 +1977,8 @@ export class App {
     mc.querySelector('#settings-save-btn-2')?.addEventListener('click', () => this.saveSettings(mc))
     mc.querySelector('#settings-save-btn-3')?.addEventListener('click', () => this.saveSettings(mc))
     mc.querySelector('#signout-settings')?.addEventListener('click', () => this.onSignOut())
+    mc.querySelector('#settings-save-cd-btn')?.addEventListener('click', () => this._saveCountdownTimer(mc))
+    mc.querySelector('#settings-clear-cd-btn')?.addEventListener('click', () => this._clearCountdownTimer(mc))
 
     if (isAdmin) {
       this._loadUsersPanel(mc)
@@ -1883,7 +2143,7 @@ export class App {
     const el = mc.querySelector('#users-list')
     if (!el) return
     try {
-      const { getAllAppUsers, updateAppUser, ROLE_PRESETS } = await import('./db/client.js')
+      const { getAllAppUsers, updateAppUser, deleteAppUser, ROLE_PRESETS } = await import('./db/client.js')
       const users = await getAllAppUsers()
       const PERM_KEYS = ['contacts_view','contacts_edit','projects_view','projects_edit','budgets_view','budgets_edit','settings']
       const PERM_LABELS = {
@@ -1924,7 +2184,10 @@ export class App {
             <input type="text" value="${u.default_role||''}" placeholder="e.g. Camera Operator" data-default-role="${u.id}"
               style="flex:1;font-size:12px;padding:4px 8px;border:1px solid var(--border-light);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
           </div>
-          ${!isSelf ? `<div style="margin-top:10px;text-align:right"><button class="row-btn" data-save-user="${u.id}" style="font-size:11px">Save changes</button></div>` : ''}
+          ${!isSelf ? `<div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
+            <button class="row-btn" data-remove-user="${u.id}" data-remove-name="${u.name||u.email}" style="font-size:11px;color:var(--red,#e05252);border-color:var(--red,#e05252)">Remove user</button>
+            <button class="row-btn" data-save-user="${u.id}" style="font-size:11px">Save changes</button>
+          </div>` : ''}
         </div>`
       }).join('')
 
@@ -1965,6 +2228,20 @@ export class App {
             this.toast('User updated')
             this._loadUsersPanel(mc)
           } catch(e) { console.error(e); this.toast('Error saving user') }
+        })
+      })
+      // Remove user
+      el.querySelectorAll('[data-remove-user]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const uid = btn.dataset.removeUser
+          const name = btn.dataset.removeName
+          if (!confirm(`Remove ${name} from the workspace? They will lose access immediately.`)) return
+          try {
+            await deleteAppUser(uid)
+            this.allUsers = (this.allUsers ?? []).filter(x => x.id !== uid)
+            this.toast('User removed')
+            this._loadUsersPanel(mc)
+          } catch(e) { console.error(e); this.toast('Error removing user') }
         })
       })
     } catch(e) { console.error(e); el.innerHTML = '<div style="font-size:12px;color:var(--text-tertiary)">Could not load users</div>' }
@@ -2024,9 +2301,121 @@ export class App {
       default_insurer_contact: mc.querySelector('#s-ins-contact')?.value.trim()||null,
       invoicing_email:         mc.querySelector('#s-inv-email')?.value.trim()||null,
       invoicing_boilerplate:   mc.querySelector('#s-inv-boilerplate')?.value.trim()||null,
+      countdown_timer:         this.settings?.countdown_timer ?? null,
     }
     try { const [updated] = await upsertSettings(this.userId, data); this.settings = updated; this.toast('Settings saved') }
     catch (e) { console.error(e); this.toast('Error saving settings') }
+  }
+
+  async _saveCountdownTimer(mc) {
+    const name   = mc.querySelector('#s-cd-name')?.value.trim()
+    const target = mc.querySelector('#s-cd-target')?.value
+    if (!name || !target) { this.toast('Please fill in both fields'); return }
+    const data = { ...this.settings, countdown_timer: { name, target } }
+    try {
+      const [updated] = await upsertSettings(this.userId, data)
+      this.settings = updated
+      this.toast('Timer saved')
+      this.renderSettings(mc)
+    } catch (e) { console.error(e); this.toast('Error saving timer') }
+  }
+
+  async _clearCountdownTimer(mc) {
+    const data = { ...this.settings, countdown_timer: null }
+    try {
+      const [updated] = await upsertSettings(this.userId, data)
+      this.settings = updated
+      this.toast('Timer removed')
+      this.renderSettings(mc)
+    } catch (e) { console.error(e); this.toast('Error removing timer') }
+  }
+
+  _mountCountdownWidget(mc) {
+    clearInterval(this._cdInterval)
+    this._cdInterval = null
+
+    const ct = this.settings?.countdown_timer
+    if (!ct?.name || !ct?.target) return
+
+    const target = new Date(ct.target)
+    if (isNaN(target.getTime())) return
+
+    const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    const wrapper = document.createElement('div')
+    wrapper.id = 'cd-widget-wrap'
+    mc.prepend(wrapper)
+
+    const update = () => {
+      const now = Date.now()
+      const diff = target.getTime() - now
+      const sinceEnd = now - target.getTime()
+
+      if (diff > 0) {
+        const totalSecs = Math.floor(diff / 1000)
+        const days  = Math.floor(totalSecs / 86400)
+        const hours = Math.floor((totalSecs % 86400) / 3600)
+        const mins  = Math.floor((totalSecs % 3600) / 60)
+        const secs  = totalSecs % 60
+        const pad = n => String(n).padStart(2, '0')
+        wrapper.innerHTML = `
+          <div class="cd-widget">
+            <div class="cd-name">${esc(ct.name)}</div>
+            <div class="cd-units">
+              <div class="cd-unit"><div class="cd-num">${days}</div><div class="cd-lbl">days</div></div>
+              <div class="cd-sep">:</div>
+              <div class="cd-unit"><div class="cd-num">${pad(hours)}</div><div class="cd-lbl">hours</div></div>
+              <div class="cd-sep">:</div>
+              <div class="cd-unit"><div class="cd-num">${pad(mins)}</div><div class="cd-lbl">min</div></div>
+              <div class="cd-sep">:</div>
+              <div class="cd-unit"><div class="cd-num">${pad(secs)}</div><div class="cd-lbl">sec</div></div>
+            </div>
+          </div>`
+      } else if (sinceEnd < 86400000) {
+        if (!wrapper.querySelector('.cd-widget--celebrate')) {
+          wrapper.innerHTML = `
+            <div class="cd-widget cd-widget--celebrate" style="animation:cd-bg-shift 4s ease infinite alternate">
+              <div class="cd-name">${esc(ct.name)}</div>
+              <div class="cd-celebrate-body">
+                <div class="cd-done-msg">🎉 It's a wrap! 🎉</div>
+                <div class="cd-done-sub">The deadline has passed — nice work, everyone.</div>
+              </div>
+            </div>`
+          this._startConfetti()
+        }
+      } else {
+        clearInterval(this._cdInterval)
+        this._cdInterval = null
+        wrapper.remove()
+      }
+    }
+
+    update()
+    this._cdInterval = setInterval(update, 1000)
+  }
+
+  _startConfetti() {
+    document.getElementById('cd-confetti-layer')?.remove()
+    const layer = document.createElement('div')
+    layer.id = 'cd-confetti-layer'
+    layer.className = 'cd-confetti-layer'
+    document.body.appendChild(layer)
+
+    const COLORS = ['#f59e0b','#ef4444','#10b981','#3b82f6','#8b5cf6','#ec4899','#f97316','#06b6d4','#fbbf24','#a3e635']
+    const spawn = () => {
+      if (!document.contains(layer)) { clearInterval(confettiTimer); return }
+      for (let i = 0; i < 8; i++) {
+        const el = document.createElement('div')
+        el.className = 'cd-confetti-piece'
+        const size = 7 + Math.random() * 10
+        const dur  = 2.5 + Math.random() * 2
+        el.style.cssText = `left:${Math.random()*100}%;width:${size}px;height:${size*(0.4+Math.random()*0.8)}px;background:${COLORS[Math.floor(Math.random()*COLORS.length)]};animation-duration:${dur}s`
+        layer.appendChild(el)
+        setTimeout(() => el.remove(), dur * 1000 + 100)
+      }
+    }
+    spawn()
+    const confettiTimer = setInterval(spawn, 220)
+    setTimeout(() => { clearInterval(confettiTimer); setTimeout(() => layer.remove(), 3000) }, 30000)
   }
 
   async _saveBudgetTemplate(template) {
@@ -2062,6 +2451,15 @@ export class App {
       .nav-item.active{background:#1868DB;color:#ffffff;font-weight:500}
       .nav-item svg{opacity:0.75;flex-shrink:0}.nav-item.active svg{opacity:1}
       .nav-bottom{margin-top:auto;border-top:1px solid rgba(255,255,255,0.08);padding:8px 0}
+      .sidebar-tt{padding:10px 14px 6px;border-bottom:1px solid rgba(255,255,255,0.08)}
+      .stt-select{width:100%;padding:5px 8px;font-size:12px;background:#2C333A;border:1px solid rgba(255,255,255,0.1);border-radius:4px;color:#B6C2CF;font-family:var(--font);outline:none;cursor:pointer;margin-bottom:5px;appearance:none;-webkit-appearance:none;display:block}
+      .stt-select:focus{border-color:#1868DB}
+      .stt-select:disabled{opacity:0.45;cursor:default}
+      .stt-hours{flex:0 0 52px;padding:5px 6px;font-size:12px;background:#2C333A;border:1px solid rgba(255,255,255,0.1);border-radius:4px;color:#B6C2CF;font-family:var(--font);outline:none;text-align:center;width:52px}
+      .stt-hours:focus{border-color:#1868DB}
+      .stt-btn{flex:1;padding:5px 10px;font-size:12px;font-weight:600;background:#1868DB;color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:var(--font);transition:background 0.12s;white-space:nowrap}
+      .stt-btn:hover:not(:disabled){background:#0052CC}
+      .stt-btn:disabled{opacity:0.6;cursor:default}
       .main{flex:1;display:flex;flex-direction:column;min-width:0}
       .topbar{background:var(--bg-primary);border-bottom:1px solid var(--border-light);padding:0 24px;height:52px;display:flex;align-items:center;gap:12px;flex-shrink:0}
       .topbar-title{font-size:15px;font-weight:600;color:var(--text-primary);flex:1;letter-spacing:-0.1px}
@@ -2389,15 +2787,43 @@ export class App {
       .notes-timestamp{font-size:11px;color:#596773}
       .notes-delete-btn{background:none;border:none;font-size:11px;color:#596773;cursor:pointer;padding:2px 6px;border-radius:var(--radius-sm);font-family:var(--font);transition:background 0.1s,color 0.1s}
       .notes-delete-btn:hover{background:rgba(239,68,68,0.15);color:#ef4444}
+
+      /* ── Countdown widget ── */
+      .cd-widget{background:var(--bg-primary);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:28px 24px 24px;margin-bottom:24px;text-align:center;box-shadow:0 1px 3px rgba(9,30,66,0.06);position:relative;overflow:hidden}
+      .cd-name{font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:16px}
+      .cd-units{display:flex;align-items:center;justify-content:center;gap:4px}
+      .cd-unit{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:76px}
+      .cd-num{font-size:54px;font-weight:700;letter-spacing:-2px;color:var(--text-primary);line-height:1;font-variant-numeric:tabular-nums}
+      .cd-lbl{font-size:10px;text-transform:uppercase;letter-spacing:1.2px;color:var(--text-tertiary);font-weight:600}
+      .cd-sep{font-size:42px;font-weight:300;color:var(--border-strong);line-height:1;padding-bottom:14px;user-select:none}
+      .cd-widget--celebrate{border-color:transparent!important;color:#fff}
+      .cd-widget--celebrate .cd-name{color:rgba(255,255,255,0.75)}
+      .cd-celebrate-body{display:flex;flex-direction:column;align-items:center;gap:8px;padding:8px 0}
+      .cd-done-msg{font-size:34px;font-weight:700;color:#fff;animation:cd-pulse 1.4s ease-in-out infinite alternate;text-shadow:0 0 24px rgba(255,220,80,0.7);letter-spacing:-0.5px}
+      .cd-done-sub{font-size:13px;color:rgba(255,255,255,0.65);letter-spacing:0.3px}
+      .cd-confetti-layer{position:fixed;inset:0;overflow:hidden;pointer-events:none;z-index:9999}
+      .cd-confetti-piece{position:absolute;top:-14px;border-radius:2px;animation:cd-fall linear forwards}
+      @keyframes cd-bg-shift{
+        0%{background:linear-gradient(135deg,#1a0533 0%,#0a1a3d 50%,#001a10 100%)}
+        25%{background:linear-gradient(135deg,#1a2800 0%,#3d1500 50%,#001a3d 100%)}
+        50%{background:linear-gradient(135deg,#001a3d 0%,#1a0533 50%,#1a2800 100%)}
+        75%{background:linear-gradient(135deg,#3d1500 0%,#001a10 50%,#1a0533 100%)}
+        100%{background:linear-gradient(135deg,#0a1a3d 0%,#1a2800 50%,#3d0a1a 100%)}
+      }
+      @keyframes cd-pulse{0%{transform:scale(1);opacity:0.9}100%{transform:scale(1.07);opacity:1}}
+      @keyframes cd-fall{0%{transform:translateY(0) rotate(0deg);opacity:1}100%{transform:translateY(110vh) rotate(720deg);opacity:0}}
     `
     document.head.appendChild(style)
   }
 
   iconHamburger() { return `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 4.5h14M2 9h14M2 13.5h14"/></svg>` }
   iconContacts() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="6" cy="5" r="2.5"/><path d="M1 14c0-2.8 2.2-4.5 5-4.5s5 1.7 5 4.5"/><path d="M11 3.5a2 2 0 0 1 0 4M15 14c0-2.4-1.5-3.8-4-4"/></svg>` }
+  iconMarketing()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1 8c0 0 2-5 7-5s7 5 7 5-2 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>` }
+  iconTimeTrack()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="9" r="5.5"/><path d="M8 6v3.5l2 1.5"/><path d="M6 1h4M8 1v2.5"/></svg>` }
   iconProjects() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 6h6M5 9h4"/></svg>` }
   iconBudgets()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 3h12v2H2zM2 7h9M2 11h7"/><circle cx="13" cy="11" r="2.2"/><path d="M13 9.8v1l.7.7"/></svg>` }
   iconPipeline() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1" y="4" width="4" height="9" rx="1"/><rect x="6" y="6" width="4" height="7" rx="1"/><rect x="11" y="8" width="4" height="5" rx="1"/></svg>` }
+  iconStoryPlanner() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="2" width="13" height="3.5" rx="0.8"/><rect x="1.5" y="6.5" width="13" height="3.5" rx="0.8"/><rect x="1.5" y="11" width="8" height="3.5" rx="0.8"/></svg>` }
   iconSettings() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M11.4 4.6l-1.4 1.4M4.6 11.4l-1.4 1.4"/></svg>` }
   iconSignOut()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M10 11l4-4-4-4M14 8H6"/></svg>` }
   iconTheme() {

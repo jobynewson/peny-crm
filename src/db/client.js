@@ -5,11 +5,45 @@ import * as schema from './schema.js'
 import {
   contacts, projects, budgets, settings, workspace,
   project_budgets, budget_versions, activity_log,
-  app_users, time_entries, user_notes, social_posts,
+  app_users, time_entries, user_notes, social_posts, marketing_cards,
+  story_plans,
 } from './schema.js'
 
 const sql = neon(import.meta.env.VITE_DATABASE_URL)
 export const db = drizzle(sql, { schema })
+
+// ── Schema migrations ─────────────────────────────────────────────────────────
+export async function runMigrations() {
+  await sql`
+    CREATE TABLE IF NOT EXISTS marketing_cards (
+      id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id       TEXT NOT NULL,
+      title         TEXT NOT NULL,
+      card_type     TEXT NOT NULL DEFAULT 'ad-hoc',
+      status        TEXT NOT NULL DEFAULT 'ideas',
+      lead_owner_id TEXT,
+      due_date      DATE,
+      notes         TEXT,
+      sub_tasks     JSONB NOT NULL DEFAULT '[]'::jsonb,
+      sort_order    INTEGER NOT NULL DEFAULT 0,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS story_plans (
+      id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id    TEXT NOT NULL,
+      title      TEXT NOT NULL,
+      blocks     JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`
+    ALTER TABLE story_plans ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES projects(id) ON DELETE SET NULL
+  `
+}
 
 // ── Workspace ─────────────────────────────────────────────────────────────────
 // Returns the workspace owner ID — all data is scoped to this single ID.
@@ -217,6 +251,10 @@ export async function updateAppUser(id, data) {
     .returning()
 }
 
+export async function deleteAppUser(id) {
+  return db.delete(app_users).where(eq(app_users.id, id))
+}
+
 // ── Time tracking ─────────────────────────────────────────────────────────────
 export async function getTimeEntries(projectId) {
   return db.select().from(time_entries)
@@ -343,7 +381,7 @@ export async function getCallSheet(id) {
 }
 export async function createCallSheet(userId, projectId, data) {
   const { sql } = await import('drizzle-orm')
-  const token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
+  const token = crypto.randomUUID().replace(/-/g, '')
   const [sheet] = await db.execute(sql`
     INSERT INTO call_sheets (project_id, user_id, sheet_date, status, general_call,
       location_name, location_address, location_map_link, weather_text, notes, sheet_token, hotels)
@@ -393,7 +431,7 @@ export async function saveCallSheetCrew(callSheetId, crewRows) {
   await db.execute(sql`DELETE FROM call_sheet_crew WHERE call_sheet_id = ${callSheetId}`)
   for (let i = 0; i < crewRows.length; i++) {
     const c = crewRows[i]
-    const token = c.crew_token || (Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2))
+    const token = c.crew_token || crypto.randomUUID().replace(/-/g, '')
     await db.execute(sql`
       INSERT INTO call_sheet_crew (call_sheet_id, name, crew_type, role, department, phone, call_time, crew_token, sort_order)
       VALUES (${callSheetId}, ${c.name||''}, ${c.crew_type||'crew'}, ${c.role||null}, ${c.department||null}, ${c.phone||null}, ${c.call_time||null}, ${token}, ${i})
@@ -461,7 +499,7 @@ export async function getShoot(id) {
 }
 export async function createShoot(userId, projectId, data) {
   const { sql } = await import('drizzle-orm')
-  const token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
+  const token = crypto.randomUUID().replace(/-/g, '')
   const [shoot] = await db.execute(sql`
     INSERT INTO shoots (
       project_id, user_id, name, shoot_date, status, shoot_token,
@@ -622,4 +660,52 @@ export async function updateUserNote(clerkId, id, data) {
 export async function deleteUserNote(clerkId, id) {
   return db.delete(user_notes)
     .where(and(eq(user_notes.id, id), eq(user_notes.clerk_id, clerkId)))
+}
+
+// ── Marketing cards ───────────────────────────────────────────────────────────
+export async function getMarketingCards(workspaceId) {
+  return db.select().from(marketing_cards)
+    .where(eq(marketing_cards.user_id, workspaceId))
+    .orderBy(marketing_cards.sort_order, desc(marketing_cards.created_at))
+}
+export async function createMarketingCard(workspaceId, data) {
+  const [card] = await db.insert(marketing_cards)
+    .values({ user_id: workspaceId, ...data })
+    .returning()
+  return card
+}
+export async function updateMarketingCard(workspaceId, id, data) {
+  const [card] = await db.update(marketing_cards)
+    .set({ ...data, updated_at: new Date() })
+    .where(and(eq(marketing_cards.id, id), eq(marketing_cards.user_id, workspaceId)))
+    .returning()
+  return card
+}
+export async function deleteMarketingCard(workspaceId, id) {
+  return db.delete(marketing_cards)
+    .where(and(eq(marketing_cards.id, id), eq(marketing_cards.user_id, workspaceId)))
+}
+
+// ── Story Planner ─────────────────────────────────────────────────────────────
+export async function getStoryPlans(workspaceId) {
+  return db.select().from(story_plans)
+    .where(eq(story_plans.user_id, workspaceId))
+    .orderBy(desc(story_plans.created_at))
+}
+export async function createStoryPlan(workspaceId, data) {
+  const [plan] = await db.insert(story_plans)
+    .values({ user_id: workspaceId, title: data.title, blocks: data.blocks ?? [] })
+    .returning()
+  return plan
+}
+export async function updateStoryPlan(workspaceId, id, data) {
+  const [plan] = await db.update(story_plans)
+    .set({ ...data, updated_at: new Date() })
+    .where(and(eq(story_plans.id, id), eq(story_plans.user_id, workspaceId)))
+    .returning()
+  return plan
+}
+export async function deleteStoryPlan(workspaceId, id) {
+  return db.delete(story_plans)
+    .where(and(eq(story_plans.id, id), eq(story_plans.user_id, workspaceId)))
 }

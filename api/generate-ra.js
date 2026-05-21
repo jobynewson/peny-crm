@@ -1,13 +1,25 @@
 // api/generate-ra.js
 // POST /api/generate-ra — generates a risk assessment from shoot + project data
 import { neon } from '@neondatabase/serverless'
+import { createClerkClient } from '@clerk/backend'
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+
+  const raw = req.headers.authorization?.replace('Bearer ', '').trim()
+  if (!raw) return res.status(401).json({ error: 'Unauthorised' })
+  let userId
+  try {
+    const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY })
+    const payload = await clerk.verifyToken(raw)
+    userId = payload.sub
+  } catch {
+    return res.status(401).json({ error: 'Invalid session token' })
+  }
 
   const { shoot_id } = req.body
   if (!shoot_id) return res.status(400).json({ error: 'shoot_id required' })
@@ -17,12 +29,12 @@ export default async function handler(req, res) {
 
   const sql = neon(process.env.VITE_DATABASE_URL)
 
-  // Pull shoot + project data
+  // Pull shoot + project data — user_id constraint prevents cross-user access
   const rows = await sql`
     SELECT sh.*, p.name AS project_name, p.brief AS project_brief, p.notes AS project_notes
     FROM shoots sh
     JOIN projects p ON p.id = sh.project_id
-    WHERE sh.id = ${shoot_id}
+    WHERE sh.id = ${shoot_id} AND sh.user_id = ${userId}
     LIMIT 1
   `
   if (!rows[0]) return res.status(404).json({ error: 'Shoot not found' })

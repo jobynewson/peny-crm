@@ -1,6 +1,7 @@
 // api/callsheet.js
 // Public endpoint — GET /api/callsheet?token=SHOOT_TOKEN&crew=CREW_TOKEN
 import { neon } from '@neondatabase/serverless'
+import { isRateLimited, getClientIp } from './_ratelimit.js'
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -8,6 +9,10 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
+
+  if (isRateLimited(getClientIp(req))) {
+    return res.status(429).json({ error: 'Too many requests' })
+  }
 
   const { token, crew: crewToken } = req.query
   if (!token) return res.status(400).json({ error: 'Token required' })
@@ -41,6 +46,18 @@ export default async function handler(req, res) {
   `
   if (!rows[0]) return res.status(404).json({ error: 'Shoot not found' })
   const sh = rows[0]
+
+  // Expire token 7 days after the last shoot date
+  const shootDates = Array.isArray(sh.shoot_dates)
+    ? sh.shoot_dates.map(d => d.date).filter(Boolean)
+    : []
+  if (sh.shoot_date) shootDates.push(sh.shoot_date)
+  const latestDate = shootDates.sort().pop()
+  if (latestDate) {
+    const expiry = new Date(latestDate + 'T00:00:00')
+    expiry.setDate(expiry.getDate() + 7)
+    if (new Date() > expiry) return res.status(410).json({ error: 'This link has expired' })
+  }
 
   const crew        = Array.isArray(sh.crew)       ? sh.crew      : []
   const schedule    = Array.isArray(sh.schedule)   ? sh.schedule  : []
@@ -105,7 +122,7 @@ export default async function handler(req, res) {
     client:  sh.first_name ? { name: projectClientName, company: sh.company } : null,
     studio:  { name: sh.studio_name, address: sh.studio_address },
     thisCrew,
-    crew,
+    crew: crew.map(({ crew_token: _, ...c }) => c),
     schedule,
     locations,
   })

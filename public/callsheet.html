@@ -75,7 +75,8 @@
 
     const res = await fetch(`/api/callsheet?token=${sheetToken}${crewToken?'&crew='+crewToken:''}`)
     if (!res.ok) {
-      document.getElementById('root').innerHTML = `<div class="error-state"><h2>Not found</h2><p>This call sheet link has expired or doesn't exist.</p></div>`
+      const expired = res.status === 410
+      document.getElementById('root').innerHTML = `<div class="error-state"><h2>${expired ? 'Link expired' : 'Not found'}</h2><p>${expired ? 'This call sheet link expired 7 days after the shoot.' : "This call sheet link doesn't exist."}</p></div>`
       throw new Error('Not found')
     }
     const { sheet, project, client, studio, thisCrew, crew, schedule, locations } = await res.json()

@@ -451,12 +451,13 @@ export class ProjectsView {
     const sidebarCollapsed = localStorage.getItem('slate-sidebar-collapsed') === '1'
 
     const TABS = [
-      { id: 'overview', label: '📋 Overview' },
-      { id: 'shoots',   label: '🎬 Shoots', hide: (p.project_type||'full_service') === 'post_production' },
-      { id: 'budget',   label: '💰 Budget' },
-      { id: 'planning', label: '🗂 Planning' },
-      { id: 'files',    label: '📁 Files' },
-      { id: 'notes',    label: '💬 Notes' },
+      { id: 'overview',     label: '📋 Overview' },
+      { id: 'shoots',       label: '🎬 Shoots', hide: (p.project_type||'full_service') === 'post_production' },
+      { id: 'budget',       label: '💰 Budget' },
+      { id: 'planning',     label: '🗂 Planning' },
+      { id: 'files',        label: '📁 Files' },
+      { id: 'notes',        label: '💬 Notes' },
+      { id: 'story-plans',  label: '🎬 Story Plans' },
     ].filter(t => !t.hide)
 
     mc.innerHTML = `
@@ -547,12 +548,13 @@ export class ProjectsView {
         <div style="font-size:13px;color:var(--text-primary);line-height:1.6">${value}</div>
       </div>` : ''
 
-    if (tab === 'overview') return this._renderTabOverview(p, cl, delivs, crew, shots, doneCount, field)
-    if (tab === 'shoots')   return this._renderTabShoots(p)
-    if (tab === 'budget')   return this._renderTabBudget(p, linked)
-    if (tab === 'planning') return this._renderTabPlanning(p)
-    if (tab === 'files')    return this._renderTabFiles(p)
-    if (tab === 'notes')    return this._renderTabNotes(p)
+    if (tab === 'overview')    return this._renderTabOverview(p, cl, delivs, crew, shots, doneCount, field)
+    if (tab === 'shoots')      return this._renderTabShoots(p)
+    if (tab === 'budget')      return this._renderTabBudget(p, linked)
+    if (tab === 'planning')    return this._renderTabPlanning(p)
+    if (tab === 'files')       return this._renderTabFiles(p)
+    if (tab === 'notes')       return this._renderTabNotes(p)
+    if (tab === 'story-plans') return this._renderTabStoryPlans(p)
     return ''
   }
 
@@ -732,6 +734,20 @@ export class ProjectsView {
         <div style="font-size:15px;font-weight:500;color:var(--text-secondary);margin-bottom:8px">Files coming soon</div>
         <div style="font-size:13px;line-height:1.6;max-width:320px;margin:0 auto">Contracts, release forms, risk assessment exports, and other project files will live here.</div>
       </div>`
+  }
+
+  _renderTabStoryPlans(p) {
+    return `
+      <div class="proj-panel">
+        <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
+          Story Plans
+          <button id="pv-sp-new" class="btn-secondary" style="font-size:12px;padding:4px 10px">+ New plan</button>
+        </div>
+        <div id="pv-sp-list" style="padding:12px 14px">
+          <div style="font-size:13px;color:var(--text-tertiary)">Loading…</div>
+        </div>
+      </div>
+    `
   }
 
   _renderTabNotes(p) {
@@ -978,6 +994,16 @@ export class ProjectsView {
         })
       })
     }
+    if (tab === 'story-plans') {
+      mc.querySelector('#pv-sp-new')?.addEventListener('click', () => {
+        const spView = this.app.storyPlannerView
+        if (!spView) return
+        spView.plans = null
+        this.app.navigate('story-planner')
+        setTimeout(() => spView.openNewPlanModal(document.getElementById('main-content'), p.id), 100)
+      })
+      this._loadStoryPlansForProject(mc, p)
+    }
   }
 
   _bindSidebar(mc, p, linked) {
@@ -1046,6 +1072,61 @@ export class ProjectsView {
         this.app.toast('Project deleted')
       } catch (e) { console.error(e); this.app.toast('Error deleting project') }
     })
+  }
+
+  async _loadStoryPlansForProject(mc, p) {
+    const listEl = mc.querySelector('#pv-sp-list')
+    if (!listEl) return
+    try {
+      const { getStoryPlans } = await import('../db/client.js')
+      const allPlans = await getStoryPlans(this.app.userId)
+      const plans = allPlans.filter(plan => plan.project_id === p.id)
+
+      if (!plans.length) {
+        listEl.innerHTML = `<div style="font-size:13px;color:var(--text-tertiary);padding:8px 0">No story plans attached to this project yet.</div>`
+        return
+      }
+
+      const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      listEl.innerHTML = plans.map(plan => {
+        const blocks = plan.blocks || []
+        const totalMins = blocks.reduce((s, b) => s + (parseFloat(b.duration_mins) || 0), 0)
+        const fmtDur = m => {
+          if (m <= 0) return ''
+          if (m < 1) return `${Math.round(m * 60)}s`
+          const h = Math.floor(m / 60), rem = Math.floor(m % 60)
+          return h > 0 ? `${h}h${rem > 0 ? ' ' + rem + 'm' : ''}` : `${rem}m`
+        }
+        return `
+          <div data-pv-sp-open="${plan.id}"
+            style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--bg-tertiary);border:0.5px solid var(--border-light);border-radius:var(--radius-sm);margin-bottom:6px;cursor:pointer;transition:border-color 0.15s"
+            onmouseover="this.style.borderColor='var(--border-strong)'" onmouseout="this.style.borderColor='var(--border-light)'">
+            <div>
+              <div style="font-size:13px;font-weight:500">${esc(plan.title)}</div>
+              <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">
+                ${blocks.length} block${blocks.length !== 1 ? 's' : ''}${totalMins > 0 ? ' · ' + fmtDur(totalMins) : ''}
+              </div>
+            </div>
+            <span style="font-size:12px;color:var(--accent,#4a90d9);flex-shrink:0">Open →</span>
+          </div>
+        `
+      }).join('')
+
+      listEl.querySelectorAll('[data-pv-sp-open]').forEach(el => {
+        el.addEventListener('click', () => {
+          const spView = this.app.storyPlannerView
+          if (!spView) return
+          const planId = el.dataset.pvSpOpen
+          const plan = plans.find(p => p.id === planId)
+          spView.currentPlanId = planId
+          spView.plan = plan || { id: planId, title: 'Plan', blocks: [] }
+          this.app.navigate('story-planner')
+        })
+      })
+    } catch(e) {
+      console.error(e)
+      if (listEl) listEl.innerHTML = `<div style="font-size:13px;color:var(--text-tertiary)">Error loading plans</div>`
+    }
   }
 
   async _loadShoots(mc, p) {
@@ -2271,9 +2352,11 @@ export class ProjectsView {
     if (hadOne && !confirm('This will replace the existing risk assessment. Continue?')) return
     btn.disabled = true; btn.textContent = '✨ Generating…'
     try {
+      const { getAuthToken } = await import('../auth/clerk.js')
+      const authToken = await getAuthToken()
       const res = await fetch('/api/generate-ra', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
         body: JSON.stringify({ shoot_id: sh.id }),
       })
       if (!res.ok) throw new Error(await res.text())
@@ -3170,11 +3253,11 @@ export class ProjectsView {
         <select id="ql-task" style="font-size:12px;padding:5px 8px;border:1px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none">
           ${trackableLines.map(l => `<option value="${l.label}" data-bid="${l.budgetId||''}">${l.label}${l.budgetName?' ('+l.budgetName+')':''}</option>`).join('')}
         </select>
-        <div style="display:flex;gap:6px">
-          <input type="date" id="ql-date" value="${new Date().toISOString().split('T')[0]}" max="${new Date().toISOString().split('T')[0]}"
-            style="flex:1;font-size:12px;padding:5px 8px;border:1px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
-          <button class="btn-primary" id="ql-submit" style="font-size:12px;padding:5px 14px;white-space:nowrap">Log</button>
-        </div>
+        <input type="date" id="ql-date" value="${new Date().toISOString().split('T')[0]}" max="${new Date().toISOString().split('T')[0]}"
+          style="font-size:12px;padding:5px 8px;border:1px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+        <input type="text" id="ql-note" placeholder="Notes (optional)" maxlength="300"
+          style="font-size:12px;padding:5px 8px;border:1px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+        <button class="btn-primary" id="ql-submit" style="font-size:12px;padding:5px 14px;white-space:nowrap;align-self:flex-start">Log</button>
         <div id="ql-msg" style="font-size:11px;display:none"></div>
       </div>
 
@@ -3190,6 +3273,7 @@ export class ProjectsView {
       const lineLabel = taskEl?.value
       const budgetId = taskEl?.selectedOptions[0]?.dataset.bid || null
       const date = linkDiv.querySelector('#ql-date')?.value
+      const note = linkDiv.querySelector('#ql-note')?.value?.trim() || null
       const msgEl = linkDiv.querySelector('#ql-msg')
 
       if (!crewName || !hours || hours <= 0 || !lineLabel) {
@@ -3198,9 +3282,10 @@ export class ProjectsView {
       }
       try {
         const { addTimeEntry } = await import('../db/client.js')
-        await addTimeEntry({ project_id: p.id, budget_id: budgetId||null, line_label: lineLabel, crew_name: crewName, hours, entry_date: date, note: null })
+        await addTimeEntry({ project_id: p.id, budget_id: budgetId||null, line_label: lineLabel, crew_name: crewName, hours, entry_date: date, note })
         if (msgEl) { msgEl.style.display='block'; msgEl.style.color='#6ec96e'; msgEl.textContent=`✓ ${hours}h logged` }
         linkDiv.querySelector('#ql-hours').value = ''
+        if (linkDiv.querySelector('#ql-note')) linkDiv.querySelector('#ql-note').value = ''
         setTimeout(() => { if (msgEl) msgEl.style.display='none' }, 3000)
         this._loadTimePanel(mc, p)
       } catch(e) { console.error(e); if (msgEl) { msgEl.style.display='block'; msgEl.style.color='#e07070'; msgEl.textContent='Error logging time' } }

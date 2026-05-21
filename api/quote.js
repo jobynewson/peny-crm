@@ -1,5 +1,6 @@
 // api/quote.js — Public client-facing budget/quote page
 import { neon } from '@neondatabase/serverless'
+import { isRateLimited, getClientIp } from './_ratelimit.js'
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -7,13 +8,17 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
 
+  if (isRateLimited(getClientIp(req))) {
+    return res.status(429).json({ error: 'Too many requests' })
+  }
+
   const { token } = req.query
   if (!token) return res.status(400).json({ error: 'Token required' })
 
   const sql = neon(process.env.VITE_DATABASE_URL)
   const rows = await sql`
     SELECT b.id, b.name, b.sections, b.markup, b.custom_pct, b.vat, b.insurance,
-           b.travel_rate, b.prep_rate, b.discount, b.notes, b.prepared_by, b.quote_email,
+           b.travel_rate, b.prep_rate, b.notes, b.prepared_by,
            b.signed_off, b.created_at,
            c.first_name, c.last_name, c.company,
            s.company_name, s.address, s.email, s.phone, s.website, s.vat_number
@@ -34,7 +39,7 @@ export default async function handler(req, res) {
       name: b.name, notes: b.notes, prepared_by: b.prepared_by,
       markup: b.markup, custom_pct: b.custom_pct, vat: b.vat,
       insurance: b.insurance, travel_rate: b.travel_rate, prep_rate: b.prep_rate,
-      discount: b.discount, signed_off: b.signed_off, created_at: b.created_at,
+      signed_off: b.signed_off, created_at: b.created_at,
     },
     sections: (sections||[]).filter(s => s.enabled),
     client: b.first_name ? { name: `${b.first_name} ${b.last_name}`, company: b.company } : null,
