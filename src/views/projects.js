@@ -1258,6 +1258,18 @@ export class ProjectsView {
               </div>
               <div class="bsec-body">
                 <div style="padding:14px">
+                  <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px">
+                    <input type="checkbox" id="se-show-call-times" ${sh.show_call_times !== false ? 'checked' : ''} style="margin:0;cursor:pointer" />
+                    <label for="se-show-call-times" style="font-size:12px;color:var(--text-secondary);cursor:pointer;user-select:none">Show call times</label>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap">
+                    <span style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;flex-shrink:0">Date range</span>
+                    <input type="date" id="se-range-start" class="proj-input" style="font-size:12px;padding:5px 8px;width:140px" title="Start date" />
+                    <span style="font-size:12px;color:var(--text-secondary);flex-shrink:0">+</span>
+                    <input type="number" id="se-range-length" class="proj-input" min="1" max="60" placeholder="Days" style="font-size:12px;padding:5px 8px;width:65px" title="Shoot length in days" />
+                    <span style="font-size:12px;color:var(--text-secondary);flex-shrink:0">days</span>
+                    <button class="btn-secondary" id="se-gen-range" style="font-size:11px;padding:3px 10px">Fill dates</button>
+                  </div>
                   <div id="se-dates-list">${this._shootDatesHTML(sh)}</div>
                 </div>
               </div>
@@ -1307,7 +1319,7 @@ export class ProjectsView {
               </div>
               <div class="bsec-body">
                 <div style="padding:14px" id="se-locs-list">
-                  ${sh.locations.map((l,i) => this._shootLocHTML(l, i)).join('') || '<div style="font-size:12px;color:var(--text-tertiary)">No additional locations</div>'}
+                  ${sh.locations.map((l,i) => this._shootLocHTML(l, i, sh)).join('') || '<div style="font-size:12px;color:var(--text-tertiary)">No additional locations</div>'}
                 </div>
               </div>
             </div>
@@ -1547,11 +1559,18 @@ export class ProjectsView {
     this._renderShootCrewLinks(overlay, sh)
   }
 
-  _shootLocHTML(l, i) {
+  _shootLocHTML(l, i, sh) {
+    const dates = sh ? (Array.isArray(sh.shoot_dates) ? sh.shoot_dates.filter(d => d.date) : []) : []
+    const fmtDateShort = d => new Date(d).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})
+    const dateSelect = dates.length > 1 ? `<select class="bl-in" data-loc-field="${i},date" style="font-size:12px;padding:5px 8px;width:110px;flex-shrink:0">
+        <option value="">Every day</option>
+        ${dates.map(d => `<option value="${d.date}" ${l.date===d.date?'selected':''}>${esc(fmtDateShort(d.date))}</option>`).join('')}
+      </select>` : ''
     return `<div class="se-loc-row" style="border:1px solid var(--border-med);border-radius:var(--radius-md);padding:10px;margin-bottom:8px;background:var(--bg-secondary)" data-loc-idx="${i}">
-      <div style="display:flex;gap:6px;margin-bottom:6px">
+      <div style="display:flex;gap:6px;margin-bottom:6px;align-items:center">
         <input type="text" class="bl-in w" value="${esc(l.name||'')}" placeholder="Location name" data-loc-field="${i},name" style="flex:1;font-size:12px;padding:5px 8px" />
-        <input type="time" class="bl-in w" value="${esc(l.move_time||'')}" placeholder="Move time" data-loc-field="${i},move_time" style="width:90px;font-size:12px;padding:5px 8px" />
+        ${dateSelect}
+        <input type="time" class="bl-in" value="${esc(l.move_time||'')}" placeholder="Move time" data-loc-field="${i},move_time" style="width:90px;font-size:12px;padding:5px 8px;flex-shrink:0" />
         <button class="row-btn" style="color:#c03020" data-loc-rem="${i}">×</button>
       </div>
       <input type="text" class="bl-in w" value="${esc(l.address||'')}" placeholder="Address" data-loc-field="${i},address" style="width:100%;font-size:12px;padding:5px 8px;margin-bottom:6px" />
@@ -1577,22 +1596,23 @@ export class ProjectsView {
 
   // List of shoot dates with general call time per day
   _shootDatesHTML(sh) {
+    const showCallTimes = sh.show_call_times !== false
     const dates = Array.isArray(sh.shoot_dates) ? sh.shoot_dates : []
     if (!dates.length) {
       return `<div style="font-size:12px;color:var(--text-tertiary);padding:4px 0">No shoot dates yet — click <strong style="color:var(--text-primary)">+ Add day</strong> above</div>`
     }
     return dates.map((d, i) => `
-      <div style="display:grid;grid-template-columns:140px 1fr 120px 28px;gap:8px;margin-bottom:6px;align-items:center" data-date-idx="${i}">
+      <div style="display:grid;grid-template-columns:140px 1fr ${showCallTimes ? '120px ' : ''}28px;gap:8px;margin-bottom:6px;align-items:center" data-date-idx="${i}">
         <input type="date" class="proj-input" value="${d.date?String(d.date).split('T')[0]:''}" data-date-field="${i},date" style="font-size:12px;padding:5px 8px" />
         <div style="font-size:11px;color:var(--text-tertiary)">${d.date ? new Date(d.date).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'}) : ''}</div>
-        <input type="time" class="proj-input" value="${esc(d.general_call||'')}" placeholder="General call" data-date-field="${i},general_call" style="font-size:12px;padding:5px 8px" />
+        ${showCallTimes ? `<input type="time" class="proj-input" value="${esc(d.general_call||'')}" placeholder="General call" data-date-field="${i},general_call" style="font-size:12px;padding:5px 8px" />` : ''}
         <button class="row-btn" style="color:#c03020" data-date-rem="${i}">×</button>
       </div>`).join('')
   }
 
   // Render the Crew/On Camera/Client section as a grid: name | role | phone | one call-time column per shoot date
   _shootCrewSectionHTML(sh, type) {
-    const dates = Array.isArray(sh.shoot_dates) ? sh.shoot_dates.filter(d => d.date) : []
+    const dates = sh.show_call_times !== false && Array.isArray(sh.shoot_dates) ? sh.shoot_dates.filter(d => d.date) : []
     const filtered = (sh.crew || []).map((c, idx) => ({c, idx})).filter(({c}) => (c.crew_type||'crew') === type)
     const handle = `<span class="crew-drag-handle" title="Drag to reorder" style="cursor:grab;color:var(--text-tertiary);padding:0 4px;font-size:14px;line-height:1;flex-shrink:0;user-select:none">⠿</span>`
 
@@ -2060,6 +2080,8 @@ export class ProjectsView {
       const schedList = overlay.querySelector('#se-sched-list')
       if (schedList) schedList.innerHTML = sh.schedule.map((r,i) => this._shootSchedHTML(r, i, sh)).join('') || '<div style="font-size:12px;color:var(--text-tertiary)">No schedule yet</div>'
       this._bindShootSched(overlay, sh, save)
+      // Additional locations date selectors also depend on shoot dates
+      this._refreshShootLocs(overlay, sh, save)
     }
     const bindDateList = () => {
       overlay.querySelectorAll('[data-date-field]').forEach(el => {
@@ -2103,6 +2125,28 @@ export class ProjectsView {
       refreshDates()
       save()
     })
+    overlay.querySelector('#se-show-call-times')?.addEventListener('change', e => {
+      sh.show_call_times = e.target.checked
+      refreshDates()
+      save()
+    })
+    overlay.querySelector('#se-gen-range')?.addEventListener('click', () => {
+      const startVal = overlay.querySelector('#se-range-start')?.value
+      const lengthVal = parseInt(overlay.querySelector('#se-range-length')?.value, 10)
+      if (!startVal) { this.app.toast('Enter a start date'); return }
+      if (!lengthVal || lengthVal < 1) { this.app.toast('Enter number of days (min 1)'); return }
+      const newDates = []
+      for (let i = 0; i < lengthVal; i++) {
+        const d = new Date(startVal)
+        d.setDate(d.getDate() + i)
+        const iso = d.toISOString().split('T')[0]
+        const existing = sh.shoot_dates.find(x => String(x.date).split('T')[0] === iso)
+        newDates.push(existing || { date: iso, general_call: '' })
+      }
+      sh.shoot_dates = newDates
+      refreshDates()
+      save()
+    })
     bindDateList()
 
     // Fill blanks with general call (per-day, fills any blank crew call time for that day with that day's general call)
@@ -2129,6 +2173,9 @@ export class ProjectsView {
       const date = firstDate?.date ? String(firstDate.date).split('T')[0] : ''
       if (!date) { this.app.toast('Add a shoot date first'); return }
       if (!addrVal && !locName) { this.app.toast('Enter a location first'); return }
+      const today = new Date(); today.setHours(0,0,0,0)
+      const daysAway = Math.round((new Date(date) - today) / 864e5)
+      if (daysAway > 16) { this.app.toast(`Weather forecasts are only available up to 16 days in advance — your shoot is ${daysAway} days away`); return }
       btn.disabled = true; btn.textContent = 'Fetching…'
       try {
         let resolvedAddr = addrVal
@@ -2154,8 +2201,9 @@ export class ProjectsView {
           if (d.results?.[0]) { lat=d.results[0].latitude; lng=d.results[0].longitude }
         }
         if (!lat) { this.app.toast('Could not find location'); btn.disabled=false; btn.textContent='🌤 Fetch'; return }
-        const wx = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max,weathercode&timezone=Europe%2FLondon&start_date=${date}&end_date=${date}`).then(r=>r.json())
+        const wx = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max,weathercode&timezone=auto&start_date=${date}&end_date=${date}`).then(r=>r.json())
         const d = wx.daily
+        if (!d || !d.weathercode) { this.app.toast('No weather data for that date/location'); btn.disabled=false; btn.textContent='🌤 Fetch'; return }
         const codeDesc = { 0:'Clear', 1:'Mainly clear', 2:'Partly cloudy', 3:'Overcast', 45:'Fog', 48:'Fog', 51:'Light drizzle', 53:'Drizzle', 55:'Heavy drizzle', 61:'Light rain', 63:'Rain', 65:'Heavy rain', 71:'Light snow', 73:'Snow', 75:'Heavy snow', 80:'Rain showers', 81:'Rain showers', 82:'Heavy rain showers', 95:'Thunderstorm' }
         const txt = `${codeDesc[d.weathercode[0]]||'Mixed'} · ${Math.round(d.temperature_2m_min[0])}–${Math.round(d.temperature_2m_max[0])}°C · Wind ${Math.round(d.windspeed_10m_max[0])}km/h · Rain ${d.precipitation_probability_max[0]}%`
         overlay.querySelector('#se-weather').value = txt
@@ -2554,7 +2602,7 @@ export class ProjectsView {
   }
   _refreshShootLocs(overlay, sh, save) {
     const el = overlay.querySelector('#se-locs-list')
-    el.innerHTML = sh.locations.map((l,i) => this._shootLocHTML(l,i)).join('') || '<div style="font-size:12px;color:var(--text-tertiary)">No additional locations</div>'
+    el.innerHTML = sh.locations.map((l,i) => this._shootLocHTML(l,i,sh)).join('') || '<div style="font-size:12px;color:var(--text-tertiary)">No additional locations</div>'
     this._bindShootLocs(overlay, sh, save)
   }
 
