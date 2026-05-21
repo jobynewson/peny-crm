@@ -1,5 +1,6 @@
 import { createProject, updateProject, deleteProject, linkBudgetToProject, unlinkBudgetFromProject, logActivity, getActivityLog, getTimeEntries, setTrackToken, deleteTimeEntry, getWorkLog, addWorkLogEntry, deleteWorkLogEntry } from '../db/client.js'
 import { renderPlanningTab, bindPlanningTab } from './planning-tab.js'
+import { PostProductionView } from './post-production.js'
 
 const STAGES = ['Enquiry','Pre-production','In Production','Post','Delivered']
 const RETAINER_STAGE = 'Retainer'
@@ -13,8 +14,9 @@ export class ProjectsView {
     this.app = app
     this.currentId = null
     this.editingId = null
-    this._pvTab = 'overview'  // current project tab
+    this._pvTab = 'overview'
     this._pvCrewTab = 'crew'
+    this._postProductionView = new PostProductionView(app)
   }
 
   render(mc) {
@@ -451,13 +453,14 @@ export class ProjectsView {
     const sidebarCollapsed = localStorage.getItem('slate-sidebar-collapsed') === '1'
 
     const TABS = [
-      { id: 'overview',     label: '📋 Overview' },
-      { id: 'shoots',       label: '🎬 Shoots', hide: (p.project_type||'full_service') === 'post_production' },
-      { id: 'budget',       label: '💰 Budget' },
-      { id: 'planning',     label: '🗂 Planning' },
-      { id: 'files',        label: '📁 Files' },
-      { id: 'notes',        label: '💬 Notes' },
-      { id: 'story-plans',  label: '🎬 Story Plans' },
+      { id: 'overview',         label: '📋 Overview' },
+      { id: 'shoots',           label: '🎬 Shoots', hide: (p.project_type||'full_service') === 'post_production' },
+      { id: 'post-production',  label: '🎞 Post Production' },
+      { id: 'budget',           label: '💰 Budget' },
+      { id: 'planning',         label: '🗂 Planning' },
+      { id: 'files',            label: '📁 Files' },
+      { id: 'notes',            label: '💬 Notes' },
+      { id: 'story-plans',      label: '🎬 Story Plans' },
     ].filter(t => !t.hide)
 
     mc.innerHTML = `
@@ -548,13 +551,14 @@ export class ProjectsView {
         <div style="font-size:13px;color:var(--text-primary);line-height:1.6">${value}</div>
       </div>` : ''
 
-    if (tab === 'overview')    return this._renderTabOverview(p, cl, delivs, crew, shots, doneCount, field)
-    if (tab === 'shoots')      return this._renderTabShoots(p)
-    if (tab === 'budget')      return this._renderTabBudget(p, linked)
-    if (tab === 'planning')    return this._renderTabPlanning(p)
-    if (tab === 'files')       return this._renderTabFiles(p)
-    if (tab === 'notes')       return this._renderTabNotes(p)
-    if (tab === 'story-plans') return this._renderTabStoryPlans(p)
+    if (tab === 'overview')        return this._renderTabOverview(p, cl, delivs, crew, shots, doneCount, field)
+    if (tab === 'shoots')          return this._renderTabShoots(p)
+    if (tab === 'post-production') return `<div id="pv-pps-container"><div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">Loading…</div></div>`
+    if (tab === 'budget')          return this._renderTabBudget(p, linked)
+    if (tab === 'planning')        return this._renderTabPlanning(p)
+    if (tab === 'files')           return this._renderTabFiles(p)
+    if (tab === 'notes')           return this._renderTabNotes(p)
+    if (tab === 'story-plans')     return this._renderTabStoryPlans(p)
     return ''
   }
 
@@ -926,6 +930,10 @@ export class ProjectsView {
       mc.querySelectorAll('[data-open-shoot]').forEach(el => {
         el.addEventListener('click', () => this._openShootEditor(mc, p, el.dataset.openShoot))
       })
+    }
+    if (tab === 'post-production') {
+      const container = mc.querySelector('#pv-pps-container')
+      if (container) this._postProductionView.renderTab(container, p)
     }
     if (tab === 'budget') {
       mc.querySelector('#pv-new-budget')?.addEventListener('click', () => {

@@ -49,6 +49,23 @@ export default async function handler(req, res) {
     ORDER BY entry_date DESC, created_at DESC
   `
 
+  const ppsSchedule = await sql`
+    SELECT id FROM post_production_schedules
+    WHERE project_id = ${project.id}
+    LIMIT 1
+  `
+
+  let ppsPhases = []
+  if (ppsSchedule[0]) {
+    ppsPhases = await sql`
+      SELECT id, name, start_date, end_date, color, sort_order
+      FROM pps_phases
+      WHERE schedule_id = ${ppsSchedule[0].id}
+        AND show_in_portal = true
+      ORDER BY sort_order, created_at
+    `
+  }
+
   return res.status(200).json({
     project: {
       name:        project.name,
@@ -61,8 +78,9 @@ export default async function handler(req, res) {
     client: project.first_name
       ? { name: project.first_name + ' ' + project.last_name, company: project.company }
       : null,
-    studio: { name: project.studio_name, website: project.studio_website },
+    studio:       { name: project.studio_name, website: project.studio_website },
     deliverables: (deliverables || []).filter(d => d.text),
-    workLog: logEntries,
+    workLog:      logEntries,
+    ppsPhases,
   })
 }

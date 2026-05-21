@@ -6,7 +6,8 @@ import {
   contacts, projects, budgets, settings, workspace,
   project_budgets, budget_versions, activity_log,
   app_users, time_entries, user_notes, social_posts, marketing_cards,
-  story_plans, credentials,
+  story_plans, credentials, team_calendar_entries,
+  post_production_schedules, pps_phases,
 } from './schema.js'
 
 const sql = neon(import.meta.env.VITE_DATABASE_URL)
@@ -56,6 +57,53 @@ export async function runMigrations() {
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS team_calendar_entries (
+      id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id       TEXT NOT NULL,
+      assignee_id   UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+      entry_date    DATE NOT NULL,
+      entry_type    TEXT NOT NULL DEFAULT 'other',
+      label         TEXT NOT NULL,
+      color         TEXT,
+      project_id    UUID REFERENCES projects(id) ON DELETE SET NULL,
+      shoot_id      UUID REFERENCES shoots(id) ON DELETE SET NULL,
+      pps_phase_id  UUID,
+      budget_id     UUID REFERENCES budgets(id) ON DELETE SET NULL,
+      line_label    TEXT,
+      notes         TEXT,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`ALTER TABLE team_calendar_entries ADD COLUMN IF NOT EXISTS end_date DATE`
+  await sql`
+    CREATE TABLE IF NOT EXISTS post_production_schedules (
+      id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id    TEXT NOT NULL,
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      start_date DATE,
+      end_date   DATE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`ALTER TABLE post_production_schedules ADD COLUMN IF NOT EXISTS start_date DATE`
+  await sql`ALTER TABLE post_production_schedules ADD COLUMN IF NOT EXISTS end_date DATE`
+  await sql`
+    CREATE TABLE IF NOT EXISTS pps_phases (
+      id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      schedule_id     UUID NOT NULL REFERENCES post_production_schedules(id) ON DELETE CASCADE,
+      name            TEXT NOT NULL,
+      start_date      DATE,
+      end_date        DATE,
+      color           TEXT NOT NULL DEFAULT '#C47E3A',
+      show_in_portal  BOOLEAN NOT NULL DEFAULT false,
+      sort_order      INTEGER NOT NULL DEFAULT 0,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `
 }
@@ -748,4 +796,111 @@ export async function updateCredential(workspaceId, id, data) {
 export async function deleteCredential(workspaceId, id) {
   return db.delete(credentials)
     .where(and(eq(credentials.id, id), eq(credentials.user_id, workspaceId)))
+}
+
+// ── Team Calendar Entries ─────────────────────────────────────────────────────
+export async function getTeamCalendarEntries(workspaceId) {
+  return db.select().from(team_calendar_entries)
+    .where(eq(team_calendar_entries.user_id, workspaceId))
+    .orderBy(team_calendar_entries.entry_date)
+}
+export async function createTeamCalendarEntry(workspaceId, data) {
+  const [row] = await db.insert(team_calendar_entries)
+    .values({ user_id: workspaceId, ...data })
+    .returning()
+  return row
+}
+export async function updateTeamCalendarEntry(workspaceId, id, data) {
+  const [row] = await db.update(team_calendar_entries)
+    .set({ ...data, updated_at: new Date() })
+    .where(and(eq(team_calendar_entries.id, id), eq(team_calendar_entries.user_id, workspaceId)))
+    .returning()
+  return row
+}
+export async function deleteTeamCalendarEntry(workspaceId, id) {
+  return db.delete(team_calendar_entries)
+    .where(and(eq(team_calendar_entries.id, id), eq(team_calendar_entries.user_id, workspaceId)))
+}
+
+// ── Post Production Schedule ──────────────────────────────────────────────────
+const PPS_DEFAULT_PHASES = [
+  { name: 'Shoot Blocks',            color: '#4CAF50' },
+  { name: 'Ingest',                  color: '#C47E3A' },
+  { name: 'Prep / Proxy / Sync',     color: '#C47E3A' },
+  { name: 'Hero — Selects / Edit',   color: '#C47E3A' },
+  { name: 'Hero — Edit',             color: '#C47E3A' },
+  { name: 'Hero — V1 Watch',         color: '#7B6EAB' },
+  { name: 'Hero — V2 Watch',         color: '#7B6EAB' },
+  { name: 'Hero — V2 Edit',          color: '#C47E3A' },
+  { name: 'Hero — V3 Watch',         color: '#7B6EAB' },
+  { name: 'Socials — Edit',          color: '#C47E3A' },
+  { name: 'Hero — V4 Watch',         color: '#7B6EAB' },
+  { name: 'Client Feedback',         color: '#d9534f' },
+  { name: 'Final Version',           color: '#4a90d9' },
+  { name: 'Social Clips',            color: '#C47E3A' },
+  { name: 'Approved',                color: '#6ec96e' },
+]
+export async function getPpsForProject(workspaceId, projectId) {
+  const schedules = await db.select().from(post_production_schedules)
+    .where(and(
+      eq(post_production_schedules.user_id, workspaceId),
+      eq(post_production_schedules.project_id, projectId)
+    ))
+    .limit(1)
+  if (!schedules[0]) return null
+  const schedule = schedules[0]
+  const phases = await db.select().from(pps_phases)
+    .where(eq(pps_phases.schedule_id, schedule.id))
+    .orderBy(pps_phases.sort_order, pps_phases.created_at)
+  return { ...schedule, phases }
+}
+export async function createPpsWithDefaults(workspaceId, projectId) {
+  const [schedule] = await db.insert(post_production_schedules)
+    .values({ user_id: workspaceId, project_id: projectId })
+    .returning()
+  for (let i = 0; i < PPS_DEFAULT_PHASES.length; i++) {
+    await db.insert(pps_phases).values({
+      schedule_id: schedule.id,
+      name:        PPS_DEFAULT_PHASES[i].name,
+      color:       PPS_DEFAULT_PHASES[i].color,
+      sort_order:  i,
+    })
+  }
+  return getPpsForProject(workspaceId, projectId)
+}
+export async function createPpsPhase(scheduleId, data) {
+  const [row] = await db.insert(pps_phases)
+    .values({ schedule_id: scheduleId, ...data })
+    .returning()
+  return row
+}
+export async function updatePpsPhase(id, data) {
+  const [row] = await db.update(pps_phases)
+    .set({ ...data, updated_at: new Date() })
+    .where(eq(pps_phases.id, id))
+    .returning()
+  return row
+}
+export async function deletePpsPhase(id) {
+  return db.delete(pps_phases).where(eq(pps_phases.id, id))
+}
+export async function updatePpsScheduleDates(id, data) {
+  const [row] = await db.update(post_production_schedules)
+    .set({ ...data, updated_at: new Date() })
+    .where(eq(post_production_schedules.id, id))
+    .returning()
+  return row
+}
+
+// ── Shoots (lightweight — for calendar auto-populate) ─────────────────────────
+export async function getShootsForCalendar(workspaceId) {
+  const { sql: sq } = await import('drizzle-orm')
+  return db.execute(sq`
+    SELECT s.id, s.project_id, s.name, s.shoot_date, s.shoot_dates, s.crew,
+           p.name AS project_name
+    FROM shoots s
+    JOIN projects p ON p.id = s.project_id
+    WHERE s.user_id = ${workspaceId}
+    ORDER BY s.shoot_date NULLS LAST
+  `).then(r => r.rows ?? r)
 }

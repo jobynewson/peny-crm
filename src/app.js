@@ -8,9 +8,10 @@ import { StoryPlannerView } from './views/story-planner.js'
 import { MarketingView } from './views/marketing.js'
 import { TimeTrackView } from './views/timetrack.js'
 import { PasswordManagerView } from './views/password-manager.js'
+import { TeamCalendarView } from './views/team-calendar.js'
 
 export class App {
-  constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, onSignOut }) {
+  constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, onSignOut }) {
     this.userId         = userId
     this.clerkUserId    = clerkUserId
     this.user           = user
@@ -23,6 +24,7 @@ export class App {
     this.allUsers       = allUsers ?? []
     this.socialPosts    = socialPosts ?? []
     this.marketingCards = marketingCards ?? []
+    this.teamCalendarEntries = teamCalendarEntries ?? []
     this.onSignOut      = onSignOut
     this.currentView    = 'dashboard'
     this.contactsView    = new ContactsView(this)
@@ -33,6 +35,7 @@ export class App {
     this.marketingView   = new MarketingView(this)
     this.timeTrackView        = new TimeTrackView(this)
     this.passwordManagerView  = new PasswordManagerView(this)
+    this.teamCalendarView     = new TeamCalendarView(this)
     window.app = this
   }
 
@@ -886,6 +889,7 @@ export class App {
         setTimeout(() => document.querySelector('#topbar-btn')?.click(), 50)
       })
       this._mountCountdownWidget(mc)
+      this.teamCalendarView.renderDashboardSection(mc)
       return
     }
 
@@ -1330,6 +1334,7 @@ export class App {
       </div>`
 
     this._mountCountdownWidget(mc)
+    this.teamCalendarView.renderDashboardSection(mc)
 
     // --- Marketing tasks coming due ---
     mc.querySelector('#db-mkt-view-all')?.addEventListener('click', () => this.navigate('marketing'))

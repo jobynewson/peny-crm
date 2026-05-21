@@ -57,6 +57,16 @@
     .error-state h2 { font-size:18px; margin-bottom:8px }
     .error-state p { color:var(--text-sec); font-size:14px }
     .footer { margin-top:32px; font-size:11px; color:var(--text-ter); text-align:center }
+
+    .pps-gantt { position:relative; background:var(--surface2); border-radius:8px; padding:16px; overflow-x:auto }
+    .pps-gantt-inner { min-width:360px }
+    .pps-axis { display:flex; justify-content:space-between; font-size:10px; color:var(--text-ter); margin-bottom:8px }
+    .pps-row { display:flex; align-items:center; gap:8px; margin-bottom:5px }
+    .pps-label { flex:0 0 130px; font-size:11px; color:var(--text-sec); text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+    .pps-track { flex:1; position:relative; height:18px }
+    .pps-bar { position:absolute; top:0; height:100%; border-radius:3px; display:flex; align-items:center; padding:0 5px; overflow:hidden; min-width:4px }
+    .pps-bar-label { font-size:9px; color:rgba(255,255,255,0.9); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+    .pps-today { position:absolute; top:0; bottom:0; width:1px; background:rgba(74,144,217,0.5); z-index:2; pointer-events:none }
   </style>
 </head>
 <body>
@@ -76,7 +86,7 @@
       throw new Error('Not found')
     }
 
-    const { project, client, studio, deliverables, workLog } = await res.json()
+    const { project, client, studio, deliverables, workLog, ppsPhases } = await res.json()
 
     const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
 
@@ -126,6 +136,55 @@
         </div>`).join('')
       : `<div class="empty">No updates yet</div>`
 
+    let ppsHTML = ''
+    if (ppsPhases && ppsPhases.length) {
+      const withDates = ppsPhases.filter(ph => ph.start_date && ph.end_date)
+      let ganttHTML = ''
+      if (withDates.length) {
+        const allMs = withDates.flatMap(ph => [new Date(ph.start_date).getTime(), new Date(ph.end_date).getTime()])
+        const minMs = Math.min(...allMs)
+        const maxMs = Math.max(...allMs)
+        const totalMs = maxMs - minMs || 1
+        const today = new Date(); today.setHours(0,0,0,0)
+        const todayPct = ((today.getTime() - minMs) / totalMs * 100).toFixed(1)
+        const showToday = today.getTime() >= minMs && today.getTime() <= maxMs
+        const fmtS = d => new Date(d).toLocaleDateString('en-GB', { day:'numeric', month:'short' })
+        ganttHTML = `
+          <div class="pps-gantt">
+            <div class="pps-gantt-inner">
+              <div class="pps-axis"><span>${fmtS(minMs)}</span><span>${fmtS(maxMs)}</span></div>
+              <div style="position:relative">
+                ${showToday ? `<div class="pps-today" style="left:${todayPct}%"></div>` : ''}
+                ${withDates.map(ph => {
+                  const l = ((new Date(ph.start_date).getTime() - minMs) / totalMs * 100).toFixed(1)
+                  const w = Math.max(0.5, ((new Date(ph.end_date).getTime() - new Date(ph.start_date).getTime()) / totalMs * 100)).toFixed(1)
+                  const days = Math.round((new Date(ph.end_date) - new Date(ph.start_date)) / 86400000) + 1
+                  return `<div class="pps-row">
+                    <div class="pps-label">${esc(ph.name)}</div>
+                    <div class="pps-track">
+                      <div class="pps-bar" style="left:${l}%;width:${w}%;background:${ph.color || '#C47E3A'}" title="${esc(ph.name)}: ${fmtS(ph.start_date)} – ${fmtS(ph.end_date)} (${days}d)">
+                        <span class="pps-bar-label">${days}d</span>
+                      </div>
+                    </div>
+                  </div>`
+                }).join('')}
+              </div>
+            </div>
+          </div>`
+      }
+      ppsHTML = `
+        <div class="card">
+          <div class="section-title">Post Production Schedule</div>
+          ${ganttHTML}
+          ${!withDates.length ? `<div style="font-size:13px;color:var(--text-sec)">
+            ${ppsPhases.map(ph => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:0.5px solid var(--border)">
+              <div style="width:10px;height:10px;border-radius:50%;flex-shrink:0;background:${ph.color || '#C47E3A'}"></div>
+              <span>${esc(ph.name)}</span>
+            </div>`).join('')}
+          </div>` : ''}
+        </div>`
+    }
+
     document.getElementById('root').innerHTML = `
       <div class="wrap">
         <div class="card">
@@ -155,6 +214,8 @@
             Open in Frame.io
           </a>
         </div>` : ''}
+
+        ${ppsHTML}
 
         <div class="card">
           <div class="section-title">Deliverables</div>
