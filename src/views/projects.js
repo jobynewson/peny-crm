@@ -1258,6 +1258,10 @@ export class ProjectsView {
               </div>
               <div class="bsec-body">
                 <div style="padding:14px">
+                  <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px">
+                    <input type="checkbox" id="se-show-call-times" ${sh.show_call_times !== false ? 'checked' : ''} style="margin:0;cursor:pointer" />
+                    <label for="se-show-call-times" style="font-size:12px;color:var(--text-secondary);cursor:pointer;user-select:none">Show call times</label>
+                  </div>
                   <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap">
                     <span style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;flex-shrink:0">Date range</span>
                     <input type="date" id="se-range-start" class="proj-input" style="font-size:12px;padding:5px 8px;width:140px" title="Start date" />
@@ -1585,22 +1589,23 @@ export class ProjectsView {
 
   // List of shoot dates with general call time per day
   _shootDatesHTML(sh) {
+    const showCallTimes = sh.show_call_times !== false
     const dates = Array.isArray(sh.shoot_dates) ? sh.shoot_dates : []
     if (!dates.length) {
       return `<div style="font-size:12px;color:var(--text-tertiary);padding:4px 0">No shoot dates yet — click <strong style="color:var(--text-primary)">+ Add day</strong> above</div>`
     }
     return dates.map((d, i) => `
-      <div style="display:grid;grid-template-columns:140px 1fr 120px 28px;gap:8px;margin-bottom:6px;align-items:center" data-date-idx="${i}">
+      <div style="display:grid;grid-template-columns:140px 1fr ${showCallTimes ? '120px ' : ''}28px;gap:8px;margin-bottom:6px;align-items:center" data-date-idx="${i}">
         <input type="date" class="proj-input" value="${d.date?String(d.date).split('T')[0]:''}" data-date-field="${i},date" style="font-size:12px;padding:5px 8px" />
         <div style="font-size:11px;color:var(--text-tertiary)">${d.date ? new Date(d.date).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'}) : ''}</div>
-        <input type="time" class="proj-input" value="${esc(d.general_call||'')}" placeholder="General call" data-date-field="${i},general_call" style="font-size:12px;padding:5px 8px" />
+        ${showCallTimes ? `<input type="time" class="proj-input" value="${esc(d.general_call||'')}" placeholder="General call" data-date-field="${i},general_call" style="font-size:12px;padding:5px 8px" />` : ''}
         <button class="row-btn" style="color:#c03020" data-date-rem="${i}">×</button>
       </div>`).join('')
   }
 
   // Render the Crew/On Camera/Client section as a grid: name | role | phone | one call-time column per shoot date
   _shootCrewSectionHTML(sh, type) {
-    const dates = Array.isArray(sh.shoot_dates) ? sh.shoot_dates.filter(d => d.date) : []
+    const dates = sh.show_call_times !== false && Array.isArray(sh.shoot_dates) ? sh.shoot_dates.filter(d => d.date) : []
     const filtered = (sh.crew || []).map((c, idx) => ({c, idx})).filter(({c}) => (c.crew_type||'crew') === type)
     const handle = `<span class="crew-drag-handle" title="Drag to reorder" style="cursor:grab;color:var(--text-tertiary);padding:0 4px;font-size:14px;line-height:1;flex-shrink:0;user-select:none">⠿</span>`
 
@@ -2108,6 +2113,11 @@ export class ProjectsView {
     }
     overlay.querySelector('#se-add-day')?.addEventListener('click', () => {
       sh.shoot_dates.push({ date: '', general_call: '' })
+      refreshDates()
+      save()
+    })
+    overlay.querySelector('#se-show-call-times')?.addEventListener('change', e => {
+      sh.show_call_times = e.target.checked
       refreshDates()
       save()
     })
