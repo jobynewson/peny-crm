@@ -2173,9 +2173,6 @@ export class ProjectsView {
       const date = firstDate?.date ? String(firstDate.date).split('T')[0] : ''
       if (!date) { this.app.toast('Add a shoot date first'); return }
       if (!addrVal && !locName) { this.app.toast('Enter a location first'); return }
-      const today = new Date(); today.setHours(0,0,0,0)
-      const daysAway = Math.round((new Date(date) - today) / 864e5)
-      if (daysAway > 16) { this.app.toast(`Weather forecasts are only available up to 16 days in advance — your shoot is ${daysAway} days away`); return }
       btn.disabled = true; btn.textContent = 'Fetching…'
       try {
         let resolvedAddr = addrVal
@@ -2203,7 +2200,7 @@ export class ProjectsView {
         if (!lat) { this.app.toast('Could not find location'); btn.disabled=false; btn.textContent='🌤 Fetch'; return }
         const wx = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max,weathercode&timezone=auto&start_date=${date}&end_date=${date}`).then(r=>r.json())
         const d = wx.daily
-        if (!d || !d.weathercode) { this.app.toast('No weather data for that date/location'); btn.disabled=false; btn.textContent='🌤 Fetch'; return }
+        if (!d || !d.weathercode) { this.app.toast('No forecast available — weather data is only accessible up to 16 days in advance'); btn.disabled=false; btn.textContent='🌤 Fetch'; return }
         const codeDesc = { 0:'Clear', 1:'Mainly clear', 2:'Partly cloudy', 3:'Overcast', 45:'Fog', 48:'Fog', 51:'Light drizzle', 53:'Drizzle', 55:'Heavy drizzle', 61:'Light rain', 63:'Rain', 65:'Heavy rain', 71:'Light snow', 73:'Snow', 75:'Heavy snow', 80:'Rain showers', 81:'Rain showers', 82:'Heavy rain showers', 95:'Thunderstorm' }
         const txt = `${codeDesc[d.weathercode[0]]||'Mixed'} · ${Math.round(d.temperature_2m_min[0])}–${Math.round(d.temperature_2m_max[0])}°C · Wind ${Math.round(d.windspeed_10m_max[0])}km/h · Rain ${d.precipitation_probability_max[0]}%`
         overlay.querySelector('#se-weather').value = txt
