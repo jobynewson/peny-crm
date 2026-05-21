@@ -1562,15 +1562,15 @@ export class ProjectsView {
   _shootLocHTML(l, i, sh) {
     const dates = sh ? (Array.isArray(sh.shoot_dates) ? sh.shoot_dates.filter(d => d.date) : []) : []
     const fmtDateShort = d => new Date(d).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})
-    const dateSelect = dates.length > 1 ? `<select class="bl-in" data-loc-field="${i},date" style="font-size:12px;padding:5px 8px;width:130px;flex-shrink:0">
-        <option value="">All days</option>
+    const dateSelect = dates.length > 1 ? `<select class="bl-in" data-loc-field="${i},date" style="font-size:12px;padding:5px 8px;width:110px;flex-shrink:0">
+        <option value="">Every day</option>
         ${dates.map(d => `<option value="${d.date}" ${l.date===d.date?'selected':''}>${esc(fmtDateShort(d.date))}</option>`).join('')}
       </select>` : ''
     return `<div class="se-loc-row" style="border:1px solid var(--border-med);border-radius:var(--radius-md);padding:10px;margin-bottom:8px;background:var(--bg-secondary)" data-loc-idx="${i}">
       <div style="display:flex;gap:6px;margin-bottom:6px;align-items:center">
-        ${dateSelect}
         <input type="text" class="bl-in w" value="${esc(l.name||'')}" placeholder="Location name" data-loc-field="${i},name" style="flex:1;font-size:12px;padding:5px 8px" />
-        <input type="time" class="bl-in w" value="${esc(l.move_time||'')}" placeholder="Move time" data-loc-field="${i},move_time" style="width:90px;font-size:12px;padding:5px 8px" />
+        ${dateSelect}
+        <input type="time" class="bl-in" value="${esc(l.move_time||'')}" placeholder="Move time" data-loc-field="${i},move_time" style="width:90px;font-size:12px;padding:5px 8px;flex-shrink:0" />
         <button class="row-btn" style="color:#c03020" data-loc-rem="${i}">×</button>
       </div>
       <input type="text" class="bl-in w" value="${esc(l.address||'')}" placeholder="Address" data-loc-field="${i},address" style="width:100%;font-size:12px;padding:5px 8px;margin-bottom:6px" />
@@ -2173,6 +2173,9 @@ export class ProjectsView {
       const date = firstDate?.date ? String(firstDate.date).split('T')[0] : ''
       if (!date) { this.app.toast('Add a shoot date first'); return }
       if (!addrVal && !locName) { this.app.toast('Enter a location first'); return }
+      const today = new Date(); today.setHours(0,0,0,0)
+      const daysAway = Math.round((new Date(date) - today) / 864e5)
+      if (daysAway > 16) { this.app.toast(`Weather forecasts are only available up to 16 days in advance — your shoot is ${daysAway} days away`); return }
       btn.disabled = true; btn.textContent = 'Fetching…'
       try {
         let resolvedAddr = addrVal
