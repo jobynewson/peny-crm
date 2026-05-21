@@ -2,19 +2,20 @@
 // Public endpoint — no authentication required
 // GET  /api/track?token=xxx  → returns project info, crew, trackable lines, entries
 // POST /api/track             → submits a time entry
+// Note: no CORS headers — track.html is served same-origin from Vercel
 
 import { neon } from '@neondatabase/serverless'
+import { isRateLimited, getClientIp } from './_ratelimit.js'
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   if (req.method === 'OPTIONS') return res.status(200).end()
 
+  const ip = getClientIp(req)
   const sql = neon(process.env.VITE_DATABASE_URL)
 
   // ── GET ───────────────────────────────────────────────────────────────────
   if (req.method === 'GET') {
+    if (isRateLimited(ip, { max: 60 })) return res.status(429).json({ error: 'Too many requests' })
     const { token } = req.query
     if (!token) return res.status(400).json({ error: 'Token required' })
 
@@ -107,6 +108,7 @@ export default async function handler(req, res) {
 
   // ── POST ──────────────────────────────────────────────────────────────────
   if (req.method === 'POST') {
+    if (isRateLimited(ip, { max: 20 })) return res.status(429).json({ error: 'Too many requests' })
     const { token, crewName, lineLabel, hours, date, note, budgetId } = req.body
 
     if (!token) return res.status(400).json({ error: 'Token required' })

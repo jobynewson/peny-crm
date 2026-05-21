@@ -1,6 +1,7 @@
 // api/callsheet.js
 // Public endpoint — GET /api/callsheet?token=SHOOT_TOKEN&crew=CREW_TOKEN
 import { neon } from '@neondatabase/serverless'
+import { isRateLimited, getClientIp } from './_ratelimit.js'
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -8,6 +9,10 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
+
+  if (isRateLimited(getClientIp(req))) {
+    return res.status(429).json({ error: 'Too many requests' })
+  }
 
   const { token, crew: crewToken } = req.query
   if (!token) return res.status(400).json({ error: 'Token required' })
@@ -105,7 +110,7 @@ export default async function handler(req, res) {
     client:  sh.first_name ? { name: projectClientName, company: sh.company } : null,
     studio:  { name: sh.studio_name, address: sh.studio_address },
     thisCrew,
-    crew,
+    crew: crew.map(({ crew_token: _, ...c }) => c),
     schedule,
     locations,
   })
