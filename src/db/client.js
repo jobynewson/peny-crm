@@ -381,7 +381,7 @@ export async function getCallSheet(id) {
 }
 export async function createCallSheet(userId, projectId, data) {
   const { sql } = await import('drizzle-orm')
-  const token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
+  const token = crypto.randomUUID().replace(/-/g, '')
   const [sheet] = await db.execute(sql`
     INSERT INTO call_sheets (project_id, user_id, sheet_date, status, general_call,
       location_name, location_address, location_map_link, weather_text, notes, sheet_token, hotels)
@@ -431,7 +431,7 @@ export async function saveCallSheetCrew(callSheetId, crewRows) {
   await db.execute(sql`DELETE FROM call_sheet_crew WHERE call_sheet_id = ${callSheetId}`)
   for (let i = 0; i < crewRows.length; i++) {
     const c = crewRows[i]
-    const token = c.crew_token || (Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2))
+    const token = c.crew_token || crypto.randomUUID().replace(/-/g, '')
     await db.execute(sql`
       INSERT INTO call_sheet_crew (call_sheet_id, name, crew_type, role, department, phone, call_time, crew_token, sort_order)
       VALUES (${callSheetId}, ${c.name||''}, ${c.crew_type||'crew'}, ${c.role||null}, ${c.department||null}, ${c.phone||null}, ${c.call_time||null}, ${token}, ${i})
@@ -499,7 +499,7 @@ export async function getShoot(id) {
 }
 export async function createShoot(userId, projectId, data) {
   const { sql } = await import('drizzle-orm')
-  const token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
+  const token = crypto.randomUUID().replace(/-/g, '')
   const [shoot] = await db.execute(sql`
     INSERT INTO shoots (
       project_id, user_id, name, shoot_date, status, shoot_token,
