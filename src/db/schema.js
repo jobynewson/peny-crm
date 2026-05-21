@@ -373,6 +373,45 @@ export const story_plans = pgTable('story_plans', {
   ...timestamps,
 })
 
+// ── Team Calendar Entries ─────────────────────────────────────────────────────
+export const team_calendar_entries = pgTable('team_calendar_entries', {
+  id:           uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id:      text('user_id').notNull(),
+  assignee_id:  uuid('assignee_id').notNull().references(() => app_users.id, { onDelete: 'cascade' }),
+  entry_date:   date('entry_date').notNull(),
+  entry_type:   text('entry_type').notNull().default('other'),
+  label:        text('label').notNull(),
+  color:        text('color'),
+  project_id:   uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
+  shoot_id:     uuid('shoot_id').references(() => shoots.id, { onDelete: 'set null' }),
+  pps_phase_id: uuid('pps_phase_id'),
+  budget_id:    uuid('budget_id').references(() => budgets.id, { onDelete: 'set null' }),
+  line_label:   text('line_label'),
+  notes:        text('notes'),
+  ...timestamps,
+})
+
+// ── Post Production Schedules ─────────────────────────────────────────────────
+export const post_production_schedules = pgTable('post_production_schedules', {
+  id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id:    text('user_id').notNull(),
+  project_id: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  ...timestamps,
+})
+
+// ── PPS Phases ────────────────────────────────────────────────────────────────
+export const pps_phases = pgTable('pps_phases', {
+  id:             uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  schedule_id:    uuid('schedule_id').notNull().references(() => post_production_schedules.id, { onDelete: 'cascade' }),
+  name:           text('name').notNull(),
+  start_date:     date('start_date'),
+  end_date:       date('end_date'),
+  color:          text('color').notNull().default('#C47E3A'),
+  show_in_portal: boolean('show_in_portal').notNull().default(false),
+  sort_order:     integer('sort_order').notNull().default(0),
+  ...timestamps,
+})
+
 // ── Credentials (password manager) ───────────────────────────────────────────
 export const credentials = pgTable('credentials', {
   id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),

@@ -3,7 +3,7 @@ import { initAuth, getCurrentUserId, signOut } from './auth/clerk.js'
 import {
   getContacts, getProjects, getBudgets, getSettings,
   getOrCreateAppUser, getOrCreateWorkspace, resolvePermissions, getAllAppUsers,
-  getSocialPosts, getMarketingCards, runMigrations,
+  getSocialPosts, getMarketingCards, runMigrations, getTeamCalendarEntries,
 } from './db/client.js'
 
 async function bootstrap() {
@@ -35,7 +35,7 @@ async function bootstrap() {
   await runMigrations()
 
   // 4. Load all shared workspace data in parallel
-  const [contactsData, projectsData, budgetsData, settingsData, allUsersData, socialPostsData, marketingCardsData] = await Promise.all([
+  const [contactsData, projectsData, budgetsData, settingsData, allUsersData, socialPostsData, marketingCardsData, teamCalendarData] = await Promise.all([
     getContacts(workspaceId),
     getProjects(workspaceId),
     getBudgets(workspaceId),
@@ -43,6 +43,7 @@ async function bootstrap() {
     getAllAppUsers(),
     getSocialPosts(workspaceId).catch(() => []),
     getMarketingCards(workspaceId).catch(() => []),
+    getTeamCalendarEntries(workspaceId).catch(() => []),
   ])
 
   const { App } = await import('./app.js')
@@ -52,13 +53,14 @@ async function bootstrap() {
     user,
     appUser,
     permissions,
-    contacts:        contactsData,
-    projects:        projectsData,
-    budgets:         budgetsData,
-    settings:        settingsData,
-    allUsers:        allUsersData,
-    socialPosts:     socialPostsData,
-    marketingCards:  marketingCardsData,
+    contacts:              contactsData,
+    projects:              projectsData,
+    budgets:               budgetsData,
+    settings:              settingsData,
+    allUsers:              allUsersData,
+    socialPosts:           socialPostsData,
+    marketingCards:        marketingCardsData,
+    teamCalendarEntries:   teamCalendarData,
     onSignOut: signOut,
   })
 
