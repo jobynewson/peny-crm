@@ -2352,9 +2352,11 @@ export class ProjectsView {
     if (hadOne && !confirm('This will replace the existing risk assessment. Continue?')) return
     btn.disabled = true; btn.textContent = '✨ Generating…'
     try {
+      const { getAuthToken } = await import('../auth/clerk.js')
+      const authToken = await getAuthToken()
       const res = await fetch('/api/generate-ra', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
         body: JSON.stringify({ shoot_id: sh.id }),
       })
       if (!res.ok) throw new Error(await res.text())

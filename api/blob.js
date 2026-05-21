@@ -5,11 +5,24 @@
 //   GET    /api/blob?url=<blobUrl>  — proxy private blob for <img> tags
 
 import { put, del } from '@vercel/blob'
+import { createClerkClient } from '@clerk/backend'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+}
+
+async function requireAuth(req, res) {
+  const raw = req.headers.authorization?.replace('Bearer ', '').trim()
+  if (!raw) { res.status(401).json({ error: 'Unauthorised' }); return null }
+  try {
+    const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY })
+    const payload = await clerk.verifyToken(raw)
+    return payload.sub
+  } catch {
+    res.status(401).json({ error: 'Invalid session token' }); return null
+  }
 }
 
 export default async function handler(req, res) {
@@ -42,6 +55,8 @@ export default async function handler(req, res) {
 
   // ── POST: upload image, returns { url } ────────────────────────────────────
   if (req.method === 'POST') {
+    const userId = await requireAuth(req, res)
+    if (!userId) return
     const { base64, filename, contentType, projectId } = req.body
     if (!base64 || !filename || !contentType) {
       return res.status(400).json({ error: 'Missing required fields: base64, filename, contentType' })
@@ -60,6 +75,8 @@ export default async function handler(req, res) {
 
   // ── DELETE: remove blob ────────────────────────────────────────────────────
   if (req.method === 'DELETE') {
+    const userId = await requireAuth(req, res)
+    if (!userId) return
     const { url } = req.query
     if (!url) return res.status(400).json({ error: 'Missing required query param: url' })
     try {

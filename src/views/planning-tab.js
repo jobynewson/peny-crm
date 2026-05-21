@@ -173,8 +173,10 @@ export function bindPlanningTab(mc, p, userId) {
 
         // Fire-and-forget blob cleanup (don't block UI on failure)
         if (card?.type === 'image' && card.url) {
-          fetch(`/api/blob?url=${encodeURIComponent(card.url)}`, { method: 'DELETE' })
-            .catch(e => console.warn('Blob cleanup failed:', e))
+          const { getAuthToken } = await import('../auth/clerk.js')
+          getAuthToken().then(t => fetch(`/api/blob?url=${encodeURIComponent(card.url)}`, {
+            method: 'DELETE', headers: { 'Authorization': `Bearer ${t}` },
+          })).catch(e => console.warn('Blob cleanup failed:', e))
         }
 
         p.planning_cards = getCards().filter(c => c.id !== id)
@@ -280,9 +282,11 @@ export function bindPlanningTab(mc, p, userId) {
         img.src = objectUrl
       })
 
+      const { getAuthToken } = await import('../auth/clerk.js')
+      const authToken = await getAuthToken()
       const res = await fetch('/api/blob', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
         body: JSON.stringify({
           base64,
           filename: file.name.replace(/\.[^.]+$/, '.jpg'),

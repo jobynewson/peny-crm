@@ -39,6 +39,13 @@ export function getCurrentUserId() {
   return clerk.user?.id ?? null
 }
 
+// Returns a Bearer token string for authenticating API requests
+export async function getAuthToken() {
+  const token = await clerk.session?.getToken()
+  if (!token) throw new Error('No active session')
+  return token
+}
+
 // Sign out and reload
 export async function signOut() {
   await clerk.signOut()

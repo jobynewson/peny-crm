@@ -379,9 +379,11 @@ export class StoryPlannerView {
           img.onerror = rej
           img.src = objUrl
         })
+        const { getAuthToken } = await import('../auth/clerk.js')
+        const authToken = await getAuthToken()
         const resp = await fetch('/api/blob', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
           body: JSON.stringify({
             base64,
             filename: (file.name || 'image').replace(/\.[^.]+$/, '.jpg'),
@@ -468,7 +470,9 @@ export class StoryPlannerView {
 
       overlay.querySelector('#bm-img-remove')?.addEventListener('click', () => {
         if (imageUrl?.includes('.blob.vercel-storage.com')) {
-          fetch(`/api/blob?url=${encodeURIComponent(imageUrl)}`, { method: 'DELETE' }).catch(() => {})
+          import('../auth/clerk.js').then(({ getAuthToken }) => getAuthToken()).then(t =>
+            fetch(`/api/blob?url=${encodeURIComponent(imageUrl)}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${t}` } })
+          ).catch(() => {})
         }
         imageUrl = null
         renderModal()
@@ -559,7 +563,9 @@ export class StoryPlannerView {
   async _deleteBlock(mc, blockId) {
     const block = (this.plan.blocks || []).find(b => b.id === blockId)
     if (block?.image_url?.includes('.blob.vercel-storage.com')) {
-      fetch(`/api/blob?url=${encodeURIComponent(block.image_url)}`, { method: 'DELETE' }).catch(() => {})
+      import('../auth/clerk.js').then(({ getAuthToken }) => getAuthToken()).then(t =>
+        fetch(`/api/blob?url=${encodeURIComponent(block.image_url)}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${t}` } })
+      ).catch(() => {})
     }
     this.plan.blocks = (this.plan.blocks || []).filter(b => b.id !== blockId)
     await this._savePlan()
