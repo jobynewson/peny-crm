@@ -7,6 +7,8 @@ export class TeamCalendarView {
     this.app = app
     this._expanded  = localStorage.getItem('tc-expanded') !== 'false'
     this._weekOffset = 0
+    this._monthOffset = 0      // full-page month view offset from the current month
+    this._mode = 'week'        // 'week' (dashboard section) | 'month' (full page)
     this._shootsCache = null   // lazily loaded
     this._ppsPhasesCache = null // lazily loaded — post production phases with an assignee
     this._clipboard = null     // { entry data for paste }
@@ -32,6 +34,70 @@ export class TeamCalendarView {
     })
   }
 
+  // First day of the month currently shown in the full-page view.
+  _getMonthBase() {
+    const d = new Date()
+    d.setDate(1)
+    d.setMonth(d.getMonth() + this._monthOffset)
+    d.setHours(0, 0, 0, 0)
+    return d
+  }
+
+  _getMonthDays() {
+    const base = this._getMonthBase()
+    const month = base.getMonth()
+    const days = []
+    const d = new Date(base)
+    while (d.getMonth() === month) { days.push(new Date(d)); d.setDate(d.getDate() + 1) }
+    return days
+  }
+
+  // Days currently driving the grid — depends on whether we're the dashboard
+  // week section or the full-page month view.
+  _activeDays() {
+    return this._mode === 'month'
+      ? this._getMonthDays()
+      : this._getWeekDays(this._getWeekStart())
+  }
+
+  // ── Full-page month view (left-nav "Calendar") ────────────────────────────────
+
+  renderFullPage(container) {
+    this._mode = 'month'
+    const section = document.createElement('div')
+    section.id = 'tc-section'
+    container.innerHTML = ''
+    container.appendChild(section)
+    this._renderFullPage(section)
+  }
+
+  _renderFullPage(section) {
+    this._mode = 'month'
+    const base  = this._getMonthBase()
+    const label = base.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+    const navBtn = 'background:var(--bg-secondary);border:1px solid var(--border-med);border-radius:var(--radius-md);padding:5px 11px;cursor:pointer;font-size:14px;color:var(--text-secondary);font-family:var(--font);line-height:1.2'
+
+    section.innerHTML = `
+      <div style="padding:18px 22px;max-width:1500px;margin:0 auto">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:6px">
+            <button id="tc-fp-prev"  style="${navBtn}" title="Previous month">‹</button>
+            <button id="tc-fp-today" style="${navBtn};font-size:12px">Today</button>
+            <button id="tc-fp-next"  style="${navBtn}" title="Next month">›</button>
+          </div>
+          <div id="tc-fp-month" style="font-size:18px;font-weight:600;color:var(--text-primary)">${esc(label)}</div>
+        </div>
+        <div id="tc-grid-wrap"><div style="font-size:12px;color:var(--text-tertiary);padding:8px 0">Loading…</div></div>
+      </div>`
+
+    section.querySelector('#tc-fp-prev')?.addEventListener('click',  () => { this._monthOffset--; this._renderFullPage(section) })
+    section.querySelector('#tc-fp-next')?.addEventListener('click',  () => { this._monthOffset++; this._renderFullPage(section) })
+    section.querySelector('#tc-fp-today')?.addEventListener('click', () => { this._monthOffset = 0; this._renderFullPage(section) })
+
+    this._loadAndRenderGrid(section)
+    this._bindClipboardEscape()
+  }
+
   _dateKey(d) {
     const y = d.getFullYear()
     const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -48,6 +114,7 @@ export class TeamCalendarView {
   // ── Dashboard section ─────────────────────────────────────────────────────────
 
   renderDashboardSection(container) {
+    this._mode = 'week'
     let section = container.querySelector('#tc-section')
     if (!section) {
       section = document.createElement('div')
@@ -128,8 +195,7 @@ export class TeamCalendarView {
     }
 
     const users   = this.app.allUsers || []
-    const weekStart = this._getWeekStart()
-    const days    = this._getWeekDays(weekStart)
+    const days    = this._activeDays()
     const entries = this.app.teamCalendarEntries || []
 
     gridWrap.innerHTML = this._renderGrid(days, users, entries)
@@ -359,24 +425,24 @@ export class TeamCalendarView {
       if (this._expanded) this._loadAndRenderGrid(section)
     })
     if (this._expanded) this._loadAndRenderGrid(section)
+    this._bindClipboardEscape()
+  }
 
-    // Escape clears clipboard
-    if (!this._escBound) {
-      this._escBound = true
-      document.addEventListener('keydown', e => {
-        if (e.key === 'Escape' && this._clipboard) {
-          this._clipboard = null
-          const gw = document.querySelector('#tc-grid-wrap')
-          if (gw) { const s = document.querySelector('#tc-section'); if (s) { gw.innerHTML = this._renderGrid(this._lastDays || [], this.app.allUsers || [], this.app.teamCalendarEntries || []); this._bindGrid(gw, s) } }
-        }
-      })
-    }
+  // Escape clears a copied entry (paste mode). Bound once, globally.
+  _bindClipboardEscape() {
+    if (this._escBound) return
+    this._escBound = true
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && this._clipboard) {
+        this._clipboard = null
+        const gw = document.querySelector('#tc-grid-wrap')
+        if (gw) { const s = document.querySelector('#tc-section'); if (s) { gw.innerHTML = this._renderGrid(this._activeDays(), this.app.allUsers || [], this.app.teamCalendarEntries || []); this._bindGrid(gw, s) } }
+      }
+    })
   }
 
   _bindGrid(gridWrap, section) {
-    const users = this.app.allUsers || []
-    const weekStart = this._getWeekStart()
-    this._lastDays = this._getWeekDays(weekStart)
+    this._lastDays = this._activeDays()
 
     // ── Cell: click to add, drag-over highlight ──
     gridWrap.querySelectorAll('.tc-cell').forEach(cell => {
@@ -560,11 +626,11 @@ export class TeamCalendarView {
   _refreshGrid(section) {
     const gw = section.querySelector('#tc-grid-wrap')
     if (!gw) return
-    const days = this._getWeekDays(this._getWeekStart())
+    const days = this._activeDays()
     gw.innerHTML = this._renderGrid(days, this.app.allUsers || [], this.app.teamCalendarEntries || [])
     this._bindGrid(gw, section)
-    // Update header count
-    this._updateHeaderCount(section, days)
+    // Update header count (dashboard week section only)
+    if (this._mode !== 'month') this._updateHeaderCount(section, days)
   }
 
   _updateHeaderCount(section, days) {

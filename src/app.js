@@ -47,8 +47,23 @@ export class App {
     this._restoreFromHash()   // parse URL before first render
     this.render()
     this._bindKeyboard()
+    this._bindDateRangeLinks()
     // Handle browser back/forward
     window.addEventListener('popstate', (e) => this._handlePopState(e))
+  }
+
+  // When a start date in a range changes, keep its paired end date in step so the
+  // end picker always opens on the start's month (no accidental May-vs-June slips).
+  // An end input opts in via data-range-start="<start-input-id>".
+  _bindDateRangeLinks() {
+    document.addEventListener('change', e => {
+      const start = e.target
+      if (!(start instanceof HTMLInputElement) || start.type !== 'date' || !start.id || !start.value) return
+      const end = document.querySelector(`input[type="date"][data-range-start="${CSS.escape(start.id)}"]`)
+      if (!end) return
+      end.min = start.value
+      if (!end.value || end.value < start.value) end.value = start.value
+    })
   }
 
   async _openDevRequest() {
@@ -279,6 +294,13 @@ export class App {
 
   _bindKeyboard() {
     document.addEventListener('keydown', e => {
+      // Escape closes any open floating modal/dialog first — even while a field
+      // inside it is focused — so it never falls through to "go back".
+      if (e.key === 'Escape') {
+        const floatingModal = document.querySelector('#tc-modal, #pps-block-modal, #pps-col-modal, #dev-req-overlay, #shortcut-overlay')
+        if (floatingModal) { floatingModal.remove(); return }
+      }
+
       // Don't fire shortcuts when typing in an input/textarea/select
       const tag = document.activeElement?.tagName
       if (['INPUT','TEXTAREA','SELECT'].includes(tag)) {
@@ -354,7 +376,7 @@ export class App {
       <div class="sidebar" id="app-sidebar">
         <div class="logo"><img src="/slate-logo.png" alt="Slate" /></div>
         <div class="nav-label">Main</div>
-        ${[['dashboard','Dashboard',this.iconPipeline()],['contacts','Contacts',this.iconContacts()],['projects','Projects',this.iconProjects()],['budgets','Budgets',this.iconBudgets()],['marketing','Marketing',this.iconMarketing()],['story-planner','Story Planner',this.iconStoryPlanner()]].map(([id,label,icon])=>`
+        ${[['dashboard','Dashboard',this.iconPipeline()],['calendar','Calendar',this.iconCalendar()],['contacts','Contacts',this.iconContacts()],['projects','Projects',this.iconProjects()],['budgets','Budgets',this.iconBudgets()],['marketing','Marketing',this.iconMarketing()],['story-planner','Story Planner',this.iconStoryPlanner()]].map(([id,label,icon])=>`
           <div class="nav-item ${this.currentView===id?'active':''}" data-view="${id}">${icon} ${label}</div>`).join('')}
         <div class="sidebar-notes">
           <div class="sidebar-notes-header">
@@ -544,7 +566,7 @@ export class App {
     if (!hash) return
     const parts = hash.split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','marketing','timetrack','story-planner','password-manager']
+    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager']
     if (!validViews.includes(view)) return
     this.currentView = view
     if (view === 'projects' && id) {
@@ -564,7 +586,7 @@ export class App {
     const hash = location.hash.slice(1)
     const parts = (hash || 'dashboard').split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','marketing','timetrack','story-planner','password-manager']
+    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager']
     if (!validViews.includes(view)) { this.currentView = 'dashboard'; this.render(); return }
 
     this.currentView = view
@@ -600,6 +622,8 @@ export class App {
       this.timeTrackView.render(mc)
     } else if (this.currentView === 'password-manager') {
       this.passwordManagerView.render(mc)
+    } else if (this.currentView === 'calendar') {
+      this.teamCalendarView.renderFullPage(mc)
     } else if (this.currentView === 'dashboard') {
       this.renderDashboard(mc)
     } else {
@@ -610,7 +634,7 @@ export class App {
   viewTitle() {
     if (this.currentView === 'projects' && this.projectsView?.currentId) return this.projects.find(p=>p.id===this.projectsView.currentId)?.name ?? 'Project'
     if (this.currentView === 'budgets'  && this.budgetsView?.currentId)  return this.budgets.find(b=>b.id===this.budgetsView.currentId)?.name  ?? 'Budget'
-    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',settings:'Settings',marketing:'Marketing',timetrack:'Time tracker','story-planner':'Story Planner','password-manager':'Passwords'}[this.currentView] ?? ''
+    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',calendar:'Team Calendar',settings:'Settings',marketing:'Marketing',timetrack:'Time tracker','story-planner':'Story Planner','password-manager':'Passwords'}[this.currentView] ?? ''
   }
 
   updateTitle() {
@@ -2846,6 +2870,7 @@ export class App {
   iconProjects() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 6h6M5 9h4"/></svg>` }
   iconBudgets()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 3h12v2H2zM2 7h9M2 11h7"/><circle cx="13" cy="11" r="2.2"/><path d="M13 9.8v1l.7.7"/></svg>` }
   iconPipeline() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1" y="4" width="4" height="9" rx="1"/><rect x="6" y="6" width="4" height="7" rx="1"/><rect x="11" y="8" width="4" height="5" rx="1"/></svg>` }
+  iconCalendar() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="3" width="13" height="11.5" rx="1.5"/><path d="M1.5 6.5h13M5 1.5v3M11 1.5v3"/></svg>` }
   iconStoryPlanner() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="2" width="13" height="3.5" rx="0.8"/><rect x="1.5" y="6.5" width="13" height="3.5" rx="0.8"/><rect x="1.5" y="11" width="8" height="3.5" rx="0.8"/></svg>` }
   iconSettings() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M11.4 4.6l-1.4 1.4M4.6 11.4l-1.4 1.4"/></svg>` }
   iconPasswordManager() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/><circle cx="8" cy="11" r="1" fill="currentColor" stroke="none"/></svg>` }
