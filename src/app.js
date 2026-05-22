@@ -991,10 +991,6 @@ export class App {
     if (this._dbEnqOpen === undefined) {
       this._dbEnqOpen = localStorage.getItem('db_enq_open') !== 'false'
     }
-    if (this._dbUpcomingOpen === undefined) {
-      this._dbUpcomingOpen = localStorage.getItem('db_upcoming_open') !== 'false'
-    }
-
     // --- Compute upcoming deliverables (due within 7 days, not done) ---
     const today = new Date(); today.setHours(0,0,0,0)
     const sevenDaysLater = new Date(today); sevenDaysLater.setDate(sevenDaysLater.getDate() + 7); sevenDaysLater.setHours(23,59,59,999)
@@ -1016,6 +1012,32 @@ export class App {
       }
     }
     upcomingDeliverables.sort((a, b) => a.due - b.due)
+
+    // --- Compute edit deadlines coming due (within 14 days) from TC entries + PPS blocks ---
+    const dStr = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+    const fourteenDaysLater = new Date(today); fourteenDaysLater.setDate(today.getDate() + 14)
+    // PPS phases (shared cache with the team calendar view) surface block-level deadlines
+    let ppsPhasesForDash = this.teamCalendarView?._ppsPhasesCache
+    if (!ppsPhasesForDash) {
+      try {
+        const { getPpsPhasesForCalendar } = await import('./db/client.js')
+        ppsPhasesForDash = await getPpsPhasesForCalendar(this.userId)
+        if (this.teamCalendarView) this.teamCalendarView._ppsPhasesCache = ppsPhasesForDash
+      } catch (e) { console.error(e); ppsPhasesForDash = [] }
+    }
+    const ppsDeadlines = []
+    for (const ph of (ppsPhasesForDash || [])) {
+      for (const b of (Array.isArray(ph.blocks) ? ph.blocks : [])) {
+        if (b.is_deadline && b.end_date) {
+          ppsDeadlines.push({ date: b.end_date, label: `${ph.project_name ? ph.project_name + ' — ' : ''}${b.title || ph.name}`, assignee_id: b.assignee_id })
+        }
+      }
+    }
+    const editDeadlines = [
+      ...(this.teamCalendarEntries || []).filter(e => e.is_deadline).map(e => ({ date: e.end_date || e.entry_date, label: e.label, assignee_id: e.assignee_id })),
+      ...ppsDeadlines,
+    ].filter(e => e.date && e.date <= dStr(fourteenDaysLater))
+     .sort((a, b) => a.date.localeCompare(b.date))
 
     const renderComment = (c, pid) => {
       const ini = initials(c.author_name || 'Unknown')
@@ -1141,42 +1163,6 @@ export class App {
           : `<div style="color:var(--text-tertiary);font-size:13px;padding:12px 0 4px">No live projects yet.</div>`}
       </div>
 
-      <!-- Upcoming Deliverables -->
-      ${upcomingDeliverables.length ? `
-      <div style="margin-bottom:28px">
-        <div class="db-section-head db-upcoming-toggle" id="db-upcoming-toggle" style="cursor:pointer;user-select:none">
-          <span class="db-section-dot" style="background:#ef4444"></span>
-          Upcoming Deliverables
-          <span class="db-section-count">${upcomingDeliverables.length}</span>
-          <span class="db-chevron${this._dbUpcomingOpen ? ' db-chevron--open' : ''}" style="margin-left:auto" id="db-upcoming-chevron">▶</span>
-        </div>
-        <div id="db-upcoming-body" style="display:${this._dbUpcomingOpen ? 'block' : 'none'}">
-          <div class="db-proj-list">
-            ${upcomingDeliverables.map(({ d, p, due, idx, src }) => {
-              const daysUntil = Math.round((due - today) / 86400000)
-              const overdue = daysUntil < 0
-              const dueToday = daysUntil === 0
-              const duePill = overdue
-                ? `<span class="db-due-pill db-due-pill--overdue">${Math.abs(daysUntil)}d overdue</span>`
-                : dueToday
-                  ? `<span class="db-due-pill db-due-pill--today">Today</span>`
-                  : `<span class="db-due-pill">${daysUntil}d</span>`
-              const dueDateStr = due.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-              return `<div class="db-proj-row db-upcoming-row" style="cursor:default">
-                <div class="db-proj-header" style="cursor:default;gap:10px">
-                  <input type="checkbox" class="db-deliv-check" data-deliv-pid="${p.id}" data-deliv-idx="${idx}" data-deliv-src="${src}" style="cursor:pointer;flex-shrink:0;width:15px;height:15px" />
-                  ${duePill}
-                  <span style="font-size:11px;color:var(--text-tertiary);white-space:nowrap;flex-shrink:0">${dueDateStr}</span>
-                  <span class="db-proj-name-label" style="flex:2">${esc(d.text)}</span>
-                  <span class="db-proj-client-label" style="font-size:11px">${esc(p.name)}</span>
-                  <button class="db-action-link" style="font-size:11px;padding:3px 8px;flex-shrink:0" data-open-pid="${p.id}">Open ↗</button>
-                </div>
-              </div>`
-            }).join('')}
-          </div>
-        </div>
-      </div>` : ''}
-
       <!-- Enquiries -->
       <div style="margin-bottom:28px">
         <div class="db-section-head db-enq-toggle" id="db-enq-toggle" style="cursor:pointer;user-select:none">
@@ -1211,121 +1197,158 @@ export class App {
         </div>
       </div>
 
-      <!-- Retainers + Social Calendar row -->
-      <div style="display:flex;gap:20px;margin-bottom:28px;align-items:flex-start">
+      <!-- 4-column row: Marketing Tasks | Deliverables | Edit Deadlines | Retainers -->
+      ${(() => {
+        const todayMs = today.getTime()
+        const sevenDaysMs = sevenDaysLater.getTime()
+        const myTasks = []
+        for (const card of (this.marketingCards || [])) {
+          for (const st of (card.sub_tasks || [])) {
+            if (st.done || !st.due_date || st.owner_id !== this.clerkUserId) continue
+            const dueMs = new Date(st.due_date + 'T00:00:00').getTime()
+            if (dueMs <= sevenDaysMs) myTasks.push({ st, card, dueMs })
+          }
+        }
+        myTasks.sort((a, b) => a.dueMs - b.dueMs)
 
-        <!-- Retainers -->
-        ${retainers.length ? `
-        <div style="flex:1;min-width:0">
-          <div class="db-section-head">
-            <span class="db-section-dot" style="background:#a78bfa"></span>
-            Retainers
-            <span class="db-section-count">${retainers.length}</span>
-          </div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px" id="retainer-cards">
-            ${retainers.map(p => {
-              const cl = this.contacts.find(c => c.id === p.client_id)
-              const periodMult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}
-              const calcHours = (p.retainer_items||[]).reduce((s,i) => {
-                const mult = periodMult[i.period||'month']||1
-                return s + (i.unit==='hours' ? (parseFloat(i.qty)||0)*mult : (parseFloat(i.qty)||0)*8*mult)
-              }, 0)
-              const hours = calcHours || (parseFloat(p.retainer_hours)||0)
-              const calcFee = (p.retainer_items||[]).reduce((s,i) => {
-                const mult = periodMult[i.period||'month']||1
-                return s + (parseFloat(i.rate)||0)*(parseFloat(i.qty)||0)*mult
-              }, 0)
-              const fee = p.retainer_fee_mode==='calculated' ? calcFee : (parseFloat(p.retainer_fee)||0)
-              return `<div class="kanban-card" style="border-left:3px solid #a78bfa;cursor:default" data-retainer="${p.id}">
-                <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
-                  <div class="kanban-card-title" style="cursor:pointer" data-open-pid="${p.id}">${p.name}</div>
-                  ${fee ? `<div style="font-size:12px;font-weight:600;color:#a78bfa;white-space:nowrap;margin-left:8px">£${fee.toLocaleString('en-GB')}/mo</div>` : ''}
+        const duePillClass = ms => { const d = Math.round((ms - todayMs) / 86400000); return d < 0 ? 'db-due-pill--overdue' : d === 0 ? 'db-due-pill--today' : '' }
+        const dueLabel     = ms => { const d = Math.round((ms - todayMs) / 86400000); return d < 0 ? `${Math.abs(d)}d overdue` : d === 0 ? 'Today' : new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) }
+
+        const delivDuePill = due => {
+          const d = Math.round((due - today) / 86400000)
+          return d < 0 ? `<span class="db-due-pill db-due-pill--overdue">${Math.abs(d)}d overdue</span>`
+               : d === 0 ? `<span class="db-due-pill db-due-pill--today">Today</span>`
+               : `<span class="db-due-pill">${d}d</span>`
+        }
+
+        const deadlineDuePill = entry => {
+          const d = Math.round((new Date(entry.date + 'T00:00:00').getTime() - todayMs) / 86400000)
+          return d < 0 ? `<span class="db-due-pill db-due-pill--overdue">${Math.abs(d)}d overdue</span>`
+               : d === 0 ? `<span class="db-due-pill db-due-pill--today">Today</span>`
+               : `<span class="db-due-pill">${new Date(entry.date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>`
+        }
+
+        const retainerCards = retainers.map(p => {
+          const cl = this.contacts.find(c => c.id === p.client_id)
+          const periodMult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}
+          const calcHours = (p.retainer_items||[]).reduce((s,i) => { const mult = periodMult[i.period||'month']||1; return s + (i.unit==='hours' ? (parseFloat(i.qty)||0)*mult : (parseFloat(i.qty)||0)*8*mult) }, 0)
+          const hours = calcHours || (parseFloat(p.retainer_hours)||0)
+          const calcFee = (p.retainer_items||[]).reduce((s,i) => { const mult = periodMult[i.period||'month']||1; return s + (parseFloat(i.rate)||0)*(parseFloat(i.qty)||0)*mult }, 0)
+          const fee = p.retainer_fee_mode==='calculated' ? calcFee : (parseFloat(p.retainer_fee)||0)
+          return `<div class="kanban-card" style="border-left:3px solid #a78bfa;cursor:default" data-retainer="${p.id}">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
+              <div class="kanban-card-title" style="cursor:pointer" data-open-pid="${p.id}">${esc(p.name)}</div>
+              ${fee ? `<div style="font-size:12px;font-weight:600;color:#a78bfa;white-space:nowrap;margin-left:8px">£${fee.toLocaleString('en-GB')}/mo</div>` : ''}
+            </div>
+            <div class="kanban-card-client">${cl ? esc(cl.first_name+' '+cl.last_name) : 'No client'}</div>
+            ${(p.retainer_items||[]).length ? `
+              <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px" data-ret-items="${p.id}">
+                ${(p.retainer_items||[]).map((item,ii) => {
+                  const mult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}[item.period||'month']||1
+                  const allocH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
+                  return allocH ? `<div>
+                    <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px">
+                      <span style="color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">${esc(item.label)}</span>
+                      <span data-ret-item-label="${p.id}-${ii}" style="color:var(--text-secondary);white-space:nowrap">— / ${allocH}h</span>
+                    </div>
+                    <div style="height:4px;background:var(--bg-secondary);border-radius:2px;overflow:hidden">
+                      <div style="height:100%;width:0%;border-radius:2px;transition:width 0.3s" data-ret-item-bar="${p.id}-${ii}"></div>
+                    </div>
+                  </div>` : ''
+                }).join('')}
+                <div data-ret-alert="${p.id}" style="font-size:10px;margin-top:2px;display:none"></div>
+              </div>` : hours ? `
+              <div style="margin-top:8px">
+                <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px">
+                  <span style="color:var(--text-tertiary)">This month</span>
+                  <span style="color:var(--text-secondary)" data-ret-label="${p.id}">— / ${hours}h</span>
                 </div>
-                <div class="kanban-card-client">${cl ? cl.first_name+' '+cl.last_name : 'No client'}</div>
-                ${(p.retainer_items||[]).length ? `
-                  <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px" data-ret-items="${p.id}">
-                    ${(p.retainer_items||[]).map((item,ii) => {
-                      const mult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}[item.period||'month']||1
-                      const allocH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
-                      return allocH ? `
-                      <div>
-                        <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px">
-                          <span style="color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">${esc(item.label)}</span>
-                          <span data-ret-item-label="${p.id}-${ii}" style="color:var(--text-secondary);white-space:nowrap">— / ${allocH}h</span>
-                        </div>
-                        <div style="height:4px;background:var(--bg-secondary);border-radius:2px;overflow:hidden">
-                          <div style="height:100%;width:0%;border-radius:2px;transition:width 0.3s" data-ret-item-bar="${p.id}-${ii}"></div>
-                        </div>
-                      </div>` : ''
-                    }).join('')}
-                    <div data-ret-alert="${p.id}" style="font-size:10px;margin-top:2px;display:none"></div>
-                  </div>` : hours ? `
-                  <div style="margin-top:8px">
-                    <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px">
-                      <span style="color:var(--text-tertiary)">This month</span>
-                      <span style="color:var(--text-secondary)" data-ret-label="${p.id}">— / ${hours}h</span>
-                    </div>
-                    <div style="height:6px;background:var(--bg-secondary);border-radius:3px;overflow:hidden">
-                      <div style="height:100%;width:0%;border-radius:3px;transition:width 0.3s" data-ret-bar="${p.id}"></div>
-                    </div>
-                    <div data-ret-alert="${p.id}" style="font-size:10px;margin-top:4px;display:none"></div>
-                  </div>` : ''}
-              </div>`
-            }).join('')}
-          </div>
-        </div>` : ''}
+                <div style="height:6px;background:var(--bg-secondary);border-radius:3px;overflow:hidden">
+                  <div style="height:100%;width:0%;border-radius:3px;transition:width 0.3s" data-ret-bar="${p.id}"></div>
+                </div>
+                <div data-ret-alert="${p.id}" style="font-size:10px;margin-top:4px;display:none"></div>
+              </div>` : ''}
+          </div>`
+        }).join('')
 
-        <!-- Marketing Tasks Coming Due -->
-        ${(() => {
-          const todayMs = new Date().setHours(0,0,0,0)
-          const sevenDaysMs = todayMs + 7 * 86400000
-          const myTasks = []
-          for (const card of (this.marketingCards || [])) {
-            for (const st of (card.sub_tasks || [])) {
-              if (st.done || !st.due_date || st.owner_id !== this.clerkUserId) continue
-              const dueMs = new Date(st.due_date + 'T00:00:00').getTime()
-              if (dueMs <= sevenDaysMs) myTasks.push({ st, card, dueMs })
-            }
-          }
-          myTasks.sort((a, b) => a.dueMs - b.dueMs)
+        return `<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:20px;margin-bottom:28px;align-items:flex-start">
 
-          if (!myTasks.length) return ''
-
-          const duePillClass = (ms) => {
-            const d = Math.round((ms - todayMs) / 86400000)
-            if (d < 0) return 'db-due-pill--overdue'
-            if (d === 0) return 'db-due-pill--today'
-            return ''
-          }
-          const dueLabel = (ms) => {
-            const d = Math.round((ms - todayMs) / 86400000)
-            if (d < 0) return `${Math.abs(d)}d overdue`
-            if (d === 0) return 'Today'
-            return new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-          }
-
-          return `<div style="flex:1;min-width:0;max-width:420px">
+          <!-- Marketing Tasks -->
+          <div>
             <div class="db-section-head" style="justify-content:space-between">
               <div style="display:flex;align-items:center;gap:6px">
                 <span class="db-section-dot" style="background:#a78bfa"></span>
-                Marketing Tasks Coming Due
-                <span class="db-section-count">${myTasks.length}</span>
+                Marketing Tasks
+                ${myTasks.length ? `<span class="db-section-count">${myTasks.length}</span>` : ''}
               </div>
-              <button class="db-action-link" id="db-mkt-view-all" style="font-size:11px;padding:2px 8px;border:0.5px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-secondary)">View all ↗</button>
+              <button class="db-action-link" id="db-mkt-view-all" style="font-size:11px;padding:2px 8px;border:0.5px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-secondary)">All ↗</button>
             </div>
+            ${myTasks.length ? `
             <div class="db-proj-list" style="border-radius:var(--radius-md)">
               ${myTasks.map(({ st, card, dueMs }) => `
-              <div class="db-proj-row" style="display:flex;align-items:center;gap:8px;padding:9px 14px;min-height:unset">
+              <div class="db-proj-row" style="display:flex;align-items:center;gap:8px;padding:8px 12px;min-height:unset">
                 <span class="db-due-pill ${duePillClass(dueMs)}">${dueLabel(dueMs)}</span>
-                <span class="db-proj-name-label" style="flex:1">${esc(st.text)}</span>
-                <span class="db-proj-client-label" style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(card.title)}</span>
-                <button class="db-action-link db-mkt-open-card" data-card-id="${card.id}" style="font-size:11px;padding:2px 6px;flex-shrink:0">Open ↗</button>
+                <span class="db-proj-name-label" style="flex:1;font-size:12px">${esc(st.text)}</span>
+                <button class="db-action-link db-mkt-open-card" data-card-id="${card.id}" style="font-size:11px;padding:2px 6px;flex-shrink:0">↗</button>
               </div>`).join('')}
-            </div>
-          </div>`
-        })()}
+            </div>` : `<div style="color:var(--text-tertiary);font-size:12px;padding:8px 0">No tasks due this week.</div>`}
+          </div>
 
-      </div>
+          <!-- Upcoming Deliverables -->
+          <div>
+            <div class="db-section-head">
+              <span class="db-section-dot" style="background:#ef4444"></span>
+              Deliverables
+              ${upcomingDeliverables.length ? `<span class="db-section-count">${upcomingDeliverables.length}</span>` : ''}
+            </div>
+            ${upcomingDeliverables.length ? `
+            <div class="db-proj-list" style="border-radius:var(--radius-md)">
+              ${upcomingDeliverables.map(({ d, p, due, idx, src }) => `
+              <div class="db-proj-row db-upcoming-row" style="cursor:default">
+                <div class="db-proj-header" style="cursor:default;gap:8px;padding:8px 12px">
+                  <input type="checkbox" class="db-deliv-check" data-deliv-pid="${p.id}" data-deliv-idx="${idx}" data-deliv-src="${src}" style="cursor:pointer;flex-shrink:0;width:13px;height:13px" />
+                  ${delivDuePill(due)}
+                  <span class="db-proj-name-label" style="flex:1;font-size:12px">${esc(d.text)}</span>
+                  <button class="db-action-link" style="font-size:11px;padding:2px 6px;flex-shrink:0" data-open-pid="${p.id}">↗</button>
+                </div>
+              </div>`).join('')}
+            </div>` : `<div style="color:var(--text-tertiary);font-size:12px;padding:8px 0">No deliverables due this week.</div>`}
+          </div>
+
+          <!-- Edit Deadlines Coming Due -->
+          <div>
+            <div class="db-section-head">
+              <span class="db-section-dot" style="background:#f59e0b"></span>
+              Edit Deadlines
+              ${editDeadlines.length ? `<span class="db-section-count">${editDeadlines.length}</span>` : ''}
+            </div>
+            ${editDeadlines.length ? `
+            <div class="db-proj-list" style="border-radius:var(--radius-md)">
+              ${editDeadlines.map(e => {
+                const assignee = this.allUsers.find(u => u.id === e.assignee_id)
+                return `<div class="db-proj-row" style="display:flex;align-items:center;gap:8px;padding:8px 12px;min-height:unset">
+                  ${deadlineDuePill(e)}
+                  <span class="db-proj-name-label" style="flex:1;font-size:12px">${esc(e.label)}</span>
+                  ${assignee ? `<span style="font-size:10px;color:var(--text-tertiary);flex-shrink:0">${esc(assignee.name || assignee.email.split('@')[0])}</span>` : ''}
+                </div>`
+              }).join('')}
+            </div>` : `<div style="color:var(--text-tertiary);font-size:12px;padding:8px 0">No edit deadlines in the next 14 days.</div>`}
+          </div>
+
+          <!-- Retainers -->
+          <div>
+            <div class="db-section-head">
+              <span class="db-section-dot" style="background:#a78bfa"></span>
+              Retainers
+              ${retainers.length ? `<span class="db-section-count">${retainers.length}</span>` : ''}
+            </div>
+            ${retainers.length ? `
+            <div style="display:flex;flex-direction:column;gap:10px" id="retainer-cards">${retainerCards}</div>
+            ` : `<div style="color:var(--text-tertiary);font-size:12px;padding:8px 0">No retainers yet.</div>`}
+          </div>
+
+        </div>`
+      })()}
 
       <!-- Financial Summary -->
       <div style="padding-top:20px;border-top:1px solid var(--border-light)">
@@ -1400,17 +1423,6 @@ export class App {
         }
         localStorage.setItem('db_pinned', JSON.stringify([...this._dbPinned]))
       })
-    })
-
-    // --- Upcoming deliverables collapse ---
-    mc.querySelector('#db-upcoming-toggle')?.addEventListener('click', () => {
-      const body = mc.querySelector('#db-upcoming-body')
-      const chevron = mc.querySelector('#db-upcoming-chevron')
-      if (!body) return
-      this._dbUpcomingOpen = body.style.display === 'none'
-      body.style.display = this._dbUpcomingOpen ? 'block' : 'none'
-      if (chevron) chevron.classList.toggle('db-chevron--open', this._dbUpcomingOpen)
-      localStorage.setItem('db_upcoming_open', String(this._dbUpcomingOpen))
     })
 
     // --- Upcoming deliverable completion checkboxes ---

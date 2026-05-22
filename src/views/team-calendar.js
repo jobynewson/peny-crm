@@ -8,6 +8,7 @@ export class TeamCalendarView {
     this._expanded  = localStorage.getItem('tc-expanded') !== 'false'
     this._weekOffset = 0
     this._shootsCache = null   // lazily loaded
+    this._ppsPhasesCache = null // lazily loaded — post production phases with an assignee
     this._clipboard = null     // { entry data for paste }
     this._dragOver  = null     // cell currently being dragged over
   }
@@ -115,6 +116,17 @@ export class TeamCalendarView {
       }
     }
 
+    // Lazy-load post production phases that have a team member assigned
+    if (this._ppsPhasesCache === null) {
+      try {
+        const { getPpsPhasesForCalendar } = await import('../db/client.js')
+        this._ppsPhasesCache = await getPpsPhasesForCalendar(this.app.userId)
+      } catch (e) {
+        console.error('Could not load post production phases for calendar:', e)
+        this._ppsPhasesCache = []
+      }
+    }
+
     const users   = this.app.allUsers || []
     const weekStart = this._getWeekStart()
     const days    = this._getWeekDays(weekStart)
@@ -150,6 +162,8 @@ export class TeamCalendarView {
 
     // Synthetic shoot entries (auto-populated)
     const shootEntries = this._buildShootEntries(days, users)
+    // Synthetic post production entries (auto-populated from PPS blocks with an assignee)
+    const ppsEntries   = this._buildPpsEntries(days, users)
 
     const paste = this._clipboard
       ? `<div id="tc-paste-hint" style="font-size:11px;color:var(--accent);margin-top:6px;margin-bottom:2px">📋 Entry copied — click a cell to paste (or press Escape to clear)</div>` : ''
@@ -182,9 +196,11 @@ export class TeamCalendarView {
                 ${users.map(u => {
                   const realEntries  = byUserDate[`${u.id}:${dateKey}`] || []
                   const ghostEntries = (shootEntries[`${u.id}:${dateKey}`] || [])
+                  const ppsGhosts    = (ppsEntries[`${u.id}:${dateKey}`] || [])
                   const allChips = [
                     ...realEntries.map(e => this._chipHTML(e, false, projects)),
                     ...ghostEntries.map(e => this._chipHTML(e, true, projects)),
+                    ...ppsGhosts.map(e => this._chipHTML(e, true, projects)),
                   ]
                   return `<td class="tc-cell" data-tc-date="${dateKey}" data-tc-user="${u.id}"
                     style="padding:5px 6px;border-right:1px solid var(--border-light);vertical-align:top;min-height:36px;cursor:pointer"
@@ -199,8 +215,9 @@ export class TeamCalendarView {
         </table>
       </div>
       <div style="margin-top:6px;font-size:11px;color:var(--text-tertiary);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-        <span>Click cell to add · Click entry to edit · Drag to move</span>
+        <span>Click cell to add · Click entry to edit · Drag to move · Drag edges to resize</span>
         ${this._shootsCache?.length ? `<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;border:1.5px dashed #4CAF50"></span> Auto from shoot plan</span>` : ''}
+        ${this._ppsPhasesCache?.length ? `<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;border:1.5px dashed #C47E3A"></span> Auto from post production</span>` : ''}
         ${this._clipboard ? `<span style="color:var(--accent)">📋 Paste active</span>` : ''}
       </div>`
   }
@@ -211,15 +228,25 @@ export class TeamCalendarView {
     const label = proj ? proj.name : e.label
     const spanIndicator = e.end_date && e.end_date > e.entry_date && e._isFirst
       ? `<span style="font-size:9px;opacity:0.7;margin-left:2px">→</span>` : ''
+    const hasNav = isGhost && !!e._navTarget
     const ghostStyle = isGhost
-      ? `border-style:dashed;opacity:0.75;pointer-events:none;`
+      ? `border-style:dashed;opacity:0.75;${hasNav ? 'cursor:pointer;' : 'pointer-events:none;'}`
       : `cursor:pointer;`
-    return `<div class="${isGhost ? 'tc-chip-ghost' : 'tc-chip'}" ${!isGhost ? `data-tc-entry-id="${e.id}" draggable="true"` : ''}
-      style="display:flex;align-items:center;gap:4px;padding:3px 6px;background:${col}22;border:1px solid ${col}88;border-radius:4px;margin-bottom:2px;${ghostStyle}max-width:100%"
-      title="${esc(label)}${proj && e.label !== proj.name ? ' · ' + esc(e.label) : ''}${e.end_date && e.end_date > e.entry_date ? ' (multi-day)' : ''}${isGhost ? ' (from shoot plan)' : ''}">
+    const ghostNote = isGhost ? (e._ghostNote || ' (from shoot plan)') : ''
+    const navAttr = hasNav ? `data-ghost-nav="${e._navTarget}"` : ''
+    const chipAttrs = isGhost ? navAttr : `data-tc-entry-id="${e.id}" draggable="true"`
+    const startHandle = !isGhost && e._isFirst
+      ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="start" style="position:absolute;top:-1px;left:0;right:0;height:6px;cursor:ns-resize;color:${col}"></div>` : ''
+    const endHandle = !isGhost && e._isLast
+      ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="end" style="position:absolute;bottom:-1px;left:0;right:0;height:6px;cursor:ns-resize;color:${col}"></div>` : ''
+    return `<div class="${isGhost ? 'tc-chip-ghost' : 'tc-chip'}" ${chipAttrs}
+      style="position:relative;display:flex;align-items:center;gap:4px;padding:3px 6px;background:${col}22;border:1px solid ${col}88;border-radius:4px;margin-bottom:2px;${ghostStyle}max-width:100%"
+      title="${esc(label)}${proj && e.label !== proj.name ? ' · ' + esc(e.label) : ''}${e.end_date && e.end_date > e.entry_date ? ' (multi-day)' : ''}${ghostNote}${hasNav ? ' · Click to open ↗' : ''}">
+      ${startHandle}
       <div style="width:6px;height:6px;border-radius:50%;flex-shrink:0;background:${col}"></div>
       <span style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0">${esc(label)}</span>
       ${spanIndicator}
+      ${endHandle}
     </div>`
   }
 
@@ -262,8 +289,50 @@ export class TeamCalendarView {
                 color: '#4CAF50',
                 project_id: sh.project_id,
                 _ghost: true,
+                _navTarget: `shoot::${sh.project_id}`,
               })
             }
+          }
+        }
+      }
+    }
+    return result
+  }
+
+  _buildPpsEntries(days, users) {
+    const result = {}
+    const phases = this._ppsPhasesCache || []
+    if (!phases.length || !users.length) return result
+
+    const userIds = new Set(users.map(u => u.id))
+
+    for (const ph of phases) {
+      const blocks = Array.isArray(ph.blocks) ? ph.blocks : []
+      for (const b of blocks) {
+        if (!b.assignee_id || !userIds.has(b.assignee_id)) continue
+        if (!b.start_date || !b.end_date) continue
+        const stage = b.title || ph.name
+        const label = `${ph.project_name ? ph.project_name + ' — ' : ''}${stage}`
+        const color = b.color || ph.color || '#C47E3A'
+        for (const day of days) {
+          const k = this._dateKey(day)
+          if (k >= b.start_date && k <= b.end_date) {
+            const key = `${b.assignee_id}:${k}`
+            if (!result[key]) result[key] = []
+            result[key].push({
+              id: `pps-${b.id}-${k}`,
+              assignee_id: b.assignee_id,
+              entry_date: k,
+              end_date: b.end_date,
+              entry_type: 'post_production',
+              label,
+              color,
+              project_id: ph.project_id,
+              _isFirst: k === b.start_date,
+              _ghost: true,
+              _ghostNote: ' (from post production schedule)',
+              _navTarget: `pps::${ph.project_id}`,
+            })
           }
         }
       }
@@ -344,18 +413,104 @@ export class TeamCalendarView {
     // ── Chips: click to edit, drag to move ──
     gridWrap.querySelectorAll('.tc-chip').forEach(chip => {
       chip.addEventListener('click', e => {
+        if (e.target.closest('.tc-resize-handle')) return
         e.stopPropagation()
         const entry = (this.app.teamCalendarEntries || []).find(x => x.id === chip.dataset.tcEntryId)
         if (entry) this._openEntryModal(entry, section)
       })
 
       chip.addEventListener('dragstart', e => {
+        if (this._resizing) { e.preventDefault(); return }
         e.dataTransfer.setData('text/plain', chip.dataset.tcEntryId)
         e.dataTransfer.effectAllowed = 'move'
         setTimeout(() => chip.style.opacity = '0.4', 0)
       })
       chip.addEventListener('dragend', () => { chip.style.opacity = '' })
     })
+
+    // ── Ghost chips: click to navigate to source shoot or PPS ──
+    gridWrap.querySelectorAll('.tc-chip-ghost[data-ghost-nav]').forEach(chip => {
+      chip.addEventListener('click', e => {
+        e.stopPropagation()
+        const [type, projectId] = chip.dataset.ghostNav.split('::')
+        const tab = type === 'shoot' ? 'shoots' : 'post-production'
+        // navigate() resets currentId, so set state directly like openProject does
+        this.app.currentView = 'projects'
+        this.app.projectsView.currentId = projectId
+        this.app.projectsView._pvTab = tab
+        this.app.projectsView.editingId = null
+        history.pushState({ view: 'projects' }, '', `#projects/${projectId}/${tab}`)
+        this.app.render()
+      })
+    })
+
+    // ── Resize handles: drag a chip's top/bottom edge to change its dates ──
+    gridWrap.querySelectorAll('.tc-resize-handle').forEach(handle => {
+      handle.addEventListener('pointerdown', e => this._startResize(e, handle, section))
+    })
+  }
+
+  // ── Resize via drag ───────────────────────────────────────────────────────────
+
+  _startResize(e, handle, section) {
+    e.preventDefault()
+    e.stopPropagation()
+    this._resizing = true
+    const edge  = handle.dataset.edge
+    const entry = (this.app.teamCalendarEntries || []).find(x => x.id === handle.dataset.tcEntryId)
+    if (!entry) { this._resizing = false; return }
+
+    const fixedStart = entry.entry_date
+    const fixedEnd   = entry.end_date || entry.entry_date
+    const orig = { start: entry.entry_date, end: entry.end_date }
+    let lastDate = null
+    document.body.classList.add('is-resizing')
+
+    const onMove = ev => {
+      const cell = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.tc-cell')
+      const date = cell?.dataset.tcDate
+      if (!date || date === lastDate) return
+      lastDate = date
+      let s, en
+      if (edge === 'start') {
+        s  = date <= fixedEnd ? date : fixedEnd
+        en = s === fixedEnd ? null : fixedEnd
+      } else {
+        const target = date >= fixedStart ? date : fixedStart
+        s  = fixedStart
+        en = target === fixedStart ? null : target
+      }
+      if (s === entry.entry_date && en === entry.end_date) return
+      entry.entry_date = s
+      entry.end_date   = en
+      this._refreshGrid(section)
+    }
+
+    const onUp = async () => {
+      document.removeEventListener('pointermove', onMove)
+      document.removeEventListener('pointerup', onUp)
+      document.body.classList.remove('is-resizing')
+      this._resizing = false
+      if (entry.entry_date === orig.start && entry.end_date === orig.end) return
+      try {
+        const { updateTeamCalendarEntry } = await import('../db/client.js')
+        const updated = await updateTeamCalendarEntry(this.app.userId, entry.id, {
+          entry_date: entry.entry_date,
+          end_date:   entry.end_date,
+        })
+        const idx = (this.app.teamCalendarEntries || []).findIndex(x => x.id === entry.id)
+        if (idx >= 0) this.app.teamCalendarEntries[idx] = updated
+        this._refreshGrid(section)
+      } catch (err) {
+        console.error(err)
+        entry.entry_date = orig.start
+        entry.end_date   = orig.end
+        this._refreshGrid(section)
+      }
+    }
+
+    document.addEventListener('pointermove', onMove)
+    document.addEventListener('pointerup', onUp)
   }
 
   // ── Move via drag ─────────────────────────────────────────────────────────────
@@ -457,6 +612,7 @@ export class TeamCalendarView {
       const selBudgetId  = state.budget_id    ?? (entry?.budget_id ?? '')
       const selLineLabel = state.line_label   ?? (entry?.line_label ?? '')
       const selNotes     = state.notes        ?? (entry?.notes ?? '')
+      const selIsDeadline = state.is_deadline ?? (entry?.is_deadline ?? false)
 
       const selProject = selProjectId ? projects.find(p => p.id === selProjectId) : null
       const linkedBudgets = selProject
@@ -592,6 +748,15 @@ export class TeamCalendarView {
               <textarea id="tc-m-notes" rows="2" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);resize:vertical">${esc(selNotes)}</textarea>
             </div>
 
+            <!-- 11. Deadline -->
+            <div>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text-primary)">
+                <input type="checkbox" id="tc-m-deadline" ${selIsDeadline ? 'checked' : ''} style="cursor:pointer;accent-color:#ef4444;width:14px;height:14px;flex-shrink:0" />
+                <span>Mark as deadline</span>
+                <span style="font-size:11px;color:var(--text-tertiary)">(shows in dashboard deadline widget)</span>
+              </label>
+            </div>
+
             <!-- Actions -->
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
               ${entry ? `
@@ -696,6 +861,7 @@ export class TeamCalendarView {
       budget_id:    taskBudgetId || '',
       line_label:   taskLabelParts.join('::') || '',
       notes:        overlay.querySelector('#tc-m-notes')?.value    || prev.notes       || '',
+      is_deadline:  overlay.querySelector('#tc-m-deadline')?.checked ?? prev.is_deadline ?? false,
     }
   }
 
@@ -726,6 +892,7 @@ export class TeamCalendarView {
         budget_id:    state.budget_id    || null,
         line_label:   state.line_label   || null,
         notes:        state.notes        || null,
+        is_deadline:  state.is_deadline  ?? false,
       }
       if (entry) {
         const updated = await updateTeamCalendarEntry(this.app.userId, entry.id, payload)

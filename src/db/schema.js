@@ -389,6 +389,7 @@ export const team_calendar_entries = pgTable('team_calendar_entries', {
   budget_id:    uuid('budget_id').references(() => budgets.id, { onDelete: 'set null' }),
   line_label:   text('line_label'),
   notes:        text('notes'),
+  is_deadline:  boolean('is_deadline').notNull().default(false),
   ...timestamps,
 })
 
@@ -397,8 +398,9 @@ export const post_production_schedules = pgTable('post_production_schedules', {
   id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
   user_id:    text('user_id').notNull(),
   project_id: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  start_date: date('start_date'),
-  end_date:   date('end_date'),
+  start_date:       date('start_date'),
+  end_date:         date('end_date'),
+  lead_assignee_id: uuid('lead_assignee_id'),
   ...timestamps,
 })
 
@@ -411,6 +413,8 @@ export const pps_phases = pgTable('pps_phases', {
   end_date:       date('end_date'),
   color:          text('color').notNull().default('#C47E3A'),
   show_in_portal: boolean('show_in_portal').notNull().default(false),
+  assignee_id:    uuid('assignee_id'),
+  blocks:         jsonb('blocks').notNull().default([]),
   sort_order:     integer('sort_order').notNull().default(0),
   ...timestamps,
 })

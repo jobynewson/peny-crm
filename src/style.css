@@ -401,3 +401,33 @@ body {
 .plan-card--video .plan-image-caption::placeholder {
   color: #555;
 }
+
+/* Drag-to-resize handles (team calendar + post production grids) */
+.tc-resize-handle,
+.pps-resize-handle {
+  opacity: 0;
+  transition: opacity 0.1s;
+  z-index: 3;
+}
+.tc-chip:hover .tc-resize-handle,
+.pps-block-cell:hover .pps-resize-handle {
+  opacity: 1;
+}
+.tc-resize-handle::after,
+.pps-resize-handle::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 22px;
+  height: 3px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.6;
+}
+body.is-resizing,
+body.is-resizing * {
+  cursor: ns-resize !important;
+  user-select: none !important;
+}
