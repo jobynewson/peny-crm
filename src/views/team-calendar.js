@@ -215,7 +215,7 @@ export class TeamCalendarView {
         </table>
       </div>
       <div style="margin-top:6px;font-size:11px;color:var(--text-tertiary);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-        <span>Click cell to add · Click entry to edit · Drag to move</span>
+        <span>Click cell to add · Click entry to edit · Drag to move · Drag edges to resize</span>
         ${this._shootsCache?.length ? `<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;border:1.5px dashed #4CAF50"></span> Auto from shoot plan</span>` : ''}
         ${this._ppsPhasesCache?.length ? `<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;border:1.5px dashed #C47E3A"></span> Auto from post production</span>` : ''}
         ${this._clipboard ? `<span style="color:var(--accent)">📋 Paste active</span>` : ''}
@@ -232,12 +232,18 @@ export class TeamCalendarView {
       ? `border-style:dashed;opacity:0.75;pointer-events:none;`
       : `cursor:pointer;`
     const ghostNote = isGhost ? (e._ghostNote || ' (from shoot plan)') : ''
+    const startHandle = !isGhost && e._isFirst
+      ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="start" style="position:absolute;top:-1px;left:0;right:0;height:6px;cursor:ns-resize;color:${col}"></div>` : ''
+    const endHandle = !isGhost && e._isLast
+      ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="end" style="position:absolute;bottom:-1px;left:0;right:0;height:6px;cursor:ns-resize;color:${col}"></div>` : ''
     return `<div class="${isGhost ? 'tc-chip-ghost' : 'tc-chip'}" ${!isGhost ? `data-tc-entry-id="${e.id}" draggable="true"` : ''}
-      style="display:flex;align-items:center;gap:4px;padding:3px 6px;background:${col}22;border:1px solid ${col}88;border-radius:4px;margin-bottom:2px;${ghostStyle}max-width:100%"
+      style="position:relative;display:flex;align-items:center;gap:4px;padding:3px 6px;background:${col}22;border:1px solid ${col}88;border-radius:4px;margin-bottom:2px;${ghostStyle}max-width:100%"
       title="${esc(label)}${proj && e.label !== proj.name ? ' · ' + esc(e.label) : ''}${e.end_date && e.end_date > e.entry_date ? ' (multi-day)' : ''}${ghostNote}">
+      ${startHandle}
       <div style="width:6px;height:6px;border-radius:50%;flex-shrink:0;background:${col}"></div>
       <span style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0">${esc(label)}</span>
       ${spanIndicator}
+      ${endHandle}
     </div>`
   }
 
@@ -397,18 +403,88 @@ export class TeamCalendarView {
     // ── Chips: click to edit, drag to move ──
     gridWrap.querySelectorAll('.tc-chip').forEach(chip => {
       chip.addEventListener('click', e => {
+        if (e.target.closest('.tc-resize-handle')) return
         e.stopPropagation()
         const entry = (this.app.teamCalendarEntries || []).find(x => x.id === chip.dataset.tcEntryId)
         if (entry) this._openEntryModal(entry, section)
       })
 
       chip.addEventListener('dragstart', e => {
+        if (this._resizing) { e.preventDefault(); return }
         e.dataTransfer.setData('text/plain', chip.dataset.tcEntryId)
         e.dataTransfer.effectAllowed = 'move'
         setTimeout(() => chip.style.opacity = '0.4', 0)
       })
       chip.addEventListener('dragend', () => { chip.style.opacity = '' })
     })
+
+    // ── Resize handles: drag a chip's top/bottom edge to change its dates ──
+    gridWrap.querySelectorAll('.tc-resize-handle').forEach(handle => {
+      handle.addEventListener('pointerdown', e => this._startResize(e, handle, section))
+    })
+  }
+
+  // ── Resize via drag ───────────────────────────────────────────────────────────
+
+  _startResize(e, handle, section) {
+    e.preventDefault()
+    e.stopPropagation()
+    this._resizing = true
+    const edge  = handle.dataset.edge
+    const entry = (this.app.teamCalendarEntries || []).find(x => x.id === handle.dataset.tcEntryId)
+    if (!entry) { this._resizing = false; return }
+
+    const fixedStart = entry.entry_date
+    const fixedEnd   = entry.end_date || entry.entry_date
+    const orig = { start: entry.entry_date, end: entry.end_date }
+    let lastDate = null
+    document.body.classList.add('is-resizing')
+
+    const onMove = ev => {
+      const cell = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.tc-cell')
+      const date = cell?.dataset.tcDate
+      if (!date || date === lastDate) return
+      lastDate = date
+      let s, en
+      if (edge === 'start') {
+        s  = date <= fixedEnd ? date : fixedEnd
+        en = s === fixedEnd ? null : fixedEnd
+      } else {
+        const target = date >= fixedStart ? date : fixedStart
+        s  = fixedStart
+        en = target === fixedStart ? null : target
+      }
+      if (s === entry.entry_date && en === entry.end_date) return
+      entry.entry_date = s
+      entry.end_date   = en
+      this._refreshGrid(section)
+    }
+
+    const onUp = async () => {
+      document.removeEventListener('pointermove', onMove)
+      document.removeEventListener('pointerup', onUp)
+      document.body.classList.remove('is-resizing')
+      this._resizing = false
+      if (entry.entry_date === orig.start && entry.end_date === orig.end) return
+      try {
+        const { updateTeamCalendarEntry } = await import('../db/client.js')
+        const updated = await updateTeamCalendarEntry(this.app.userId, entry.id, {
+          entry_date: entry.entry_date,
+          end_date:   entry.end_date,
+        })
+        const idx = (this.app.teamCalendarEntries || []).findIndex(x => x.id === entry.id)
+        if (idx >= 0) this.app.teamCalendarEntries[idx] = updated
+        this._refreshGrid(section)
+      } catch (err) {
+        console.error(err)
+        entry.entry_date = orig.start
+        entry.end_date   = orig.end
+        this._refreshGrid(section)
+      }
+    }
+
+    document.addEventListener('pointermove', onMove)
+    document.addEventListener('pointerup', onUp)
   }
 
   // ── Move via drag ─────────────────────────────────────────────────────────────
