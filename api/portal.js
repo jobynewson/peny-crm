@@ -58,16 +58,16 @@ export default async function handler(req, res) {
   let ppsPhases = []
   if (ppsSchedule[0]) {
     const cols = await sql`
-      SELECT id, name, color, blocks, sort_order
+      SELECT id, name, color, blocks, show_in_portal, sort_order
       FROM pps_phases
       WHERE schedule_id = ${ppsSchedule[0].id}
-        AND show_in_portal = true
       ORDER BY sort_order, created_at
     `
-    // Expand each portal-visible column's blocks into Gantt rows
+    // A block shows if its column is portal-visible, or the block itself is marked
     for (const col of cols) {
+      const colVisible = col.show_in_portal
       const blocks = Array.isArray(col.blocks) ? col.blocks : []
-      const dated = blocks.filter(b => b.start_date && b.end_date)
+      const dated = blocks.filter(b => (colVisible || b.show_in_portal) && b.start_date && b.end_date)
       if (dated.length) {
         for (const b of dated) {
           ppsPhases.push({
@@ -77,7 +77,7 @@ export default async function handler(req, res) {
             color:      b.color || col.color,
           })
         }
-      } else {
+      } else if (colVisible) {
         ppsPhases.push({ name: col.name, color: col.color })
       }
     }

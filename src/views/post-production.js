@@ -389,7 +389,7 @@ export class PostProductionView {
     const isNew = !block
     const data = block
       ? { ...block }
-      : { id: newId(), title: '', notes: '', start_date: defaultDate || '', end_date: defaultDate || '', color: null, assignee_id: pps.lead_assignee_id || null }
+      : { id: newId(), title: '', notes: '', start_date: defaultDate || '', end_date: defaultDate || '', color: null, assignee_id: pps.lead_assignee_id || null, is_deadline: false, show_in_portal: false }
     let selColor = data.color || ''   // '' = inherit column colour
 
     const render = () => {
@@ -437,6 +437,18 @@ export class PostProductionView {
               <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:7px">Colour</div>
               <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${swatches}</div>
             </div>
+            <div style="display:flex;flex-direction:column;gap:10px;padding-top:2px;border-top:1px solid var(--border-light)">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text-primary);margin-top:6px">
+                <input type="checkbox" id="ppsb-deadline" ${data.is_deadline ? 'checked' : ''} style="cursor:pointer;accent-color:#ef4444;width:14px;height:14px;flex-shrink:0" />
+                <span>Deadline</span>
+                <span style="font-size:11px;color:var(--text-tertiary)">(shows in dashboard "Edit Deadlines")</span>
+              </label>
+              ${project.portal_token ? `
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text-primary)">
+                <input type="checkbox" id="ppsb-portal" ${data.show_in_portal ? 'checked' : ''} style="cursor:pointer;accent-color:var(--accent);width:14px;height:14px;flex-shrink:0" />
+                <span>Show in client portal</span>
+              </label>` : ''}
+            </div>
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:4px">
               ${!isNew ? `<button id="ppsb-del" class="btn-cancel" style="color:#ef4444;border-color:rgba(239,68,68,0.35)">Delete</button>` : '<div></div>'}
               <div style="display:flex;gap:8px">
@@ -455,6 +467,8 @@ export class PostProductionView {
           data.start_date = overlay.querySelector('#ppsb-start')?.value ?? data.start_date
           data.end_date   = overlay.querySelector('#ppsb-end')?.value ?? data.end_date
           data.assignee_id = overlay.querySelector('#ppsb-assignee')?.value || null
+          data.is_deadline = overlay.querySelector('#ppsb-deadline')?.checked ?? data.is_deadline
+          data.show_in_portal = overlay.querySelector('#ppsb-portal')?.checked ?? data.show_in_portal
           render()
         })
       })
@@ -471,13 +485,15 @@ export class PostProductionView {
         const btn = overlay.querySelector('#ppsb-save')
         if (btn) btn.textContent = 'Saving…'
         const next = {
-          id:          data.id,
-          title:       overlay.querySelector('#ppsb-title')?.value.trim() || '',
-          notes:       overlay.querySelector('#ppsb-notes')?.value.trim() || '',
-          start_date:  s,
-          end_date:    en,
-          color:       selColor || null,
-          assignee_id: overlay.querySelector('#ppsb-assignee')?.value || null,
+          id:             data.id,
+          title:          overlay.querySelector('#ppsb-title')?.value.trim() || '',
+          notes:          overlay.querySelector('#ppsb-notes')?.value.trim() || '',
+          start_date:     s,
+          end_date:       en,
+          color:          selColor || null,
+          assignee_id:    overlay.querySelector('#ppsb-assignee')?.value || null,
+          is_deadline:    overlay.querySelector('#ppsb-deadline')?.checked || false,
+          show_in_portal: overlay.querySelector('#ppsb-portal')?.checked ?? (data.show_in_portal || false),
         }
         if (!phase.blocks) phase.blocks = []
         const idx = phase.blocks.findIndex(b => b.id === data.id)
