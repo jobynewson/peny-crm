@@ -105,6 +105,12 @@ export class PostProductionView {
     const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
     const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
+    const usersById = {}
+    for (const u of (this.app.allUsers || [])) usersById[u.id] = u
+    const userName = u => u ? (u.name || u.email?.split('@')[0] || '') : ''
+    // Local calendar date (matches the modal's date-input format — avoids UTC drift on write)
+    const localKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
     // Build per-phase active-day sets and "first visible day in range" markers
     const phaseData = phases.map(ph => {
       if (!ph.start_date || !ph.end_date) return { active: new Set(), firstDay: null }
@@ -138,13 +144,16 @@ export class PostProductionView {
                 const days_ = hasDates
                   ? Math.round((new Date(ph.end_date) - new Date(ph.start_date)) / 86400000) + 1
                   : null
+                const assignee = ph.assignee_id ? usersById[ph.assignee_id] : null
+                const assigneeName = userName(assignee)
                 return `<th class="pps-phase-header" data-phase-id="${ph.id}"
                   style="padding:8px 6px;text-align:center;cursor:pointer;width:${CELL_W}px;min-width:${CELL_W}px;max-width:${CELL_W}px;border-left:1px solid var(--border-light)"
-                  title="Click to edit · ${esc(ph.name)}${hasDates ? ' · ' + days_ + ' days' : ''}">
+                  title="Click to edit · ${esc(ph.name)}${hasDates ? ' · ' + days_ + ' days' : ''}${assigneeName ? ' · ' + esc(assigneeName) : ''}">
                   <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
                     <div style="width:10px;height:10px;border-radius:50%;background:${ph.color || '#C47E3A'};flex-shrink:0"></div>
                     <div style="font-size:10px;font-weight:600;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:${CELL_W - 12}px;text-transform:uppercase;letter-spacing:0.3px">${esc(abbr(ph.name))}</div>
                     <div style="font-size:9px;color:var(--text-tertiary);white-space:nowrap">${hasDates ? days_ + 'd' : 'no dates'}</div>
+                    ${assigneeName ? `<div style="font-size:9px;color:${ph.color || '#C47E3A'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:${CELL_W - 12}px" title="${esc(assigneeName)}">${esc(abbr(assigneeName))}</div>` : ''}
                   </div>
                 </th>`
               }).join('')}
@@ -158,6 +167,7 @@ export class PostProductionView {
           <tbody>
             ${days.map(d => {
               const ds = d.toISOString().slice(0, 10)
+              const dkey = localKey(d)
               const dow = DOW[d.getDay()]
               const isWeekend = d.getDay() === 0 || d.getDay() === 6
               const isToday = d.getTime() === today.getTime()
@@ -186,10 +196,12 @@ export class PostProductionView {
                   const { active, firstDay } = phaseData[pi]
                   const isActive = active.has(ds)
                   const isFirst  = firstDay === ds
-                  if (!isActive) return `<td style="border-left:1px solid var(--border-light)"></td>`
+                  if (!isActive) return `<td class="pps-empty-cell" data-phase-id="${ph.id}" data-date="${dkey}" style="border-left:1px solid var(--border-light);cursor:pointer;text-align:center;vertical-align:middle">
+                    <span class="pps-add-hint" style="opacity:0;font-size:14px;line-height:1;color:${ph.color || '#C47E3A'};transition:opacity 0.1s;pointer-events:none;user-select:none">+</span>
+                  </td>`
                   const rgba25 = _hexRgba(ph.color || '#C47E3A', 0.22)
                   const rgba55 = _hexRgba(ph.color || '#C47E3A', 0.55)
-                  return `<td style="border-left:2px solid ${rgba55};background:${rgba25};padding:2px 6px">
+                  return `<td class="pps-block-cell" data-phase-id="${ph.id}" data-date="${dkey}" title="Click to edit · ${esc(ph.name)}" style="border-left:2px solid ${rgba55};background:${rgba25};padding:2px 6px;cursor:pointer">
                     ${isFirst ? `<div style="font-size:9px;font-weight:700;color:${ph.color || '#C47E3A'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:${CELL_W - 12}px;text-transform:uppercase;letter-spacing:0.3px" title="${esc(ph.name)}">${esc(ph.name)}</div>` : ''}
                   </td>`
                 }).join('')}
@@ -247,9 +259,55 @@ export class PostProductionView {
       })
     })
 
+    // Blocks within the calendar are clickable to edit
+    container.querySelectorAll('.pps-block-cell').forEach(cell => {
+      cell.addEventListener('click', () => {
+        const phase = (pps.phases || []).find(ph => ph.id === cell.dataset.phaseId)
+        if (phase) this._openPhaseModal(phase, pps, project, container)
+      })
+    })
+
+    // +button in each empty calendar field — visible on rollover, adds that day to the phase
+    container.querySelectorAll('.pps-empty-cell').forEach(cell => {
+      const hint = cell.querySelector('.pps-add-hint')
+      cell.addEventListener('mouseenter', () => { if (hint) hint.style.opacity = '0.7' })
+      cell.addEventListener('mouseleave', () => { if (hint) hint.style.opacity = '0' })
+      cell.addEventListener('click', () => {
+        const phase = (pps.phases || []).find(ph => ph.id === cell.dataset.phaseId)
+        if (phase) this._addDayToPhase(phase, cell.dataset.date, pps, project, container)
+      })
+    })
+
     container.querySelector('#pps-add-phase-col')?.addEventListener('click', () => {
       this._openPhaseModal(null, pps, project, container)
     })
+  }
+
+  // Extend (or create) a phase's contiguous block to include the clicked day
+  async _addDayToPhase(phase, ds, pps, project, container) {
+    let start = phase.start_date
+    let end   = phase.end_date
+    if (!start || !end) { start = ds; end = ds }
+    else { if (ds < start) start = ds; if (ds > end) end = ds }
+    if (start === phase.start_date && end === phase.end_date) return
+    try {
+      const { updatePpsPhase } = await import('../db/client.js')
+      const updated = await updatePpsPhase(phase.id, { start_date: start, end_date: end })
+      const idx = (pps.phases || []).findIndex(p => p.id === phase.id)
+      if (idx >= 0) pps.phases[idx] = updated
+      this._invalidateTeamCalendar()
+      const hasPortal = !!project.portal_token
+      const gridWrap = container.querySelector('#pps-grid-wrap')
+      if (gridWrap) {
+        gridWrap.innerHTML = this._renderGrid(pps, pps.phases || [], hasPortal)
+        this._bindGrid(container, pps, project)
+      }
+    } catch (e) { console.error(e) }
+  }
+
+  // Force the dashboard team calendar to reload PPS-derived entries next time it renders
+  _invalidateTeamCalendar() {
+    if (this.app.teamCalendarView) this.app.teamCalendarView._ppsPhasesCache = null
   }
 
   // ── Phase modal ───────────────────────────────────────────────────────────────
@@ -260,6 +318,7 @@ export class PostProductionView {
     overlay.id = 'pps-phase-modal'
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(9,30,66,0.54);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px 16px'
 
+    const users = this.app.allUsers || []
     let selColor = phase?.color || '#C47E3A'
 
     const render = () => {
@@ -288,6 +347,14 @@ export class PostProductionView {
                 <label style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px">End date</label>
                 <input type="date" id="ppsm-end" value="${phase?.end_date || ''}" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);color-scheme:dark" />
               </div>
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px">Team member</label>
+              <select id="ppsm-assignee" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font)">
+                <option value="">— None —</option>
+                ${users.map(u => `<option value="${u.id}" ${u.id === phase?.assignee_id ? 'selected' : ''}>${esc(u.name || u.email)}</option>`).join('')}
+              </select>
+              <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">Assigning a member adds this block to their team calendar on the dashboard${phase && !(phase.start_date && phase.end_date) ? ' (once the phase has dates)' : ''}.</div>
             </div>
             <div>
               <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:7px">Colour</div>
@@ -325,6 +392,7 @@ export class PostProductionView {
           end_date:       overlay.querySelector('#ppsm-end')?.value   || null,
           color:          selColor,
           show_in_portal: overlay.querySelector('#ppsm-portal')?.checked ?? false,
+          assignee_id:    overlay.querySelector('#ppsm-assignee')?.value || null,
         }
         try {
           const { createPpsPhase, updatePpsPhase } = await import('../db/client.js')
@@ -337,6 +405,7 @@ export class PostProductionView {
             if (!pps.phases) pps.phases = []
             pps.phases.push(created)
           }
+          this._invalidateTeamCalendar()
           overlay.remove()
           this._renderPpsContent(container, pps, project)
         } catch (e) {
@@ -351,6 +420,7 @@ export class PostProductionView {
           const { deletePpsPhase } = await import('../db/client.js')
           await deletePpsPhase(phase.id)
           pps.phases = (pps.phases || []).filter(p => p.id !== phase.id)
+          this._invalidateTeamCalendar()
           overlay.remove()
           this._renderPpsContent(container, pps, project)
         } catch (e) { console.error(e) }

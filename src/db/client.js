@@ -106,6 +106,7 @@ export async function runMigrations() {
       updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `
+  await sql`ALTER TABLE pps_phases ADD COLUMN IF NOT EXISTS assignee_id UUID`
 }
 
 // ── Workspace ─────────────────────────────────────────────────────────────────
@@ -902,5 +903,22 @@ export async function getShootsForCalendar(workspaceId) {
     JOIN projects p ON p.id = s.project_id
     WHERE s.user_id = ${workspaceId}
     ORDER BY s.shoot_date NULLS LAST
+  `).then(r => r.rows ?? r)
+}
+
+// ── PPS phases (lightweight — for team calendar auto-populate) ────────────────
+export async function getPpsPhasesForCalendar(workspaceId) {
+  const { sql: sq } = await import('drizzle-orm')
+  return db.execute(sq`
+    SELECT ph.id, ph.name, ph.start_date, ph.end_date, ph.color, ph.assignee_id,
+           s.project_id, p.name AS project_name
+    FROM pps_phases ph
+    JOIN post_production_schedules s ON s.id = ph.schedule_id
+    JOIN projects p ON p.id = s.project_id
+    WHERE s.user_id = ${workspaceId}
+      AND ph.assignee_id IS NOT NULL
+      AND ph.start_date IS NOT NULL
+      AND ph.end_date   IS NOT NULL
+    ORDER BY ph.start_date
   `).then(r => r.rows ?? r)
 }

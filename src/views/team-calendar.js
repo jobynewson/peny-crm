@@ -8,6 +8,7 @@ export class TeamCalendarView {
     this._expanded  = localStorage.getItem('tc-expanded') !== 'false'
     this._weekOffset = 0
     this._shootsCache = null   // lazily loaded
+    this._ppsPhasesCache = null // lazily loaded — post production phases with an assignee
     this._clipboard = null     // { entry data for paste }
     this._dragOver  = null     // cell currently being dragged over
   }
@@ -115,6 +116,17 @@ export class TeamCalendarView {
       }
     }
 
+    // Lazy-load post production phases that have a team member assigned
+    if (this._ppsPhasesCache === null) {
+      try {
+        const { getPpsPhasesForCalendar } = await import('../db/client.js')
+        this._ppsPhasesCache = await getPpsPhasesForCalendar(this.app.userId)
+      } catch (e) {
+        console.error('Could not load post production phases for calendar:', e)
+        this._ppsPhasesCache = []
+      }
+    }
+
     const users   = this.app.allUsers || []
     const weekStart = this._getWeekStart()
     const days    = this._getWeekDays(weekStart)
@@ -150,6 +162,8 @@ export class TeamCalendarView {
 
     // Synthetic shoot entries (auto-populated)
     const shootEntries = this._buildShootEntries(days, users)
+    // Synthetic post production entries (auto-populated from PPS blocks with an assignee)
+    const ppsEntries   = this._buildPpsEntries(days, users)
 
     const paste = this._clipboard
       ? `<div id="tc-paste-hint" style="font-size:11px;color:var(--accent);margin-top:6px;margin-bottom:2px">📋 Entry copied — click a cell to paste (or press Escape to clear)</div>` : ''
@@ -182,9 +196,11 @@ export class TeamCalendarView {
                 ${users.map(u => {
                   const realEntries  = byUserDate[`${u.id}:${dateKey}`] || []
                   const ghostEntries = (shootEntries[`${u.id}:${dateKey}`] || [])
+                  const ppsGhosts    = (ppsEntries[`${u.id}:${dateKey}`] || [])
                   const allChips = [
                     ...realEntries.map(e => this._chipHTML(e, false, projects)),
                     ...ghostEntries.map(e => this._chipHTML(e, true, projects)),
+                    ...ppsGhosts.map(e => this._chipHTML(e, true, projects)),
                   ]
                   return `<td class="tc-cell" data-tc-date="${dateKey}" data-tc-user="${u.id}"
                     style="padding:5px 6px;border-right:1px solid var(--border-light);vertical-align:top;min-height:36px;cursor:pointer"
@@ -201,6 +217,7 @@ export class TeamCalendarView {
       <div style="margin-top:6px;font-size:11px;color:var(--text-tertiary);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <span>Click cell to add · Click entry to edit · Drag to move</span>
         ${this._shootsCache?.length ? `<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;border:1.5px dashed #4CAF50"></span> Auto from shoot plan</span>` : ''}
+        ${this._ppsPhasesCache?.length ? `<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;border:1.5px dashed #C47E3A"></span> Auto from post production</span>` : ''}
         ${this._clipboard ? `<span style="color:var(--accent)">📋 Paste active</span>` : ''}
       </div>`
   }
@@ -214,9 +231,10 @@ export class TeamCalendarView {
     const ghostStyle = isGhost
       ? `border-style:dashed;opacity:0.75;pointer-events:none;`
       : `cursor:pointer;`
+    const ghostNote = isGhost ? (e._ghostNote || ' (from shoot plan)') : ''
     return `<div class="${isGhost ? 'tc-chip-ghost' : 'tc-chip'}" ${!isGhost ? `data-tc-entry-id="${e.id}" draggable="true"` : ''}
       style="display:flex;align-items:center;gap:4px;padding:3px 6px;background:${col}22;border:1px solid ${col}88;border-radius:4px;margin-bottom:2px;${ghostStyle}max-width:100%"
-      title="${esc(label)}${proj && e.label !== proj.name ? ' · ' + esc(e.label) : ''}${e.end_date && e.end_date > e.entry_date ? ' (multi-day)' : ''}${isGhost ? ' (from shoot plan)' : ''}">
+      title="${esc(label)}${proj && e.label !== proj.name ? ' · ' + esc(e.label) : ''}${e.end_date && e.end_date > e.entry_date ? ' (multi-day)' : ''}${ghostNote}">
       <div style="width:6px;height:6px;border-radius:50%;flex-shrink:0;background:${col}"></div>
       <span style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0">${esc(label)}</span>
       ${spanIndicator}
@@ -265,6 +283,41 @@ export class TeamCalendarView {
               })
             }
           }
+        }
+      }
+    }
+    return result
+  }
+
+  _buildPpsEntries(days, users) {
+    const result = {}
+    const phases = this._ppsPhasesCache || []
+    if (!phases.length || !users.length) return result
+
+    const userIds = new Set(users.map(u => u.id))
+
+    for (const ph of phases) {
+      if (!ph.assignee_id || !userIds.has(ph.assignee_id)) continue
+      if (!ph.start_date || !ph.end_date) continue
+      const label = `${ph.project_name ? ph.project_name + ' — ' : ''}${ph.name}`
+      for (const day of days) {
+        const k = this._dateKey(day)
+        if (k >= ph.start_date && k <= ph.end_date) {
+          const key = `${ph.assignee_id}:${k}`
+          if (!result[key]) result[key] = []
+          result[key].push({
+            id: `pps-${ph.id}-${k}`,
+            assignee_id: ph.assignee_id,
+            entry_date: k,
+            end_date: ph.end_date,
+            entry_type: 'post_production',
+            label,
+            color: ph.color || '#C47E3A',
+            project_id: null,
+            _isFirst: k === ph.start_date,
+            _ghost: true,
+            _ghostNote: ' (from post production schedule)',
+          })
         }
       }
     }
