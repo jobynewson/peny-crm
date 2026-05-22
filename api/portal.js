@@ -57,13 +57,30 @@ export default async function handler(req, res) {
 
   let ppsPhases = []
   if (ppsSchedule[0]) {
-    ppsPhases = await sql`
-      SELECT id, name, start_date, end_date, color, sort_order
+    const cols = await sql`
+      SELECT id, name, color, blocks, sort_order
       FROM pps_phases
       WHERE schedule_id = ${ppsSchedule[0].id}
         AND show_in_portal = true
       ORDER BY sort_order, created_at
     `
+    // Expand each portal-visible column's blocks into Gantt rows
+    for (const col of cols) {
+      const blocks = Array.isArray(col.blocks) ? col.blocks : []
+      const dated = blocks.filter(b => b.start_date && b.end_date)
+      if (dated.length) {
+        for (const b of dated) {
+          ppsPhases.push({
+            name:       b.title || col.name,
+            start_date: b.start_date,
+            end_date:   b.end_date,
+            color:      b.color || col.color,
+          })
+        }
+      } else {
+        ppsPhases.push({ name: col.name, color: col.color })
+      }
+    }
   }
 
   return res.status(200).json({

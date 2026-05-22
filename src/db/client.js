@@ -107,6 +107,23 @@ export async function runMigrations() {
     )
   `
   await sql`ALTER TABLE pps_phases ADD COLUMN IF NOT EXISTS assignee_id UUID`
+  await sql`ALTER TABLE pps_phases ADD COLUMN IF NOT EXISTS blocks JSONB NOT NULL DEFAULT '[]'::jsonb`
+  // One-time backfill: convert each legacy single-block phase (its own dates) into a block
+  await sql`
+    UPDATE pps_phases
+    SET blocks = jsonb_build_array(jsonb_build_object(
+      'id',          uuid_generate_v4()::text,
+      'title',       '',
+      'notes',       '',
+      'start_date',  start_date::text,
+      'end_date',    end_date::text,
+      'color',       color,
+      'assignee_id', assignee_id
+    ))
+    WHERE (blocks IS NULL OR blocks = '[]'::jsonb)
+      AND start_date IS NOT NULL
+      AND end_date   IS NOT NULL
+  `
 }
 
 // ── Workspace ─────────────────────────────────────────────────────────────────
@@ -825,21 +842,13 @@ export async function deleteTeamCalendarEntry(workspaceId, id) {
 
 // ── Post Production Schedule ──────────────────────────────────────────────────
 const PPS_DEFAULT_PHASES = [
-  { name: 'Shoot Blocks',            color: '#4CAF50' },
-  { name: 'Ingest',                  color: '#C47E3A' },
-  { name: 'Prep / Proxy / Sync',     color: '#C47E3A' },
-  { name: 'Hero — Selects / Edit',   color: '#C47E3A' },
-  { name: 'Hero — Edit',             color: '#C47E3A' },
-  { name: 'Hero — V1 Watch',         color: '#7B6EAB' },
-  { name: 'Hero — V2 Watch',         color: '#7B6EAB' },
-  { name: 'Hero — V2 Edit',          color: '#C47E3A' },
-  { name: 'Hero — V3 Watch',         color: '#7B6EAB' },
-  { name: 'Socials — Edit',          color: '#C47E3A' },
-  { name: 'Hero — V4 Watch',         color: '#7B6EAB' },
-  { name: 'Client Feedback',         color: '#d9534f' },
-  { name: 'Final Version',           color: '#4a90d9' },
-  { name: 'Social Clips',            color: '#C47E3A' },
-  { name: 'Approved',                color: '#6ec96e' },
+  { name: 'Shoot Blocks',    color: '#4CAF50' },
+  { name: 'V1 Edits',        color: '#C47E3A' },
+  { name: 'V2 Edits',        color: '#C47E3A' },
+  { name: 'V3 Edits',        color: '#C47E3A' },
+  { name: 'V4 Edits',        color: '#C47E3A' },
+  { name: 'Client Feedback', color: '#d9534f' },
+  { name: 'Final Version',   color: '#4a90d9' },
 ]
 export async function getPpsForProject(workspaceId, projectId) {
   const schedules = await db.select().from(post_production_schedules)
@@ -907,18 +916,17 @@ export async function getShootsForCalendar(workspaceId) {
 }
 
 // ── PPS phases (lightweight — for team calendar auto-populate) ────────────────
+// Returns one row per phase with its blocks JSON; the caller expands blocks that
+// have a team member + dates into calendar entries.
 export async function getPpsPhasesForCalendar(workspaceId) {
   const { sql: sq } = await import('drizzle-orm')
   return db.execute(sq`
-    SELECT ph.id, ph.name, ph.start_date, ph.end_date, ph.color, ph.assignee_id,
+    SELECT ph.id, ph.name, ph.color, ph.blocks,
            s.project_id, p.name AS project_name
     FROM pps_phases ph
     JOIN post_production_schedules s ON s.id = ph.schedule_id
     JOIN projects p ON p.id = s.project_id
     WHERE s.user_id = ${workspaceId}
-      AND ph.assignee_id IS NOT NULL
-      AND ph.start_date IS NOT NULL
-      AND ph.end_date   IS NOT NULL
-    ORDER BY ph.start_date
+    ORDER BY ph.sort_order
   `).then(r => r.rows ?? r)
 }

@@ -412,6 +412,7 @@ export const pps_phases = pgTable('pps_phases', {
   color:          text('color').notNull().default('#C47E3A'),
   show_in_portal: boolean('show_in_portal').notNull().default(false),
   assignee_id:    uuid('assignee_id'),
+  blocks:         jsonb('blocks').notNull().default([]),
   sort_order:     integer('sort_order').notNull().default(0),
   ...timestamps,
 })

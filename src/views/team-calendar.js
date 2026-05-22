@@ -303,27 +303,32 @@ export class TeamCalendarView {
     const userIds = new Set(users.map(u => u.id))
 
     for (const ph of phases) {
-      if (!ph.assignee_id || !userIds.has(ph.assignee_id)) continue
-      if (!ph.start_date || !ph.end_date) continue
-      const label = `${ph.project_name ? ph.project_name + ' — ' : ''}${ph.name}`
-      for (const day of days) {
-        const k = this._dateKey(day)
-        if (k >= ph.start_date && k <= ph.end_date) {
-          const key = `${ph.assignee_id}:${k}`
-          if (!result[key]) result[key] = []
-          result[key].push({
-            id: `pps-${ph.id}-${k}`,
-            assignee_id: ph.assignee_id,
-            entry_date: k,
-            end_date: ph.end_date,
-            entry_type: 'post_production',
-            label,
-            color: ph.color || '#C47E3A',
-            project_id: null,
-            _isFirst: k === ph.start_date,
-            _ghost: true,
-            _ghostNote: ' (from post production schedule)',
-          })
+      const blocks = Array.isArray(ph.blocks) ? ph.blocks : []
+      for (const b of blocks) {
+        if (!b.assignee_id || !userIds.has(b.assignee_id)) continue
+        if (!b.start_date || !b.end_date) continue
+        const stage = b.title || ph.name
+        const label = `${ph.project_name ? ph.project_name + ' — ' : ''}${stage}`
+        const color = b.color || ph.color || '#C47E3A'
+        for (const day of days) {
+          const k = this._dateKey(day)
+          if (k >= b.start_date && k <= b.end_date) {
+            const key = `${b.assignee_id}:${k}`
+            if (!result[key]) result[key] = []
+            result[key].push({
+              id: `pps-${b.id}-${k}`,
+              assignee_id: b.assignee_id,
+              entry_date: k,
+              end_date: b.end_date,
+              entry_type: 'post_production',
+              label,
+              color,
+              project_id: null,
+              _isFirst: k === b.start_date,
+              _ghost: true,
+              _ghostNote: ' (from post production schedule)',
+            })
+          }
         }
       }
     }

@@ -2,6 +2,8 @@ const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').re
 
 const PRESET_COLORS = ['#4CAF50', '#C47E3A', '#7B6EAB', '#4a90d9', '#d9534f', '#f59e0b', '#06b6d4', '#ec4899', '#6ec96e']
 
+const newId = () => (crypto?.randomUUID ? crypto.randomUUID() : `b-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+
 export class PostProductionView {
   constructor(app) {
     this.app = app
@@ -18,7 +20,7 @@ export class PostProductionView {
         container.innerHTML = `
           <div style="text-align:center;padding:40px 0;display:flex;flex-direction:column;align-items:center;gap:12px">
             <div style="font-size:16px;font-weight:500">No post production schedule yet</div>
-            <div style="font-size:13px;color:var(--text-tertiary);max-width:380px;line-height:1.6">Create a schedule with standard phase defaults based on a typical post production workflow. You can customise all phases after creating.</div>
+            <div style="font-size:13px;color:var(--text-tertiary);max-width:380px;line-height:1.6">Create a schedule with the standard column headers. Add free-standing blocks within each column for the work happening at that stage.</div>
             <button class="btn-primary" id="pps-create-btn" style="margin-top:4px">+ Create Post Production Schedule</button>
           </div>`
         container.querySelector('#pps-create-btn')?.addEventListener('click', async () => {
@@ -50,9 +52,9 @@ export class PostProductionView {
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;flex-wrap:wrap;gap:10px">
           <div>
             <div style="font-size:14px;font-weight:600;margin-bottom:2px">Post Production Schedule</div>
-            <div style="font-size:12px;color:var(--text-tertiary)">${phases.length} phase${phases.length !== 1 ? 's' : ''}${hasPortal && portalCount ? ` · ${portalCount} visible in portal` : ''}</div>
+            <div style="font-size:12px;color:var(--text-tertiary)">${phases.length} column${phases.length !== 1 ? 's' : ''}${hasPortal && portalCount ? ` · ${portalCount} visible in portal` : ''}</div>
           </div>
-          <button class="btn-primary" id="pps-add-phase">+ Add phase</button>
+          <button class="btn-primary" id="pps-add-phase">+ Add column</button>
         </div>
 
         <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
@@ -63,27 +65,28 @@ export class PostProductionView {
             <input type="date" id="pps-master-end" value="${pps.end_date || ''}" style="padding:5px 9px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);color-scheme:dark" />
             <button id="pps-save-dates" class="btn-primary" style="padding:5px 12px;font-size:12px">Save</button>
           </div>
+          <span style="font-size:11px;color:var(--text-tertiary);margin-left:auto">Hover a cell for + to add a block · click a block to edit · drag its edges to resize</span>
         </div>
 
         <div id="pps-grid-wrap">
-          ${this._renderGrid(pps, phases, hasPortal)}
+          ${this._renderGrid(pps, phases)}
         </div>
       </div>`
 
     this._bindContent(container, pps, project)
   }
 
-  // ── Grid (date rows × phase columns) ─────────────────────────────────────────
+  // ── Grid (date rows × column columns, free-standing blocks within) ───────────
 
-  _renderGrid(pps, phases, hasPortal) {
+  _renderGrid(pps, phases) {
     if (!pps.start_date || !pps.end_date) {
       return `<div style="padding:28px;text-align:center;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md)">
-        <div style="font-size:13px;color:var(--text-tertiary)">Set a schedule range above to see the phase grid</div>
+        <div style="font-size:13px;color:var(--text-tertiary)">Set a schedule range above to see the grid</div>
       </div>`
     }
     if (!phases.length) {
       return `<div style="padding:28px;text-align:center;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md)">
-        <div style="font-size:13px;color:var(--text-tertiary)">Add phases to populate the schedule grid</div>
+        <div style="font-size:13px;color:var(--text-tertiary)">Add a column to populate the grid</div>
       </div>`
     }
 
@@ -111,22 +114,26 @@ export class PostProductionView {
     // Local calendar date (matches the modal's date-input format — avoids UTC drift on write)
     const localKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
-    // Build per-phase active-day sets and "first visible day in range" markers
+    // Per-column: map each day → the block covering it, plus first/last visible day per block
     const phaseData = phases.map(ph => {
-      if (!ph.start_date || !ph.end_date) return { active: new Set(), firstDay: null }
-      const ps = new Date(ph.start_date + 'T00:00:00')
-      const pe = new Date(ph.end_date   + 'T00:00:00')
-      const active = new Set()
-      for (let d = new Date(ps); d <= pe; d.setDate(d.getDate() + 1)) {
-        active.add(d.toISOString().slice(0, 10))
+      const blocks = (ph.blocks || []).filter(b => b && b.start_date && b.end_date)
+      const dayBlock = {}
+      for (const b of blocks) {
+        const bs = new Date(b.start_date + 'T00:00:00')
+        const be = new Date(b.end_date   + 'T00:00:00')
+        if (be < bs) continue
+        for (let d = new Date(bs); d <= be; d.setDate(d.getDate() + 1)) {
+          const ds = d.toISOString().slice(0, 10)
+          if (!dayBlock[ds]) dayBlock[ds] = b   // first block wins on overlap
+        }
       }
-      // First / last day of phase that's within the master range
-      let firstDay = null, lastDay = null
+      const firstByBlock = {}, lastByBlock = {}
       for (const d of days) {
         const ds = d.toISOString().slice(0, 10)
-        if (active.has(ds)) { if (!firstDay) firstDay = ds; lastDay = ds }
+        const b = dayBlock[ds]
+        if (b) { if (!firstByBlock[b.id]) firstByBlock[b.id] = ds; lastByBlock[b.id] = ds }
       }
-      return { active, firstDay, lastDay }
+      return { dayBlock, firstByBlock, lastByBlock }
     })
 
     const CELL_W = 82
@@ -138,28 +145,21 @@ export class PostProductionView {
           <thead>
             <tr style="background:var(--bg-secondary);border-bottom:2px solid var(--border-light)">
               <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:400;color:var(--text-tertiary);width:90px;white-space:nowrap;position:sticky;left:0;background:var(--bg-secondary);z-index:2;border-right:1px solid var(--border-light)">Date</th>
-              ${phases.map((ph, pi) => {
-                const { active, firstDay } = phaseData[pi]
-                const hasDates = ph.start_date && ph.end_date
-                const days_ = hasDates
-                  ? Math.round((new Date(ph.end_date) - new Date(ph.start_date)) / 86400000) + 1
-                  : null
-                const assignee = ph.assignee_id ? usersById[ph.assignee_id] : null
-                const assigneeName = userName(assignee)
+              ${phases.map(ph => {
+                const blockCount = (ph.blocks || []).filter(b => b).length
                 return `<th class="pps-phase-header" data-phase-id="${ph.id}"
                   style="padding:8px 6px;text-align:center;cursor:pointer;width:${CELL_W}px;min-width:${CELL_W}px;max-width:${CELL_W}px;border-left:1px solid var(--border-light)"
-                  title="Click to edit · ${esc(ph.name)}${hasDates ? ' · ' + days_ + ' days' : ''}${assigneeName ? ' · ' + esc(assigneeName) : ''}">
+                  title="Click to edit column · ${esc(ph.name)}">
                   <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
                     <div style="width:10px;height:10px;border-radius:50%;background:${ph.color || '#C47E3A'};flex-shrink:0"></div>
                     <div style="font-size:10px;font-weight:600;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:${CELL_W - 12}px;text-transform:uppercase;letter-spacing:0.3px">${esc(abbr(ph.name))}</div>
-                    <div style="font-size:9px;color:var(--text-tertiary);white-space:nowrap">${hasDates ? days_ + 'd' : 'no dates'}</div>
-                    ${assigneeName ? `<div style="font-size:9px;color:${ph.color || '#C47E3A'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:${CELL_W - 12}px" title="${esc(assigneeName)}">${esc(abbr(assigneeName))}</div>` : ''}
+                    <div style="font-size:9px;color:var(--text-tertiary);white-space:nowrap">${blockCount ? blockCount + ' block' + (blockCount !== 1 ? 's' : '') : '—'}</div>
                   </div>
                 </th>`
               }).join('')}
               <th style="width:36px;min-width:36px;border-left:1px solid var(--border-light)">
                 <div style="display:flex;align-items:center;justify-content:center">
-                  <button id="pps-add-phase-col" title="Add phase" style="background:none;border:1px solid var(--border-light);color:var(--text-tertiary);border-radius:4px;width:22px;height:22px;cursor:pointer;font-size:16px;line-height:1;padding:0;display:flex;align-items:center;justify-content:center">+</button>
+                  <button id="pps-add-phase-col" title="Add column" style="background:none;border:1px solid var(--border-light);color:var(--text-tertiary);border-radius:4px;width:22px;height:22px;cursor:pointer;font-size:16px;line-height:1;padding:0;display:flex;align-items:center;justify-content:center">+</button>
                 </div>
               </th>
             </tr>
@@ -193,20 +193,26 @@ export class PostProductionView {
                   ${monthLabel}
                 </td>
                 ${phases.map((ph, pi) => {
-                  const { active, firstDay, lastDay } = phaseData[pi]
-                  const isActive = active.has(ds)
-                  const isFirst  = firstDay === ds
-                  const isLast   = lastDay === ds
-                  if (!isActive) return `<td class="pps-empty-cell" data-phase-id="${ph.id}" data-date="${dkey}" style="border-left:1px solid var(--border-light);cursor:pointer;text-align:center;vertical-align:middle">
+                  const { dayBlock, firstByBlock, lastByBlock } = phaseData[pi]
+                  const block = dayBlock[ds]
+                  if (!block) return `<td class="pps-empty-cell" data-phase-id="${ph.id}" data-date="${dkey}" style="border-left:1px solid var(--border-light);cursor:pointer;text-align:center;vertical-align:middle">
                     <span class="pps-add-hint" style="opacity:0;font-size:14px;line-height:1;color:${ph.color || '#C47E3A'};transition:opacity 0.1s;pointer-events:none;user-select:none">+</span>
                   </td>`
-                  const rgba25 = _hexRgba(ph.color || '#C47E3A', 0.22)
-                  const rgba55 = _hexRgba(ph.color || '#C47E3A', 0.55)
-                  const handleColor = ph.color || '#C47E3A'
-                  return `<td class="pps-block-cell" data-phase-id="${ph.id}" data-date="${dkey}" title="Click to edit · drag edges to resize · ${esc(ph.name)}" style="position:relative;border-left:2px solid ${rgba55};background:${rgba25};padding:2px 6px;cursor:pointer">
-                    ${isFirst ? `<div class="pps-resize-handle" data-phase-id="${ph.id}" data-edge="start" style="position:absolute;top:0;left:0;right:0;height:6px;cursor:ns-resize;color:${handleColor}"></div>` : ''}
-                    ${isFirst ? `<div style="font-size:9px;font-weight:700;color:${handleColor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:${CELL_W - 12}px;text-transform:uppercase;letter-spacing:0.3px" title="${esc(ph.name)}">${esc(ph.name)}</div>` : ''}
-                    ${isLast ? `<div class="pps-resize-handle" data-phase-id="${ph.id}" data-edge="end" style="position:absolute;bottom:0;left:0;right:0;height:6px;cursor:ns-resize;color:${handleColor}"></div>` : ''}
+                  const isFirst = firstByBlock[block.id] === ds
+                  const isLast  = lastByBlock[block.id]  === ds
+                  const color = block.color || ph.color || '#C47E3A'
+                  const rgba25 = _hexRgba(color, 0.22)
+                  const rgba55 = _hexRgba(color, 0.55)
+                  const assignee = block.assignee_id ? usersById[block.assignee_id] : null
+                  const assigneeName = userName(assignee)
+                  const blockTitle = block.title || ''
+                  return `<td class="pps-block-cell" data-phase-id="${ph.id}" data-block-id="${block.id}" data-date="${dkey}"
+                    title="Click to edit · drag edges to resize${blockTitle ? ' · ' + esc(blockTitle) : ''}${assigneeName ? ' · ' + esc(assigneeName) : ''}"
+                    style="position:relative;border-left:2px solid ${rgba55};${isFirst ? `border-top:2px solid ${rgba55};` : ''}${isLast ? `border-bottom:2px solid ${rgba55};` : ''}background:${rgba25};padding:2px 6px;cursor:pointer">
+                    ${isFirst ? `<div class="pps-resize-handle" data-phase-id="${ph.id}" data-block-id="${block.id}" data-edge="start" style="position:absolute;top:0;left:0;right:0;height:6px;cursor:ns-resize;color:${color}"></div>` : ''}
+                    ${isFirst && blockTitle ? `<div style="font-size:9px;font-weight:700;color:${color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:${CELL_W - 12}px;text-transform:uppercase;letter-spacing:0.3px" title="${esc(blockTitle)}">${esc(blockTitle)}</div>` : ''}
+                    ${isFirst && assigneeName ? `<div style="font-size:9px;color:${color};opacity:0.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:${CELL_W - 12}px" title="${esc(assigneeName)}">${esc(abbr(assigneeName))}</div>` : ''}
+                    ${isLast ? `<div class="pps-resize-handle" data-phase-id="${ph.id}" data-block-id="${block.id}" data-edge="end" style="position:absolute;bottom:0;left:0;right:0;height:6px;cursor:ns-resize;color:${color}"></div>` : ''}
                   </td>`
                 }).join('')}
                 <td style="border-left:1px solid var(--border-light)"></td>
@@ -220,10 +226,8 @@ export class PostProductionView {
   // ── Event binding ─────────────────────────────────────────────────────────────
 
   _bindContent(container, pps, project) {
-    const hasPortal = !!project.portal_token
-
     container.querySelector('#pps-add-phase')?.addEventListener('click', () => {
-      this._openPhaseModal(null, pps, project, container)
+      this._openColumnModal(null, pps, project, container)
     })
 
     container.querySelector('#pps-save-dates')?.addEventListener('click', async () => {
@@ -236,11 +240,7 @@ export class PostProductionView {
         await updatePpsScheduleDates(pps.id, { start_date: startVal, end_date: endVal })
         pps.start_date = startVal
         pps.end_date   = endVal
-        const gridWrap = container.querySelector('#pps-grid-wrap')
-        if (gridWrap) {
-          gridWrap.innerHTML = this._renderGrid(pps, pps.phases || [], hasPortal)
-          this._bindGrid(container, pps, project)
-        }
+        this._rerenderGrid(container, pps, project)
         if (btn) btn.textContent = '✓ Saved'
         setTimeout(() => { if (btn && btn.textContent === '✓ Saved') btn.textContent = 'Save' }, 1500)
       } catch (e) {
@@ -259,60 +259,55 @@ export class PostProductionView {
       th.addEventListener('mouseleave', () => { th.style.background = '' })
       th.addEventListener('click', () => {
         const phase = (pps.phases || []).find(ph => ph.id === th.dataset.phaseId)
-        if (phase) this._openPhaseModal(phase, pps, project, container)
+        if (phase) this._openColumnModal(phase, pps, project, container)
       })
     })
 
-    // Blocks within the calendar are clickable to edit
+    // Click a block to edit its title / notes / dates / colour / team member
     container.querySelectorAll('.pps-block-cell').forEach(cell => {
       cell.addEventListener('click', e => {
         if (e.target.closest('.pps-resize-handle')) return
         const phase = (pps.phases || []).find(ph => ph.id === cell.dataset.phaseId)
-        if (phase) this._openPhaseModal(phase, pps, project, container)
+        const block = phase && (phase.blocks || []).find(b => b.id === cell.dataset.blockId)
+        if (phase && block) this._openBlockModal(phase, block, null, pps, project, container)
       })
     })
 
-    // Drag a block's top/bottom edge to resize (change start/end date)
+    // Drag a block's top/bottom edge to resize (change its start/end date)
     container.querySelectorAll('.pps-resize-handle').forEach(handle => {
       handle.addEventListener('pointerdown', e => this._startResize(e, handle, pps, project, container))
     })
 
-    // +button in each empty calendar field — visible on rollover, adds that day to the phase
+    // +button in each empty calendar field — visible on rollover, adds a free-standing block
     container.querySelectorAll('.pps-empty-cell').forEach(cell => {
       const hint = cell.querySelector('.pps-add-hint')
       cell.addEventListener('mouseenter', () => { if (hint) hint.style.opacity = '0.7' })
       cell.addEventListener('mouseleave', () => { if (hint) hint.style.opacity = '0' })
       cell.addEventListener('click', () => {
         const phase = (pps.phases || []).find(ph => ph.id === cell.dataset.phaseId)
-        if (phase) this._addDayToPhase(phase, cell.dataset.date, pps, project, container)
+        if (phase) this._openBlockModal(phase, null, cell.dataset.date, pps, project, container)
       })
     })
 
     container.querySelector('#pps-add-phase-col')?.addEventListener('click', () => {
-      this._openPhaseModal(null, pps, project, container)
+      this._openColumnModal(null, pps, project, container)
     })
   }
 
-  // Extend (or create) a phase's contiguous block to include the clicked day
-  async _addDayToPhase(phase, ds, pps, project, container) {
-    let start = phase.start_date
-    let end   = phase.end_date
-    if (!start || !end) { start = ds; end = ds }
-    else { if (ds < start) start = ds; if (ds > end) end = ds }
-    if (start === phase.start_date && end === phase.end_date) return
-    try {
-      const { updatePpsPhase } = await import('../db/client.js')
-      const updated = await updatePpsPhase(phase.id, { start_date: start, end_date: end })
-      const idx = (pps.phases || []).findIndex(p => p.id === phase.id)
-      if (idx >= 0) pps.phases[idx] = updated
-      this._invalidateTeamCalendar()
-      const hasPortal = !!project.portal_token
-      const gridWrap = container.querySelector('#pps-grid-wrap')
-      if (gridWrap) {
-        gridWrap.innerHTML = this._renderGrid(pps, pps.phases || [], hasPortal)
-        this._bindGrid(container, pps, project)
-      }
-    } catch (e) { console.error(e) }
+  _rerenderGrid(container, pps, project) {
+    const gridWrap = container.querySelector('#pps-grid-wrap')
+    if (gridWrap) {
+      gridWrap.innerHTML = this._renderGrid(pps, pps.phases || [])
+      this._bindGrid(container, pps, project)
+    }
+  }
+
+  // ── Block operations ────────────────────────────────────────────────────────
+
+  async _persistBlocks(phase) {
+    const { updatePpsPhase } = await import('../db/client.js')
+    await updatePpsPhase(phase.id, { blocks: phase.blocks })
+    this._invalidateTeamCalendar()
   }
 
   // Force the dashboard team calendar to reload PPS-derived entries next time it renders
@@ -326,19 +321,12 @@ export class PostProductionView {
     e.stopPropagation()
     const edge  = handle.dataset.edge
     const phase = (pps.phases || []).find(p => p.id === handle.dataset.phaseId)
-    if (!phase || !phase.start_date || !phase.end_date) return
+    const block = phase && (phase.blocks || []).find(b => b.id === handle.dataset.blockId)
+    if (!block || !block.start_date || !block.end_date) return
 
-    const orig = { start: phase.start_date, end: phase.end_date }
+    const orig = { start: block.start_date, end: block.end_date }
     let lastDate = null
     document.body.classList.add('is-resizing')
-
-    const rerender = () => {
-      const gridWrap = container.querySelector('#pps-grid-wrap')
-      if (gridWrap) {
-        gridWrap.innerHTML = this._renderGrid(pps, pps.phases || [], !!project.portal_token)
-        this._bindGrid(container, pps, project)
-      }
-    }
 
     const onMove = ev => {
       const el = document.elementFromPoint(ev.clientX, ev.clientY)
@@ -349,29 +337,23 @@ export class PostProductionView {
       let s = orig.start, en = orig.end
       if (edge === 'start') s = date <= orig.end ? date : orig.end
       else                  en = date >= orig.start ? date : orig.start
-      if (s === phase.start_date && en === phase.end_date) return
-      phase.start_date = s
-      phase.end_date   = en
-      rerender()
+      if (s === block.start_date && en === block.end_date) return
+      block.start_date = s
+      block.end_date   = en
+      this._rerenderGrid(container, pps, project)
     }
 
     const onUp = async () => {
       document.removeEventListener('pointermove', onMove)
       document.removeEventListener('pointerup', onUp)
       document.body.classList.remove('is-resizing')
-      if (phase.start_date === orig.start && phase.end_date === orig.end) return
-      try {
-        const { updatePpsPhase } = await import('../db/client.js')
-        const updated = await updatePpsPhase(phase.id, { start_date: phase.start_date, end_date: phase.end_date })
-        const idx = (pps.phases || []).findIndex(p => p.id === phase.id)
-        if (idx >= 0) pps.phases[idx] = updated
-        this._invalidateTeamCalendar()
-        rerender()
-      } catch (err) {
+      if (block.start_date === orig.start && block.end_date === orig.end) return
+      try { await this._persistBlocks(phase) }
+      catch (err) {
         console.error(err)
-        phase.start_date = orig.start
-        phase.end_date   = orig.end
-        rerender()
+        block.start_date = orig.start
+        block.end_date   = orig.end
+        this._rerenderGrid(container, pps, project)
       }
     }
 
@@ -379,15 +361,150 @@ export class PostProductionView {
     document.addEventListener('pointerup', onUp)
   }
 
-  // ── Phase modal ───────────────────────────────────────────────────────────────
+  // ── Block modal (title / notes / dates / colour / team member) ───────────────
 
-  _openPhaseModal(phase, pps, project, container) {
-    document.getElementById('pps-phase-modal')?.remove()
+  _openBlockModal(phase, block, defaultDate, pps, project, container) {
+    document.getElementById('pps-block-modal')?.remove()
     const overlay = document.createElement('div')
-    overlay.id = 'pps-phase-modal'
+    overlay.id = 'pps-block-modal'
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(9,30,66,0.54);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px 16px'
 
     const users = this.app.allUsers || []
+    const isNew = !block
+    const data = block
+      ? { ...block }
+      : { id: newId(), title: '', notes: '', start_date: defaultDate || '', end_date: defaultDate || '', color: null, assignee_id: null }
+    let selColor = data.color || ''   // '' = inherit column colour
+
+    const render = () => {
+      const autoSwatch = `<div class="pps-sw${selColor === '' ? ' pps-sw-sel' : ''}" data-c=""
+        style="width:22px;height:22px;border-radius:50%;background:var(--bg-tertiary,#333);cursor:pointer;border:2px solid ${selColor === '' ? 'var(--accent)' : 'var(--border-med)'};font-size:8px;display:flex;align-items:center;justify-content:center;color:var(--text-tertiary);flex-shrink:0" title="Inherit column colour">auto</div>`
+      const swatches = autoSwatch + PRESET_COLORS.map(c =>
+        `<div class="pps-sw${selColor === c ? ' pps-sw-sel' : ''}" data-c="${c}"
+          style="width:22px;height:22px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${selColor === c ? '#fff' : 'transparent'};flex-shrink:0"></div>`
+      ).join('')
+
+      overlay.innerHTML = `
+        <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:440px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border-light)">
+            <div style="font-size:14px;font-weight:600">${isNew ? 'Add block' : 'Edit block'} <span style="font-weight:400;color:var(--text-tertiary)">· ${esc(phase.name)}</span></div>
+            <button id="ppsb-x" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-tertiary);padding:2px 6px;line-height:1">×</button>
+          </div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
+            <div>
+              <label style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px">Title</label>
+              <input type="text" id="ppsb-title" value="${esc(data.title || '')}" placeholder="e.g. HERO — Edit, EOP V1 Watch…" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font)" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div>
+                <label style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px">Start date <span style="color:#ef4444">*</span></label>
+                <input type="date" id="ppsb-start" value="${data.start_date || ''}" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);color-scheme:dark" />
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px">End date <span style="color:#ef4444">*</span></label>
+                <input type="date" id="ppsb-end" value="${data.end_date || ''}" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);color-scheme:dark" />
+              </div>
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px">Notes</label>
+              <textarea id="ppsb-notes" rows="2" placeholder="What's happening in this block…" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);resize:vertical">${esc(data.notes || '')}</textarea>
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px">Team member</label>
+              <select id="ppsb-assignee" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font)">
+                <option value="">— None —</option>
+                ${users.map(u => `<option value="${u.id}" ${u.id === data.assignee_id ? 'selected' : ''}>${esc(u.name || u.email)}</option>`).join('')}
+              </select>
+              <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">Assigning a member adds this block to their team calendar on the dashboard.</div>
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:7px">Colour</div>
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${swatches}</div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:4px">
+              ${!isNew ? `<button id="ppsb-del" class="btn-cancel" style="color:#ef4444;border-color:rgba(239,68,68,0.35)">Delete</button>` : '<div></div>'}
+              <div style="display:flex;gap:8px">
+                <button id="ppsb-cancel" class="btn-cancel">Cancel</button>
+                <button id="ppsb-save" class="btn-primary">${isNew ? 'Add block' : 'Save changes'}</button>
+              </div>
+            </div>
+          </div>
+        </div>`
+
+      overlay.querySelectorAll('.pps-sw').forEach(sw => {
+        sw.addEventListener('click', () => {
+          selColor = sw.dataset.c
+          data.title = overlay.querySelector('#ppsb-title')?.value ?? data.title
+          data.notes = overlay.querySelector('#ppsb-notes')?.value ?? data.notes
+          data.start_date = overlay.querySelector('#ppsb-start')?.value ?? data.start_date
+          data.end_date   = overlay.querySelector('#ppsb-end')?.value ?? data.end_date
+          data.assignee_id = overlay.querySelector('#ppsb-assignee')?.value || null
+          render()
+        })
+      })
+      overlay.querySelector('#ppsb-x')?.addEventListener('click',      () => overlay.remove())
+      overlay.querySelector('#ppsb-cancel')?.addEventListener('click', () => overlay.remove())
+
+      overlay.querySelector('#ppsb-save')?.addEventListener('click', async () => {
+        const startVal = overlay.querySelector('#ppsb-start')?.value || ''
+        const endVal   = overlay.querySelector('#ppsb-end')?.value   || ''
+        if (!startVal || !endVal) { overlay.querySelector('#ppsb-start')?.focus(); return }
+        // Normalise so start <= end
+        const s = startVal <= endVal ? startVal : endVal
+        const en = startVal <= endVal ? endVal : startVal
+        const btn = overlay.querySelector('#ppsb-save')
+        if (btn) btn.textContent = 'Saving…'
+        const next = {
+          id:          data.id,
+          title:       overlay.querySelector('#ppsb-title')?.value.trim() || '',
+          notes:       overlay.querySelector('#ppsb-notes')?.value.trim() || '',
+          start_date:  s,
+          end_date:    en,
+          color:       selColor || null,
+          assignee_id: overlay.querySelector('#ppsb-assignee')?.value || null,
+        }
+        if (!phase.blocks) phase.blocks = []
+        const idx = phase.blocks.findIndex(b => b.id === data.id)
+        const prev = phase.blocks.slice()
+        if (idx >= 0) phase.blocks[idx] = next
+        else phase.blocks = [...phase.blocks, next]
+        try {
+          await this._persistBlocks(phase)
+          overlay.remove()
+          this._renderPpsContent(container, pps, project)
+        } catch (e) {
+          console.error(e)
+          phase.blocks = prev
+          if (btn) btn.textContent = 'Error — retry'
+        }
+      })
+
+      overlay.querySelector('#ppsb-del')?.addEventListener('click', async () => {
+        if (isNew || !confirm('Delete this block?')) return
+        const prev = phase.blocks.slice()
+        phase.blocks = phase.blocks.filter(b => b.id !== data.id)
+        try {
+          await this._persistBlocks(phase)
+          overlay.remove()
+          this._renderPpsContent(container, pps, project)
+        } catch (e) { console.error(e); phase.blocks = prev }
+      })
+    }
+
+    render()
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+    document.body.appendChild(overlay)
+    setTimeout(() => overlay.querySelector('#ppsb-title')?.focus(), 50)
+  }
+
+  // ── Column modal (header / colour / portal visibility) ───────────────────────
+
+  _openColumnModal(phase, pps, project, container) {
+    document.getElementById('pps-col-modal')?.remove()
+    const overlay = document.createElement('div')
+    overlay.id = 'pps-col-modal'
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(9,30,66,0.54);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px 16px'
+
     let selColor = phase?.color || '#C47E3A'
 
     const render = () => {
@@ -399,46 +516,28 @@ export class PostProductionView {
       overlay.innerHTML = `
         <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:420px" onclick="event.stopPropagation()">
           <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border-light)">
-            <div style="font-size:14px;font-weight:600">${phase ? 'Edit phase' : 'Add phase'}</div>
-            <button id="ppsm-x" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-tertiary);padding:2px 6px;line-height:1">×</button>
+            <div style="font-size:14px;font-weight:600">${phase ? 'Edit column' : 'Add column'}</div>
+            <button id="ppsc-x" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-tertiary);padding:2px 6px;line-height:1">×</button>
           </div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
             <div>
-              <label style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px">Phase name <span style="color:#ef4444">*</span></label>
-              <input type="text" id="ppsm-name" value="${esc(phase?.name || '')}" placeholder="e.g. V1 Edits" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font)" />
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-              <div>
-                <label style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px">Start date</label>
-                <input type="date" id="ppsm-start" value="${phase?.start_date || ''}" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);color-scheme:dark" />
-              </div>
-              <div>
-                <label style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px">End date</label>
-                <input type="date" id="ppsm-end" value="${phase?.end_date || ''}" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);color-scheme:dark" />
-              </div>
+              <label style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px">Column header <span style="color:#ef4444">*</span></label>
+              <input type="text" id="ppsc-name" value="${esc(phase?.name || '')}" placeholder="e.g. V1 Edits" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font)" />
             </div>
             <div>
-              <label style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px">Team member</label>
-              <select id="ppsm-assignee" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font)">
-                <option value="">— None —</option>
-                ${users.map(u => `<option value="${u.id}" ${u.id === phase?.assignee_id ? 'selected' : ''}>${esc(u.name || u.email)}</option>`).join('')}
-              </select>
-              <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">Assigning a member adds this block to their team calendar on the dashboard${phase && !(phase.start_date && phase.end_date) ? ' (once the phase has dates)' : ''}.</div>
-            </div>
-            <div>
-              <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:7px">Colour</div>
+              <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:7px">Default colour</div>
               <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${swatches}</div>
             </div>
             ${project.portal_token ? `
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
-              <input type="checkbox" id="ppsm-portal" ${phase?.show_in_portal ? 'checked' : ''} style="cursor:pointer;accent-color:var(--accent)" />
+              <input type="checkbox" id="ppsc-portal" ${phase?.show_in_portal ? 'checked' : ''} style="cursor:pointer;accent-color:var(--accent)" />
               Show in client portal
             </label>` : ''}
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:4px">
-              ${phase ? `<button id="ppsm-del" class="btn-cancel" style="color:#ef4444;border-color:rgba(239,68,68,0.35)">Delete</button>` : '<div></div>'}
+              ${phase ? `<button id="ppsc-del" class="btn-cancel" style="color:#ef4444;border-color:rgba(239,68,68,0.35)">Delete column</button>` : '<div></div>'}
               <div style="display:flex;gap:8px">
-                <button id="ppsm-cancel" class="btn-cancel">Cancel</button>
-                <button id="ppsm-save" class="btn-primary">${phase ? 'Save changes' : 'Add phase'}</button>
+                <button id="ppsc-cancel" class="btn-cancel">Cancel</button>
+                <button id="ppsc-save" class="btn-primary">${phase ? 'Save changes' : 'Add column'}</button>
               </div>
             </div>
           </div>
@@ -447,30 +546,27 @@ export class PostProductionView {
       overlay.querySelectorAll('.pps-sw').forEach(sw => {
         sw.addEventListener('click', () => { selColor = sw.dataset.c; render() })
       })
-      overlay.querySelector('#ppsm-x')?.addEventListener('click',      () => overlay.remove())
-      overlay.querySelector('#ppsm-cancel')?.addEventListener('click', () => overlay.remove())
+      overlay.querySelector('#ppsc-x')?.addEventListener('click',      () => overlay.remove())
+      overlay.querySelector('#ppsc-cancel')?.addEventListener('click', () => overlay.remove())
 
-      overlay.querySelector('#ppsm-save')?.addEventListener('click', async () => {
-        const name = overlay.querySelector('#ppsm-name')?.value.trim()
-        if (!name) { overlay.querySelector('#ppsm-name')?.focus(); return }
-        const btn = overlay.querySelector('#ppsm-save')
+      overlay.querySelector('#ppsc-save')?.addEventListener('click', async () => {
+        const name = overlay.querySelector('#ppsc-name')?.value.trim()
+        if (!name) { overlay.querySelector('#ppsc-name')?.focus(); return }
+        const btn = overlay.querySelector('#ppsc-save')
         if (btn) btn.textContent = 'Saving…'
-        const data = {
+        const meta = {
           name,
-          start_date:     overlay.querySelector('#ppsm-start')?.value || null,
-          end_date:       overlay.querySelector('#ppsm-end')?.value   || null,
           color:          selColor,
-          show_in_portal: overlay.querySelector('#ppsm-portal')?.checked ?? false,
-          assignee_id:    overlay.querySelector('#ppsm-assignee')?.value || null,
+          show_in_portal: overlay.querySelector('#ppsc-portal')?.checked ?? false,
         }
         try {
           const { createPpsPhase, updatePpsPhase } = await import('../db/client.js')
           if (phase) {
-            const updated = await updatePpsPhase(phase.id, data)
-            const idx = (pps.phases || []).findIndex(p => p.id === phase.id)
-            if (idx >= 0) pps.phases[idx] = updated
+            await updatePpsPhase(phase.id, meta)
+            Object.assign(phase, meta)
           } else {
-            const created = await createPpsPhase(pps.id, { ...data, sort_order: (pps.phases || []).length })
+            const created = await createPpsPhase(pps.id, { ...meta, blocks: [], sort_order: (pps.phases || []).length })
+            if (!created.blocks) created.blocks = []
             if (!pps.phases) pps.phases = []
             pps.phases.push(created)
           }
@@ -483,8 +579,8 @@ export class PostProductionView {
         }
       })
 
-      overlay.querySelector('#ppsm-del')?.addEventListener('click', async () => {
-        if (!phase || !confirm('Delete this phase?')) return
+      overlay.querySelector('#ppsc-del')?.addEventListener('click', async () => {
+        if (!phase || !confirm('Delete this column and all its blocks?')) return
         try {
           const { deletePpsPhase } = await import('../db/client.js')
           await deletePpsPhase(phase.id)
@@ -499,7 +595,7 @@ export class PostProductionView {
     render()
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
     document.body.appendChild(overlay)
-    setTimeout(() => overlay.querySelector('#ppsm-name')?.focus(), 50)
+    setTimeout(() => overlay.querySelector('#ppsc-name')?.focus(), 50)
   }
 }
 
