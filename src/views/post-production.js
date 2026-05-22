@@ -65,6 +65,13 @@ export class PostProductionView {
             <input type="date" id="pps-master-end" value="${pps.end_date || ''}" style="padding:5px 9px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);color-scheme:dark" />
             <button id="pps-save-dates" class="btn-primary" style="padding:5px 12px;font-size:12px">Save</button>
           </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:11px;color:var(--text-tertiary);font-weight:500;white-space:nowrap">Lead:</span>
+            <select id="pps-lead-user" style="padding:4px 8px;font-size:12px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font)">
+              <option value="">— None —</option>
+              ${(this.app.allUsers || []).map(u => `<option value="${u.id}" ${u.id === (pps.lead_assignee_id || '') ? 'selected' : ''}>${esc(u.name || u.email.split('@')[0])}</option>`).join('')}
+            </select>
+          </div>
           <span style="font-size:11px;color:var(--text-tertiary);margin-left:auto">Hover a cell for + to add a block · click a block to edit · drag its edges to resize</span>
         </div>
 
@@ -250,6 +257,15 @@ export class PostProductionView {
       }
     })
 
+    container.querySelector('#pps-lead-user')?.addEventListener('change', async e => {
+      const leadId = e.target.value || null
+      pps.lead_assignee_id = leadId
+      try {
+        const { updatePpsScheduleDates } = await import('../db/client.js')
+        await updatePpsScheduleDates(pps.id, { lead_assignee_id: leadId })
+      } catch (err) { console.error(err) }
+    })
+
     this._bindGrid(container, pps, project)
   }
 
@@ -373,7 +389,7 @@ export class PostProductionView {
     const isNew = !block
     const data = block
       ? { ...block }
-      : { id: newId(), title: '', notes: '', start_date: defaultDate || '', end_date: defaultDate || '', color: null, assignee_id: null }
+      : { id: newId(), title: '', notes: '', start_date: defaultDate || '', end_date: defaultDate || '', color: null, assignee_id: pps.lead_assignee_id || null }
     let selColor = data.color || ''   // '' = inherit column colour
 
     const render = () => {

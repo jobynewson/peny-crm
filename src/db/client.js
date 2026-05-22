@@ -79,6 +79,8 @@ export async function runMigrations() {
     )
   `
   await sql`ALTER TABLE team_calendar_entries ADD COLUMN IF NOT EXISTS end_date DATE`
+  await sql`ALTER TABLE team_calendar_entries ADD COLUMN IF NOT EXISTS is_deadline BOOLEAN NOT NULL DEFAULT false`
+  await sql`ALTER TABLE post_production_schedules ADD COLUMN IF NOT EXISTS lead_assignee_id UUID`
   await sql`
     CREATE TABLE IF NOT EXISTS post_production_schedules (
       id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
