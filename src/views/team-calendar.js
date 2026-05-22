@@ -433,9 +433,14 @@ export class TeamCalendarView {
       chip.addEventListener('click', e => {
         e.stopPropagation()
         const [type, projectId] = chip.dataset.ghostNav.split('::')
+        const tab = type === 'shoot' ? 'shoots' : 'post-production'
+        // navigate() resets currentId, so set state directly like openProject does
+        this.app.currentView = 'projects'
         this.app.projectsView.currentId = projectId
-        this.app.projectsView._pvTab = type === 'shoot' ? 'shoots' : 'post-production'
-        this.app.navigate('projects')
+        this.app.projectsView._pvTab = tab
+        this.app.projectsView.editingId = null
+        history.pushState({ view: 'projects' }, '', `#projects/${projectId}/${tab}`)
+        this.app.render()
       })
     })
 
