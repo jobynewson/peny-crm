@@ -49,48 +49,55 @@ export default async function handler(req, res) {
     ORDER BY entry_date DESC, created_at DESC
   `
 
-  const ppsSchedule = await sql`
-    SELECT id FROM post_production_schedules
+  const scheduleRows = await sql`
+    SELECT id, start_date, end_date FROM post_production_schedules
     WHERE project_id = ${project.id}
     LIMIT 1
   `
 
+  let ppsSchedule = null
   let ppsPhases = []
-  if (ppsSchedule[0]) {
+  if (scheduleRows[0]) {
+    const sched = scheduleRows[0]
+    ppsSchedule = { start_date: sched.start_date, end_date: sched.end_date }
+
     const cols = await sql`
       SELECT id, name, color, blocks, show_in_portal, sort_order
       FROM pps_phases
-      WHERE schedule_id = ${ppsSchedule[0].id}
+      WHERE schedule_id = ${sched.id}
       ORDER BY sort_order, created_at
     `
-    // A block shows if its column is portal-visible, or the block itself is marked
+
     for (const col of cols) {
       const colVisible = col.show_in_portal
       const blocks = Array.isArray(col.blocks) ? col.blocks : []
-      const dated = blocks.filter(b => (colVisible || b.show_in_portal) && b.start_date && b.end_date)
-      if (dated.length) {
-        for (const b of dated) {
-          ppsPhases.push({
-            name:        b.title || col.name,
+      const visibleBlocks = blocks.filter(b => (colVisible || b.show_in_portal) && b.start_date && b.end_date)
+      if (visibleBlocks.length || colVisible) {
+        ppsPhases.push({
+          id:    col.id,
+          name:  col.name,
+          color: col.color,
+          blocks: visibleBlocks.map(b => ({
+            id:          b.id,
+            title:       b.title       || '',
             start_date:  b.start_date,
             end_date:    b.end_date,
-            color:       b.color || col.color,
+            color:       b.color       || null,
+            notes:       b.notes       || '',
             is_deadline: b.is_deadline || false,
-          })
-        }
-      } else if (colVisible) {
-        ppsPhases.push({ name: col.name, color: col.color })
+          })),
+        })
       }
     }
   }
 
   return res.status(200).json({
     project: {
-      name:        project.name,
-      status:      project.status,
-      brief:       project.brief,
-      shoot_start: project.shoot_start,
-      shoot_end:   project.shoot_end,
+      name:          project.name,
+      status:        project.status,
+      brief:         project.brief,
+      shoot_start:   project.shoot_start,
+      shoot_end:     project.shoot_end,
       frame_io_link: project.frame_io_link,
     },
     client: project.first_name
@@ -99,6 +106,7 @@ export default async function handler(req, res) {
     studio:       { name: project.studio_name, website: project.studio_website },
     deliverables: (deliverables || []).filter(d => d.text),
     workLog:      logEntries,
+    ppsSchedule,
     ppsPhases,
   })
 }
