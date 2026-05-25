@@ -205,10 +205,25 @@ export class TeamCalendarView {
   _renderGrid(days, users, entries) {
     if (!users.length) return `<div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">No team members found.</div>`
 
-    const today    = new Date(); today.setHours(0, 0, 0, 0)
+    const today   = new Date(); today.setHours(0, 0, 0, 0)
     const projects = this.app.projects || []
-    const numDays  = days.length
-    const dayKeys  = days.map(d => this._dateKey(d))
+
+    // Build lookup: userId:dateKey → [entries] with _isFirst/_isLast continuity flags
+    const byUserDate = {}
+    for (const e of entries) {
+      const start = e.entry_date
+      const end   = e.end_date || e.entry_date
+      for (const day of days) {
+        const k = this._dateKey(day)
+        if (k >= start && k <= end) {
+          const key = `${e.assignee_id}:${k}`
+          if (!byUserDate[key]) byUserDate[key] = []
+          if (!byUserDate[key].find(x => x.id === e.id)) {
+            byUserDate[key].push({ ...e, _isFirst: k === start, _isLast: k === end })
+          }
+        }
+      }
+    }
 
     const shootEntries = this._buildShootEntries(days, users)
     const ppsEntries   = this._buildPpsEntries(days, users)
@@ -216,114 +231,54 @@ export class TeamCalendarView {
     const paste = this._clipboard
       ? `<div id="tc-paste-hint" style="font-size:11px;color:var(--accent);margin-top:6px;margin-bottom:2px">📋 Entry copied — click a cell to paste (or press Escape to clear)</div>` : ''
 
-    const CHIP_H   = 24
-    const LANE_GAP = 2
-    const PAD_V    = 4
-
-    // Build per-user layouts with span indices and lane assignments
-    const userLayouts = users.map(u => {
-      const allEntries = []
-      const seenIds    = new Set()
-
-      for (const e of entries) {
-        if (e.assignee_id !== u.id) continue
-        const start = e.entry_date
-        const end   = e.end_date || e.entry_date
-        const si    = dayKeys.findIndex(k => k >= start)
-        let   ei    = -1
-        for (let i = numDays - 1; i >= 0; i--) { if (dayKeys[i] <= end) { ei = i; break } }
-        if (si === -1 || ei === -1 || si > ei) continue
-        seenIds.add(e.id)
-        allEntries.push({ ...e,
-          _isFirst: start >= dayKeys[0],
-          _isLast:  !e.end_date || e.end_date <= dayKeys[numDays - 1],
-          _startIdx: si, _endIdx: ei })
-      }
-
-      for (let i = 0; i < numDays; i++) {
-        for (const e of (shootEntries[`${u.id}:${dayKeys[i]}`] || [])) {
-          if (seenIds.has(e.id)) continue
-          seenIds.add(e.id)
-          allEntries.push({ ...e, _isFirst: true, _isLast: true, _startIdx: i, _endIdx: i })
-        }
-      }
-
-      for (let i = 0; i < numDays; i++) {
-        for (const e of (ppsEntries[`${u.id}:${dayKeys[i]}`] || [])) {
-          const blockKey = e.id.replace(/-\d{4}-\d{2}-\d{2}$/, '')
-          if (seenIds.has(blockKey)) continue
-          seenIds.add(blockKey)
-          const end = e.end_date || e.entry_date
-          let ei = -1
-          for (let j = numDays - 1; j >= 0; j--) { if (dayKeys[j] <= end) { ei = j; break } }
-          if (ei === -1) continue
-          allEntries.push({ ...e,
-            _isFirst: e._isFirst,
-            _isLast:  !e.end_date || e.end_date <= dayKeys[numDays - 1],
-            _startIdx: i, _endIdx: ei })
-        }
-      }
-
-      const { layouts, numLanes } = this._assignLanes(allEntries)
-      const rowH = numLanes > 0 ? PAD_V + numLanes * (CHIP_H + LANE_GAP) - LANE_GAP + PAD_V : 34
-      return { user: u, layouts, rowH }
-    })
-
-    const headerCols = days.map(day => {
-      const isToday   = day.getTime() === today.getTime()
-      const isWeekend = day.getDay() === 0 || day.getDay() === 6
-      const dayStr    = day.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
-      return `<div style="padding:7px 8px;font-size:11px;font-weight:500;border-left:1px solid var(--border-light);
-        color:${isToday ? 'var(--accent)' : isWeekend ? 'var(--text-tertiary)' : 'var(--text-secondary)'};
-        ${isToday ? 'background:rgba(74,144,217,0.06);' : ''}white-space:nowrap">
-        ${esc(dayStr)}${isToday ? ' <span style="font-size:9px;background:var(--accent);color:#fff;border-radius:3px;padding:1px 4px;vertical-align:middle">TODAY</span>' : ''}
-      </div>`
-    }).join('')
-
-    const rowsHTML = userLayouts.map(({ user: u, layouts, rowH }) => {
-      const bgCells = days.map((day, i) => {
-        const dk        = this._dateKey(day)
-        const isToday   = day.getTime() === today.getTime()
-        const isWeekend = day.getDay() === 0 || day.getDay() === 6
-        const bg = isToday ? 'rgba(74,144,217,0.06)' : isWeekend ? 'var(--bg-secondary)' : ''
-        return `<div class="tc-cell" data-tc-date="${dk}" data-tc-user="${u.id}"
-          style="position:absolute;left:${(i/numDays)*100}%;width:${(1/numDays)*100}%;top:0;bottom:0;
-          ${bg ? 'background:' + bg + ';' : ''}${i > 0 ? 'border-left:1px solid var(--border-light);' : ''}
-          cursor:pointer;box-sizing:border-box">
-          <div class="tc-add-hint" style="opacity:0;font-size:15px;color:var(--text-tertiary);
-            display:flex;align-items:center;justify-content:center;height:100%;
-            transition:opacity 0.1s;pointer-events:none;user-select:none">+</div>
-        </div>`
-      }).join('')
-
-      const chipsHTML = layouts.map(({ entry: e, lane }) => {
-        const top   = PAD_V + lane * (CHIP_H + LANE_GAP)
-        const left  = (e._startIdx / numDays) * 100
-        const width = ((e._endIdx - e._startIdx + 1) / numDays) * 100
-        return this._chipHTML(e, projects, left, width, top, CHIP_H)
-      }).join('')
-
-      return `
-        <div style="display:flex;border-top:1px solid var(--border-light)">
-          <div style="width:110px;flex-shrink:0;padding:7px 10px;border-right:1px solid var(--border-light);
-            font-size:12px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-            display:flex;align-items:flex-start;min-height:${rowH}px;box-sizing:border-box">
-            ${esc(u.name || u.email.split('@')[0])}
-          </div>
-          <div style="flex:1;position:relative;height:${rowH}px">${bgCells}${chipsHTML}</div>
-        </div>`
-    }).join('')
-
     return `
       ${paste}
       <div style="overflow-x:auto;border-radius:var(--radius-md);border:1px solid var(--border-light)">
-        <div id="tc-table" style="min-width:${110 + numDays * 120}px;font-size:12px">
-          <div style="display:flex;background:var(--bg-secondary);border-bottom:1px solid var(--border-light)">
-            <div style="width:110px;flex-shrink:0;padding:8px 10px;font-size:11px;font-weight:500;color:var(--text-tertiary);border-right:1px solid var(--border-light)">Team</div>
-            <div style="flex:1;display:grid;grid-template-columns:repeat(${numDays},1fr)">${headerCols}</div>
-          </div>
-          ${rowsHTML}
-        </div>
+        <table id="tc-table" style="width:100%;min-width:${100 + users.length * 150}px;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="background:var(--bg-secondary)">
+              <th style="padding:8px 10px;text-align:left;font-weight:500;font-size:11px;color:var(--text-tertiary);width:110px;border-right:1px solid var(--border-light);white-space:nowrap">Date</th>
+              ${users.map(u => `
+                <th style="padding:8px 10px;text-align:left;font-weight:500;font-size:11px;color:var(--text-secondary);min-width:150px;border-right:1px solid var(--border-light)">
+                  ${esc(u.name || u.email.split('@')[0])}
+                </th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${days.map(day => {
+              const dateKey   = this._dateKey(day)
+              const isToday   = day.getTime() === today.getTime()
+              const isWeekend = day.getDay() === 0 || day.getDay() === 6
+              const dayStr    = day.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+              const rowBg     = isToday ? 'rgba(74,144,217,0.06)' : isWeekend ? 'var(--bg-secondary)' : 'var(--bg-primary)'
+              return `<tr style="background:${rowBg};border-top:1px solid var(--border-light)">
+                <td style="padding:7px 10px;border-right:1px solid var(--border-light);vertical-align:middle;white-space:nowrap;${isToday ? 'font-weight:600;color:var(--accent)' : isWeekend ? 'color:var(--text-tertiary)' : 'color:var(--text-secondary)'}">
+                  ${esc(dayStr)}${isToday ? ' <span style="font-size:9px;background:var(--accent);color:#fff;border-radius:3px;padding:1px 4px;vertical-align:middle">TODAY</span>' : ''}
+                </td>
+                ${users.map(u => {
+                  const realEntries  = byUserDate[`${u.id}:${dateKey}`] || []
+                  const ghostEntries = shootEntries[`${u.id}:${dateKey}`] || []
+                  const ppsGhosts    = ppsEntries[`${u.id}:${dateKey}`] || []
+                  const allChips = [
+                    ...realEntries.map(e => this._chipHTML(e, false, projects)),
+                    ...ghostEntries.map(e => this._chipHTML(e, true, projects)),
+                    ...ppsGhosts.map(e => this._chipHTML(e, true, projects)),
+                  ]
+                  return `<td class="tc-cell" data-tc-date="${dateKey}" data-tc-user="${u.id}"
+                    style="padding:3px 4px;border-right:1px solid var(--border-light);height:34px;
+                    vertical-align:middle;cursor:pointer;position:relative;box-sizing:border-box">
+                    <div style="display:flex;gap:2px;height:26px;align-items:stretch;overflow:hidden">
+                      ${allChips.join('')}
+                    </div>
+                    <div class="tc-add-hint" style="position:absolute;inset:0;display:flex;align-items:center;
+                      justify-content:center;opacity:0;font-size:16px;color:var(--text-tertiary);
+                      transition:opacity 0.1s;pointer-events:none;user-select:none">+</div>
+                  </td>`
+                }).join('')}
+              </tr>`
+            }).join('')}
+          </tbody>
+        </table>
       </div>
       <div style="margin-top:6px;font-size:11px;color:var(--text-tertiary);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <span>Click cell to add · Click entry to edit · Drag to move · Drag edges to resize</span>
@@ -333,46 +288,35 @@ export class TeamCalendarView {
       </div>`
   }
 
-  _assignLanes(entries) {
-    const sorted = [...entries].sort((a, b) => {
-      const diff = (b._endIdx - b._startIdx) - (a._endIdx - a._startIdx)
-      return diff !== 0 ? diff : a._startIdx - b._startIdx
-    })
-    const laneEnds = []
-    const layouts  = []
-    for (const entry of sorted) {
-      let lane = 0
-      while (lane < laneEnds.length && laneEnds[lane] >= entry._startIdx) lane++
-      laneEnds[lane] = entry._endIdx
-      layouts.push({ entry, lane })
-    }
-    return { layouts, numLanes: laneEnds.length }
-  }
-
-  _chipHTML(e, projects, leftPct, widthPct, topPx, heightPx) {
-    const col     = e.color || TYPE_COLORS[e.entry_type] || '#7B6EAB'
-    const proj    = e.project_id ? projects.find(p => p.id === e.project_id) : null
-    const label   = proj ? proj.name : e.label
-    const isGhost = !!e._ghost
-    const hasNav  = isGhost && !!e._navTarget
+  _chipHTML(e, isGhost, projects) {
+    const col    = e.color || TYPE_COLORS[e.entry_type] || '#7B6EAB'
+    const proj   = e.project_id ? projects.find(p => p.id === e.project_id) : null
+    const label  = proj ? proj.name : e.label
+    const hasNav = isGhost && !!e._navTarget
     const ghostStyle = isGhost
       ? `border-style:dashed;opacity:0.75;${hasNav ? 'cursor:pointer;' : 'pointer-events:none;'}`
       : `cursor:pointer;`
     const navAttr   = hasNav ? `data-ghost-nav="${e._navTarget}"` : ''
     const chipAttrs = isGhost ? navAttr : `data-tc-entry-id="${e.id}" draggable="true"`
+    // Multi-day continuity: square the corners and drop the border where the block continues
+    const isMulti = !!(e.end_date && e.end_date > e.entry_date)
+    const brTL = e._isFirst !== false ? '4px' : '0'
+    const brBL = e._isFirst !== false ? '4px' : '0'
+    const brTR = e._isLast  !== false ? '4px' : '0'
+    const brBR = e._isLast  !== false ? '4px' : '0'
+    const borderL = isMulti && e._isFirst === false ? 'none' : `1px solid ${col}88`
+    const borderR = isMulti && e._isLast  === false ? 'none' : `1px solid ${col}88`
     const startHandle = !isGhost && e._isFirst
-      ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="start" style="position:absolute;top:0;bottom:0;left:0;width:6px;cursor:ew-resize;color:${col};z-index:1"></div>` : ''
+      ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="start" style="position:absolute;top:-1px;left:0;right:0;height:6px;cursor:ns-resize;color:${col}"></div>` : ''
     const endHandle = !isGhost && e._isLast
-      ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="end" style="position:absolute;top:0;bottom:0;right:0;width:6px;cursor:ew-resize;color:${col};z-index:1"></div>` : ''
-    const brL = e._isFirst !== false ? '4px' : '0'
-    const brR = e._isLast  !== false ? '4px' : '0'
-    const title = `${esc(label)}${proj && e.label !== proj.name ? ' · ' + esc(e.label) : ''}${e.end_date && e.end_date > e.entry_date ? ' (multi-day)' : ''}${isGhost ? (e._ghostNote || ' (from shoot plan)') : ''}${hasNav ? ' · Click to open ↗' : ''}`
+      ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="end" style="position:absolute;bottom:-1px;left:0;right:0;height:6px;cursor:ns-resize;color:${col}"></div>` : ''
+    const title = `${esc(label)}${proj && e.label !== proj.name ? ' · ' + esc(e.label) : ''}${isMulti ? ' (multi-day)' : ''}${isGhost ? (e._ghostNote || ' (from shoot plan)') : ''}${hasNav ? ' · Click to open ↗' : ''}`
     return `<div class="${isGhost ? 'tc-chip-ghost' : 'tc-chip'}" ${chipAttrs}
-      style="position:absolute;left:calc(${leftPct}% + 2px);width:calc(${widthPct}% - 4px);top:${topPx}px;height:${heightPx}px;
-      display:flex;align-items:center;gap:4px;padding:2px 6px;
-      background:${col}22;border:1px solid ${col}88;
-      border-radius:${brL} ${brR} ${brR} ${brL};
-      ${ghostStyle}box-sizing:border-box;overflow:hidden" title="${title}">
+      style="position:relative;flex:1;min-width:0;display:flex;align-items:center;gap:4px;padding:2px 5px;
+      background:${col}22;border-top:1px solid ${col}88;border-bottom:1px solid ${col}88;
+      border-left:${borderL};border-right:${borderR};
+      border-radius:${brTL} ${brTR} ${brBR} ${brBL};
+      ${ghostStyle}overflow:hidden" title="${title}">
       ${startHandle}
       <div style="width:6px;height:6px;border-radius:50%;flex-shrink:0;background:${col}"></div>
       <span style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0">${esc(label)}</span>
@@ -600,7 +544,7 @@ export class TeamCalendarView {
     const fixedEnd   = entry.end_date || entry.entry_date
     const orig = { start: entry.entry_date, end: entry.end_date }
     let lastDate = null
-    document.body.classList.add('is-tc-resizing')
+    document.body.classList.add('is-resizing')
 
     const onMove = ev => {
       const cell = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.tc-cell')
@@ -625,7 +569,7 @@ export class TeamCalendarView {
     const onUp = async () => {
       document.removeEventListener('pointermove', onMove)
       document.removeEventListener('pointerup', onUp)
-      document.body.classList.remove('is-tc-resizing')
+      document.body.classList.remove('is-resizing')
       this._resizing = false
       if (entry.entry_date === orig.start && entry.end_date === orig.end) return
       try {

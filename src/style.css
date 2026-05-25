@@ -413,18 +413,7 @@ body {
 .pps-block-cell:hover .pps-resize-handle {
   opacity: 1;
 }
-.tc-resize-handle::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 3px;
-  height: 14px;
-  border-radius: 2px;
-  background: currentColor;
-  opacity: 0.6;
-}
+.tc-resize-handle::after,
 .pps-resize-handle::after {
   content: '';
   position: absolute;
@@ -441,13 +430,4 @@ body.is-resizing,
 body.is-resizing * {
   cursor: ns-resize !important;
   user-select: none !important;
-}
-body.is-tc-resizing,
-body.is-tc-resizing * {
-  cursor: ew-resize !important;
-  user-select: none !important;
-}
-body.is-tc-resizing .tc-chip,
-body.is-tc-resizing .tc-chip-ghost {
-  pointer-events: none !important;
 }
