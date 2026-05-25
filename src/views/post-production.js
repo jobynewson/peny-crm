@@ -72,7 +72,7 @@ export class PostProductionView {
               ${(this.app.allUsers || []).map(u => `<option value="${u.id}" ${u.id === (pps.lead_assignee_id || '') ? 'selected' : ''}>${esc(u.name || u.email.split('@')[0])}</option>`).join('')}
             </select>
           </div>
-          <span style="font-size:11px;color:var(--text-tertiary);margin-left:auto">Hover a cell for + to add a block · click a block to edit · drag its edges to resize</span>
+          <span style="font-size:11px;color:var(--text-tertiary);margin-left:auto">Hover a cell for + to add a block · click a block to edit · drag edges to resize · drag block to move</span>
         </div>
 
         <div id="pps-grid-wrap">
@@ -214,8 +214,8 @@ export class PostProductionView {
                   const assigneeName = userName(assignee)
                   const blockTitle = block.title || ''
                   return `<td class="pps-block-cell" data-phase-id="${ph.id}" data-block-id="${block.id}" data-date="${dkey}"
-                    title="Click to edit · drag edges to resize${blockTitle ? ' · ' + esc(blockTitle) : ''}${assigneeName ? ' · ' + esc(assigneeName) : ''}"
-                    style="position:relative;border-left:2px solid ${rgba55};${isFirst ? `border-top:2px solid ${rgba55};` : ''}${isLast ? `border-bottom:2px solid ${rgba55};` : ''}background:${rgba25};padding:2px 6px;cursor:pointer">
+                    title="Click to edit · drag edges to resize · drag to move${blockTitle ? ' · ' + esc(blockTitle) : ''}${assigneeName ? ' · ' + esc(assigneeName) : ''}"
+                    style="position:relative;border-left:2px solid ${rgba55};${isFirst ? `border-top:2px solid ${rgba55};` : ''}${isLast ? `border-bottom:2px solid ${rgba55};` : ''}background:${rgba25};padding:2px 6px;cursor:grab">
                     ${isFirst ? `<div class="pps-resize-handle" data-phase-id="${ph.id}" data-block-id="${block.id}" data-edge="start" style="position:absolute;top:0;left:0;right:0;height:6px;cursor:ns-resize;color:${color}"></div>` : ''}
                     ${isFirst && blockTitle ? `<div style="font-size:9px;font-weight:700;color:${color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:${CELL_W - 12}px;text-transform:uppercase;letter-spacing:0.3px" title="${esc(blockTitle)}">${esc(blockTitle)}</div>` : ''}
                     ${isFirst && assigneeName ? `<div style="font-size:9px;color:${color};opacity:0.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:${CELL_W - 12}px" title="${esc(assigneeName)}">${esc(abbr(assigneeName))}</div>` : ''}
@@ -279,13 +279,17 @@ export class PostProductionView {
       })
     })
 
-    // Click a block to edit its title / notes / dates / colour / team member
+    // Click a block to edit · pointerdown to drag-to-move
     container.querySelectorAll('.pps-block-cell').forEach(cell => {
       cell.addEventListener('click', e => {
         if (e.target.closest('.pps-resize-handle')) return
         const phase = (pps.phases || []).find(ph => ph.id === cell.dataset.phaseId)
         const block = phase && (phase.blocks || []).find(b => b.id === cell.dataset.blockId)
         if (phase && block) this._openBlockModal(phase, block, null, pps, project, container)
+      })
+      cell.addEventListener('pointerdown', e => {
+        if (e.target.closest('.pps-resize-handle')) return
+        this._startMove(e, cell, pps, project, container)
       })
     })
 
@@ -375,6 +379,58 @@ export class PostProductionView {
 
     document.addEventListener('pointermove', onMove)
     document.addEventListener('pointerup', onUp)
+  }
+
+  // Drag a block's body to shift its start + end dates by the same offset
+  _startMove(e, cell, pps, project, container) {
+    e.preventDefault()
+    const phase = (pps.phases || []).find(p => p.id === cell.dataset.phaseId)
+    const block = phase && (phase.blocks || []).find(b => b.id === cell.dataset.blockId)
+    if (!block || !block.start_date || !block.end_date) return
+
+    const startX = e.clientX, startY = e.clientY
+    const dragFromDate = cell.dataset.date
+    const origStart = block.start_date, origEnd = block.end_date
+    let moved = false, lastDate = null
+
+    const shiftDate = (ds, days) => {
+      const d = new Date(ds + 'T00:00:00')
+      d.setDate(d.getDate() + days)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+
+    const onMove = ev => {
+      if (!moved && Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) < 6) return
+      if (!moved) { moved = true; document.body.classList.add('is-resizing') }
+      const el = document.elementFromPoint(ev.clientX, ev.clientY)
+      const date = el?.closest('td[data-date]')?.dataset.date
+      if (!date || date === lastDate) return
+      lastDate = date
+      const offsetDays = Math.round((new Date(date + 'T00:00:00') - new Date(dragFromDate + 'T00:00:00')) / 86400000)
+      block.start_date = shiftDate(origStart, offsetDays)
+      block.end_date   = shiftDate(origEnd,   offsetDays)
+      this._rerenderGrid(container, pps, project)
+    }
+
+    const onUp = async () => {
+      document.removeEventListener('pointermove', onMove)
+      document.removeEventListener('pointerup',   onUp)
+      document.body.classList.remove('is-resizing')
+      if (!moved) return
+      const suppressClick = ev => { ev.stopImmediatePropagation(); document.removeEventListener('click', suppressClick, true) }
+      document.addEventListener('click', suppressClick, true)
+      if (block.start_date === origStart && block.end_date === origEnd) return
+      try { await this._persistBlocks(phase) }
+      catch (err) {
+        console.error(err)
+        block.start_date = origStart
+        block.end_date   = origEnd
+        this._rerenderGrid(container, pps, project)
+      }
+    }
+
+    document.addEventListener('pointermove', onMove)
+    document.addEventListener('pointerup',   onUp)
   }
 
   // ── Block modal (title / notes / dates / colour / team member) ───────────────

@@ -244,7 +244,6 @@ export class TeamCalendarView {
               ${users.map(u => `
                 <th style="padding:8px 10px;text-align:left;font-weight:500;font-size:11px;color:var(--text-secondary);min-width:150px;border-right:1px solid var(--border-light)">
                   ${esc(u.name || u.email.split('@')[0])}
-                  ${u.role ? `<div style="font-weight:400;font-size:10px;color:var(--text-tertiary)">${esc(u.role)}</div>` : ''}
                 </th>`).join('')}
             </tr>
           </thead>
