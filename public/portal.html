@@ -130,6 +130,7 @@
     let ppsHTML = ''
     if (ppsPhases && ppsPhases.length) {
       const withDates = ppsPhases.filter(ph => ph.start_date && ph.end_date)
+      const fmtS = d => new Date(d).toLocaleDateString('en-GB', { day:'numeric', month:'short' })
       let ganttHTML = ''
       if (withDates.length) {
         const allMs = withDates.flatMap(ph => [new Date(ph.start_date).getTime(), new Date(ph.end_date).getTime()])
@@ -139,7 +140,6 @@
         const today = new Date(); today.setHours(0,0,0,0)
         const todayPct = ((today.getTime() - minMs) / totalMs * 100).toFixed(1)
         const showToday = today.getTime() >= minMs && today.getTime() <= maxMs
-        const fmtS = d => new Date(d).toLocaleDateString('en-GB', { day:'numeric', month:'short' })
 
         // Month boundary markers for column grid lines
         const monthMarkers = []
@@ -196,6 +196,29 @@
             </div>
           </div>`
       }
+      const deadlines = ppsPhases.filter(ph => ph.is_deadline && ph.start_date)
+      const deadlinesHTML = deadlines.length ? `
+        <div style="margin-top:20px;padding-top:18px;border-top:0.5px solid var(--border)">
+          <div class="section-title" style="margin-bottom:10px">Key Dates</div>
+          ${deadlines.map((ph, i) => {
+            const d = new Date(ph.start_date)
+            const daysAway = Math.round((d - today) / 86400000)
+            const isPast = daysAway < 0
+            const isToday = daysAway === 0
+            const isSoon = daysAway > 0 && daysAway <= 7
+            let badge = ''
+            if (isToday)       badge = `<span style="font-size:10px;font-weight:600;color:var(--accent);background:rgba(74,144,217,0.12);padding:2px 7px;border-radius:20px;flex-shrink:0">Today</span>`
+            else if (isSoon)   badge = `<span style="font-size:10px;font-weight:600;color:var(--amber);background:rgba(245,158,11,0.12);padding:2px 7px;border-radius:20px;flex-shrink:0">${daysAway}d away</span>`
+            else if (isPast)   badge = `<span style="font-size:10px;color:var(--text-ter);padding:2px 7px;flex-shrink:0">${fmtS(ph.start_date)}</span>`
+            else               badge = `<span style="font-size:10px;color:var(--text-ter);padding:2px 7px;flex-shrink:0">${fmtS(ph.start_date)}</span>`
+            return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border)${i === deadlines.length-1 ? ';border-bottom:none' : ''}">
+              <div style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:${ph.color || '#C47E3A'}"></div>
+              <span style="flex:1;font-size:13px;color:${isPast ? 'var(--text-ter)' : 'var(--text)'}">${esc(ph.name)}</span>
+              ${badge}
+            </div>`
+          }).join('')}
+        </div>` : ''
+
       ppsHTML = `
         <div class="card">
           <div class="section-title">Post Production Schedule</div>
@@ -206,6 +229,7 @@
               <span>${esc(ph.name)}</span>
             </div>`).join('')}
           </div>` : ''}
+          ${deadlinesHTML}
         </div>`
     }
 
