@@ -233,7 +233,7 @@ export class TeamCalendarView {
 
     return `
       ${paste}
-      <div style="overflow-x:auto;border-radius:var(--radius-md);border:1px solid var(--border-light)">
+      <div id="tc-table-wrap" style="overflow-x:auto;border-radius:var(--radius-md);border:1px solid var(--border-light);position:relative">
         <table id="tc-table" style="width:100%;min-width:${100 + users.length * 150}px;border-collapse:collapse;font-size:12px">
           <thead>
             <tr style="background:var(--bg-secondary)">
@@ -260,7 +260,7 @@ export class TeamCalendarView {
                   const ghostEntries = shootEntries[`${u.id}:${dateKey}`] || []
                   const ppsGhosts    = ppsEntries[`${u.id}:${dateKey}`] || []
                   const allChips = [
-                    ...realEntries.map(e => this._chipHTML(e, false, projects)),
+                    ...realEntries.filter(e => !e.end_date || e.end_date <= e.entry_date).map(e => this._chipHTML(e, false, projects)),
                     ...ghostEntries.map(e => this._chipHTML(e, true, projects)),
                     ...ppsGhosts.map(e => this._chipHTML(e, true, projects)),
                   ]
@@ -279,6 +279,7 @@ export class TeamCalendarView {
             }).join('')}
           </tbody>
         </table>
+        <div id="tc-overlay" style="position:absolute;inset:0;pointer-events:none;overflow:hidden"></div>
       </div>
       <div style="margin-top:6px;font-size:11px;color:var(--text-tertiary);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <span>Click cell to add · Click entry to edit · Drag to move · Drag edges to resize</span>
@@ -497,14 +498,11 @@ export class TeamCalendarView {
         if (this._resizing) { e.preventDefault(); return }
         e.dataTransfer.setData('text/plain', chip.dataset.tcEntryId)
         e.dataTransfer.effectAllowed = 'move'
-        setTimeout(() => {
-          chip.style.opacity = '0.4'
-          gridWrap.querySelectorAll('.tc-chip, .tc-chip-ghost').forEach(c => { c.style.pointerEvents = 'none' })
-        }, 0)
+        setTimeout(() => { chip.style.opacity = '0.4'; this._setChipPointerEvents(gridWrap, false) }, 0)
       })
       chip.addEventListener('dragend', () => {
         chip.style.opacity = ''
-        gridWrap.querySelectorAll('.tc-chip, .tc-chip-ghost').forEach(c => { c.style.pointerEvents = '' })
+        this._setChipPointerEvents(gridWrap, true)
       })
     })
 
@@ -528,6 +526,106 @@ export class TeamCalendarView {
     gridWrap.querySelectorAll('.tc-resize-handle').forEach(handle => {
       handle.addEventListener('pointerdown', e => this._startResize(e, handle, section))
     })
+
+    this._positionOverlay(gridWrap, section)
+  }
+
+  _setChipPointerEvents(gridWrap, restore) {
+    gridWrap.querySelectorAll('.tc-chip, .tc-chip-ghost').forEach(c => {
+      c.style.pointerEvents = c.classList.contains('tc-chip-overlay')
+        ? (restore ? 'all' : 'none')
+        : (restore ? '' : 'none')
+    })
+  }
+
+  _positionOverlay(gridWrap, section) {
+    const overlay = gridWrap.querySelector('#tc-overlay')
+    const wrap    = gridWrap.querySelector('#tc-table-wrap')
+    if (!overlay || !wrap) return
+
+    const entries  = this.app.teamCalendarEntries || []
+    const days     = this._lastDays || this._activeDays()
+    const projects = this.app.projects || []
+    const day0Key  = this._dateKey(days[0])
+    const dayNKey  = this._dateKey(days[days.length - 1])
+
+    // Phase 1: measure all cells before any DOM writes (avoids layout thrashing)
+    const wrapRect = wrap.getBoundingClientRect()
+    const scrollLeft = wrap.scrollLeft
+    const toPlace = []
+    for (const e of entries) {
+      if (!e.end_date || e.end_date <= e.entry_date) continue
+      let firstCell = null, lastCell = null
+      for (const cell of gridWrap.querySelectorAll(`.tc-cell[data-tc-user="${e.assignee_id}"]`)) {
+        const d = cell.dataset.tcDate
+        if (d >= e.entry_date && d <= e.end_date) {
+          if (!firstCell) firstCell = cell
+          lastCell = cell
+        }
+      }
+      if (!firstCell || !lastCell) continue
+      const fr = firstCell.getBoundingClientRect()
+      const lr = lastCell.getBoundingClientRect()
+      toPlace.push({
+        e, projects,
+        top:    fr.top  - wrapRect.top,
+        left:   fr.left - wrapRect.left + scrollLeft,
+        width:  fr.width,
+        height: lr.bottom - fr.top,
+        isFirstVisible: e.entry_date >= day0Key,
+        isLastVisible:  e.end_date   <= dayNKey,
+      })
+    }
+
+    // Phase 2: write overlay chips
+    overlay.innerHTML = ''
+    for (const { e, top, left, width, height, isFirstVisible, isLastVisible } of toPlace) {
+      const col   = e.color || TYPE_COLORS[e.entry_type] || '#7B6EAB'
+      const proj  = e.project_id ? projects.find(p => p.id === e.project_id) : null
+      const label = proj ? proj.name : e.label
+      const PAD   = 2
+
+      const chip = document.createElement('div')
+      chip.className = 'tc-chip tc-chip-overlay'
+      chip.dataset.tcEntryId = e.id
+      chip.draggable = true
+      chip.title = label
+      chip.style.cssText = `position:absolute;left:${left+PAD}px;top:${top+PAD}px;` +
+        `width:${width-PAD*2}px;height:${height-PAD*2}px;` +
+        `display:flex;align-items:flex-start;gap:4px;padding:4px 6px;` +
+        `background:${col}22;border:1px solid ${col}88;border-radius:4px;` +
+        `cursor:pointer;box-sizing:border-box;overflow:hidden;pointer-events:all;z-index:2`
+
+      chip.innerHTML = `
+        ${isFirstVisible ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="start" style="position:absolute;top:-1px;left:0;right:0;height:6px;cursor:ns-resize;color:${col}"></div>` : ''}
+        <div style="display:flex;align-items:center;gap:4px;flex:1;min-width:0;overflow:hidden">
+          <div style="width:6px;height:6px;border-radius:50%;flex-shrink:0;background:${col}"></div>
+          <span style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0">${esc(label)}</span>
+        </div>
+        ${isLastVisible ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="end" style="position:absolute;bottom:-1px;left:0;right:0;height:6px;cursor:ns-resize;color:${col}"></div>` : ''}`
+
+      chip.addEventListener('click', ev => {
+        if (ev.target.closest('.tc-resize-handle')) return
+        ev.stopPropagation()
+        const entry = (this.app.teamCalendarEntries || []).find(x => x.id === e.id)
+        if (entry) this._openEntryModal(entry, section)
+      })
+      chip.addEventListener('dragstart', ev => {
+        if (this._resizing) { ev.preventDefault(); return }
+        ev.dataTransfer.setData('text/plain', e.id)
+        ev.dataTransfer.effectAllowed = 'move'
+        setTimeout(() => { chip.style.opacity = '0.4'; this._setChipPointerEvents(gridWrap, false) }, 0)
+      })
+      chip.addEventListener('dragend', () => {
+        chip.style.opacity = ''
+        this._setChipPointerEvents(gridWrap, true)
+      })
+      chip.querySelectorAll('.tc-resize-handle').forEach(h => {
+        h.addEventListener('pointerdown', ev => this._startResize(ev, h, section))
+      })
+
+      overlay.appendChild(chip)
+    }
   }
 
   // ── Resize via drag ───────────────────────────────────────────────────────────
