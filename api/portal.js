@@ -71,10 +71,11 @@ export default async function handler(req, res) {
       if (dated.length) {
         for (const b of dated) {
           ppsPhases.push({
-            name:       b.title || col.name,
-            start_date: b.start_date,
-            end_date:   b.end_date,
-            color:      b.color || col.color,
+            name:        b.title || col.name,
+            start_date:  b.start_date,
+            end_date:    b.end_date,
+            color:       b.color || col.color,
+            is_deadline: b.is_deadline || false,
           })
         }
       } else if (colVisible) {
