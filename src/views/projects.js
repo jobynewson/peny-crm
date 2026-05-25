@@ -288,7 +288,7 @@ export class ProjectsView {
             <div id="pf-shoot-fields" style="display:none">
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
                 <div class="field" style="margin:0"><div class="field-label">Shoot start</div><input type="date" id="pf-shoot-start" class="proj-input" /></div>
-                <div class="field" style="margin:0"><div class="field-label">Shoot end</div><input type="date" id="pf-shoot-end" class="proj-input" /></div>
+                <div class="field" style="margin:0"><div class="field-label">Shoot end</div><input type="date" id="pf-shoot-end" class="proj-input" data-range-start="pf-shoot-start" /></div>
               </div>
               <div class="field"><div class="field-label">Location</div><input type="text" id="pf-location" placeholder="e.g. Brecon Beacons" /></div>
             </div>
@@ -3533,7 +3533,7 @@ export class ProjectsView {
             <div class="proj-panel-body">
               <div class="proj-date-row">
                 <div><div class="proj-field-label">Shoot start</div><input type="date" class="proj-input" id="pe-start" value="${p.shoot_start??''}" /></div>
-                <div><div class="proj-field-label">Shoot end</div><input type="date" class="proj-input" id="pe-end" value="${p.shoot_end??''}" /></div>
+                <div><div class="proj-field-label">Shoot end</div><input type="date" class="proj-input" id="pe-end" value="${p.shoot_end??''}" min="${p.shoot_start??''}" data-range-start="pe-start" /></div>
               </div>
               <div style="margin-top:14px;padding:10px 12px;background:var(--bg-secondary);border-radius:var(--radius-md);font-size:12px;color:var(--text-secondary);line-height:1.5">
                 <strong style="color:var(--text-primary)">Shoot-specific details</strong> — location, crew call times, hotels, schedule, emergency services and H&S are now managed per-shoot. Save the project, then add individual shoots from the project view.

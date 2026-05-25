@@ -62,7 +62,7 @@ export class PostProductionView {
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <input type="date" id="pps-master-start" value="${pps.start_date || ''}" style="padding:5px 9px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);color-scheme:dark" />
             <span style="color:var(--text-tertiary);font-size:13px">→</span>
-            <input type="date" id="pps-master-end" value="${pps.end_date || ''}" style="padding:5px 9px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);color-scheme:dark" />
+            <input type="date" id="pps-master-end" value="${pps.end_date || ''}" min="${pps.start_date || ''}" data-range-start="pps-master-start" style="padding:5px 9px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);color-scheme:dark" />
             <button id="pps-save-dates" class="btn-primary" style="padding:5px 12px;font-size:12px">Save</button>
           </div>
           <div style="display:flex;align-items:center;gap:6px">
@@ -418,7 +418,7 @@ export class PostProductionView {
               </div>
               <div>
                 <label style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px">End date <span style="color:#ef4444">*</span></label>
-                <input type="date" id="ppsb-end" value="${data.end_date || ''}" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);color-scheme:dark" />
+                <input type="date" id="ppsb-end" value="${data.end_date || ''}" min="${data.start_date || ''}" data-range-start="ppsb-start" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);color-scheme:dark" />
               </div>
             </div>
             <div>
