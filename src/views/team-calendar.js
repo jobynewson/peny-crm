@@ -261,8 +261,8 @@ export class TeamCalendarView {
                   const ppsGhosts    = ppsEntries[`${u.id}:${dateKey}`] || []
                   const allChips = [
                     ...realEntries.filter(e => !e.end_date || e.end_date <= e.entry_date).map(e => this._chipHTML(e, false, projects)),
-                    ...ghostEntries.map(e => this._chipHTML(e, true, projects)),
-                    ...ppsGhosts.map(e => this._chipHTML(e, true, projects)),
+                    ...ghostEntries.filter(e => !e._isMultiDayGhost).map(e => this._chipHTML(e, true, projects)),
+                    ...ppsGhosts.filter(e => !e._blockIsMultiDay).map(e => this._chipHTML(e, true, projects)),
                   ]
                   return `<td class="tc-cell" data-tc-date="${dateKey}" data-tc-user="${u.id}"
                     style="padding:3px 4px;border-right:1px solid var(--border-light);height:34px;
@@ -325,11 +325,31 @@ export class TeamCalendarView {
     </div>`
   }
 
+  _findConsecutiveSpans(sortedDates) {
+    if (!sortedDates.length) return []
+    const spans = []
+    let spanStart = sortedDates[0]
+    let spanDates = [sortedDates[0]]
+    for (let i = 1; i < sortedDates.length; i++) {
+      const diffDays = (new Date(sortedDates[i] + 'T00:00:00') - new Date(sortedDates[i-1] + 'T00:00:00')) / 86400000
+      if (diffDays === 1) {
+        spanDates.push(sortedDates[i])
+      } else {
+        spans.push({ start: spanStart, end: sortedDates[i-1], dates: spanDates })
+        spanStart = sortedDates[i]
+        spanDates = [sortedDates[i]]
+      }
+    }
+    spans.push({ start: spanStart, end: sortedDates[sortedDates.length-1], dates: spanDates })
+    return spans
+  }
+
   _buildShootEntries(days, users) {
     const result = {}
     const shoots = this._shootsCache || []
     if (!shoots.length || !users.length) return result
 
+    const dayKeySet = new Set(days.map(d => this._dateKey(d)))
     const nameToUser = {}
     for (const u of users) {
       if (u.name) nameToUser[u.name.toLowerCase().trim()] = u
@@ -349,25 +369,31 @@ export class TeamCalendarView {
         const user = nameToUser[member.name.toLowerCase().trim()]
         if (!user) continue
 
-        for (const dateStr of shootDates) {
-          for (const day of days) {
-            if (this._dateKey(day) === dateStr) {
-              const key = `${user.id}:${dateStr}`
-              if (!result[key]) result[key] = []
-              result[key].push({
-                id: `shoot-${sh.id}-${user.id}-${dateStr}`,
-                assignee_id: user.id,
-                entry_date: dateStr,
-                end_date: null,
-                entry_type: 'shoot',
-                label: `Shoot — ${sh.project_name || 'Project'}${sh.name ? ': ' + sh.name : ''}`,
-                color: '#4CAF50',
-                project_id: sh.project_id,
-                _ghost: true,
-                _navTarget: `shoot::${sh.project_id}`,
-              })
-            }
+        const visibleDates = shootDates.filter(d => dayKeySet.has(d)).sort()
+        const multiDayDateSet = new Set()
+        if (visibleDates.length >= 2) {
+          for (const span of this._findConsecutiveSpans(visibleDates)) {
+            if (span.dates.length >= 2) span.dates.forEach(d => multiDayDateSet.add(d))
           }
+        }
+
+        for (const dateStr of shootDates) {
+          if (!dayKeySet.has(dateStr)) continue
+          const key = `${user.id}:${dateStr}`
+          if (!result[key]) result[key] = []
+          result[key].push({
+            id: `shoot-${sh.id}-${user.id}-${dateStr}`,
+            assignee_id: user.id,
+            entry_date: dateStr,
+            end_date: null,
+            entry_type: 'shoot',
+            label: `Shoot — ${sh.project_name || 'Project'}${sh.name ? ': ' + sh.name : ''}`,
+            color: '#4CAF50',
+            project_id: sh.project_id,
+            _ghost: true,
+            _navTarget: `shoot::${sh.project_id}`,
+            _isMultiDayGhost: multiDayDateSet.has(dateStr),
+          })
         }
       }
     }
@@ -407,6 +433,7 @@ export class TeamCalendarView {
               _ghost: true,
               _ghostNote: ' (from post production schedule)',
               _navTarget: `pps::${ph.project_id}`,
+              _blockIsMultiDay: b.start_date !== b.end_date,
             })
           }
         }
@@ -546,28 +573,36 @@ export class TeamCalendarView {
     const entries  = this.app.teamCalendarEntries || []
     const days     = this._lastDays || this._activeDays()
     const projects = this.app.projects || []
+    const users    = this.app.allUsers || []
     const day0Key  = this._dateKey(days[0])
     const dayNKey  = this._dateKey(days[days.length - 1])
 
-    // Phase 1: measure all cells before any DOM writes (avoids layout thrashing)
-    const wrapRect = wrap.getBoundingClientRect()
-    const scrollLeft = wrap.scrollLeft
-    const toPlace = []
-    for (const e of entries) {
-      if (!e.end_date || e.end_date <= e.entry_date) continue
+    const measureCells = (userId, startDate, endDate) => {
       let firstCell = null, lastCell = null
-      for (const cell of gridWrap.querySelectorAll(`.tc-cell[data-tc-user="${e.assignee_id}"]`)) {
+      for (const cell of gridWrap.querySelectorAll(`.tc-cell[data-tc-user="${userId}"]`)) {
         const d = cell.dataset.tcDate
-        if (d >= e.entry_date && d <= e.end_date) {
+        if (d >= startDate && d <= endDate) {
           if (!firstCell) firstCell = cell
           lastCell = cell
         }
       }
+      return { firstCell, lastCell }
+    }
+
+    // Phase 1: measure all overlay blocks before any DOM writes
+    const wrapRect   = wrap.getBoundingClientRect()
+    const scrollLeft = wrap.scrollLeft
+    const toPlace    = []
+
+    // 1a: real multi-day entries
+    for (const e of entries) {
+      if (!e.end_date || e.end_date <= e.entry_date) continue
+      const { firstCell, lastCell } = measureCells(e.assignee_id, e.entry_date, e.end_date)
       if (!firstCell || !lastCell) continue
       const fr = firstCell.getBoundingClientRect()
       const lr = lastCell.getBoundingClientRect()
       toPlace.push({
-        e, projects,
+        e, isGhost: false,
         top:    fr.top  - wrapRect.top,
         left:   fr.left - wrapRect.left + scrollLeft,
         width:  fr.width,
@@ -577,52 +612,143 @@ export class TeamCalendarView {
       })
     }
 
+    // 1b: PPS multi-day ghost blocks
+    const userIdSet = new Set(users.map(u => u.id))
+    for (const ph of (this._ppsPhasesCache || [])) {
+      for (const b of (Array.isArray(ph.blocks) ? ph.blocks : [])) {
+        if (!b.assignee_id || !userIdSet.has(b.assignee_id)) continue
+        if (!b.start_date || !b.end_date || b.start_date === b.end_date) continue
+        if (b.end_date < day0Key || b.start_date > dayNKey) continue
+        const { firstCell, lastCell } = measureCells(b.assignee_id, b.start_date, b.end_date)
+        if (!firstCell || !lastCell) continue
+        const fr = firstCell.getBoundingClientRect()
+        const lr = lastCell.getBoundingClientRect()
+        const label = `${ph.project_name ? ph.project_name + ' — ' : ''}${b.title || ph.name}`
+        const color = b.color || ph.color || '#C47E3A'
+        toPlace.push({
+          e: { id: `pps-overlay-${b.id}`, assignee_id: b.assignee_id, label, color,
+               project_id: ph.project_id, _navTarget: `pps::${ph.project_id}`,
+               _ghostNote: ' (from post production schedule)' },
+          isGhost: true,
+          top:    fr.top  - wrapRect.top,
+          left:   fr.left - wrapRect.left + scrollLeft,
+          width:  fr.width,
+          height: lr.bottom - fr.top,
+          isFirstVisible: b.start_date >= day0Key,
+          isLastVisible:  b.end_date   <= dayNKey,
+        })
+      }
+    }
+
+    // 1c: shoot consecutive-date ghost spans
+    const nameToUser = {}
+    for (const u of users) {
+      if (u.name) nameToUser[u.name.toLowerCase().trim()] = u
+    }
+    for (const sh of (this._shootsCache || [])) {
+      let shootDates = []
+      if (Array.isArray(sh.shoot_dates) && sh.shoot_dates.length) {
+        shootDates = sh.shoot_dates.filter(sd => sd.date).map(sd => sd.date)
+      } else if (sh.shoot_date) {
+        shootDates = [sh.shoot_date]
+      }
+      const crew = Array.isArray(sh.crew) ? sh.crew : (typeof sh.crew === 'string' ? JSON.parse(sh.crew || '[]') : [])
+      for (const member of crew) {
+        if (!member.name) continue
+        const user = nameToUser[member.name.toLowerCase().trim()]
+        if (!user) continue
+        const visibleDates = shootDates.filter(d => d >= day0Key && d <= dayNKey).sort()
+        if (visibleDates.length < 2) continue
+        for (const span of this._findConsecutiveSpans(visibleDates)) {
+          if (span.dates.length < 2) continue
+          const { firstCell, lastCell } = measureCells(user.id, span.start, span.end)
+          if (!firstCell || !lastCell) continue
+          const fr = firstCell.getBoundingClientRect()
+          const lr = lastCell.getBoundingClientRect()
+          const label = `Shoot — ${sh.project_name || 'Project'}${sh.name ? ': ' + sh.name : ''}`
+          toPlace.push({
+            e: { id: `shoot-overlay-${sh.id}-${user.id}-${span.start}`, assignee_id: user.id,
+                 label, color: '#4CAF50', project_id: sh.project_id,
+                 _navTarget: `shoot::${sh.project_id}` },
+            isGhost: true,
+            top:    fr.top  - wrapRect.top,
+            left:   fr.left - wrapRect.left + scrollLeft,
+            width:  fr.width,
+            height: lr.bottom - fr.top,
+            isFirstVisible: true,
+            isLastVisible:  true,
+          })
+        }
+      }
+    }
+
     // Phase 2: write overlay chips
     overlay.innerHTML = ''
-    for (const { e, top, left, width, height, isFirstVisible, isLastVisible } of toPlace) {
+    for (const { e, isGhost, top, left, width, height, isFirstVisible, isLastVisible } of toPlace) {
       const col   = e.color || TYPE_COLORS[e.entry_type] || '#7B6EAB'
       const proj  = e.project_id ? projects.find(p => p.id === e.project_id) : null
       const label = proj ? proj.name : e.label
       const PAD   = 2
 
       const chip = document.createElement('div')
-      chip.className = 'tc-chip tc-chip-overlay'
-      chip.dataset.tcEntryId = e.id
-      chip.draggable = true
-      chip.title = label
+      if (isGhost) {
+        chip.className = 'tc-chip-ghost tc-chip-overlay'
+        if (e._navTarget) chip.dataset.ghostNav = e._navTarget
+      } else {
+        chip.className = 'tc-chip tc-chip-overlay'
+        chip.dataset.tcEntryId = e.id
+        chip.draggable = true
+      }
+      chip.title = `${label}${isGhost ? (e._ghostNote || ' (from shoot plan)') + ' · Click to open ↗' : ''}`
       chip.style.cssText = `position:absolute;left:${left+PAD}px;top:${top+PAD}px;` +
         `width:${width-PAD*2}px;height:${height-PAD*2}px;` +
         `display:flex;align-items:flex-start;gap:4px;padding:4px 6px;` +
-        `background:${col}22;border:1px solid ${col}88;border-radius:4px;` +
-        `cursor:pointer;box-sizing:border-box;overflow:hidden;pointer-events:all;z-index:2`
+        `background:${col}22;border:1px ${isGhost ? 'dashed' : 'solid'} ${col}88;border-radius:4px;` +
+        `${isGhost ? 'opacity:0.85;' : ''}` +
+        `cursor:${isGhost && e._navTarget ? 'pointer' : isGhost ? 'default' : 'pointer'};` +
+        `box-sizing:border-box;overflow:hidden;pointer-events:all;z-index:2`
 
       chip.innerHTML = `
-        ${isFirstVisible ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="start" style="position:absolute;top:-1px;left:0;right:0;height:6px;cursor:ns-resize;color:${col}"></div>` : ''}
+        ${!isGhost && isFirstVisible ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="start" style="position:absolute;top:-1px;left:0;right:0;height:6px;cursor:ns-resize;color:${col}"></div>` : ''}
         <div style="display:flex;align-items:center;gap:4px;flex:1;min-width:0;overflow:hidden">
           <div style="width:6px;height:6px;border-radius:50%;flex-shrink:0;background:${col}"></div>
           <span style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0">${esc(label)}</span>
         </div>
-        ${isLastVisible ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="end" style="position:absolute;bottom:-1px;left:0;right:0;height:6px;cursor:ns-resize;color:${col}"></div>` : ''}`
+        ${!isGhost && isLastVisible ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="end" style="position:absolute;bottom:-1px;left:0;right:0;height:6px;cursor:ns-resize;color:${col}"></div>` : ''}`
 
-      chip.addEventListener('click', ev => {
-        if (ev.target.closest('.tc-resize-handle')) return
-        ev.stopPropagation()
-        const entry = (this.app.teamCalendarEntries || []).find(x => x.id === e.id)
-        if (entry) this._openEntryModal(entry, section)
-      })
-      chip.addEventListener('dragstart', ev => {
-        if (this._resizing) { ev.preventDefault(); return }
-        ev.dataTransfer.setData('text/plain', e.id)
-        ev.dataTransfer.effectAllowed = 'move'
-        setTimeout(() => { chip.style.opacity = '0.4'; this._setChipPointerEvents(gridWrap, false) }, 0)
-      })
-      chip.addEventListener('dragend', () => {
-        chip.style.opacity = ''
-        this._setChipPointerEvents(gridWrap, true)
-      })
-      chip.querySelectorAll('.tc-resize-handle').forEach(h => {
-        h.addEventListener('pointerdown', ev => this._startResize(ev, h, section))
-      })
+      if (isGhost && e._navTarget) {
+        chip.addEventListener('click', ev => {
+          ev.stopPropagation()
+          const [type, projectId] = e._navTarget.split('::')
+          const tab = type === 'shoot' ? 'shoots' : 'post-production'
+          this.app.currentView = 'projects'
+          this.app.projectsView.currentId = projectId
+          this.app.projectsView._pvTab = tab
+          this.app.projectsView.editingId = null
+          history.pushState({ view: 'projects' }, '', `#projects/${projectId}/${tab}`)
+          this.app.render()
+        })
+      } else if (!isGhost) {
+        chip.addEventListener('click', ev => {
+          if (ev.target.closest('.tc-resize-handle')) return
+          ev.stopPropagation()
+          const entry = (this.app.teamCalendarEntries || []).find(x => x.id === e.id)
+          if (entry) this._openEntryModal(entry, section)
+        })
+        chip.addEventListener('dragstart', ev => {
+          if (this._resizing) { ev.preventDefault(); return }
+          ev.dataTransfer.setData('text/plain', e.id)
+          ev.dataTransfer.effectAllowed = 'move'
+          setTimeout(() => { chip.style.opacity = '0.4'; this._setChipPointerEvents(gridWrap, false) }, 0)
+        })
+        chip.addEventListener('dragend', () => {
+          chip.style.opacity = ''
+          this._setChipPointerEvents(gridWrap, true)
+        })
+        chip.querySelectorAll('.tc-resize-handle').forEach(h => {
+          h.addEventListener('pointerdown', ev => this._startResize(ev, h, section))
+        })
+      }
 
       overlay.appendChild(chip)
     }
