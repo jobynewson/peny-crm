@@ -683,7 +683,16 @@ export class ProjectsView {
   }
 
   _renderTabShoots(p) {
+    const warned = p.portal_show_shoots
     return `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-secondary);border-radius:6px;border:1px solid var(--border-light);margin-bottom:8px">
+        <span style="font-size:12px;color:var(--text-secondary)">Client portal</span>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text-secondary)">
+          <input type="checkbox" id="pv-portal-shoots-toggle" ${warned ? 'checked' : ''}>
+          Show shoots in portal
+        </label>
+      </div>
+      <div id="pv-portal-shoots-warning" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:6px;padding:8px 12px;font-size:12px;font-weight:500;color:#f59e0b;margin-bottom:14px;${warned ? '' : 'display:none'}">⚠ PUBLIC — Shoot data is currently visible in the client portal</div>
       <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
         <button class="btn-primary" id="pv-add-shoot">+ Add shoot</button>
       </div>
@@ -712,7 +721,16 @@ export class ProjectsView {
   }
 
   _renderTabBudget(p, linked) {
+    const warned = p.portal_show_budget
     return `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-secondary);border-radius:6px;border:1px solid var(--border-light);margin-bottom:8px">
+        <span style="font-size:12px;color:var(--text-secondary)">Client portal</span>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text-secondary)">
+          <input type="checkbox" id="pv-portal-budget-toggle" ${warned ? 'checked' : ''}>
+          Show budgets in portal
+        </label>
+      </div>
+      <div id="pv-portal-budget-warning" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:6px;padding:8px 12px;font-size:12px;font-weight:500;color:#f59e0b;margin-bottom:14px;${warned ? '' : 'display:none'}">⚠ PUBLIC — Budget data is currently visible in the client portal</div>
       <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
         ${this.app.permissions?.budgets_edit ? `<button class="btn-primary" id="pv-new-budget">+ Create budget</button>` : ''}
       </div>
@@ -913,6 +931,12 @@ export class ProjectsView {
       })
     }
     if (tab === 'shoots') {
+      mc.querySelector('#pv-portal-shoots-toggle')?.addEventListener('change', async e => {
+        p.portal_show_shoots = e.target.checked
+        try { await updateProject(this.app.userId, p.id, { portal_show_shoots: e.target.checked }) } catch(err) { console.error(err) }
+        const w = mc.querySelector('#pv-portal-shoots-warning')
+        if (w) w.style.display = e.target.checked ? '' : 'none'
+      })
       mc.querySelector('#pv-add-shoot')?.addEventListener('click', () => this._createShoot(mc, p))
       mc.querySelectorAll('[data-open-shoot]').forEach(el => {
         el.addEventListener('click', () => this._openShootEditor(mc, p, el.dataset.openShoot))
@@ -923,6 +947,12 @@ export class ProjectsView {
       if (container) this._postProductionView.renderTab(container, p)
     }
     if (tab === 'budget') {
+      mc.querySelector('#pv-portal-budget-toggle')?.addEventListener('change', async e => {
+        p.portal_show_budget = e.target.checked
+        try { await updateProject(this.app.userId, p.id, { portal_show_budget: e.target.checked }) } catch(err) { console.error(err) }
+        const w = mc.querySelector('#pv-portal-budget-warning')
+        if (w) w.style.display = e.target.checked ? '' : 'none'
+      })
       mc.querySelector('#pv-new-budget')?.addEventListener('click', () => {
         this.app.budgetsView.openNewModalFromProject(p)
       })

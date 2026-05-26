@@ -106,6 +106,47 @@
     .modal-dates { font-size: 13px; color: var(--text-sec) }
     .modal-notes { font-size: 13px; color: var(--text-sec); line-height: 1.65; white-space: pre-line }
     .modal-dl-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: var(--red); background: rgba(239,68,68,0.1); padding: 3px 8px; border-radius: 20px }
+
+    /* ── Budget section ── */
+    .bud-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px; margin-bottom: 14px }
+    .bud-name { font-size: 14px; font-weight: 600; margin-bottom: 14px }
+    .bud-sec-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-ter); font-weight: 400 }
+    .bud-sec-hdr { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px }
+    .bud-sec-total { font-size: 11px; color: var(--text-ter) }
+    .bud-section { margin-bottom: 14px }
+    .bud-line { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0; border-bottom: 0.5px solid var(--border); font-size: 13px }
+    .bud-line:last-child { border-bottom: none }
+    .bud-line-item { color: var(--text-sec); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 12px }
+    .bud-line-amt { flex-shrink: 0; font-size: 12px; font-variant-numeric: tabular-nums }
+    .bud-totals { border-top: 1px solid var(--border2); margin-top: 12px; padding-top: 12px; display: flex; flex-direction: column; gap: 5px }
+    .bud-total-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-sec); font-variant-numeric: tabular-nums }
+    .bud-total-row.grand { font-size: 14px; font-weight: 600; color: var(--text); margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border2) }
+
+    /* ── Shoots section ── */
+    .shoot-card { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 14px }
+    .shoot-card-hdr { padding: 12px 16px; background: var(--surface2); border-bottom: 1px solid var(--border) }
+    .shoot-card-name { font-size: 14px; font-weight: 600 }
+    .shoot-card-meta { font-size: 12px; color: var(--text-sec); margin-top: 3px }
+    .shoot-card-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 16px }
+    .shoot-section-title { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-ter); margin-bottom: 7px }
+    .shoot-crew-table { width: 100%; border-collapse: collapse; font-size: 12px }
+    .shoot-crew-table th { text-align: left; color: var(--text-ter); font-size: 10px; font-weight: 400; padding: 0 12px 5px 0 }
+    .shoot-crew-table td { padding: 4px 12px 4px 0; border-bottom: 0.5px solid var(--border); color: var(--text-sec) }
+    .shoot-crew-table tr:last-child td { border-bottom: none }
+    .shoot-sched-row { display: flex; gap: 12px; padding: 4px 0; border-bottom: 0.5px solid var(--border); font-size: 13px }
+    .shoot-sched-row:last-child { border-bottom: none }
+    .shoot-sched-time { flex-shrink: 0; width: 48px; color: var(--text-ter); font-variant-numeric: tabular-nums; font-size: 12px }
+    .shoot-sched-desc { flex: 1; color: var(--text-sec) }
+
+    /* ── Planning board ── */
+    .portal-plan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px }
+    .portal-plan-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column }
+    .portal-plan-note { padding: 14px; font-size: 13px; color: var(--text-sec); line-height: 1.7; white-space: pre-line; flex: 1 }
+    .portal-plan-img { width: 100%; display: block; object-fit: cover; max-height: 260px }
+    .portal-plan-caption { padding: 8px 12px; font-size: 12px; color: var(--text-ter) }
+    .portal-plan-embed { position: relative; padding-bottom: 56.25%; height: 0 }
+    .portal-plan-embed iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0 }
+    .portal-plan-title { padding: 8px 12px; font-size: 12px; color: var(--text-ter) }
   </style>
 </head>
 <body>
@@ -124,7 +165,8 @@
       throw new Error('Not found')
     }
 
-    const { project, client, studio, deliverables, workLog, ppsSchedule, ppsPhases } = await res.json()
+    const { project, client, studio, deliverables, workLog, ppsSchedule, ppsPhases,
+            budgets = [], shoots = [], planningCards = null } = await res.json()
 
     const esc      = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     const fmtDate  = s => s ? new Date(s).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : ''
@@ -372,6 +414,190 @@
       }
     }
 
+    // ── Budget helpers ────────────────────────────────────────────────────────────
+
+    const fmtGBP = n => '£' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+
+    function lineTotal(l, tr, pr) {
+      const prep = parseFloat(l.prepDays)||0, sh = parseFloat(l.days)||0, td = parseFloat(l.travelDays)||0
+      const useDays = prep > 0 || sh > 0 || td > 0
+      const q = parseFloat(l.qty); const qty = isNaN(q) ? 0 : q
+      const r = parseFloat(l.rate)||0
+      const disc = Math.min(Math.max(parseFloat(l.discount)||0, 0), 100)
+      const gross = useDays ? prep*qty*r*(pr/100) + sh*qty*r + td*(tr/100)*r : qty*r
+      return gross * (1 - disc/100)
+    }
+    function secNet(s, tr, pr) { return (s.lines||[]).reduce((t, l) => t + lineTotal(l, tr, pr), 0) }
+    function budNet(b) {
+      const tr = parseFloat(b.travel_rate)||50, pr = parseFloat(b.prep_rate)||100
+      return (b.sections||[]).filter(s => s.enabled).reduce((t, s) => t + secNet(s, tr, pr), 0)
+    }
+    function budTotal(b) {
+      const n = budNet(b)
+      const ins = b.insurance ? n * 0.025 : 0
+      const afterFee = n + ins + n * ((parseFloat(b.markup)||0) / 100)
+      const afterCustom = afterFee + afterFee * ((parseFloat(b.custom_pct)||0) / 100)
+      return afterCustom + (b.vat ? afterCustom * 0.2 : 0)
+    }
+
+    // Proxy private Vercel Blob URLs for portal display
+    const portalImgSrc = url => {
+      if (!url) return ''
+      if (url.includes('.private.blob.vercel-storage.com')) return `/api/blob?url=${encodeURIComponent(url)}`
+      return url
+    }
+
+    function parseVideoEmbed(url) {
+      if (!url) return null
+      const yt = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/)
+      if (yt) return { type: 'youtube', id: yt[1] }
+      const vm = url.match(/vimeo\.com\/(\d+)/)
+      if (vm) return { type: 'vimeo', id: vm[1] }
+      return null
+    }
+
+    // ── Budget section HTML ───────────────────────────────────────────────────────
+
+    let budgetHTML = ''
+    if (budgets && budgets.length) {
+      const budCards = budgets.map(b => {
+        const tr = parseFloat(b.travel_rate)||50, pr = parseFloat(b.prep_rate)||100
+        const enabledSections = (b.sections||[]).filter(s => s.enabled)
+        const net = budNet(b)
+        const markup = parseFloat(b.markup)||0
+        const custom = parseFloat(b.custom_pct)||0
+        const ins = b.insurance ? net * 0.025 : 0
+        const afterFee = net + ins + net * (markup / 100)
+        const afterCustom = afterFee + afterFee * (custom / 100)
+        const vatVal = b.vat ? afterCustom * 0.2 : 0
+        const total = afterCustom + vatVal
+
+        const sectionsHtml = enabledSections.map(s => {
+          const sTotal = secNet(s, tr, pr)
+          const linesHtml = (s.lines||[]).filter(l => l.item).map(l =>
+            `<div class="bud-line">
+              <div class="bud-line-item">${esc(l.item)}</div>
+              <div class="bud-line-amt">${fmtGBP(lineTotal(l, tr, pr))}</div>
+            </div>`).join('')
+          return `<div class="bud-section">
+            <div class="bud-sec-hdr">
+              <div class="bud-sec-label">${esc(s.name||'Untitled section')}</div>
+              <div class="bud-sec-total">${fmtGBP(sTotal)}</div>
+            </div>
+            ${linesHtml}
+          </div>`
+        }).join('')
+
+        const totalsHtml = `<div class="bud-totals">
+          <div class="bud-total-row"><span>Net</span><span>${fmtGBP(net)}</span></div>
+          ${ins ? `<div class="bud-total-row"><span>Insurance (2.5%)</span><span>${fmtGBP(ins)}</span></div>` : ''}
+          ${markup ? `<div class="bud-total-row"><span>Production fee (${markup}%)</span><span>${fmtGBP(net*(markup/100))}</span></div>` : ''}
+          ${custom ? `<div class="bud-total-row"><span>Additional (${custom}%)</span><span>${fmtGBP(afterFee*(custom/100))}</span></div>` : ''}
+          ${vatVal ? `<div class="bud-total-row"><span>VAT (20%)</span><span>${fmtGBP(vatVal)}</span></div>` : ''}
+          <div class="bud-total-row grand"><span>Total</span><span>${fmtGBP(total)}</span></div>
+        </div>`
+
+        return `<div class="bud-wrap">
+          <div class="bud-name">${esc(b.name)}</div>
+          ${sectionsHtml}
+          ${totalsHtml}
+        </div>`
+      }).join('')
+
+      budgetHTML = `<div>
+        <div class="main-title">Budget</div>
+        ${budCards}
+      </div>`
+    }
+
+    // ── Shoots section HTML ───────────────────────────────────────────────────────
+
+    let shootsHTML = ''
+    if (shoots && shoots.length) {
+      const shootCards = shoots.map(sh => {
+        const dates = Array.isArray(sh.shoot_dates) ? sh.shoot_dates.filter(d => d.date).sort((a,b) => a.date < b.date ? -1 : 1) : []
+        const firstDate = dates[0]?.date || sh.shoot_date
+        const lastDate  = dates[dates.length - 1]?.date
+        const gc = sh.general_call || dates[0]?.general_call || ''
+        const name = sh.name || (firstDate ? fmtDate(firstDate) : 'Untitled Shoot')
+
+        const metaParts = []
+        if (firstDate) metaParts.push(fmtDate(firstDate) + (lastDate && lastDate !== firstDate ? ' → ' + fmtDate(lastDate) : ''))
+        if (sh.location_name) metaParts.push(sh.location_name)
+        if (gc) metaParts.push('GC ' + gc)
+
+        const crew = (sh.crew||[]).filter(c => c.name)
+        const crewHtml = crew.length ? `<div>
+          <div class="shoot-section-title">Crew</div>
+          <table class="shoot-crew-table">
+            <thead><tr><th>Name</th><th>Role</th><th>Call time</th></tr></thead>
+            <tbody>${crew.map(c => `<tr>
+              <td>${esc(c.name)}</td>
+              <td>${esc(c.role||'')}</td>
+              <td>${esc(c.call_time||'')}</td>
+            </tr>`).join('')}</tbody>
+          </table>
+        </div>` : ''
+
+        const sched = (sh.schedule||[]).filter(s => s.description)
+        const schedHtml = sched.length ? `<div>
+          <div class="shoot-section-title">Schedule</div>
+          ${sched.map(s => `<div class="shoot-sched-row">
+            <div class="shoot-sched-time">${esc(s.time||'')}</div>
+            <div class="shoot-sched-desc">${esc(s.description)}</div>
+          </div>`).join('')}
+        </div>` : ''
+
+        return `<div class="shoot-card">
+          <div class="shoot-card-hdr">
+            <div class="shoot-card-name">${esc(name)}</div>
+            ${metaParts.length ? `<div class="shoot-card-meta">${metaParts.map(esc).join(' · ')}</div>` : ''}
+          </div>
+          ${crewHtml || schedHtml ? `<div class="shoot-card-body">${crewHtml}${schedHtml}</div>` : ''}
+        </div>`
+      }).join('')
+
+      shootsHTML = `<div>
+        <div class="main-title">Shoot${shoots.length > 1 ? 's' : ''}</div>
+        ${shootCards}
+      </div>`
+    }
+
+    // ── Planning board HTML ───────────────────────────────────────────────────────
+
+    let planningHTML = ''
+    if (planningCards && planningCards.length) {
+      const cardItems = planningCards.map(card => {
+        if (card.type === 'note') return `<div class="portal-plan-card">
+          <div class="portal-plan-note">${esc(card.content||'')}</div>
+        </div>`
+
+        if (card.type === 'image') return `<div class="portal-plan-card">
+          <img class="portal-plan-img" src="${esc(portalImgSrc(card.url))}" alt="${esc(card.alt||'')}" loading="lazy" />
+          ${card.caption ? `<div class="portal-plan-caption">${esc(card.caption)}</div>` : ''}
+        </div>`
+
+        if (card.type === 'video') {
+          const embed = parseVideoEmbed(card.url)
+          let embedHtml
+          if (embed?.type === 'youtube') {
+            embedHtml = `<div class="portal-plan-embed"><iframe src="https://www.youtube.com/embed/${esc(embed.id)}?rel=0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe></div>`
+          } else if (embed?.type === 'vimeo') {
+            embedHtml = `<div class="portal-plan-embed"><iframe src="https://player.vimeo.com/video/${esc(embed.id)}?dnt=1" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen loading="lazy"></iframe></div>`
+          } else {
+            embedHtml = `<div style="padding:14px"><a href="${esc(card.url||'')}" target="_blank" rel="noopener" style="font-size:13px;color:var(--accent)">▶ ${esc(card.url||'')}</a></div>`
+          }
+          return `<div class="portal-plan-card">${embedHtml}${card.title ? `<div class="portal-plan-title">${esc(card.title)}</div>` : ''}</div>`
+        }
+        return ''
+      }).filter(Boolean).join('')
+
+      planningHTML = `<div>
+        <div class="main-title">Planning Board</div>
+        <div class="portal-plan-grid">${cardItems}</div>
+      </div>`
+    }
+
     // ── Render page ───────────────────────────────────────────────────────────────
 
     document.body.innerHTML = `
@@ -391,8 +617,13 @@
           ${footerHTML}
         </aside>
         <main class="main-area">
-          ${ppsGridHTML || `<div style="font-size:13px;color:var(--text-ter)">No post production schedule set up yet.</div>`}
+          ${ppsGridHTML || ''}
           ${keyDatesHTML}
+          ${budgetHTML}
+          ${shootsHTML}
+          ${planningHTML}
+          ${!ppsGridHTML && !keyDatesHTML && !budgetHTML && !shootsHTML && !planningHTML
+            ? `<div style="font-size:13px;color:var(--text-ter)">No content shared yet.</div>` : ''}
         </main>
       </div>`
 

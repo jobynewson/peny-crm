@@ -25,6 +25,7 @@ export default async function handler(req, res) {
     SELECT
       p.id, p.name, p.status, p.brief, p.shoot_start, p.shoot_end,
       p.deliverables, p.frame_io_link,
+      p.portal_show_budget, p.portal_show_shoots, p.portal_show_planning, p.planning_cards,
       c.first_name, c.last_name, c.company,
       s.company_name AS studio_name, s.website AS studio_website
     FROM projects p
@@ -91,6 +92,28 @@ export default async function handler(req, res) {
     }
   }
 
+  let portalBudgets = []
+  if (project.portal_show_budget) {
+    portalBudgets = await sql`
+      SELECT b.id, b.name, b.sections, b.markup, b.custom_pct, b.vat, b.insurance,
+             b.travel_rate, b.prep_rate
+      FROM budgets b
+      JOIN project_budgets pb ON pb.budget_id = b.id
+      WHERE pb.project_id = ${project.id}
+      ORDER BY b.created_at
+    `
+  }
+
+  let portalShoots = []
+  if (project.portal_show_shoots) {
+    portalShoots = await sql`
+      SELECT id, name, shoot_date, shoot_dates, general_call, location_name, crew, schedule
+      FROM shoots
+      WHERE project_id = ${project.id}
+      ORDER BY sort_order, created_at
+    `
+  }
+
   return res.status(200).json({
     project: {
       name:          project.name,
@@ -108,5 +131,29 @@ export default async function handler(req, res) {
     workLog:      logEntries,
     ppsSchedule,
     ppsPhases,
+    budgets: portalBudgets.map(b => ({
+      id:         b.id,
+      name:       b.name,
+      markup:     b.markup,
+      custom_pct: b.custom_pct,
+      vat:        b.vat,
+      insurance:  b.insurance,
+      travel_rate: b.travel_rate,
+      prep_rate:  b.prep_rate,
+      sections:   Array.isArray(b.sections) ? b.sections : [],
+    })),
+    shoots: portalShoots.map(sh => ({
+      id:           sh.id,
+      name:         sh.name,
+      shoot_date:   sh.shoot_date,
+      shoot_dates:  Array.isArray(sh.shoot_dates) ? sh.shoot_dates : [],
+      general_call: sh.general_call,
+      location_name: sh.location_name,
+      crew: (Array.isArray(sh.crew) ? sh.crew : []).map(c => ({
+        name: c.name, role: c.role, call_time: c.call_time, crew_type: c.crew_type,
+      })),
+      schedule: Array.isArray(sh.schedule) ? sh.schedule : [],
+    })),
+    planningCards: project.portal_show_planning ? (project.planning_cards || []) : null,
   })
 }

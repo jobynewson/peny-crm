@@ -9,7 +9,9 @@ const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').
 
 export function renderPlanningTab(p) {
   const cards = p.planning_cards || []
+  const warned = p.portal_show_planning
   return `
+    <div id="plan-portal-warning" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:6px;padding:8px 12px;font-size:12px;font-weight:500;color:#f59e0b;margin-bottom:12px;${warned ? '' : 'display:none'}">⚠ PUBLIC — Planning board is currently visible in the client portal</div>
     <div class="plan-toolbar">
       <button class="plan-add-btn" id="plan-add-note">
         <span class="plan-add-icon">✏️</span> Note
@@ -21,6 +23,10 @@ export function renderPlanningTab(p) {
         <span class="plan-add-icon">▶</span> Video link
       </button>
       <input type="file" id="plan-image-input" accept="image/*" style="display:none">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text-secondary);margin-left:auto;padding:0 4px">
+        <input type="checkbox" id="plan-portal-toggle" ${warned ? 'checked' : ''}>
+        Show in portal
+      </label>
     </div>
 
     <div class="plan-board" id="planning-board">
@@ -229,6 +235,14 @@ export function bindPlanningTab(mc, p, userId) {
       })
     })
   }
+
+  // ── Portal toggle ──
+  mc.querySelector('#plan-portal-toggle')?.addEventListener('change', async e => {
+    p.portal_show_planning = e.target.checked
+    try { await updateProject(userId, p.id, { portal_show_planning: e.target.checked }) } catch(err) { console.error(err) }
+    const w = mc.querySelector('#plan-portal-warning')
+    if (w) w.style.display = e.target.checked ? '' : 'none'
+  })
 
   // ── Add note ──
   mc.querySelector('#plan-add-note')?.addEventListener('click', async () => {
