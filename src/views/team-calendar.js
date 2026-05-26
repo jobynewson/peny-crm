@@ -682,6 +682,44 @@ export class TeamCalendarView {
       }
     }
 
+    // Phase 1d: split horizontal space among overlapping blocks in the same column
+    const overlapsV = (a, b) => a.top < b.top + b.height && b.top < a.top + a.height
+    const columns = {}
+    for (const item of toPlace) (columns[Math.round(item.left)] ||= []).push(item)
+    for (const group of Object.values(columns)) {
+      group.sort((a, b) => a.top - b.top)
+      const visited = new Set()
+      for (let i = 0; i < group.length; i++) {
+        if (visited.has(i)) continue
+        const cluster = []
+        const stack = [i]
+        visited.add(i)
+        while (stack.length) {
+          const idx = stack.pop()
+          cluster.push(group[idx])
+          for (let j = 0; j < group.length; j++) {
+            if (!visited.has(j) && overlapsV(group[idx], group[j])) { visited.add(j); stack.push(j) }
+          }
+        }
+        if (cluster.length < 2) continue
+        cluster.sort((a, b) => a.top - b.top)
+        const laneEnds = []
+        for (const item of cluster) {
+          let lane = laneEnds.findIndex(end => end <= item.top)
+          if (lane === -1) { lane = laneEnds.length; laneEnds.push(0) }
+          laneEnds[lane] = item.top + item.height
+          item._lane = lane
+        }
+        const lanes = laneEnds.length
+        const baseLeft = cluster[0].left
+        const laneWidth = cluster[0].width / lanes
+        for (const item of cluster) {
+          item.left  = baseLeft + item._lane * laneWidth
+          item.width = laneWidth
+        }
+      }
+    }
+
     // Phase 2: write overlay chips
     overlay.innerHTML = ''
     for (const { e, isGhost, top, left, width, height, isFirstVisible, isLastVisible } of toPlace) {
