@@ -474,6 +474,11 @@ export class ProjectsView {
             : STAGES.map(s => `<option value="${s}" ${p.status===s?'selected':''}>${s}</option>`).join('')}
         </select>
         ${this.app.permissions?.projects_edit ? `<button class="btn-secondary" id="pv-duplicate">Duplicate</button>` : ''}
+        ${p.portal_token
+          ? `<button class="btn-cancel" id="pv-copy-portal" style="font-size:11px">Copy Client Portal Link</button>`
+          : this.app.permissions?.projects_edit
+            ? `<button class="btn-cancel" id="pv-gen-portal" style="font-size:11px">Create Portal Link</button>`
+            : ''}
         ${this.app.permissions?.projects_edit ? `<button class="btn-primary" id="enter-edit">Edit project</button>` : ''}
         <button class="row-btn" id="pv-delete" style="color:#b03020;border-color:rgba(180,50,30,0.2)">Delete</button>
       </div>
@@ -578,11 +583,6 @@ export class ProjectsView {
         <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
           <span>Deliverables <span style="font-size:11px;color:var(--text-tertiary);font-weight:400">(${doneCount}/${delivs.length})</span></span>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
-            ${p.portal_token
-              ? `<button class="btn-cancel" id="pv-copy-portal" style="font-size:11px">Copy Client Portal Link</button>`
-              : this.app.permissions?.projects_edit
-                ? `<button class="btn-cancel" id="pv-gen-portal" style="font-size:11px">Create Portal Link</button>`
-                : ''}
             ${this.app.permissions?.projects_edit ? `
             <button class="btn-cancel" id="pv-mark-all-done" style="font-size:11px">Mark all done</button>
             <button class="btn-cancel" id="pv-reset-delivs" style="font-size:11px">Reset</button>` : ''}
@@ -893,19 +893,6 @@ export class ProjectsView {
           try { await updateProject(this.app.userId, p.id, { shots: p.shots }) } catch(e) { console.error(e) }
         })
       })
-      mc.querySelector('#pv-copy-portal')?.addEventListener('click', async e => {
-        const url = `${location.origin}/portal/${p.portal_token}`
-        await navigator.clipboard.writeText(url)
-        const btn = e.target; btn.textContent = '✓ Copied!'; setTimeout(() => btn.textContent = 'Copy Client Portal Link', 1500)
-      })
-      mc.querySelector('#pv-gen-portal')?.addEventListener('click', async () => {
-        const token = crypto.randomUUID().replace(/-/g,'').slice(0,24)
-        p.portal_token = token
-        const idx = this.app.projects.findIndex(x => x.id === p.id)
-        if (idx >= 0) this.app.projects[idx].portal_token = token
-        try { await updateProject(this.app.userId, p.id, { portal_token: token }) } catch(e) { console.error(e) }
-        this.renderViewer(mc)
-      })
       mc.querySelector('#pv-mark-all-done')?.addEventListener('click', async () => {
         try { p.deliverables.forEach(d => { if(d.text) d.done = true }); await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }); this.renderViewer(mc); this.app.toast('All deliverables marked done') } catch(e) { console.error(e) }
       })
@@ -1046,6 +1033,19 @@ export class ProjectsView {
     mc.querySelector('#pv-status')?.addEventListener('change', e => {
       p.status = e.target.value
       updateProject(this.app.userId, p.id, { status: p.status }).catch(console.error)
+    })
+    mc.querySelector('#pv-copy-portal')?.addEventListener('click', async e => {
+      const url = `${location.origin}/portal/${p.portal_token}`
+      await navigator.clipboard.writeText(url)
+      const btn = e.target; btn.textContent = '✓ Copied!'; setTimeout(() => btn.textContent = 'Copy Client Portal Link', 1500)
+    })
+    mc.querySelector('#pv-gen-portal')?.addEventListener('click', async () => {
+      const token = crypto.randomUUID().replace(/-/g,'').slice(0,24)
+      p.portal_token = token
+      const idx = this.app.projects.findIndex(x => x.id === p.id)
+      if (idx >= 0) this.app.projects[idx].portal_token = token
+      try { await updateProject(this.app.userId, p.id, { portal_token: token }) } catch(e) { console.error(e) }
+      this.renderViewer(mc)
     })
     mc.querySelector('#enter-edit')?.addEventListener('click', () => {
       this.editingId = this.currentId; this.renderEditor(mc)
