@@ -904,7 +904,7 @@ export class TeamCalendarView {
     const projects = (this.app.projects || []).filter(p => !p.is_retainer)
 
     const renderModal = (state = {}) => {
-      const selUserId    = state.assignee_id  ?? (defaultUserId || users[0]?.id || '')
+      const selUserId    = state.assignee_id  ?? (entry?.assignee_id || defaultUserId || users[0]?.id || '')
       const selDate      = state.entry_date   ?? (defaultDate || this._dateKey(new Date()))
       const selEndDate   = state.end_date     ?? (entry?.end_date ?? '')
       const selType      = state.entry_type   ?? (entry?.entry_type ?? 'other')
@@ -1061,6 +1061,8 @@ export class TeamCalendarView {
               </label>
             </div>
 
+            <input type="hidden" id="tc-m-color" value="${esc(selColor)}" />
+
             <!-- Actions -->
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
               ${entry ? `
@@ -1158,7 +1160,7 @@ export class TeamCalendarView {
       end_date:     endDate,
       entry_type:   overlay.querySelector('input[name="tc-m-type"]:checked')?.value || prev.entry_type || 'other',
       label:        overlay.querySelector('#tc-m-label')?.value    || prev.label        || '',
-      color:        prev.color !== undefined ? prev.color : '',
+      color:        overlay.querySelector('#tc-m-color')?.value ?? prev.color ?? '',
       project_id:   overlay.querySelector('#tc-m-project')?.value  || prev.project_id  || '',
       shoot_id:     overlay.querySelector('#tc-m-shoot')?.value    || prev.shoot_id    || '',
       pps_phase_id: overlay.querySelector('#tc-m-phase')?.value    || prev.pps_phase_id || '',
