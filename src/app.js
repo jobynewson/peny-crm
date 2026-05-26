@@ -2415,7 +2415,6 @@ export class App {
       const [updated] = await upsertSettings(this.userId, data)
       this.settings = updated
       document.getElementById('ds-widget-wrap')?.remove()
-      document.getElementById('app').style.paddingTop = ''
       this.toast('Timer removed')
       this.renderSettings(mc)
     } catch (e) { console.error(e); this.toast('Error removing timer') }
@@ -2441,11 +2440,7 @@ export class App {
         <div class="ds-days">${days}</div>
         <div class="ds-label">days since <span class="ds-name">${esc(ds.name)}</span></div>
       </div>`
-    document.body.prepend(wrapper)
-    requestAnimationFrame(() => {
-      const h = wrapper.getBoundingClientRect().height
-      document.getElementById('app').style.paddingTop = h + 'px'
-    })
+    document.querySelector('.main')?.prepend(wrapper)
   }
 
   async _saveCountdownTimer(mc) {
