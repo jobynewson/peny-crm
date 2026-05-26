@@ -912,6 +912,7 @@ export class App {
         this.navigate('projects')
         setTimeout(() => document.querySelector('#topbar-btn')?.click(), 50)
       })
+      this._mountDaysSinceWidget(mc)
       this._mountCountdownWidget(mc)
       this.teamCalendarView.renderDashboardSection(mc)
       return
@@ -1380,6 +1381,7 @@ export class App {
         <div class="stats-row">${statCards}</div>
       </div>`
 
+    this._mountDaysSinceWidget(mc)
     this._mountCountdownWidget(mc)
     this.teamCalendarView.renderDashboardSection(mc)
 
@@ -1979,6 +1981,19 @@ export class App {
 
         ${isAdmin ? `
         <div class="panel">
+          <div class="panel-header"><span class="panel-title">Dashboard days-since timer</span></div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Show a compact days-since counter at the top of the Dashboard — useful for tracking how long something has been running.</div>
+            <div class="field"><div class="field-label">Timer label</div><input type="text" id="s-ds-name" value="${s.days_since_timer?.name??''}" placeholder="e.g. Studio opening" /></div>
+            <div class="field"><div class="field-label">Start date</div><input type="date" id="s-ds-since" value="${s.days_since_timer?.since??''}" style="color-scheme:var(--color-scheme,light)" /></div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button class="btn-primary" id="settings-save-ds-btn">Save timer</button>
+              ${s.days_since_timer ? `<button class="btn-cancel" id="settings-clear-ds-btn">Remove timer</button>` : ''}
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
           <div class="panel-header"><span class="panel-title">Dashboard countdown timer</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
             <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Pin a countdown to the top of the Dashboard — great for project wrap dates or big deadlines. For 24 hours after the deadline, a celebration kicks off.</div>
@@ -2024,6 +2039,8 @@ export class App {
     mc.querySelector('#settings-save-btn-2')?.addEventListener('click', () => this.saveSettings(mc))
     mc.querySelector('#settings-save-btn-3')?.addEventListener('click', () => this.saveSettings(mc))
     mc.querySelector('#signout-settings')?.addEventListener('click', () => this.onSignOut())
+    mc.querySelector('#settings-save-ds-btn')?.addEventListener('click', () => this._saveDaysSinceTimer(mc))
+    mc.querySelector('#settings-clear-ds-btn')?.addEventListener('click', () => this._clearDaysSinceTimer(mc))
     mc.querySelector('#settings-save-cd-btn')?.addEventListener('click', () => this._saveCountdownTimer(mc))
     mc.querySelector('#settings-clear-cd-btn')?.addEventListener('click', () => this._clearCountdownTimer(mc))
 
@@ -2349,9 +2366,54 @@ export class App {
       invoicing_email:         mc.querySelector('#s-inv-email')?.value.trim()||null,
       invoicing_boilerplate:   mc.querySelector('#s-inv-boilerplate')?.value.trim()||null,
       countdown_timer:         this.settings?.countdown_timer ?? null,
+      days_since_timer:        this.settings?.days_since_timer ?? null,
     }
     try { const [updated] = await upsertSettings(this.userId, data); this.settings = updated; this.toast('Settings saved') }
     catch (e) { console.error(e); this.toast('Error saving settings') }
+  }
+
+  async _saveDaysSinceTimer(mc) {
+    const name  = mc.querySelector('#s-ds-name')?.value.trim()
+    const since = mc.querySelector('#s-ds-since')?.value
+    if (!name || !since) { this.toast('Please fill in both fields'); return }
+    const data = { ...this.settings, days_since_timer: { name, since } }
+    try {
+      const [updated] = await upsertSettings(this.userId, data)
+      this.settings = updated
+      this.toast('Timer saved')
+      this.renderSettings(mc)
+    } catch (e) { console.error(e); this.toast('Error saving timer') }
+  }
+
+  async _clearDaysSinceTimer(mc) {
+    const data = { ...this.settings, days_since_timer: null }
+    try {
+      const [updated] = await upsertSettings(this.userId, data)
+      this.settings = updated
+      this.toast('Timer removed')
+      this.renderSettings(mc)
+    } catch (e) { console.error(e); this.toast('Error removing timer') }
+  }
+
+  _mountDaysSinceWidget(mc) {
+    const ds = this.settings?.days_since_timer
+    if (!ds?.name || !ds?.since) return
+
+    const since = new Date(ds.since + 'T00:00:00')
+    if (isNaN(since.getTime())) return
+
+    const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    const todayMs = new Date().setHours(0, 0, 0, 0)
+    const days = Math.floor((todayMs - since.getTime()) / 86400000)
+
+    const wrapper = document.createElement('div')
+    wrapper.id = 'ds-widget-wrap'
+    wrapper.innerHTML = `
+      <div class="ds-widget">
+        <div class="ds-days">${days}</div>
+        <div class="ds-label">days since <span class="ds-name">${esc(ds.name)}</span></div>
+      </div>`
+    mc.prepend(wrapper)
   }
 
   async _saveCountdownTimer(mc) {
@@ -2834,6 +2896,12 @@ export class App {
       .notes-timestamp{font-size:11px;color:#596773}
       .notes-delete-btn{background:none;border:none;font-size:11px;color:#596773;cursor:pointer;padding:2px 6px;border-radius:var(--radius-sm);font-family:var(--font);transition:background 0.1s,color 0.1s}
       .notes-delete-btn:hover{background:rgba(239,68,68,0.15);color:#ef4444}
+
+      /* ── Days-since widget ── */
+      .ds-widget{display:flex;align-items:center;gap:12px;background:var(--bg-primary);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:10px 18px;margin-bottom:16px;box-shadow:0 1px 3px rgba(9,30,66,0.06)}
+      .ds-days{font-size:28px;font-weight:700;letter-spacing:-1px;color:var(--text-primary);line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap}
+      .ds-label{font-size:12px;color:var(--text-tertiary);line-height:1.4}
+      .ds-name{font-weight:600;color:var(--text-secondary)}
 
       /* ── Countdown widget ── */
       .cd-widget{background:var(--bg-primary);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:28px 24px 24px;margin-bottom:24px;text-align:center;box-shadow:0 1px 3px rgba(9,30,66,0.06);position:relative;overflow:hidden}
