@@ -2004,6 +2004,18 @@ export class App {
               ${s.countdown_timer ? `<button class="btn-cancel" id="settings-clear-cd-btn">Remove timer</button>` : ''}
             </div>
           </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Reminder roundup</span></div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Receive a daily email listing all the reminder emails sent to your team that day. Not sent at weekends.</div>
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;color:var(--text-primary)">
+              <input type="checkbox" id="s-reminder-roundup" ${s.reminder_roundup ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent)" />
+              Send me a reminder roundup email each day
+            </label>
+            <div><button class="btn-primary" id="settings-save-roundup-btn">Save</button></div>
+          </div>
         </div>` : ''}
 
         <div class="panel">
@@ -2043,6 +2055,7 @@ export class App {
     mc.querySelector('#settings-clear-ds-btn')?.addEventListener('click', () => this._clearDaysSinceTimer(mc))
     mc.querySelector('#settings-save-cd-btn')?.addEventListener('click', () => this._saveCountdownTimer(mc))
     mc.querySelector('#settings-clear-cd-btn')?.addEventListener('click', () => this._clearCountdownTimer(mc))
+    mc.querySelector('#settings-save-roundup-btn')?.addEventListener('click', () => this._saveReminderRoundup(mc))
 
     if (isAdmin) {
       this._loadUsersPanel(mc)
@@ -2367,9 +2380,20 @@ export class App {
       invoicing_boilerplate:   mc.querySelector('#s-inv-boilerplate')?.value.trim()||null,
       countdown_timer:         this.settings?.countdown_timer ?? null,
       days_since_timer:        this.settings?.days_since_timer ?? null,
+      reminder_roundup:        this.settings?.reminder_roundup ?? false,
     }
     try { const [updated] = await upsertSettings(this.userId, data); this.settings = updated; this.toast('Settings saved') }
     catch (e) { console.error(e); this.toast('Error saving settings') }
+  }
+
+  async _saveReminderRoundup(mc) {
+    const enabled = mc.querySelector('#s-reminder-roundup')?.checked ?? false
+    const data = { ...this.settings, reminder_roundup: enabled }
+    try {
+      const [updated] = await upsertSettings(this.userId, data)
+      this.settings = updated
+      this.toast(enabled ? 'Roundup emails enabled' : 'Roundup emails disabled')
+    } catch (e) { console.error(e); this.toast('Error saving preference') }
   }
 
   async _saveDaysSinceTimer(mc) {
