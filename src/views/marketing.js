@@ -125,9 +125,9 @@ export class MarketingView {
 
     return `
     <div class="mkt-card" data-card-id="${card.id}"
-      style="background:var(--bg-primary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px 12px;cursor:pointer;transition:box-shadow 0.15s,border-color 0.15s;box-shadow:0 1px 2px rgba(9,30,66,0.06);${isMyCard ? 'border-left:3px solid var(--accent);' : ''}position:relative">
+      style="background:var(--bg-primary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px 12px;cursor:pointer;transition:box-shadow 0.15s,border-color 0.15s;box-shadow:var(--shadow-sm);${isMyCard ? 'border-left:3px solid var(--accent);' : ''}position:relative">
       <div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:6px">
-        <span style="display:inline-flex;font-size:10px;font-weight:600;padding:2px 7px;border-radius:3px;background:${typeInfo.color}18;color:${typeInfo.color};flex-shrink:0;line-height:1.5">${typeInfo.label}</span>
+        <span style="display:inline-flex;font-size:10px;font-weight:600;padding:2px 7px;border-radius:var(--radius-sm);background:${typeInfo.color}18;color:${typeInfo.color};flex-shrink:0;line-height:1.5">${typeInfo.label}</span>
       </div>
       <div style="font-size:13px;font-weight:500;color:var(--text-primary);line-height:1.4;margin-bottom:8px">${esc(card.title)}</div>
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -160,11 +160,11 @@ export class MarketingView {
       const allUsers = this.app.allUsers
 
       overlay.innerHTML = `
-        <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:560px;box-shadow:0 8px 32px rgba(9,30,66,0.18);display:flex;flex-direction:column" onclick="event.stopPropagation()">
+        <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:560px;box-shadow:var(--shadow-lg);display:flex;flex-direction:column" onclick="event.stopPropagation()">
 
           <!-- Header -->
           <div style="display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--border-light)">
-            <span style="font-size:11px;font-weight:600;padding:3px 9px;border-radius:3px;background:${typeInfo.color}18;color:${typeInfo.color}">${typeInfo.label}</span>
+            <span style="font-size:11px;font-weight:600;padding:3px 9px;border-radius:var(--radius-sm);background:${typeInfo.color}18;color:${typeInfo.color}">${typeInfo.label}</span>
             <input id="mkt-title" value="${esc(card?.title || '')}" placeholder="Card title…" maxlength="200"
               style="flex:1;border:none;outline:none;font-size:15px;font-weight:600;color:var(--text-primary);background:transparent;font-family:var(--font);min-width:0">
             <button id="mkt-close" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-tertiary);line-height:1;padding:4px 6px">×</button>

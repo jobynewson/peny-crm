@@ -166,7 +166,7 @@ export class PostProductionView {
               }).join('')}
               <th style="width:36px;min-width:36px;border-left:1px solid var(--border-light)">
                 <div style="display:flex;align-items:center;justify-content:center">
-                  <button id="pps-add-phase-col" title="Add column" style="background:none;border:1px solid var(--border-light);color:var(--text-tertiary);border-radius:4px;width:22px;height:22px;cursor:pointer;font-size:16px;line-height:1;padding:0;display:flex;align-items:center;justify-content:center">+</button>
+                  <button id="pps-add-phase-col" title="Add column" style="background:none;border:1px solid var(--border-light);color:var(--text-tertiary);border-radius:var(--radius-md);width:22px;height:22px;cursor:pointer;font-size:16px;line-height:1;padding:0;display:flex;align-items:center;justify-content:center">+</button>
                 </div>
               </th>
             </tr>
@@ -181,7 +181,7 @@ export class PostProductionView {
               const isMonthStart = d.getDate() === 1
 
               const dateBg = isToday
-                ? 'rgba(74,144,217,0.08)'
+                ? 'rgba(var(--accent-rgb),0.06)'
                 : isWeekend
                   ? 'var(--bg-secondary)'
                   : 'var(--bg-primary)'
@@ -191,7 +191,7 @@ export class PostProductionView {
                 ? `<div style="font-size:9px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;margin-top:1px">${MON[d.getMonth()]} ${d.getFullYear()}</div>`
                 : ''
 
-              return `<tr style="border-bottom:1px solid var(--border-light);opacity:${isWeekend ? '0.5' : '1'}${isToday ? ';outline:1px solid rgba(74,144,217,0.25);outline-offset:-1px' : ''}">
+              return `<tr style="border-bottom:1px solid var(--border-light);opacity:${isWeekend ? '0.5' : '1'}${isToday ? ';outline:1px solid rgba(var(--accent-rgb),0.25);outline-offset:-1px' : ''}">
                 <td style="padding:3px 12px;white-space:nowrap;font-size:11px;position:sticky;left:0;background:${dateBg};z-index:1;border-right:1px solid var(--border-light)">
                   <div style="display:flex;align-items:baseline;gap:5px">
                     <span style="color:var(--text-tertiary);font-size:10px;width:24px;flex-shrink:0">${dow}</span>
@@ -469,11 +469,11 @@ export class PostProductionView {
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
               <div>
-                <label style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px">Start date <span style="color:#ef4444">*</span></label>
+                <label style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px">Start date <span style="color:var(--danger)">*</span></label>
                 <input type="date" id="ppsb-start" value="${data.start_date || ''}" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);color-scheme:dark" />
               </div>
               <div>
-                <label style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px">End date <span style="color:#ef4444">*</span></label>
+                <label style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px">End date <span style="color:var(--danger)">*</span></label>
                 <input type="date" id="ppsb-end" value="${data.end_date || ''}" min="${data.start_date || ''}" data-range-start="ppsb-start" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);color-scheme:dark" />
               </div>
             </div>
@@ -495,7 +495,7 @@ export class PostProductionView {
             </div>
             <div style="display:flex;flex-direction:column;gap:10px;padding-top:2px;border-top:1px solid var(--border-light)">
               <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text-primary);margin-top:6px">
-                <input type="checkbox" id="ppsb-deadline" ${data.is_deadline ? 'checked' : ''} style="cursor:pointer;accent-color:#ef4444;width:14px;height:14px;flex-shrink:0" />
+                <input type="checkbox" id="ppsb-deadline" ${data.is_deadline ? 'checked' : ''} style="cursor:pointer;accent-color:var(--danger);width:14px;height:14px;flex-shrink:0" />
                 <span>Deadline</span>
                 <span style="font-size:11px;color:var(--text-tertiary)">(shows in dashboard "Edit Deadlines")</span>
               </label>
@@ -506,7 +506,7 @@ export class PostProductionView {
               </label>` : ''}
             </div>
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:4px">
-              ${!isNew ? `<button id="ppsb-del" class="btn-cancel" style="color:#ef4444;border-color:rgba(239,68,68,0.35)">Delete</button>` : '<div></div>'}
+              ${!isNew ? `<button id="ppsb-del" class="btn-danger">Delete</button>` : '<div></div>'}
               <div style="display:flex;gap:8px">
                 <button id="ppsb-cancel" class="btn-cancel">Cancel</button>
                 <button id="ppsb-save" class="btn-primary">${isNew ? 'Add block' : 'Save changes'}</button>
@@ -609,7 +609,7 @@ export class PostProductionView {
           </div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
             <div>
-              <label style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px">Column header <span style="color:#ef4444">*</span></label>
+              <label style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px">Column header <span style="color:var(--danger)">*</span></label>
               <input type="text" id="ppsc-name" value="${esc(phase?.name || '')}" placeholder="e.g. V1 Edits" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font)" />
             </div>
             <div>
@@ -622,7 +622,7 @@ export class PostProductionView {
               Show in client portal
             </label>` : ''}
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:4px">
-              ${phase ? `<button id="ppsc-del" class="btn-cancel" style="color:#ef4444;border-color:rgba(239,68,68,0.35)">Delete column</button>` : '<div></div>'}
+              ${phase ? `<button id="ppsc-del" class="btn-danger">Delete column</button>` : '<div></div>'}
               <div style="display:flex;gap:8px">
                 <button id="ppsc-cancel" class="btn-cancel">Cancel</button>
                 <button id="ppsc-save" class="btn-primary">${phase ? 'Save changes' : 'Add column'}</button>

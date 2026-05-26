@@ -54,7 +54,7 @@ export class TimeTrackView {
       <div style="max-width:520px">
 
         <!-- Log form -->
-        <div style="background:var(--bg-primary);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:20px;box-shadow:0 1px 3px rgba(9,30,66,0.06);margin-bottom:24px">
+        <div style="background:var(--bg-primary);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:20px;box-shadow:var(--shadow-md);margin-bottom:24px">
           <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:16px">Logging as <strong style="color:var(--text-secondary)">${esc(loggedInName)}</strong></div>
 
           <!-- Project -->
@@ -219,7 +219,7 @@ export class TimeTrackView {
           <div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px">${esc(project.name)}</div>
           <div style="font-size:12px;color:var(--text-tertiary)">${totalHours.toFixed(1)}h total</div>
         </div>
-        <div style="background:var(--bg-primary);border:1px solid var(--border-light);border-radius:var(--radius-lg);overflow:hidden;box-shadow:0 1px 3px rgba(9,30,66,0.06)">
+        <div style="background:var(--bg-primary);border:1px solid var(--border-light);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-md)">
           ${entries.map(e => `
           <div class="tt-entry-row" data-eid="${e.id}" style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border-light)">
             <div style="flex:1;min-width:0">
@@ -232,8 +232,8 @@ export class TimeTrackView {
               </div>
             </div>
             <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
-              <span style="font-size:13px;font-weight:600;color:#4a90d9">${parseFloat(e.hours)}h</span>
-              <button class="row-btn tt-del-btn" data-eid="${e.id}" style="font-size:10px;color:#b03020;padding:2px 6px">×</button>
+              <span style="font-size:13px;font-weight:600;color:var(--accent)">${parseFloat(e.hours)}h</span>
+              <button class="row-btn tt-del-btn" data-eid="${e.id}" style="font-size:10px;color:var(--danger);padding:2px 6px">×</button>
             </div>
           </div>`).join('')}
         </div>`

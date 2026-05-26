@@ -49,7 +49,7 @@ export class ContactsView {
       <div class="panel">
         <div class="panel-header">
           <span class="panel-title">${this.view==='subbies'?'Subcontractors':'Clients'}</span>
-          <div style="display:flex;gap:4px;margin-right:8px;background:var(--bg-secondary);border-radius:20px;padding:3px">
+          <div style="display:flex;gap:4px;margin-right:8px;background:var(--bg-secondary);border-radius:var(--radius-pill);padding:3px">
             <button class="filter-pill ${this.view==='clients'?'active':''}" data-view="clients" style="border-radius:16px">Clients</button>
             <button class="filter-pill ${this.view==='subbies'?'active':''}" data-view="subbies" style="border-radius:16px">Subbies</button>
           </div>

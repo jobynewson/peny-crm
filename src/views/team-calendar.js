@@ -151,14 +151,14 @@ export class TeamCalendarView {
 
     section.innerHTML = `
       <div class="db-section-head" style="cursor:pointer;user-select:none" id="tc-toggle">
-        <span class="db-section-dot" style="background:#4a90d9"></span>
+        <span class="db-section-dot" style="background:var(--accent)"></span>
         Team Calendar
         ${weekEntries.length ? `<span class="db-section-count">${weekEntries.length}</span>` : ''}
         <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
           ${this._expanded ? `
-            <button id="tc-prev" style="background:none;border:1px solid var(--border-light);border-radius:4px;padding:2px 8px;cursor:pointer;font-size:12px;color:var(--text-secondary);font-family:var(--font);line-height:1.4" onclick="event.stopPropagation()">‹</button>
+            <button id="tc-prev" style="background:none;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:2px 8px;cursor:pointer;font-size:12px;color:var(--text-secondary);font-family:var(--font);line-height:1.4" onclick="event.stopPropagation()">‹</button>
             <span style="font-size:11px;color:var(--text-tertiary);white-space:nowrap">${esc(weekLabel)}</span>
-            <button id="tc-next" style="background:none;border:1px solid var(--border-light);border-radius:4px;padding:2px 8px;cursor:pointer;font-size:12px;color:var(--text-secondary);font-family:var(--font);line-height:1.4" onclick="event.stopPropagation()">›</button>
+            <button id="tc-next" style="background:none;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:2px 8px;cursor:pointer;font-size:12px;color:var(--text-secondary);font-family:var(--font);line-height:1.4" onclick="event.stopPropagation()">›</button>
           ` : `<span style="font-size:11px;color:var(--text-tertiary)">${esc(weekLabel)}</span>`}
           <span class="db-chevron${this._expanded ? ' db-chevron--open' : ''}">▶</span>
         </div>
@@ -250,10 +250,10 @@ export class TeamCalendarView {
               const isToday   = day.getTime() === today.getTime()
               const isWeekend = day.getDay() === 0 || day.getDay() === 6
               const dayStr    = day.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
-              const rowBg     = isToday ? 'rgba(74,144,217,0.06)' : isWeekend ? 'var(--bg-secondary)' : 'var(--bg-primary)'
+              const rowBg     = isToday ? 'rgba(var(--accent-rgb),0.06)' : isWeekend ? 'var(--bg-secondary)' : 'var(--bg-primary)'
               return `<tr style="background:${rowBg};border-top:1px solid var(--border-light)">
                 <td style="padding:7px 10px;border-right:1px solid var(--border-light);vertical-align:middle;white-space:nowrap;${isToday ? 'font-weight:600;color:var(--accent)' : isWeekend ? 'color:var(--text-tertiary)' : 'color:var(--text-secondary)'}">
-                  ${esc(dayStr)}${isToday ? ' <span style="font-size:9px;background:var(--accent);color:#fff;border-radius:3px;padding:1px 4px;vertical-align:middle">TODAY</span>' : ''}
+                  ${esc(dayStr)}${isToday ? ' <span style="font-size:9px;background:var(--accent);color:var(--accent-text);border-radius:var(--radius-sm);padding:1px 4px;vertical-align:middle">TODAY</span>' : ''}
                 </td>
                 ${users.map(u => {
                   const realEntries  = byUserDate[`${u.id}:${dateKey}`] || []
@@ -301,10 +301,10 @@ export class TeamCalendarView {
     const chipAttrs = isGhost ? navAttr : `data-tc-entry-id="${e.id}" draggable="true"`
     // Multi-day continuity: square the corners and drop the border where the block continues
     const isMulti = !!(e.end_date && e.end_date > e.entry_date)
-    const brTL = e._isFirst !== false ? '4px' : '0'
-    const brBL = e._isFirst !== false ? '4px' : '0'
-    const brTR = e._isLast  !== false ? '4px' : '0'
-    const brBR = e._isLast  !== false ? '4px' : '0'
+    const brTL = e._isFirst !== false ? 'var(--radius-md)' : '0'
+    const brBL = e._isFirst !== false ? 'var(--radius-md)' : '0'
+    const brTR = e._isLast  !== false ? 'var(--radius-md)' : '0'
+    const brBR = e._isLast  !== false ? 'var(--radius-md)' : '0'
     const borderL = isMulti && e._isFirst === false ? 'none' : `1px solid ${col}88`
     const borderR = isMulti && e._isLast  === false ? 'none' : `1px solid ${col}88`
     const startHandle = !isGhost && e._isFirst
@@ -500,7 +500,7 @@ export class TeamCalendarView {
       cell.addEventListener('dragover', e => {
         e.preventDefault()
         e.dataTransfer.dropEffect = 'move'
-        cell.style.background = 'rgba(74,144,217,0.1)'
+        cell.style.background = 'rgba(var(--accent-rgb),0.1)'
       })
       cell.addEventListener('dragleave', () => { cell.style.background = '' })
       cell.addEventListener('drop', async e => {
@@ -703,7 +703,7 @@ export class TeamCalendarView {
       chip.style.cssText = `position:absolute;left:${left+PAD}px;top:${top+PAD}px;` +
         `width:${width-PAD*2}px;height:${height-PAD*2}px;` +
         `display:flex;align-items:flex-start;gap:4px;padding:4px 6px;` +
-        `background:${col}22;border:1px ${isGhost ? 'dashed' : 'solid'} ${col}88;border-radius:4px;` +
+        `background:${col}22;border:1px ${isGhost ? 'dashed' : 'solid'} ${col}88;border-radius:var(--radius-md);` +
         `${isGhost ? 'opacity:0.85;' : ''}` +
         `cursor:${isGhost && e._navTarget ? 'pointer' : isGhost ? 'default' : 'pointer'};` +
         `box-sizing:border-box;overflow:hidden;pointer-events:all;z-index:2`
@@ -904,7 +904,7 @@ export class TeamCalendarView {
     const projects = (this.app.projects || []).filter(p => !p.is_retainer)
 
     const renderModal = (state = {}) => {
-      const selUserId    = state.assignee_id  ?? (defaultUserId || users[0]?.id || '')
+      const selUserId    = state.assignee_id  ?? (entry?.assignee_id || defaultUserId || users[0]?.id || '')
       const selDate      = state.entry_date   ?? (defaultDate || this._dateKey(new Date()))
       const selEndDate   = state.end_date     ?? (entry?.end_date ?? '')
       const selType      = state.entry_type   ?? (entry?.entry_type ?? 'other')
@@ -966,7 +966,7 @@ export class TeamCalendarView {
             <!-- 2. Custom label (optional if project selected) -->
             <div>
               <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">
-                Label ${selProjectId ? '<span style="opacity:0.5">(optional — defaults to project name)</span>' : '<span style="color:#ef4444">*</span>'}
+                Label ${selProjectId ? '<span style="opacity:0.5">(optional — defaults to project name)</span>' : '<span style="color:var(--danger)">*</span>'}
               </div>
               <input type="text" id="tc-m-label" value="${esc(selLabel)}" placeholder="${selProjectId ? esc(selProject?.name || '') : 'e.g. Travel day, Location scout…'}" style="width:100%;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font)" />
             </div>
@@ -1002,7 +1002,7 @@ export class TeamCalendarView {
               <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">Type</div>
               <div style="display:flex;gap:6px;flex-wrap:wrap">
                 ${Object.entries(ENTRY_TYPE_LABELS).map(([val, lbl]) => `
-                  <label style="display:flex;align-items:center;gap:5px;cursor:pointer;padding:5px 10px;border:1px solid ${selType===val?'var(--accent)':'var(--border-med)'};border-radius:var(--radius-md);font-size:12px;background:${selType===val?'rgba(74,144,217,0.1)':'var(--bg-secondary)'};color:${selType===val?'var(--accent)':'var(--text-secondary)'}">
+                  <label style="display:flex;align-items:center;gap:5px;cursor:pointer;padding:5px 10px;border:1px solid ${selType===val?'var(--accent)':'var(--border-med)'};border-radius:var(--radius-md);font-size:12px;background:${selType===val?'rgba(var(--accent-rgb),0.1)':'var(--bg-secondary)'};color:${selType===val?'var(--accent)':'var(--text-secondary)'}">
                     <input type="radio" name="tc-m-type" value="${val}" ${selType===val?'checked':''} style="accent-color:var(--accent)">
                     ${lbl}
                   </label>`).join('')}
@@ -1055,17 +1055,19 @@ export class TeamCalendarView {
             <!-- 11. Deadline -->
             <div>
               <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text-primary)">
-                <input type="checkbox" id="tc-m-deadline" ${selIsDeadline ? 'checked' : ''} style="cursor:pointer;accent-color:#ef4444;width:14px;height:14px;flex-shrink:0" />
+                <input type="checkbox" id="tc-m-deadline" ${selIsDeadline ? 'checked' : ''} style="cursor:pointer;accent-color:var(--danger);width:14px;height:14px;flex-shrink:0" />
                 <span>Mark as deadline</span>
                 <span style="font-size:11px;color:var(--text-tertiary)">(shows in dashboard deadline widget)</span>
               </label>
             </div>
 
+            <input type="hidden" id="tc-m-color" value="${esc(selColor)}" />
+
             <!-- Actions -->
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
               ${entry ? `
                 <div style="display:flex;gap:6px">
-                  <button id="tc-m-delete" class="btn-cancel" style="color:#ef4444;border-color:rgba(239,68,68,0.35)">Delete</button>
+                  <button id="tc-m-delete" class="btn-danger">Delete</button>
                   <button id="tc-m-copy" class="btn-cancel">Copy</button>
                 </div>` : '<div></div>'}
               <div style="display:flex;gap:8px">
@@ -1158,7 +1160,7 @@ export class TeamCalendarView {
       end_date:     endDate,
       entry_type:   overlay.querySelector('input[name="tc-m-type"]:checked')?.value || prev.entry_type || 'other',
       label:        overlay.querySelector('#tc-m-label')?.value    || prev.label        || '',
-      color:        prev.color !== undefined ? prev.color : '',
+      color:        overlay.querySelector('#tc-m-color')?.value ?? prev.color ?? '',
       project_id:   overlay.querySelector('#tc-m-project')?.value  || prev.project_id  || '',
       shoot_id:     overlay.querySelector('#tc-m-shoot')?.value    || prev.shoot_id    || '',
       pps_phase_id: overlay.querySelector('#tc-m-phase')?.value    || prev.pps_phase_id || '',

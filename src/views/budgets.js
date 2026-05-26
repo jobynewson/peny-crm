@@ -356,20 +356,20 @@ export class BudgetsView {
         ${proj ? `<span class="tag" style="background:#daeeff;color:#0d4a8a">${esc(proj.name)}</span>` : ''}
         ${b.vat ? `<span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary)">VAT included</span>` : ''}
         ${b.signed_off
-          ? `<button id="bv-signedoff-toggle" style="display:flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(110,201,110,0.12);border:0.5px solid rgba(110,201,110,0.3);border-radius:20px;color:#6ec96e;font-size:12px;font-weight:500;cursor:pointer;font-family:var(--font)">
+          ? `<button id="bv-signedoff-toggle" style="display:flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(110,201,110,0.12);border:0.5px solid rgba(110,201,110,0.3);border-radius:var(--radius-pill);color:#6ec96e;font-size:12px;font-weight:500;cursor:pointer;font-family:var(--font)">
                ✓ Signed off${b.signed_off_at ? ' · '+new Date(b.signed_off_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : ''}
                <span style="font-size:10px;opacity:0.6">✕</span>
              </button>`
-          : `<button id="bv-signedoff-toggle" style="display:flex;align-items:center;gap:6px;padding:5px 12px;background:var(--bg-secondary);border:0.5px solid var(--border-med);border-radius:20px;color:var(--text-tertiary);font-size:12px;cursor:pointer;font-family:var(--font)">
+          : `<button id="bv-signedoff-toggle" style="display:flex;align-items:center;gap:6px;padding:5px 12px;background:var(--bg-secondary);border:0.5px solid var(--border-med);border-radius:var(--radius-pill);color:var(--text-tertiary);font-size:12px;cursor:pointer;font-family:var(--font)">
                Mark as signed off
              </button>`}
         ${b.signed_off
           ? b.invoiced
-            ? `<button id="bv-invoiced-toggle" style="display:flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(74,144,217,0.12);border:0.5px solid rgba(74,144,217,0.3);border-radius:20px;color:#4a90d9;font-size:12px;font-weight:500;cursor:pointer;font-family:var(--font)">
+            ? `<button id="bv-invoiced-toggle" style="display:flex;align-items:center;gap:6px;padding:5px 12px;background:var(--accent-subtle);border:0.5px solid rgba(var(--accent-rgb),0.3);border-radius:var(--radius-pill);color:var(--accent);font-size:12px;font-weight:500;cursor:pointer;font-family:var(--font)">
                  ✓ Invoiced${b.invoiced_at ? ' · '+new Date(b.invoiced_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : ''}
                  <span style="font-size:10px;opacity:0.6">✕</span>
                </button>`
-            : `<button id="bv-invoiced-toggle" style="display:flex;align-items:center;gap:6px;padding:5px 12px;background:var(--bg-secondary);border:0.5px solid var(--border-med);border-radius:20px;color:var(--text-tertiary);font-size:12px;cursor:pointer;font-family:var(--font)">
+            : `<button id="bv-invoiced-toggle" style="display:flex;align-items:center;gap:6px;padding:5px 12px;background:var(--bg-secondary);border:0.5px solid var(--border-med);border-radius:var(--radius-pill);color:var(--text-tertiary);font-size:12px;cursor:pointer;font-family:var(--font)">
                  Mark as invoiced
                </button>`
           : ''}
