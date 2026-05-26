@@ -2420,7 +2420,7 @@ export class App {
     } catch (e) { console.error(e); this.toast('Error removing timer') }
   }
 
-  _mountDaysSinceWidget(_mc) {
+  _mountDaysSinceWidget(mc) {
     document.getElementById('ds-widget-wrap')?.remove()
 
     const ds = this.settings?.days_since_timer
@@ -2440,7 +2440,7 @@ export class App {
         <div class="ds-days">${days}</div>
         <div class="ds-label">days since <span class="ds-name">${esc(ds.name)}</span></div>
       </div>`
-    document.querySelector('.main')?.prepend(wrapper)
+    mc.prepend(wrapper)
   }
 
   async _saveCountdownTimer(mc) {
