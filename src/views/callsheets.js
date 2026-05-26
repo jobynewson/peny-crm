@@ -273,7 +273,7 @@ export class CallSheetsView {
             <div class="cs-panel-head"><span class="bsec-chev open">▶</span> Share links</div>
             <div class="cs-panel-body" style="padding:10px 12px;display:flex;flex-direction:column;gap:6px">
               <!-- Full call sheet — visually distinct -->
-              <div style="background:rgba(74,144,217,0.08);border:0.5px solid rgba(74,144,217,0.25);border-radius:var(--radius-md);padding:8px 10px;display:flex;justify-content:space-between;align-items:center">
+              <div style="background:rgba(var(--accent-rgb),0.08);border:0.5px solid rgba(var(--accent-rgb),0.25);border-radius:var(--radius-md);padding:8px 10px;display:flex;justify-content:space-between;align-items:center">
                 <div style="font-size:11px;font-weight:500;color:var(--accent)">📋 Full call sheet</div>
                 <button class="btn-secondary" data-copy="${origin}/call/${s.sheet_token}" style="font-size:11px;padding:4px 10px">Copy</button>
               </div>

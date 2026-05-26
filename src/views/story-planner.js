@@ -74,7 +74,7 @@ export class StoryPlannerView {
         style="background:var(--bg-secondary);border:0.5px solid var(--border-light);border-radius:var(--radius-md);padding:16px 16px 14px;cursor:pointer;transition:border-color 0.15s;position:relative;min-height:80px"
         onmouseover="this.style.borderColor='var(--border-strong)'" onmouseout="this.style.borderColor='var(--border-light)'">
         <button data-sp-delete="${plan.id}" data-sp-title="${esc(plan.title)}" draggable="false"
-          style="position:absolute;top:8px;right:8px;background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:16px;line-height:1;padding:3px 6px;border-radius:3px"
+          style="position:absolute;top:8px;right:8px;background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:16px;line-height:1;padding:3px 6px;border-radius:var(--radius-sm)"
           onmouseover="this.style.color='#e07070'" onmouseout="this.style.color='var(--text-tertiary)'">×</button>
         <div style="font-size:14px;font-weight:500;margin-bottom:5px;padding-right:22px">${esc(plan.title)}</div>
         <div style="font-size:12px;color:var(--text-tertiary)">
@@ -115,7 +115,7 @@ export class StoryPlannerView {
           <button class="btn-secondary" id="sp-back" style="flex-shrink:0">← Plans</button>
           <input id="sp-plan-title" value="${esc(plan.title)}"
             style="flex:1;font-size:17px;font-weight:600;background:transparent;border:none;outline:none;color:var(--text-primary);font-family:var(--font);min-width:0;border-bottom:1.5px solid transparent;padding:2px 0;transition:border-color 0.15s"
-            onfocus="this.style.borderBottomColor='var(--accent,#4a90d9)'"
+            onfocus="this.style.borderBottomColor='var(--accent)'"
             onblur="this.style.borderBottomColor='transparent'" />
           <div style="display:flex;gap:6px;flex-shrink:0">
             <button class="btn-secondary" id="sp-export-btn">Export ↓</button>
@@ -242,17 +242,17 @@ export class StoryPlannerView {
         <div style="flex:1;padding:10px 14px;min-width:0">
           <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:${block.description || duration ? '3px' : '0'}">${esc(block.title)}</div>
           ${block.description ? `<div style="font-size:12px;color:var(--text-secondary);line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:${duration ? '6px' : '0'}">${esc(block.description)}</div>` : ''}
-          ${duration > 0 ? `<span style="font-size:11px;background:rgba(74,144,217,0.12);color:#4a90d9;border-radius:4px;padding:2px 7px;font-weight:500;display:inline-block">${fmtDuration(duration)}</span>` : ''}
+          ${duration > 0 ? `<span style="font-size:11px;background:var(--accent-subtle);color:var(--accent);border-radius:var(--radius-md);padding:2px 7px;font-weight:500;display:inline-block">${fmtDuration(duration)}</span>` : ''}
         </div>
 
         ${imgSrc ? `<div style="width:72px;flex-shrink:0;overflow:hidden;border-left:0.5px solid var(--border-light)"><img src="${imgSrc}" style="width:100%;height:100%;object-fit:cover" loading="lazy" /></div>` : ''}
 
         <div style="display:flex;flex-direction:column;justify-content:center;gap:4px;padding:8px 10px;border-left:0.5px solid var(--border-light);flex-shrink:0">
           <button data-sp-block-edit="${block.id}" draggable="false"
-            style="background:none;border:0.5px solid var(--border-light);border-radius:4px;cursor:pointer;color:var(--text-tertiary);padding:3px 9px;font-size:11px;font-family:var(--font);line-height:1.5;transition:color 0.1s"
+            style="background:none;border:0.5px solid var(--border-light);border-radius:var(--radius-md);cursor:pointer;color:var(--text-tertiary);padding:3px 9px;font-size:11px;font-family:var(--font);line-height:1.5;transition:color 0.1s"
             onmouseover="this.style.color='var(--text-primary)'" onmouseout="this.style.color='var(--text-tertiary)'">Edit</button>
           <button data-sp-block-del="${block.id}" draggable="false"
-            style="background:none;border:0.5px solid var(--border-light);border-radius:4px;cursor:pointer;color:var(--text-tertiary);padding:3px 9px;font-size:11px;font-family:var(--font);line-height:1.5;transition:color 0.1s"
+            style="background:none;border:0.5px solid var(--border-light);border-radius:var(--radius-md);cursor:pointer;color:var(--text-tertiary);padding:3px 9px;font-size:11px;font-family:var(--font);line-height:1.5;transition:color 0.1s"
             onmouseover="this.style.color='#e07070'" onmouseout="this.style.color='var(--text-tertiary)'">×</button>
         </div>
       </div>
@@ -293,7 +293,7 @@ export class StoryPlannerView {
         e.dataTransfer.dropEffect = 'move'
         if (card.dataset.id !== dragSrcId) {
           clearIndicators()
-          card.style.boxShadow = '0 -3px 0 0 var(--accent,#4a90d9)'
+          card.style.boxShadow = '0 -3px 0 0 var(--accent)'
         }
       })
       card.addEventListener('dragleave', () => {
@@ -320,8 +320,8 @@ export class StoryPlannerView {
         e.preventDefault()
         e.dataTransfer.dropEffect = 'move'
         clearIndicators()
-        endZone.style.borderColor = 'var(--accent,#4a90d9)'
-        endZone.style.color = 'var(--accent,#4a90d9)'
+        endZone.style.borderColor = 'var(--accent)'
+        endZone.style.color = 'var(--accent)'
       })
       endZone.addEventListener('dragleave', () => {
         endZone.style.borderColor = 'transparent'
@@ -418,20 +418,20 @@ export class StoryPlannerView {
               <label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px">Title *</label>
               <input id="bm-title" value="${esc(block?.title || '')}" placeholder="e.g. Intro, B-roll, Interview, Outro…"
                 style="width:100%;padding:8px 11px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-size:13px;font-family:var(--font);outline:none;box-sizing:border-box;transition:border-color 0.15s"
-                onfocus="this.style.borderColor='var(--accent,#4a90d9)'" onblur="this.style.borderColor='var(--border-med)'" />
+                onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border-med)'" />
             </div>
             <div>
               <label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px">Description</label>
               <textarea id="bm-desc" placeholder="Shot notes, action, dialogue cues…"
                 style="width:100%;min-height:72px;padding:8px 11px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-size:13px;font-family:var(--font);outline:none;resize:vertical;line-height:1.5;box-sizing:border-box;transition:border-color 0.15s"
-                onfocus="this.style.borderColor='var(--accent,#4a90d9)'" onblur="this.style.borderColor='var(--border-med)'">${esc(block?.description || '')}</textarea>
+                onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border-med)'">${esc(block?.description || '')}</textarea>
             </div>
             <div>
               <label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px">Duration (minutes)</label>
               <div style="display:flex;align-items:center;gap:10px">
                 <input id="bm-duration" type="number" min="0" step="0.25" value="${block?.duration_mins ?? ''}" placeholder="e.g. 0.5"
                   style="width:110px;padding:8px 11px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-size:13px;font-family:var(--font);outline:none;transition:border-color 0.15s"
-                  onfocus="this.style.borderColor='var(--accent,#4a90d9)'" onblur="this.style.borderColor='var(--border-med)'" />
+                  onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border-med)'" />
                 <span style="font-size:12px;color:var(--text-tertiary)">min — 0.5 = 30 sec</span>
               </div>
             </div>
@@ -608,7 +608,7 @@ export class StoryPlannerView {
       ${projects.length === 0
         ? `<div style="padding:16px;font-size:13px;color:var(--text-tertiary);text-align:center">No projects yet</div>`
         : projects.map(p => `
-          <div data-spp-proj="${p.id}" style="padding:9px 14px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px;${this.plan.project_id === p.id ? 'color:var(--accent,#4a90d9);font-weight:500' : ''}"
+          <div data-spp-proj="${p.id}" style="padding:9px 14px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px;${this.plan.project_id === p.id ? 'color:var(--accent);font-weight:500' : ''}"
             onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''">
             ${this.plan.project_id === p.id ? '✓ ' : ''}${esc(p.name)}
           </div>`).join('')}
@@ -646,7 +646,7 @@ export class StoryPlannerView {
         <div style="padding:18px">
           <input id="np-title" placeholder="e.g. Brand film v2, Interview cut…"
             style="width:100%;padding:9px 12px;border:0.5px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-size:14px;font-family:var(--font);outline:none;box-sizing:border-box"
-            onfocus="this.style.borderColor='var(--accent,#4a90d9)'" onblur="this.style.borderColor='var(--border-med)'" />
+            onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border-med)'" />
         </div>
         <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:0.5px solid var(--border-light)">
           <button class="btn-cancel" id="np-cancel">Cancel</button>

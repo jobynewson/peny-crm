@@ -89,15 +89,15 @@ export class PasswordManagerView {
                       <td style="padding:12px 16px">
                         <div style="display:flex;align-items:center;gap:6px">
                           <span style="font-size:13px;color:var(--text-secondary);font-family:monospace">${esc(c.login) || '<span style="color:var(--text-tertiary)">—</span>'}</span>
-                          ${c.login ? `<button class="pm-copy" data-val="${esc(c.login)}" title="Copy email/login" style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--text-tertiary);padding:2px;line-height:0;border-radius:3px;transition:color 0.15s" onmouseover="this.style.color='var(--text-secondary)'" onmouseout="this.style.color='var(--text-tertiary)'">${this._iconCopy()}</button>` : ''}
+                          ${c.login ? `<button class="pm-copy" data-val="${esc(c.login)}" title="Copy email/login" style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--text-tertiary);padding:2px;line-height:0;border-radius:var(--radius-sm);transition:color 0.15s" onmouseover="this.style.color='var(--text-secondary)'" onmouseout="this.style.color='var(--text-tertiary)'">${this._iconCopy()}</button>` : ''}
                         </div>
                       </td>
                       <td style="padding:12px 16px">
                         <div style="display:flex;align-items:center;gap:6px">
                           <span class="pm-pw-display" data-id="${c.id}" style="font-size:13px;color:var(--text-secondary);font-family:monospace;letter-spacing:${this.visibleIds.has(c.id) ? 'normal' : '2px'}">${c.password ? (this.visibleIds.has(c.id) ? esc(c.password) : '••••••••') : '<span style="color:var(--text-tertiary);letter-spacing:normal">—</span>'}</span>
                           ${c.password ? `
-                            <button class="pm-toggle-pw" data-id="${c.id}" title="${this.visibleIds.has(c.id) ? 'Hide' : 'Show'} password" style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--text-tertiary);padding:2px;line-height:0;border-radius:3px;transition:color 0.15s" onmouseover="this.style.color='var(--text-secondary)'" onmouseout="this.style.color='var(--text-tertiary)'">${this.visibleIds.has(c.id) ? this._iconEyeOff() : this._iconEye()}</button>
-                            <button class="pm-copy" data-val="${esc(c.password)}" title="Copy password" style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--text-tertiary);padding:2px;line-height:0;border-radius:3px;transition:color 0.15s" onmouseover="this.style.color='var(--text-secondary)'" onmouseout="this.style.color='var(--text-tertiary)'">${this._iconCopy()}</button>
+                            <button class="pm-toggle-pw" data-id="${c.id}" title="${this.visibleIds.has(c.id) ? 'Hide' : 'Show'} password" style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--text-tertiary);padding:2px;line-height:0;border-radius:var(--radius-sm);transition:color 0.15s" onmouseover="this.style.color='var(--text-secondary)'" onmouseout="this.style.color='var(--text-tertiary)'">${this.visibleIds.has(c.id) ? this._iconEyeOff() : this._iconEye()}</button>
+                            <button class="pm-copy" data-val="${esc(c.password)}" title="Copy password" style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--text-tertiary);padding:2px;line-height:0;border-radius:var(--radius-sm);transition:color 0.15s" onmouseover="this.style.color='var(--text-secondary)'" onmouseout="this.style.color='var(--text-tertiary)'">${this._iconCopy()}</button>
                           ` : ''}
                         </div>
                       </td>

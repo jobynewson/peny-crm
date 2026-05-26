@@ -242,7 +242,7 @@ export class ProjectsView {
           <div class="modal-body">
 
             <!-- AI import panel -->
-            <div style="background:linear-gradient(135deg,rgba(167,139,250,0.08),rgba(74,144,217,0.08));border:0.5px solid rgba(167,139,250,0.3);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:14px">
+            <div style="background:linear-gradient(135deg,rgba(167,139,250,0.08),rgba(var(--accent-rgb),0.08));border:0.5px solid rgba(167,139,250,0.3);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:14px">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
                 <span style="font-size:12px;font-weight:500;color:var(--purple)">✨ Import from email / brief</span>
                 <button id="pf-ai-toggle" class="btn-cancel" style="font-size:11px;padding:3px 8px">Paste text</button>
@@ -609,7 +609,7 @@ export class ProjectsView {
               <span style="font-size:13px;flex:1;min-width:0;${d.done?'text-decoration:line-through;color:var(--text-tertiary)':''}">${esc(d.text)}</span>
               ${assigneeName ? `<span style="font-size:11px;color:var(--text-tertiary);white-space:nowrap;flex-shrink:0;padding:2px 7px;border:0.5px solid var(--border-light);border-radius:5px" title="Assigned to ${esc(assigneeName)}">👤 ${esc(assigneeName)}</span>` : ''}
               ${dueLabel ? `<span style="font-size:11px;color:${dueColour};white-space:nowrap;flex-shrink:0;font-weight:${isOverdue||isDueSoon?'500':'400'}">${isOverdue?'⚠ ':isDueSoon?'⏰ ':''}${dueLabel}</span>` : ''}
-              ${d.link ? `<a href="${esc(d.link)}" target="_blank" rel="noopener" title="${esc(d.link)}" style="flex-shrink:0;font-size:11px;color:var(--accent);text-decoration:none;padding:2px 7px;border:0.5px solid rgba(74,144,217,0.3);border-radius:5px;white-space:nowrap" onmouseover="this.style.opacity='0.7'" onmouseout="this.style.opacity='1'">↗ Link</a>` : ''}
+              ${d.link ? `<a href="${esc(d.link)}" target="_blank" rel="noopener" title="${esc(d.link)}" style="flex-shrink:0;font-size:11px;color:var(--accent);text-decoration:none;padding:2px 7px;border:0.5px solid rgba(var(--accent-rgb),0.3);border-radius:5px;white-space:nowrap" onmouseover="this.style.opacity='0.7'" onmouseout="this.style.opacity='1'">↗ Link</a>` : ''}
             </div>`
           }).join('')}
         </div>
@@ -1115,7 +1115,7 @@ export class ProjectsView {
                 ${blocks.length} block${blocks.length !== 1 ? 's' : ''}${totalMins > 0 ? ' · ' + fmtDur(totalMins) : ''}
               </div>
             </div>
-            <span style="font-size:12px;color:var(--accent,#4a90d9);flex-shrink:0">Open →</span>
+            <span style="font-size:12px;color:var(--accent);flex-shrink:0">Open →</span>
           </div>
         `
       }).join('')
@@ -3234,8 +3234,8 @@ export class ProjectsView {
                 ${e.note ? `<div style="font-size:10px;color:var(--text-tertiary)">${e.note}</div>` : ''}
               </div>
               <div style="display:flex;align-items:center;gap:8px">
-                <span style="font-weight:500;color:#4a90d9">${parseFloat(e.hours)}h</span>
-                <button class="row-btn" data-del-entry="${e.id}" style="font-size:10px;color:#b03020;flex-shrink:0">×</button>
+                <span style="font-weight:500;color:var(--accent)">${parseFloat(e.hours)}h</span>
+                <button class="row-btn" data-del-entry="${e.id}" style="font-size:10px;color:var(--danger);flex-shrink:0">×</button>
               </div>
             </div>`).join('')}
         </div>` : ''}
