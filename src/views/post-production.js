@@ -45,14 +45,16 @@ export class PostProductionView {
   _renderPpsContent(container, pps, project) {
     const phases = pps.phases || []
     const hasPortal = !!project.portal_token
-    const portalCount = phases.filter(p => p.show_in_portal).length
+    const portalCount = phases.filter(p =>
+      p.show_in_portal || (Array.isArray(p.blocks) && p.blocks.some(b => b.start_date && b.end_date))
+    ).length
 
     container.innerHTML = `
       <div>
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;flex-wrap:wrap;gap:10px">
           <div>
             <div style="font-size:14px;font-weight:600;margin-bottom:2px">Post Production Schedule</div>
-            <div style="font-size:12px;color:var(--text-tertiary)">${phases.length} column${phases.length !== 1 ? 's' : ''}${hasPortal && portalCount ? ` · ${portalCount} visible in portal` : ''}</div>
+            <div style="font-size:12px;color:var(--text-tertiary)">${phases.length} column${phases.length !== 1 ? 's' : ''}${hasPortal ? (portalCount ? ` · ${portalCount} visible in portal` : ' · nothing visible in portal yet') : ''}</div>
           </div>
           <button class="btn-primary" id="pps-add-phase">+ Add column</button>
         </div>
@@ -499,11 +501,6 @@ export class PostProductionView {
                 <span>Deadline</span>
                 <span style="font-size:11px;color:var(--text-tertiary)">(shows in dashboard "Edit Deadlines")</span>
               </label>
-              ${project.portal_token ? `
-              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text-primary)">
-                <input type="checkbox" id="ppsb-portal" ${data.show_in_portal ? 'checked' : ''} style="cursor:pointer;accent-color:var(--accent);width:14px;height:14px;flex-shrink:0" />
-                <span>Show in client portal</span>
-              </label>` : ''}
             </div>
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:4px">
               ${!isNew ? `<button id="ppsb-del" class="btn-danger">Delete</button>` : '<div></div>'}

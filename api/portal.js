@@ -71,7 +71,7 @@ export default async function handler(req, res) {
     for (const col of cols) {
       const colVisible = col.show_in_portal
       const blocks = Array.isArray(col.blocks) ? col.blocks : []
-      const visibleBlocks = blocks.filter(b => (colVisible || b.show_in_portal) && b.start_date && b.end_date)
+      const visibleBlocks = blocks.filter(b => b.start_date && b.end_date)
       if (visibleBlocks.length || colVisible) {
         ppsPhases.push({
           id:    col.id,
