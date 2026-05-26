@@ -129,6 +129,9 @@
     const esc      = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     const fmtDate  = s => s ? new Date(s).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : ''
     const fmtShort = s => s ? new Date(s).toLocaleDateString('en-GB', { day:'numeric', month:'short' }) : ''
+    // Extract YYYY-MM-DD from any date representation (guards against Neon returning
+    // DATE columns as ISO timestamp strings, which break the +T00:00:00 concat below)
+    const toYMD = s => { const m = s && String(s).match(/(\d{4}-\d{2}-\d{2})/); return m ? m[1] : null }
 
     function hexRgba(hex, a) {
       try {
@@ -212,9 +215,9 @@
       const allBlocks = ppsPhases.flatMap(ph => (ph.blocks || []).map(b => ({ ...b, _phId: ph.id, _phName: ph.name, _phColor: ph.color })))
 
       // Date range: prefer schedule bounds, fall back to block extents
-      const allDateStrs = allBlocks.flatMap(b => [b.start_date, b.end_date]).filter(Boolean)
-      const gridStartStr = ppsSchedule?.start_date || (allDateStrs.length ? allDateStrs.reduce((a,b) => a < b ? a : b) : null)
-      const gridEndStr   = ppsSchedule?.end_date   || (allDateStrs.length ? allDateStrs.reduce((a,b) => a > b ? a : b) : null)
+      const allDateStrs = allBlocks.flatMap(b => [toYMD(b.start_date), toYMD(b.end_date)]).filter(Boolean)
+      const gridStartStr = toYMD(ppsSchedule?.start_date) || (allDateStrs.length ? allDateStrs.reduce((a,b) => a < b ? a : b) : null)
+      const gridEndStr   = toYMD(ppsSchedule?.end_date)   || (allDateStrs.length ? allDateStrs.reduce((a,b) => a > b ? a : b) : null)
 
       if (gridStartStr && gridEndStr) {
         const start = new Date(gridStartStr + 'T00:00:00')
@@ -230,8 +233,8 @@
           const phaseData = ppsPhases.map(ph => {
             const dayBlock = {}
             for (const b of (ph.blocks || [])) {
-              const bs = new Date(b.start_date + 'T00:00:00')
-              const be = new Date(b.end_date   + 'T00:00:00')
+              const bs = new Date((toYMD(b.start_date) || '') + 'T00:00:00')
+              const be = new Date((toYMD(b.end_date)   || '') + 'T00:00:00')
               if (be < bs) continue
               for (let d = new Date(bs); d <= be; d.setDate(d.getDate() + 1)) {
                 const ds = d.toISOString().slice(0,10)
