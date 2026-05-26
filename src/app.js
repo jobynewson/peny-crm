@@ -912,9 +912,9 @@ export class App {
         this.navigate('projects')
         setTimeout(() => document.querySelector('#topbar-btn')?.click(), 50)
       })
-      this._mountDaysSinceWidget(mc)
-      this._mountCountdownWidget(mc)
       this.teamCalendarView.renderDashboardSection(mc)
+      this._mountCountdownWidget(mc)
+      this._mountDaysSinceWidget(mc)
       return
     }
 
@@ -1381,9 +1381,9 @@ export class App {
         <div class="stats-row">${statCards}</div>
       </div>`
 
-    this._mountDaysSinceWidget(mc)
-    this._mountCountdownWidget(mc)
     this.teamCalendarView.renderDashboardSection(mc)
+    this._mountCountdownWidget(mc)
+    this._mountDaysSinceWidget(mc)
 
     // --- Marketing tasks coming due ---
     mc.querySelector('#db-mkt-view-all')?.addEventListener('click', () => this.navigate('marketing'))
@@ -2925,10 +2925,11 @@ export class App {
       .notes-delete-btn:hover{background:rgba(239,68,68,0.15);color:#ef4444}
 
       /* ── Days-since widget ── */
-      .ds-widget{display:flex;align-items:center;gap:12px;background:var(--bg-primary);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:10px 18px;margin-bottom:16px;box-shadow:var(--shadow-md)}
-      .ds-days{font-size:28px;font-weight:700;letter-spacing:-1px;color:var(--text-primary);line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap}
-      .ds-label{font-size:12px;color:var(--text-tertiary);line-height:1.4}
-      .ds-name{font-weight:600;color:var(--text-secondary)}
+      #ds-widget-wrap{display:flex;justify-content:center;padding:10px 16px}
+      .ds-widget{display:inline-flex;align-items:baseline;gap:6px;background:#c0392b;color:#fff;border-radius:999px;padding:6px 18px}
+      .ds-days{font-size:18px;font-weight:700;line-height:1;color:#fff}
+      .ds-label{font-size:13px;font-weight:500;color:rgba(255,255,255,0.9)}
+      .ds-name{font-weight:700;color:#fff}
 
       /* ── Countdown widget ── */
       .cd-widget{background:var(--bg-primary);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:28px 24px 24px;margin-bottom:24px;text-align:center;box-shadow:var(--shadow-md);position:relative;overflow:hidden}
