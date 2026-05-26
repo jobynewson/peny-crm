@@ -38,10 +38,10 @@ export class ProjectsView {
     const regularProjects  = projects.filter(p => !p.is_retainer)
     const retainerProjects = projects.filter(p => p.is_retainer)
     mc.innerHTML = `
-      <div class="stats-row">
-        <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value">${regularProjects.length}</div><div class="stat-sub">projects</div></div>
-        ${STAGES.slice(0,3).map(s=>`<div class="stat-card"><div class="stat-label">${s}</div><div class="stat-value">${regularProjects.filter(p=>p.status===s).length}</div><div class="stat-sub">projects</div></div>`).join('')}
-        <div class="stat-card"><div class="stat-label">Retainers</div><div class="stat-value">${retainerProjects.length}</div><div class="stat-sub">active</div></div>
+      <div class="stats-row" style="grid-template-columns:repeat(5,1fr)">
+        <div class="stat-card stat-card--sm"><div class="stat-label">Total</div><div class="stat-value stat-value--sm">${regularProjects.length}</div><div class="stat-sub">projects</div></div>
+        ${STAGES.slice(0,3).map(s=>`<div class="stat-card stat-card--sm"><div class="stat-label">${s}</div><div class="stat-value stat-value--sm">${regularProjects.filter(p=>p.status===s).length}</div><div class="stat-sub">projects</div></div>`).join('')}
+        <div class="stat-card stat-card--sm"><div class="stat-label">Retainers</div><div class="stat-value stat-value--sm">${retainerProjects.length}</div><div class="stat-sub">active</div></div>
       </div>
       <div class="kanban-wrap" style="grid-template-columns:repeat(6,1fr)">
         ${STAGES.map(stage => {
