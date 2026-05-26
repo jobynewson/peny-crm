@@ -2414,12 +2414,16 @@ export class App {
     try {
       const [updated] = await upsertSettings(this.userId, data)
       this.settings = updated
+      document.getElementById('ds-widget-wrap')?.remove()
+      document.getElementById('app').style.paddingTop = ''
       this.toast('Timer removed')
       this.renderSettings(mc)
     } catch (e) { console.error(e); this.toast('Error removing timer') }
   }
 
-  _mountDaysSinceWidget(mc) {
+  _mountDaysSinceWidget(_mc) {
+    document.getElementById('ds-widget-wrap')?.remove()
+
     const ds = this.settings?.days_since_timer
     if (!ds?.name || !ds?.since) return
 
@@ -2437,7 +2441,11 @@ export class App {
         <div class="ds-days">${days}</div>
         <div class="ds-label">days since <span class="ds-name">${esc(ds.name)}</span></div>
       </div>`
-    mc.prepend(wrapper)
+    document.body.prepend(wrapper)
+    requestAnimationFrame(() => {
+      const h = wrapper.getBoundingClientRect().height
+      document.getElementById('app').style.paddingTop = h + 'px'
+    })
   }
 
   async _saveCountdownTimer(mc) {

@@ -474,3 +474,40 @@ body.is-resizing * {
 body.is-resizing .tc-chip-overlay {
   pointer-events: none !important;
 }
+
+/* ── Days-since banner ── */
+#ds-widget-wrap {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  background: #c0392b;
+  color: #fff;
+}
+
+.ds-widget {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 16px;
+}
+
+.ds-days {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+}
+
+.ds-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.9);
+}
+
+.ds-name {
+  font-weight: 700;
+  color: #fff;
+}
