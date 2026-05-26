@@ -206,27 +206,6 @@ export class TeamCalendarView {
     if (!users.length) return `<div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">No team members found.</div>`
 
     const today   = new Date(); today.setHours(0, 0, 0, 0)
-    const projects = this.app.projects || []
-
-    // Build lookup: userId:dateKey → [entries] with _isFirst/_isLast continuity flags
-    const byUserDate = {}
-    for (const e of entries) {
-      const start = e.entry_date
-      const end   = e.end_date || e.entry_date
-      for (const day of days) {
-        const k = this._dateKey(day)
-        if (k >= start && k <= end) {
-          const key = `${e.assignee_id}:${k}`
-          if (!byUserDate[key]) byUserDate[key] = []
-          if (!byUserDate[key].find(x => x.id === e.id)) {
-            byUserDate[key].push({ ...e, _isFirst: k === start, _isLast: k === end })
-          }
-        }
-      }
-    }
-
-    const shootEntries = this._buildShootEntries(days, users)
-    const ppsEntries   = this._buildPpsEntries(days, users)
 
     const paste = this._clipboard
       ? `<div id="tc-paste-hint" style="font-size:11px;color:var(--accent);margin-top:6px;margin-bottom:2px">📋 Entry copied — click a cell to paste (or press Escape to clear)</div>` : ''
@@ -255,26 +234,13 @@ export class TeamCalendarView {
                 <td style="padding:7px 10px;border-right:1px solid var(--border-light);vertical-align:middle;white-space:nowrap;${isToday ? 'font-weight:600;color:var(--accent)' : isWeekend ? 'color:var(--text-tertiary)' : 'color:var(--text-secondary)'}">
                   ${esc(dayStr)}${isToday ? ' <span style="font-size:9px;background:var(--accent);color:var(--accent-text);border-radius:var(--radius-sm);padding:1px 4px;vertical-align:middle">TODAY</span>' : ''}
                 </td>
-                ${users.map(u => {
-                  const realEntries  = byUserDate[`${u.id}:${dateKey}`] || []
-                  const ghostEntries = shootEntries[`${u.id}:${dateKey}`] || []
-                  const ppsGhosts    = ppsEntries[`${u.id}:${dateKey}`] || []
-                  const allChips = [
-                    ...realEntries.filter(e => !e.end_date || e.end_date <= e.entry_date).map(e => this._chipHTML(e, false, projects)),
-                    ...ghostEntries.filter(e => !e._isMultiDayGhost).map(e => this._chipHTML(e, true, projects)),
-                    ...ppsGhosts.filter(e => !e._blockIsMultiDay).map(e => this._chipHTML(e, true, projects)),
-                  ]
-                  return `<td class="tc-cell" data-tc-date="${dateKey}" data-tc-user="${u.id}"
+                ${users.map(u => `<td class="tc-cell" data-tc-date="${dateKey}" data-tc-user="${u.id}"
                     style="padding:3px 4px;border-right:1px solid var(--border-light);height:34px;
                     vertical-align:middle;cursor:pointer;position:relative;box-sizing:border-box">
-                    <div style="display:flex;gap:2px;height:26px;align-items:stretch;overflow:hidden">
-                      ${allChips.join('')}
-                    </div>
                     <div class="tc-add-hint" style="position:absolute;inset:0;display:flex;align-items:center;
                       justify-content:center;opacity:0;font-size:16px;color:var(--text-tertiary);
                       transition:opacity 0.1s;pointer-events:none;user-select:none">+</div>
-                  </td>`
-                }).join('')}
+                  </td>`).join('')}
               </tr>`
             }).join('')}
           </tbody>
@@ -287,42 +253,6 @@ export class TeamCalendarView {
         ${this._ppsPhasesCache?.length ? `<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;border:1.5px dashed #C47E3A"></span> Auto from post production</span>` : ''}
         ${this._clipboard ? `<span style="color:var(--accent)">📋 Paste active</span>` : ''}
       </div>`
-  }
-
-  _chipHTML(e, isGhost, projects) {
-    const col    = e.color || TYPE_COLORS[e.entry_type] || '#7B6EAB'
-    const proj   = e.project_id ? projects.find(p => p.id === e.project_id) : null
-    const label  = proj ? proj.name : e.label
-    const hasNav = isGhost && !!e._navTarget
-    const ghostStyle = isGhost
-      ? `border-style:dashed;opacity:0.75;${hasNav ? 'cursor:pointer;' : 'pointer-events:none;'}`
-      : `cursor:pointer;`
-    const navAttr   = hasNav ? `data-ghost-nav="${e._navTarget}"` : ''
-    const chipAttrs = isGhost ? navAttr : `data-tc-entry-id="${e.id}" draggable="true"`
-    // Multi-day continuity: square the corners and drop the border where the block continues
-    const isMulti = !!(e.end_date && e.end_date > e.entry_date)
-    const brTL = e._isFirst !== false ? 'var(--radius-md)' : '0'
-    const brBL = e._isFirst !== false ? 'var(--radius-md)' : '0'
-    const brTR = e._isLast  !== false ? 'var(--radius-md)' : '0'
-    const brBR = e._isLast  !== false ? 'var(--radius-md)' : '0'
-    const borderL = isMulti && e._isFirst === false ? 'none' : `1px solid ${col}88`
-    const borderR = isMulti && e._isLast  === false ? 'none' : `1px solid ${col}88`
-    const startHandle = !isGhost && e._isFirst
-      ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="start" style="position:absolute;top:-1px;left:0;right:0;height:6px;cursor:ns-resize;color:${col}"></div>` : ''
-    const endHandle = !isGhost && e._isLast
-      ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="end" style="position:absolute;bottom:-1px;left:0;right:0;height:6px;cursor:ns-resize;color:${col}"></div>` : ''
-    const title = `${esc(label)}${proj && e.label !== proj.name ? ' · ' + esc(e.label) : ''}${isMulti ? ' (multi-day)' : ''}${isGhost ? (e._ghostNote || ' (from shoot plan)') : ''}${hasNav ? ' · Click to open ↗' : ''}`
-    return `<div class="${isGhost ? 'tc-chip-ghost' : 'tc-chip'}" ${chipAttrs}
-      style="position:relative;flex:1;min-width:0;display:flex;align-items:center;gap:4px;padding:2px 5px;
-      background:${col}22;border-top:1px solid ${col}88;border-bottom:1px solid ${col}88;
-      border-left:${borderL};border-right:${borderR};
-      border-radius:${brTL} ${brTR} ${brBR} ${brBL};
-      ${ghostStyle}overflow:hidden" title="${title}">
-      ${startHandle}
-      <div style="width:6px;height:6px;border-radius:50%;flex-shrink:0;background:${col}"></div>
-      <span style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0">${esc(label)}</span>
-      ${endHandle}
-    </div>`
   }
 
   _findConsecutiveSpans(sortedDates) {
@@ -682,8 +612,40 @@ export class TeamCalendarView {
       }
     }
 
-    // Phase 1d: split horizontal space among overlapping blocks in the same column
-    const overlapsV = (a, b) => a.top < b.top + b.height && b.top < a.top + a.height
+    // Phase 1d: single-day blocks (real entries + ghosts) join the same layout pass
+    const addOneDay = (e, isGhost, dateKey, assigneeId) => {
+      const cell = gridWrap.querySelector(`.tc-cell[data-tc-user="${assigneeId}"][data-tc-date="${dateKey}"]`)
+      if (!cell) return
+      const fr = cell.getBoundingClientRect()
+      toPlace.push({
+        e, isGhost, oneRow: true,
+        top:    fr.top  - wrapRect.top,
+        left:   fr.left - wrapRect.left + scrollLeft,
+        width:  fr.width,
+        height: fr.height,
+        isFirstVisible: true,
+        isLastVisible:  true,
+      })
+    }
+    for (const e of entries) {
+      if (e.end_date && e.end_date > e.entry_date) continue
+      if (!e.entry_date || e.entry_date < day0Key || e.entry_date > dayNKey) continue
+      if (!userIdSet.has(e.assignee_id)) continue
+      addOneDay(e, false, e.entry_date, e.assignee_id)
+    }
+    const shootMap = this._buildShootEntries(days, users)
+    const ppsMap   = this._buildPpsEntries(days, users)
+    for (const u of users) {
+      for (const day of days) {
+        const dk = this._dateKey(day)
+        for (const g of (shootMap[`${u.id}:${dk}`] || [])) if (!g._isMultiDayGhost) addOneDay(g, true, dk, u.id)
+        for (const g of (ppsMap[`${u.id}:${dk}`]   || [])) if (!g._blockIsMultiDay) addOneDay(g, true, dk, u.id)
+      }
+    }
+
+    // Phase 1e: split horizontal space among vertically-overlapping blocks per column
+    const EPS = 4
+    const overlapsV = (a, b) => Math.min(a.top + a.height, b.top + b.height) - Math.max(a.top, b.top) > EPS
     const columns = {}
     for (const item of toPlace) (columns[Math.round(item.left)] ||= []).push(item)
     for (const group of Object.values(columns)) {
@@ -705,7 +667,7 @@ export class TeamCalendarView {
         cluster.sort((a, b) => a.top - b.top)
         const laneEnds = []
         for (const item of cluster) {
-          let lane = laneEnds.findIndex(end => end <= item.top)
+          let lane = laneEnds.findIndex(end => end <= item.top + EPS)
           if (lane === -1) { lane = laneEnds.length; laneEnds.push(0) }
           laneEnds[lane] = item.top + item.height
           item._lane = lane
@@ -722,7 +684,7 @@ export class TeamCalendarView {
 
     // Phase 2: write overlay chips
     overlay.innerHTML = ''
-    for (const { e, isGhost, top, left, width, height, isFirstVisible, isLastVisible } of toPlace) {
+    for (const { e, isGhost, top, left, width, height, isFirstVisible, isLastVisible, oneRow } of toPlace) {
       const col   = e.color || TYPE_COLORS[e.entry_type] || '#7B6EAB'
       const proj  = e.project_id ? projects.find(p => p.id === e.project_id) : null
       const label = proj ? proj.name : e.label
@@ -740,7 +702,7 @@ export class TeamCalendarView {
       chip.title = `${label}${isGhost ? (e._ghostNote || ' (from shoot plan)') + ' · Click to open ↗' : ''}`
       chip.style.cssText = `position:absolute;left:${left+PAD}px;top:${top+PAD}px;` +
         `width:${width-PAD*2}px;height:${height-PAD*2}px;` +
-        `display:flex;align-items:flex-start;gap:4px;padding:4px 6px;` +
+        `display:flex;align-items:${oneRow ? 'center' : 'flex-start'};gap:4px;padding:4px 6px;` +
         `background:${col}22;border:1px ${isGhost ? 'dashed' : 'solid'} ${col}88;border-radius:var(--radius-md);` +
         `${isGhost ? 'opacity:0.85;' : ''}` +
         `cursor:${isGhost && e._navTarget ? 'pointer' : isGhost ? 'default' : 'pointer'};` +
