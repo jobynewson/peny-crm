@@ -208,7 +208,7 @@ export class TeamCalendarView {
     const today   = new Date(); today.setHours(0, 0, 0, 0)
     const projects = this.app.projects || []
 
-    // Build lookup: userId:dateKey → [entries]
+    // Build lookup: userId:dateKey → [entries] with _isFirst/_isLast continuity flags
     const byUserDate = {}
     for (const e of entries) {
       const start = e.entry_date
@@ -218,7 +218,6 @@ export class TeamCalendarView {
         if (k >= start && k <= end) {
           const key = `${e.assignee_id}:${k}`
           if (!byUserDate[key]) byUserDate[key] = []
-          // Only add once, mark if multi-day
           if (!byUserDate[key].find(x => x.id === e.id)) {
             byUserDate[key].push({ ...e, _isFirst: k === start, _isLast: k === end })
           }
@@ -226,9 +225,7 @@ export class TeamCalendarView {
       }
     }
 
-    // Synthetic shoot entries (auto-populated)
     const shootEntries = this._buildShootEntries(days, users)
-    // Synthetic post production entries (auto-populated from PPS blocks with an assignee)
     const ppsEntries   = this._buildPpsEntries(days, users)
 
     const paste = this._clipboard
@@ -236,7 +233,7 @@ export class TeamCalendarView {
 
     return `
       ${paste}
-      <div style="overflow-x:auto;border-radius:var(--radius-md);border:1px solid var(--border-light)">
+      <div id="tc-table-wrap" style="overflow-x:auto;border-radius:var(--radius-md);border:1px solid var(--border-light);position:relative">
         <table id="tc-table" style="width:100%;min-width:${100 + users.length * 150}px;border-collapse:collapse;font-size:12px">
           <thead>
             <tr style="background:var(--bg-secondary)">
@@ -249,35 +246,40 @@ export class TeamCalendarView {
           </thead>
           <tbody>
             ${days.map(day => {
-              const dateKey = this._dateKey(day)
+              const dateKey   = this._dateKey(day)
               const isToday   = day.getTime() === today.getTime()
               const isWeekend = day.getDay() === 0 || day.getDay() === 6
               const dayStr    = day.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
               const rowBg     = isToday ? 'rgba(74,144,217,0.06)' : isWeekend ? 'var(--bg-secondary)' : 'var(--bg-primary)'
               return `<tr style="background:${rowBg};border-top:1px solid var(--border-light)">
-                <td style="padding:7px 10px;border-right:1px solid var(--border-light);vertical-align:top;white-space:nowrap;${isToday ? 'font-weight:600;color:var(--accent)' : isWeekend ? 'color:var(--text-tertiary)' : 'color:var(--text-secondary)'}">
+                <td style="padding:7px 10px;border-right:1px solid var(--border-light);vertical-align:middle;white-space:nowrap;${isToday ? 'font-weight:600;color:var(--accent)' : isWeekend ? 'color:var(--text-tertiary)' : 'color:var(--text-secondary)'}">
                   ${esc(dayStr)}${isToday ? ' <span style="font-size:9px;background:var(--accent);color:#fff;border-radius:3px;padding:1px 4px;vertical-align:middle">TODAY</span>' : ''}
                 </td>
                 ${users.map(u => {
                   const realEntries  = byUserDate[`${u.id}:${dateKey}`] || []
-                  const ghostEntries = (shootEntries[`${u.id}:${dateKey}`] || [])
-                  const ppsGhosts    = (ppsEntries[`${u.id}:${dateKey}`] || [])
+                  const ghostEntries = shootEntries[`${u.id}:${dateKey}`] || []
+                  const ppsGhosts    = ppsEntries[`${u.id}:${dateKey}`] || []
                   const allChips = [
-                    ...realEntries.map(e => this._chipHTML(e, false, projects)),
-                    ...ghostEntries.map(e => this._chipHTML(e, true, projects)),
-                    ...ppsGhosts.map(e => this._chipHTML(e, true, projects)),
+                    ...realEntries.filter(e => !e.end_date || e.end_date <= e.entry_date).map(e => this._chipHTML(e, false, projects)),
+                    ...ghostEntries.filter(e => !e._isMultiDayGhost).map(e => this._chipHTML(e, true, projects)),
+                    ...ppsGhosts.filter(e => !e._blockIsMultiDay).map(e => this._chipHTML(e, true, projects)),
                   ]
                   return `<td class="tc-cell" data-tc-date="${dateKey}" data-tc-user="${u.id}"
-                    style="padding:5px 6px;border-right:1px solid var(--border-light);vertical-align:top;min-height:36px;cursor:pointer"
-                    draggable="false">
-                    ${allChips.join('')}
-                    <div class="tc-add-hint" style="opacity:0;font-size:18px;color:var(--text-tertiary);line-height:1;text-align:center;padding:1px 0;transition:opacity 0.1s;pointer-events:none;user-select:none">+</div>
+                    style="padding:3px 4px;border-right:1px solid var(--border-light);height:34px;
+                    vertical-align:middle;cursor:pointer;position:relative;box-sizing:border-box">
+                    <div style="display:flex;gap:2px;height:26px;align-items:stretch;overflow:hidden">
+                      ${allChips.join('')}
+                    </div>
+                    <div class="tc-add-hint" style="position:absolute;inset:0;display:flex;align-items:center;
+                      justify-content:center;opacity:0;font-size:16px;color:var(--text-tertiary);
+                      transition:opacity 0.1s;pointer-events:none;user-select:none">+</div>
                   </td>`
                 }).join('')}
               </tr>`
             }).join('')}
           </tbody>
         </table>
+        <div id="tc-overlay" style="position:absolute;inset:0;pointer-events:none;overflow:hidden"></div>
       </div>
       <div style="margin-top:6px;font-size:11px;color:var(--text-tertiary);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <span>Click cell to add · Click entry to edit · Drag to move · Drag edges to resize</span>
@@ -288,31 +290,58 @@ export class TeamCalendarView {
   }
 
   _chipHTML(e, isGhost, projects) {
-    const col  = e.color || TYPE_COLORS[e.entry_type] || '#7B6EAB'
-    const proj = e.project_id ? projects.find(p => p.id === e.project_id) : null
-    const label = proj ? proj.name : e.label
-    const spanIndicator = e.end_date && e.end_date > e.entry_date && e._isFirst
-      ? `<span style="font-size:9px;opacity:0.7;margin-left:2px">→</span>` : ''
+    const col    = e.color || TYPE_COLORS[e.entry_type] || '#7B6EAB'
+    const proj   = e.project_id ? projects.find(p => p.id === e.project_id) : null
+    const label  = proj ? proj.name : e.label
     const hasNav = isGhost && !!e._navTarget
     const ghostStyle = isGhost
       ? `border-style:dashed;opacity:0.75;${hasNav ? 'cursor:pointer;' : 'pointer-events:none;'}`
       : `cursor:pointer;`
-    const ghostNote = isGhost ? (e._ghostNote || ' (from shoot plan)') : ''
-    const navAttr = hasNav ? `data-ghost-nav="${e._navTarget}"` : ''
+    const navAttr   = hasNav ? `data-ghost-nav="${e._navTarget}"` : ''
     const chipAttrs = isGhost ? navAttr : `data-tc-entry-id="${e.id}" draggable="true"`
+    // Multi-day continuity: square the corners and drop the border where the block continues
+    const isMulti = !!(e.end_date && e.end_date > e.entry_date)
+    const brTL = e._isFirst !== false ? '4px' : '0'
+    const brBL = e._isFirst !== false ? '4px' : '0'
+    const brTR = e._isLast  !== false ? '4px' : '0'
+    const brBR = e._isLast  !== false ? '4px' : '0'
+    const borderL = isMulti && e._isFirst === false ? 'none' : `1px solid ${col}88`
+    const borderR = isMulti && e._isLast  === false ? 'none' : `1px solid ${col}88`
     const startHandle = !isGhost && e._isFirst
       ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="start" style="position:absolute;top:-1px;left:0;right:0;height:6px;cursor:ns-resize;color:${col}"></div>` : ''
     const endHandle = !isGhost && e._isLast
       ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="end" style="position:absolute;bottom:-1px;left:0;right:0;height:6px;cursor:ns-resize;color:${col}"></div>` : ''
+    const title = `${esc(label)}${proj && e.label !== proj.name ? ' · ' + esc(e.label) : ''}${isMulti ? ' (multi-day)' : ''}${isGhost ? (e._ghostNote || ' (from shoot plan)') : ''}${hasNav ? ' · Click to open ↗' : ''}`
     return `<div class="${isGhost ? 'tc-chip-ghost' : 'tc-chip'}" ${chipAttrs}
-      style="position:relative;display:flex;align-items:center;gap:4px;padding:3px 6px;background:${col}22;border:1px solid ${col}88;border-radius:4px;margin-bottom:2px;${ghostStyle}max-width:100%"
-      title="${esc(label)}${proj && e.label !== proj.name ? ' · ' + esc(e.label) : ''}${e.end_date && e.end_date > e.entry_date ? ' (multi-day)' : ''}${ghostNote}${hasNav ? ' · Click to open ↗' : ''}">
+      style="position:relative;flex:1;min-width:0;display:flex;align-items:center;gap:4px;padding:2px 5px;
+      background:${col}22;border-top:1px solid ${col}88;border-bottom:1px solid ${col}88;
+      border-left:${borderL};border-right:${borderR};
+      border-radius:${brTL} ${brTR} ${brBR} ${brBL};
+      ${ghostStyle}overflow:hidden" title="${title}">
       ${startHandle}
       <div style="width:6px;height:6px;border-radius:50%;flex-shrink:0;background:${col}"></div>
       <span style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0">${esc(label)}</span>
-      ${spanIndicator}
       ${endHandle}
     </div>`
+  }
+
+  _findConsecutiveSpans(sortedDates) {
+    if (!sortedDates.length) return []
+    const spans = []
+    let spanStart = sortedDates[0]
+    let spanDates = [sortedDates[0]]
+    for (let i = 1; i < sortedDates.length; i++) {
+      const diffDays = (new Date(sortedDates[i] + 'T00:00:00') - new Date(sortedDates[i-1] + 'T00:00:00')) / 86400000
+      if (diffDays === 1) {
+        spanDates.push(sortedDates[i])
+      } else {
+        spans.push({ start: spanStart, end: sortedDates[i-1], dates: spanDates })
+        spanStart = sortedDates[i]
+        spanDates = [sortedDates[i]]
+      }
+    }
+    spans.push({ start: spanStart, end: sortedDates[sortedDates.length-1], dates: spanDates })
+    return spans
   }
 
   _buildShootEntries(days, users) {
@@ -320,6 +349,7 @@ export class TeamCalendarView {
     const shoots = this._shootsCache || []
     if (!shoots.length || !users.length) return result
 
+    const dayKeySet = new Set(days.map(d => this._dateKey(d)))
     const nameToUser = {}
     for (const u of users) {
       if (u.name) nameToUser[u.name.toLowerCase().trim()] = u
@@ -339,25 +369,31 @@ export class TeamCalendarView {
         const user = nameToUser[member.name.toLowerCase().trim()]
         if (!user) continue
 
-        for (const dateStr of shootDates) {
-          for (const day of days) {
-            if (this._dateKey(day) === dateStr) {
-              const key = `${user.id}:${dateStr}`
-              if (!result[key]) result[key] = []
-              result[key].push({
-                id: `shoot-${sh.id}-${user.id}-${dateStr}`,
-                assignee_id: user.id,
-                entry_date: dateStr,
-                end_date: null,
-                entry_type: 'shoot',
-                label: `Shoot — ${sh.project_name || 'Project'}${sh.name ? ': ' + sh.name : ''}`,
-                color: '#4CAF50',
-                project_id: sh.project_id,
-                _ghost: true,
-                _navTarget: `shoot::${sh.project_id}`,
-              })
-            }
+        const visibleDates = shootDates.filter(d => dayKeySet.has(d)).sort()
+        const multiDayDateSet = new Set()
+        if (visibleDates.length >= 2) {
+          for (const span of this._findConsecutiveSpans(visibleDates)) {
+            if (span.dates.length >= 2) span.dates.forEach(d => multiDayDateSet.add(d))
           }
+        }
+
+        for (const dateStr of shootDates) {
+          if (!dayKeySet.has(dateStr)) continue
+          const key = `${user.id}:${dateStr}`
+          if (!result[key]) result[key] = []
+          result[key].push({
+            id: `shoot-${sh.id}-${user.id}-${dateStr}`,
+            assignee_id: user.id,
+            entry_date: dateStr,
+            end_date: null,
+            entry_type: 'shoot',
+            label: `Shoot — ${sh.project_name || 'Project'}${sh.name ? ': ' + sh.name : ''}`,
+            color: '#4CAF50',
+            project_id: sh.project_id,
+            _ghost: true,
+            _navTarget: `shoot::${sh.project_id}`,
+            _isMultiDayGhost: multiDayDateSet.has(dateStr),
+          })
         }
       }
     }
@@ -397,6 +433,7 @@ export class TeamCalendarView {
               _ghost: true,
               _ghostNote: ' (from post production schedule)',
               _navTarget: `pps::${ph.project_id}`,
+              _blockIsMultiDay: b.start_date !== b.end_date,
             })
           }
         }
@@ -488,9 +525,12 @@ export class TeamCalendarView {
         if (this._resizing) { e.preventDefault(); return }
         e.dataTransfer.setData('text/plain', chip.dataset.tcEntryId)
         e.dataTransfer.effectAllowed = 'move'
-        setTimeout(() => chip.style.opacity = '0.4', 0)
+        setTimeout(() => { chip.style.opacity = '0.4'; this._setChipPointerEvents(gridWrap, false) }, 0)
       })
-      chip.addEventListener('dragend', () => { chip.style.opacity = '' })
+      chip.addEventListener('dragend', () => {
+        chip.style.opacity = ''
+        this._setChipPointerEvents(gridWrap, true)
+      })
     })
 
     // ── Ghost chips: click to navigate to source shoot or PPS ──
@@ -513,6 +553,205 @@ export class TeamCalendarView {
     gridWrap.querySelectorAll('.tc-resize-handle').forEach(handle => {
       handle.addEventListener('pointerdown', e => this._startResize(e, handle, section))
     })
+
+    this._positionOverlay(gridWrap, section)
+  }
+
+  _setChipPointerEvents(gridWrap, restore) {
+    gridWrap.querySelectorAll('.tc-chip, .tc-chip-ghost').forEach(c => {
+      c.style.pointerEvents = c.classList.contains('tc-chip-overlay')
+        ? (restore ? 'all' : 'none')
+        : (restore ? '' : 'none')
+    })
+  }
+
+  _positionOverlay(gridWrap, section) {
+    const overlay = gridWrap.querySelector('#tc-overlay')
+    const wrap    = gridWrap.querySelector('#tc-table-wrap')
+    if (!overlay || !wrap) return
+
+    const entries  = this.app.teamCalendarEntries || []
+    const days     = this._lastDays || this._activeDays()
+    const projects = this.app.projects || []
+    const users    = this.app.allUsers || []
+    const day0Key  = this._dateKey(days[0])
+    const dayNKey  = this._dateKey(days[days.length - 1])
+
+    const measureCells = (userId, startDate, endDate) => {
+      let firstCell = null, lastCell = null
+      for (const cell of gridWrap.querySelectorAll(`.tc-cell[data-tc-user="${userId}"]`)) {
+        const d = cell.dataset.tcDate
+        if (d >= startDate && d <= endDate) {
+          if (!firstCell) firstCell = cell
+          lastCell = cell
+        }
+      }
+      return { firstCell, lastCell }
+    }
+
+    // Phase 1: measure all overlay blocks before any DOM writes
+    const wrapRect   = wrap.getBoundingClientRect()
+    const scrollLeft = wrap.scrollLeft
+    const toPlace    = []
+
+    // 1a: real multi-day entries
+    for (const e of entries) {
+      if (!e.end_date || e.end_date <= e.entry_date) continue
+      const { firstCell, lastCell } = measureCells(e.assignee_id, e.entry_date, e.end_date)
+      if (!firstCell || !lastCell) continue
+      const fr = firstCell.getBoundingClientRect()
+      const lr = lastCell.getBoundingClientRect()
+      toPlace.push({
+        e, isGhost: false,
+        top:    fr.top  - wrapRect.top,
+        left:   fr.left - wrapRect.left + scrollLeft,
+        width:  fr.width,
+        height: lr.bottom - fr.top,
+        isFirstVisible: e.entry_date >= day0Key,
+        isLastVisible:  e.end_date   <= dayNKey,
+      })
+    }
+
+    // 1b: PPS multi-day ghost blocks
+    const userIdSet = new Set(users.map(u => u.id))
+    for (const ph of (this._ppsPhasesCache || [])) {
+      for (const b of (Array.isArray(ph.blocks) ? ph.blocks : [])) {
+        if (!b.assignee_id || !userIdSet.has(b.assignee_id)) continue
+        if (!b.start_date || !b.end_date || b.start_date === b.end_date) continue
+        if (b.end_date < day0Key || b.start_date > dayNKey) continue
+        const { firstCell, lastCell } = measureCells(b.assignee_id, b.start_date, b.end_date)
+        if (!firstCell || !lastCell) continue
+        const fr = firstCell.getBoundingClientRect()
+        const lr = lastCell.getBoundingClientRect()
+        const label = `${ph.project_name ? ph.project_name + ' — ' : ''}${b.title || ph.name}`
+        const color = b.color || ph.color || '#C47E3A'
+        toPlace.push({
+          e: { id: `pps-overlay-${b.id}`, assignee_id: b.assignee_id, label, color,
+               project_id: ph.project_id, _navTarget: `pps::${ph.project_id}`,
+               _ghostNote: ' (from post production schedule)' },
+          isGhost: true,
+          top:    fr.top  - wrapRect.top,
+          left:   fr.left - wrapRect.left + scrollLeft,
+          width:  fr.width,
+          height: lr.bottom - fr.top,
+          isFirstVisible: b.start_date >= day0Key,
+          isLastVisible:  b.end_date   <= dayNKey,
+        })
+      }
+    }
+
+    // 1c: shoot consecutive-date ghost spans
+    const nameToUser = {}
+    for (const u of users) {
+      if (u.name) nameToUser[u.name.toLowerCase().trim()] = u
+    }
+    for (const sh of (this._shootsCache || [])) {
+      let shootDates = []
+      if (Array.isArray(sh.shoot_dates) && sh.shoot_dates.length) {
+        shootDates = sh.shoot_dates.filter(sd => sd.date).map(sd => sd.date)
+      } else if (sh.shoot_date) {
+        shootDates = [sh.shoot_date]
+      }
+      const crew = Array.isArray(sh.crew) ? sh.crew : (typeof sh.crew === 'string' ? JSON.parse(sh.crew || '[]') : [])
+      for (const member of crew) {
+        if (!member.name) continue
+        const user = nameToUser[member.name.toLowerCase().trim()]
+        if (!user) continue
+        const visibleDates = shootDates.filter(d => d >= day0Key && d <= dayNKey).sort()
+        if (visibleDates.length < 2) continue
+        for (const span of this._findConsecutiveSpans(visibleDates)) {
+          if (span.dates.length < 2) continue
+          const { firstCell, lastCell } = measureCells(user.id, span.start, span.end)
+          if (!firstCell || !lastCell) continue
+          const fr = firstCell.getBoundingClientRect()
+          const lr = lastCell.getBoundingClientRect()
+          const label = `Shoot — ${sh.project_name || 'Project'}${sh.name ? ': ' + sh.name : ''}`
+          toPlace.push({
+            e: { id: `shoot-overlay-${sh.id}-${user.id}-${span.start}`, assignee_id: user.id,
+                 label, color: '#4CAF50', project_id: sh.project_id,
+                 _navTarget: `shoot::${sh.project_id}` },
+            isGhost: true,
+            top:    fr.top  - wrapRect.top,
+            left:   fr.left - wrapRect.left + scrollLeft,
+            width:  fr.width,
+            height: lr.bottom - fr.top,
+            isFirstVisible: true,
+            isLastVisible:  true,
+          })
+        }
+      }
+    }
+
+    // Phase 2: write overlay chips
+    overlay.innerHTML = ''
+    for (const { e, isGhost, top, left, width, height, isFirstVisible, isLastVisible } of toPlace) {
+      const col   = e.color || TYPE_COLORS[e.entry_type] || '#7B6EAB'
+      const proj  = e.project_id ? projects.find(p => p.id === e.project_id) : null
+      const label = proj ? proj.name : e.label
+      const PAD   = 2
+
+      const chip = document.createElement('div')
+      if (isGhost) {
+        chip.className = 'tc-chip-ghost tc-chip-overlay'
+        if (e._navTarget) chip.dataset.ghostNav = e._navTarget
+      } else {
+        chip.className = 'tc-chip tc-chip-overlay'
+        chip.dataset.tcEntryId = e.id
+        chip.draggable = true
+      }
+      chip.title = `${label}${isGhost ? (e._ghostNote || ' (from shoot plan)') + ' · Click to open ↗' : ''}`
+      chip.style.cssText = `position:absolute;left:${left+PAD}px;top:${top+PAD}px;` +
+        `width:${width-PAD*2}px;height:${height-PAD*2}px;` +
+        `display:flex;align-items:flex-start;gap:4px;padding:4px 6px;` +
+        `background:${col}22;border:1px ${isGhost ? 'dashed' : 'solid'} ${col}88;border-radius:4px;` +
+        `${isGhost ? 'opacity:0.85;' : ''}` +
+        `cursor:${isGhost && e._navTarget ? 'pointer' : isGhost ? 'default' : 'pointer'};` +
+        `box-sizing:border-box;overflow:hidden;pointer-events:all;z-index:2`
+
+      chip.innerHTML = `
+        ${!isGhost && isFirstVisible ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="start" style="position:absolute;top:-1px;left:0;right:0;height:6px;cursor:ns-resize;color:${col}"></div>` : ''}
+        <div style="display:flex;align-items:center;gap:4px;flex:1;min-width:0;overflow:hidden">
+          <div style="width:6px;height:6px;border-radius:50%;flex-shrink:0;background:${col}"></div>
+          <span style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0">${esc(label)}</span>
+        </div>
+        ${!isGhost && isLastVisible ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="end" style="position:absolute;bottom:-1px;left:0;right:0;height:6px;cursor:ns-resize;color:${col}"></div>` : ''}`
+
+      if (isGhost && e._navTarget) {
+        chip.addEventListener('click', ev => {
+          ev.stopPropagation()
+          const [type, projectId] = e._navTarget.split('::')
+          const tab = type === 'shoot' ? 'shoots' : 'post-production'
+          this.app.currentView = 'projects'
+          this.app.projectsView.currentId = projectId
+          this.app.projectsView._pvTab = tab
+          this.app.projectsView.editingId = null
+          history.pushState({ view: 'projects' }, '', `#projects/${projectId}/${tab}`)
+          this.app.render()
+        })
+      } else if (!isGhost) {
+        chip.addEventListener('click', ev => {
+          if (ev.target.closest('.tc-resize-handle')) return
+          ev.stopPropagation()
+          const entry = (this.app.teamCalendarEntries || []).find(x => x.id === e.id)
+          if (entry) this._openEntryModal(entry, section)
+        })
+        chip.addEventListener('dragstart', ev => {
+          if (this._resizing) { ev.preventDefault(); return }
+          ev.dataTransfer.setData('text/plain', e.id)
+          ev.dataTransfer.effectAllowed = 'move'
+          setTimeout(() => { chip.style.opacity = '0.4'; this._setChipPointerEvents(gridWrap, false) }, 0)
+        })
+        chip.addEventListener('dragend', () => {
+          chip.style.opacity = ''
+          this._setChipPointerEvents(gridWrap, true)
+        })
+        chip.querySelectorAll('.tc-resize-handle').forEach(h => {
+          h.addEventListener('pointerdown', ev => this._startResize(ev, h, section))
+        })
+      }
+
+      overlay.appendChild(chip)
+    }
   }
 
   // ── Resize via drag ───────────────────────────────────────────────────────────

@@ -431,3 +431,6 @@ body.is-resizing * {
   cursor: ns-resize !important;
   user-select: none !important;
 }
+body.is-resizing .tc-chip-overlay {
+  pointer-events: none !important;
+}
