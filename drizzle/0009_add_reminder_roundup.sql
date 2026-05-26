@@ -1,0 +1,1 @@
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS reminder_roundup BOOLEAN NOT NULL DEFAULT false;

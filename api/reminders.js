@@ -13,6 +13,12 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorised' })
   }
 
+  // No reminder emails on weekends (Saturday=6, Sunday=0, UTC)
+  const dowUTC = new Date().getUTCDay()
+  if (dowUTC === 0 || dowUTC === 6) {
+    return res.status(200).json({ ok: true, skipped: 'weekend', results: [] })
+  }
+
   const type = req.query.type || 'deliverables'
   const sql = neon(process.env.VITE_DATABASE_URL)
   const transporter = nodemailer.createTransport({
@@ -215,6 +221,62 @@ export default async function handler(req, res) {
         results.push({ type: 'note', to: note.email, noteId: note.id })
       } catch (err) {
         results.push({ type: 'note', to: note.email, error: err.message })
+      }
+    }
+  }
+
+  // ── Reminder roundup ─────────────────────────────────────────────────────
+  // Send a summary of all emails sent this run to any admin who opted in.
+  const sent = results.filter(r => !r.error)
+  if (sent.length > 0) {
+    let roundupRecipients = []
+    try {
+      roundupRecipients = await sql`
+        SELECT u.email, u.name
+        FROM settings s
+        JOIN app_users u ON u.clerk_id = s.user_id
+        WHERE s.reminder_roundup = true
+          AND u.email IS NOT NULL
+      `
+    } catch (_) { /* settings table may not have column yet */ }
+
+    for (const admin of roundupRecipients) {
+      const typeLabel = type === 'notes' ? 'Note reminders' : 'Deliverable reminders'
+      const subject = `📋 ${typeLabel} roundup — ${sent.length} sent today`
+
+      const groupedRows = sent.map(r => {
+        const typeTag = r.type === 'note' ? 'Note' : r.type === 'marketing-task' ? 'Marketing' : 'Deliverable'
+        const detail = r.type === 'note'
+          ? `1 note reminder`
+          : `${r.sent} item${r.sent !== 1 ? 's' : ''}`
+        return `
+          <tr>
+            <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:14px;color:#1a1a1a">${r.to}</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#555">${typeTag}</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#3b82f6;font-weight:500">${detail}</td>
+          </tr>`
+      }).join('')
+
+      const body = `
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#999;border-bottom:2px solid #f0f0f0">Recipient</th>
+            <th style="padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#999;border-bottom:2px solid #f0f0f0">Type</th>
+            <th style="padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#999;border-bottom:2px solid #f0f0f0">Items</th>
+          </tr></thead>
+          <tbody>${groupedRows}</tbody>
+        </table>`
+      const name = admin.name || admin.email.split('@')[0]
+      const html = emailWrap(
+        `${typeLabel} Roundup`,
+        `Hi ${name}, here's a summary of reminder emails sent today (${sent.length} total):`,
+        body,
+      )
+      try {
+        await sendMail(admin.email, subject, html)
+        results.push({ type: 'roundup', to: admin.email, sent: sent.length })
+      } catch (err) {
+        results.push({ type: 'roundup', to: admin.email, error: err.message })
       }
     }
   }
