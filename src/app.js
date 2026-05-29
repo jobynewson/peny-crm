@@ -664,6 +664,13 @@ export class App {
     return [start, end]
   }
 
+  _retainerPreviousPeriod(retainerStart) {
+    const [currentStart] = this._retainerPeriod(retainerStart)
+    if (!currentStart) return [null, null]
+    const prevStart = new Date(Date.UTC(currentStart.getUTCFullYear(), currentStart.getUTCMonth() - 1, currentStart.getUTCDate()))
+    return [prevStart, currentStart]
+  }
+
   // ── Sidebar quick-log widget ─────────────────────────────────────────────────
 
   _sttTrackableLines(project) {
@@ -1748,29 +1755,62 @@ export class App {
             ? allEntries.filter(e => { const d = new Date(e.entry_date); return d >= periodStart && d < periodEnd })
             : allEntries
           const logged = entries.reduce((s, e) => s + parseFloat(e.hours), 0)
-          const hours = allocH
-          const pct = Math.min(100, Math.round(logged / hours * 100))
           const alertPctVal = parseFloat(p.retainer_alert) || 80
           const alertEl = mc.querySelector(`[data-ret-alert="${p.id}"]`)
           const items = p.retainer_items || []
+
+          // Compute per-item rollover deltas from previous period
+          const rolloverDeltas = {}
+          if (p.retainer_rollover && periodStart) {
+            const [prevStart, prevEnd] = this._retainerPreviousPeriod(p.retainer_start)
+            if (prevStart) {
+              const prevEntries = allEntries.filter(e => { const d = new Date(e.entry_date); return d >= prevStart && d < prevEnd })
+              const pm4 = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}
+              for (const item of items) {
+                const mult = pm4[item.period||'month'] || 1
+                const prevAllocH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
+                const prevLogged = prevEntries.filter(e => e.line_label === item.label).reduce((s,e) => s + parseFloat(e.hours), 0)
+                rolloverDeltas[item.label] = prevAllocH - prevLogged
+              }
+            }
+          }
+
           if (items.length) {
             const pm3 = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}
+            let totalEffective = 0
             items.forEach((item, ii) => {
               const mult = pm3[item.period||'month'] || 1
-              const aH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
-              if (!aH) return
+              const baseH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
+              if (!baseH) return
+              const delta = rolloverDeltas[item.label] ?? 0
+              const aH = Math.max(0, baseH + delta)
+              totalEffective += aH
               const iL = entries.filter(e => e.line_label === item.label).reduce((s,e) => s + parseFloat(e.hours), 0)
-              const iPct = Math.min(100, Math.round(iL / aH * 100))
+              const iPct = aH > 0 ? Math.min(100, Math.round(iL / aH * 100)) : 100
               const iCol = iPct >= 100 ? '#ef4444' : iPct >= alertPctVal ? '#f59e0b' : '#a78bfa'
               const bar = mc.querySelector(`[data-ret-item-bar="${p.id}-${ii}"]`)
               const lbl = mc.querySelector(`[data-ret-item-label="${p.id}-${ii}"]`)
               if (bar) { bar.style.width = iPct + '%'; bar.style.background = iCol }
-              if (lbl) { lbl.textContent = `${iL.toFixed(1)} / ${aH}h`; lbl.style.color = iPct >= alertPctVal ? iCol : '' }
+              const rolloverNote = delta !== 0 ? ` (${delta > 0 ? '+' : ''}${Math.round(delta)}h)` : ''
+              if (lbl) { lbl.textContent = `${iL.toFixed(1)} / ${aH}h${rolloverNote}`; lbl.style.color = iPct >= alertPctVal ? iCol : '' }
             })
+            const hours = totalEffective || allocH
+            const pct = hours > 0 ? Math.min(100, Math.round(logged / hours * 100)) : 0
             const colour = pct >= 100 ? '#ef4444' : pct >= alertPctVal ? '#f59e0b' : '#a78bfa'
             if (alertEl && pct >= alertPctVal && pct < 100) { alertEl.style.display='block'; alertEl.style.color=colour; alertEl.textContent=`⚠ ${pct}% used overall` }
             if (alertEl && pct >= 100) { alertEl.style.display='block'; alertEl.style.color=colour; alertEl.textContent=`⚠ Over allocation by ${(logged-hours).toFixed(1)}h` }
           } else {
+            // Legacy retainer_hours path — apply rollover on total
+            let hours = allocH
+            if (p.retainer_rollover && periodStart) {
+              const [prevStart, prevEnd] = this._retainerPreviousPeriod(p.retainer_start)
+              if (prevStart) {
+                const prevEntries = allEntries.filter(e => { const d = new Date(e.entry_date); return d >= prevStart && d < prevEnd })
+                const prevLogged = prevEntries.reduce((s,e) => s + parseFloat(e.hours), 0)
+                hours = Math.max(0, hours + (hours - prevLogged))
+              }
+            }
+            const pct = Math.min(100, Math.round(logged / hours * 100))
             const bar = mc.querySelector(`[data-ret-bar="${p.id}"]`)
             const label = mc.querySelector(`[data-ret-label="${p.id}"]`)
             const colour = pct >= 100 ? '#ef4444' : pct >= alertPctVal ? '#f59e0b' : '#a78bfa'
