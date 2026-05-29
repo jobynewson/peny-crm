@@ -25,13 +25,13 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: 'Invalid session token' })
     }
 
-    // Verify the caller is an admin in our DB
+    // Verify the caller is a superadmin in our DB
     const sql = neon(process.env.VITE_DATABASE_URL)
     const rows = await sql`
       SELECT role FROM app_users WHERE clerk_id = ${callerUserId} LIMIT 1
     `
-    if (!rows[0] || rows[0].role !== 'admin') {
-      return res.status(403).json({ error: 'Admin access required' })
+    if (!rows[0] || rows[0].role !== 'superadmin') {
+      return res.status(403).json({ error: 'Superadmin access required' })
     }
 
     // Send the Clerk invitation
