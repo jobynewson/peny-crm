@@ -158,10 +158,14 @@ export async function runMigrations() {
 
   // Migrate the legacy role tiers to the three-tier model and drop the old
   // per-permission overrides (permissions are now derived purely from role).
+  // The old CHECK constraint only allowed admin/member/readonly, so it must be
+  // replaced before remapping the values (and before any new user is inserted).
+  await sql`ALTER TABLE app_users DROP CONSTRAINT IF EXISTS app_users_role_check`
   await sql`UPDATE app_users SET role = 'superadmin' WHERE role = 'admin'`
   await sql`UPDATE app_users SET role = 'user'       WHERE role = 'member'`
   await sql`UPDATE app_users SET role = 'viewer'     WHERE role = 'readonly'`
   await sql`UPDATE app_users SET permissions = '{}'::jsonb WHERE permissions <> '{}'::jsonb`
+  await sql`ALTER TABLE app_users ADD CONSTRAINT app_users_role_check CHECK (role IN ('superadmin','user','viewer'))`
 }
 
 // ── Workspace ─────────────────────────────────────────────────────────────────
