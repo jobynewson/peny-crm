@@ -23,16 +23,18 @@ async function bootstrap() {
 
   const clerkUserId = getCurrentUserId()
 
-  // 1. Get/create app user record (handles role, first-user = admin)
+  // 1. Ensure schema is up to date (idempotent, safe to run every startup).
+  //    Must run before creating the user row so role values match the current
+  //    role CHECK constraint.
+  await runMigrations()
+
+  // 2. Get/create app user record (handles role, first-user = superadmin)
   const appUser = await getOrCreateAppUser(user)
   const permissions = resolvePermissions(appUser)
 
-  // 2. Get/create workspace — returns the shared owner ID used for all data
-  //    First admin to ever sign in becomes the workspace owner automatically
+  // 3. Get/create workspace — returns the shared owner ID used for all data
+  //    First user to ever sign in becomes the workspace owner automatically
   const workspaceId = await getOrCreateWorkspace(clerkUserId)
-
-  // 3. Ensure schema is up to date (idempotent, safe to run every startup)
-  await runMigrations()
 
   // 4. Load all shared workspace data in parallel
   const [contactsData, projectsData, budgetsData, settingsData, allUsersData, socialPostsData, marketingCardsData, teamCalendarData] = await Promise.all([
