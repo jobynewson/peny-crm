@@ -54,7 +54,10 @@ export class PostProductionView {
             <div style="font-size:14px;font-weight:600;margin-bottom:2px">Post Production Schedule</div>
             <div style="font-size:12px;color:var(--text-tertiary)">${phases.length} column${phases.length !== 1 ? 's' : ''}${hasPortal && portalCount ? ` · ${portalCount} visible in portal` : ''}</div>
           </div>
-          <button class="btn-primary" id="pps-add-phase">+ Add column</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn-cancel" id="pps-export-pdf" style="font-size:12px;padding:5px 12px">⬇ Export PDF</button>
+            <button class="btn-primary" id="pps-add-phase">+ Add column</button>
+          </div>
         </div>
 
         <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
@@ -81,6 +84,178 @@ export class PostProductionView {
       </div>`
 
     this._bindContent(container, pps, project)
+  }
+
+  // ── PDF Export ────────────────────────────────────────────────────────────────
+
+  _exportPdf(pps, project) {
+    const phases = pps.phases || []
+    const usersById = {}
+    for (const u of (this.app.allUsers || [])) usersById[u.id] = u
+    const userName = id => id && usersById[id] ? (usersById[id].name || usersById[id].email?.split('@')[0] || '') : null
+    const leadName = userName(pps.lead_assignee_id)
+
+    const fmtDate = ds => {
+      if (!ds) return ''
+      const d = new Date(ds + 'T00:00:00')
+      const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+      return `${d.getDate()} ${MON[d.getMonth()]} ${d.getFullYear()}`
+    }
+
+    const fmtDateShort = ds => {
+      if (!ds) return ''
+      const d = new Date(ds + 'T00:00:00')
+      const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+      return `${d.getDate()} ${MON[d.getMonth()]}`
+    }
+
+    // Build flat list of blocks sorted by start date
+    const allBlocks = []
+    for (const ph of phases) {
+      for (const b of (ph.blocks || [])) {
+        if (b && b.start_date && b.end_date) allBlocks.push({ ...b, _phaseName: ph.name, _phaseColor: ph.color || '#C47E3A' })
+      }
+    }
+    allBlocks.sort((a, b) => a.start_date.localeCompare(b.start_date))
+
+    // Gantt: calculate timeline bounds
+    const schedStart = pps.start_date
+    const schedEnd   = pps.end_date
+    if (!schedStart || !schedEnd) {
+      alert('Set a schedule range before exporting.')
+      return
+    }
+    const tStart = new Date(schedStart + 'T00:00:00')
+    const tEnd   = new Date(schedEnd   + 'T00:00:00')
+    const totalDays = Math.round((tEnd - tStart) / 86400000) + 1
+
+    // Build month header spans for the Gantt
+    const monthSpans = []
+    let cursor = new Date(tStart)
+    while (cursor <= tEnd) {
+      const y = cursor.getFullYear(), m = cursor.getMonth()
+      const monthEnd = new Date(Math.min(+new Date(y, m + 1, 0), +tEnd))
+      const spanDays = Math.round((monthEnd - cursor) / 86400000) + 1
+      const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+      monthSpans.push({ label: `${MON[m]} ${y}`, days: spanDays })
+      cursor = new Date(y, m + 1, 1)
+    }
+
+    const pct = (ds, de) => {
+      const s = Math.max(0, Math.round((new Date(ds + 'T00:00:00') - tStart) / 86400000))
+      const e = Math.min(totalDays - 1, Math.round((new Date(de + 'T00:00:00') - tStart) / 86400000))
+      const left = (s / totalDays * 100).toFixed(2)
+      const width = Math.max(0.5, ((e - s + 1) / totalDays * 100)).toFixed(2)
+      return { left, width }
+    }
+
+    // Gantt rows — one row per phase
+    const ganttRows = phases.map(ph => {
+      const blocks = (ph.blocks || []).filter(b => b && b.start_date && b.end_date)
+      const bars = blocks.map(b => {
+        const { left, width } = pct(b.start_date, b.end_date)
+        const color = b.color || ph.color || '#C47E3A'
+        const opacity = b.is_complete ? 0.45 : 0.8
+        return `<div style="position:absolute;left:${left}%;width:${width}%;top:4px;bottom:4px;background:${color};opacity:${opacity};border-radius:3px;overflow:hidden;display:flex;align-items:center;padding:0 4px;box-sizing:border-box" title="${b.title || ''}">
+          ${b.title ? `<span style="font-size:8px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;letter-spacing:0.3px;text-transform:uppercase">${b.is_complete ? '✓ ' : ''}${b.title}</span>` : ''}
+        </div>`
+      }).join('')
+      return `<tr>
+        <td style="padding:0 10px 0 0;white-space:nowrap;font-size:10px;font-weight:600;color:#333;width:130px;min-width:130px;vertical-align:middle">
+          <div style="display:flex;align-items:center;gap:5px">
+            <div style="width:8px;height:8px;border-radius:50%;background:${ph.color || '#C47E3A'};flex-shrink:0"></div>
+            ${ph.name}
+          </div>
+        </td>
+        <td style="position:relative;height:28px">${bars}</td>
+      </tr>`
+    }).join('')
+
+    // Month tick marks for the Gantt header
+    const monthTicks = monthSpans.map(ms => `<th style="font-size:8px;color:#888;font-weight:500;border-left:1px solid #e5e5e5;padding:3px 4px;text-align:left;width:${(ms.days/totalDays*100).toFixed(2)}%">${ms.label}</th>`).join('')
+
+    // List table rows
+    const listRows = allBlocks.map(b => {
+      const sameYear = b.start_date?.slice(0,4) === b.end_date?.slice(0,4)
+      const dateRange = b.start_date === b.end_date
+        ? fmtDate(b.start_date)
+        : `${sameYear ? fmtDateShort(b.start_date) : fmtDate(b.start_date)} – ${fmtDate(b.end_date)}`
+      return `<tr style="border-bottom:1px solid #f0f0f0">
+        <td style="padding:6px 10px 6px 0;vertical-align:top">
+          <div style="display:flex;align-items:center;gap:6px">
+            <div style="width:8px;height:8px;border-radius:50%;background:${b._phaseColor};flex-shrink:0;margin-top:1px"></div>
+            <span style="font-size:10px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:0.3px">${b._phaseName}</span>
+          </div>
+        </td>
+        <td style="padding:6px 10px;vertical-align:top">
+          <div style="font-size:11px;font-weight:${b.title ? '600' : '400'};color:${b.title ? '#111' : '#aaa'}${b.is_complete ? ';text-decoration:line-through;color:#888' : ''}">${b.title || '(untitled)'}</div>
+          ${b.notes ? `<div style="font-size:10px;color:#777;margin-top:2px;line-height:1.4">${b.notes}</div>` : ''}
+        </td>
+        <td style="padding:6px 10px;font-size:10px;color:#555;white-space:nowrap;vertical-align:top">${dateRange}</td>
+        <td style="padding:6px 0;font-size:10px;vertical-align:top;text-align:center">${b.is_complete ? '<span style="color:#4caf50;font-weight:700">✓</span>' : b.is_deadline ? '<span style="color:#d9534f;font-size:9px;font-weight:600">DEADLINE</span>' : ''}</td>
+      </tr>`
+    }).join('')
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>${project.name || 'Post Production Schedule'} — Schedule</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0 }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color: #111; background: #fff; padding: 36px 40px }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 2px }
+  .meta { font-size: 11px; color: #777; margin-bottom: 28px; line-height: 1.6 }
+  .section-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #888; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 2px solid #111 }
+  table { border-collapse: collapse; width: 100% }
+  @media print {
+    body { padding: 20px 24px }
+    @page { margin: 1.5cm; size: A4 landscape }
+  }
+</style>
+</head>
+<body>
+  <h1>${project.name || 'Post Production Schedule'}</h1>
+  <div class="meta">
+    Post Production Schedule
+    ${leadName ? `&nbsp;·&nbsp; Lead: <strong>${leadName}</strong>` : ''}
+    &nbsp;·&nbsp; ${fmtDate(schedStart)} – ${fmtDate(schedEnd)}
+    &nbsp;·&nbsp; ${phases.length} phase${phases.length !== 1 ? 's' : ''}, ${allBlocks.length} block${allBlocks.length !== 1 ? 's' : ''}
+    &nbsp;·&nbsp; <span style="color:#aaa">Generated ${fmtDate(new Date().toISOString().slice(0,10))}</span>
+  </div>
+
+  <div class="section-title" style="margin-bottom:14px">Timeline</div>
+  <table style="margin-bottom:32px;table-layout:fixed">
+    <thead>
+      <tr>
+        <th style="width:130px;min-width:130px"></th>
+        <th style="padding:0"><table style="width:100%;table-layout:fixed;border-collapse:collapse"><thead><tr>${monthTicks}</tr></thead></table></th>
+      </tr>
+    </thead>
+    <tbody>${ganttRows}</tbody>
+  </table>
+
+  <div class="section-title" style="margin-bottom:10px">Schedule</div>
+  <table>
+    <thead>
+      <tr style="border-bottom:2px solid #111">
+        <th style="padding:5px 10px 5px 0;font-size:9px;text-align:left;color:#888;text-transform:uppercase;letter-spacing:0.5px;width:130px">Phase</th>
+        <th style="padding:5px 10px;font-size:9px;text-align:left;color:#888;text-transform:uppercase;letter-spacing:0.5px">Task</th>
+        <th style="padding:5px 10px;font-size:9px;text-align:left;color:#888;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;width:160px">Dates</th>
+        <th style="padding:5px 0;font-size:9px;text-align:center;color:#888;text-transform:uppercase;letter-spacing:0.5px;width:60px">Status</th>
+      </tr>
+    </thead>
+    <tbody>${listRows}</tbody>
+  </table>
+
+  <script>window.onload = () => window.print()<\/script>
+</body>
+</html>`
+
+    const win = window.open('', '_blank')
+    if (!win) { alert('Allow pop-ups to export PDF.'); return }
+    win.document.write(html)
+    win.document.close()
   }
 
   // ── Grid (date rows × column columns, free-standing blocks within) ───────────
@@ -236,6 +411,10 @@ export class PostProductionView {
   _bindContent(container, pps, project) {
     container.querySelector('#pps-add-phase')?.addEventListener('click', () => {
       this._openColumnModal(null, pps, project, container)
+    })
+
+    container.querySelector('#pps-export-pdf')?.addEventListener('click', () => {
+      this._exportPdf(pps, project)
     })
 
     container.querySelector('#pps-save-dates')?.addEventListener('click', async () => {
