@@ -608,7 +608,7 @@ export class CallSheetsView {
         let resolvedAddr = locAddr
         if (locAddr?.startsWith('http') && (locAddr.includes('goo.gl') || locAddr.includes('maps.app'))) {
           try {
-            const r = await fetch(`/api/resolve?url=${encodeURIComponent(locAddr)}`)
+            const r = await fetch(`/api/maps?action=resolve&url=${encodeURIComponent(locAddr)}`)
             const d = await r.json()
             if (d.url) resolvedAddr = d.url
           } catch(e) { /* fall through */ }
