@@ -69,7 +69,7 @@ export class App {
   }
 
   async _openDevRequest() {
-    const isAdmin = this.appUser?.role === 'admin'
+    const isAdmin = this.appUser?.role === 'superadmin'
     const existing = document.getElementById('dev-req-overlay')
     if (existing) { existing.remove(); return }
 
@@ -1975,15 +1975,10 @@ export class App {
 
   renderSettings(mc) {
     const s = this.settings ?? {}
-    const isAdmin = this.appUser?.role === 'admin'
-    const PERM_LABELS = {
-      contacts_view:'View contacts', contacts_edit:'Edit contacts',
-      projects_view:'View projects', projects_edit:'Edit projects',
-      budgets_view:'View budgets',   budgets_edit:'Edit budgets',
-      settings:'Access settings',
-    }
+    const isAdmin = this.appUser?.role === 'superadmin'
     mc.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;max-width:1100px">
       <div style="display:flex;flex-direction:column;gap:16px">
+        ${isAdmin ? `
         <div class="panel">
           <div class="panel-header"><span class="panel-title">Company details</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
@@ -2039,13 +2034,13 @@ export class App {
             </div>
             <div><button class="btn-primary" id="settings-save-btn-3">Save settings</button></div>
           </div>
-        </div>
+        </div>` : ''}
 
         ${isAdmin ? `
         <div class="panel">
           <div class="panel-header"><span class="panel-title">Users</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
-            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Invite-only. New users receive an email invitation from Clerk and are assigned Member role by default.</div>
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Invite-only. New users receive an email invitation from Clerk and are assigned the User role by default. Only superadmins can edit names, email addresses and roles.</div>
             <div style="display:flex;gap:8px">
               <input type="email" id="invite-email" placeholder="colleague@email.com" style="flex:1;padding:8px 11px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
               <button class="btn-primary" id="invite-btn">Send invite</button>
@@ -2120,10 +2115,18 @@ export class App {
 
         <div class="panel">
           <div class="panel-header"><span class="panel-title">Account</span></div>
-          <div style="padding:20px;display:flex;flex-direction:column;gap:10px">
+          <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
             <div style="font-size:13px;color:var(--text-secondary)">
               Signed in as <strong>${this.user.primaryEmailAddress?.emailAddress??''}</strong>
-              <span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary);margin-left:8px;text-transform:capitalize">${this.appUser?.role??'member'}</span>
+              <span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary);margin-left:8px;text-transform:capitalize">${this.appUser?.role??'user'}</span>
+            </div>
+            <div class="field">
+              <div class="field-label">Your role / job title</div>
+              <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:6px">Shown when you're added to call sheets and crew lists.</div>
+              <div style="display:flex;gap:8px">
+                <input type="text" id="account-job-title" value="${(this.appUser?.default_role??'').replace(/"/g,'&quot;')}" placeholder="e.g. Camera Operator" style="flex:1;padding:8px 11px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+                <button class="btn-primary" id="account-job-title-save">Save</button>
+              </div>
             </div>
             <button class="btn-cancel" style="width:fit-content" id="signout-settings">Sign out</button>
           </div>
@@ -2151,6 +2154,7 @@ export class App {
     mc.querySelector('#settings-save-btn-2')?.addEventListener('click', () => this.saveSettings(mc))
     mc.querySelector('#settings-save-btn-3')?.addEventListener('click', () => this.saveSettings(mc))
     mc.querySelector('#signout-settings')?.addEventListener('click', () => this.onSignOut())
+    mc.querySelector('#account-job-title-save')?.addEventListener('click', () => this._saveJobTitle(mc))
     mc.querySelector('#settings-save-ds-btn')?.addEventListener('click', () => this._saveDaysSinceTimer(mc))
     mc.querySelector('#settings-clear-ds-btn')?.addEventListener('click', () => this._clearDaysSinceTimer(mc))
     mc.querySelector('#settings-save-cd-btn')?.addEventListener('click', () => this._saveCountdownTimer(mc))
@@ -2317,92 +2321,79 @@ export class App {
     render()
   }
 
+  async _saveJobTitle(mc) {
+    const title = mc.querySelector('#account-job-title')?.value.trim() || null
+    if (!this.appUser?.id) return
+    try {
+      const { updateAppUser } = await import('./db/client.js')
+      await updateAppUser(this.appUser.id, { default_role: title })
+      this.appUser.default_role = title
+      // Keep the in-memory user list in sync so crew dropdowns reflect the change
+      const u = this.allUsers?.find(x => x.id === this.appUser.id)
+      if (u) u.default_role = title
+      this.toast('Saved')
+    } catch (e) { console.error(e); this.toast('Error saving') }
+  }
+
   async _loadUsersPanel(mc) {
     const el = mc.querySelector('#users-list')
     if (!el) return
     try {
-      const { getAllAppUsers, updateAppUser, deleteAppUser, ROLE_PRESETS } = await import('./db/client.js')
+      const { getAllAppUsers, updateAppUser, deleteAppUser, ROLE_LABELS } = await import('./db/client.js')
       const users = await getAllAppUsers()
-      const PERM_KEYS = ['contacts_view','contacts_edit','projects_view','projects_edit','budgets_view','budgets_edit','settings']
-      const PERM_LABELS = {
-        contacts_view:'View contacts', contacts_edit:'Edit contacts',
-        projects_view:'View projects', projects_edit:'Edit projects',
-        budgets_view:'View budgets',   budgets_edit:'Edit budgets',
-        settings:'Settings access',
-      }
+      const esc = v => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')
+      const ROLES = ['superadmin','user','viewer']
 
       el.innerHTML = users.map(u => {
-        const preset = ROLE_PRESETS[u.role] ?? ROLE_PRESETS.member
-        const overrides = u.permissions ?? {}
         const isSelf = u.clerk_id === this.clerkUserId
         return `<div style="border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px;margin-bottom:10px" data-uid="${u.id}">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-            <div style="flex:1">
-              <div style="font-size:13px;font-weight:500">${u.name||'—'} ${isSelf?'<span style="font-size:10px;color:var(--text-tertiary)">(you)</span>':''}</div>
-              <div style="font-size:12px;color:var(--text-secondary)">${u.email}</div>
-            </div>
-            <select class="status-select" data-role-uid="${u.id}" ${isSelf?'disabled':''} style="width:120px">
-              ${['admin','member','readonly'].map(r=>`<option value="${r}" ${u.role===r?'selected':''}>${r.charAt(0).toUpperCase()+r.slice(1)}</option>`).join('')}
+            <div style="font-size:13px;font-weight:500;flex:1">${esc(u.name)||'—'} ${isSelf?'<span style="font-size:10px;color:var(--text-tertiary)">(you)</span>':''}</div>
+            <select class="status-select" data-role-uid="${u.id}" ${isSelf?'disabled':''} style="width:130px" title="${isSelf?'You cannot change your own role':''}">
+              ${ROLES.map(r=>`<option value="${r}" ${u.role===r?'selected':''}>${ROLE_LABELS[r]}</option>`).join('')}
             </select>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-            ${PERM_KEYS.map(k => {
-              const fromRole = preset[k]
-              const override = overrides[k]
-              const effective = override !== undefined ? override : fromRole
-              return `<label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text-secondary);cursor:${isSelf?'default':'pointer'}">
-                <input type="checkbox" ${effective?'checked':''} data-perm="${u.id}:${k}" ${isSelf?'disabled':''} style="cursor:${isSelf?'default':'pointer'}" />
-                ${PERM_LABELS[k]}
-                ${override!==undefined?`<span style="font-size:10px;color:#d48c10" title="Overrides role preset">✱</span>`:''}
-              </label>`
-            }).join('')}
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div class="field" style="margin:0">
+              <div class="field-label">Name</div>
+              <input type="text" value="${esc(u.name)}" placeholder="Full name" data-name="${u.id}"
+                style="width:100%;font-size:12px;padding:6px 8px;border:1px solid var(--border-light);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+            </div>
+            <div class="field" style="margin:0">
+              <div class="field-label">Email address</div>
+              <input type="email" value="${esc(u.email)}" placeholder="name@email.com" data-email="${u.id}"
+                style="width:100%;font-size:12px;padding:6px 8px;border:1px solid var(--border-light);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+            </div>
           </div>
-          <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
-            <div style="font-size:12px;color:var(--text-secondary);white-space:nowrap">Default crew role:</div>
-            <input type="text" value="${u.default_role||''}" placeholder="e.g. Camera Operator" data-default-role="${u.id}"
+          <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+            <div style="font-size:12px;color:var(--text-secondary);white-space:nowrap">Job title / crew role:</div>
+            <input type="text" value="${esc(u.default_role)}" placeholder="e.g. Camera Operator" data-default-role="${u.id}"
               style="flex:1;font-size:12px;padding:4px 8px;border:1px solid var(--border-light);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
           </div>
-          ${!isSelf ? `<div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
-            <button class="row-btn" data-remove-user="${u.id}" data-remove-name="${u.name||u.email}" style="font-size:11px;color:var(--red,#e05252);border-color:var(--red,#e05252)">Remove user</button>
+          <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
+            ${!isSelf ? `<button class="row-btn" data-remove-user="${u.id}" data-remove-name="${esc(u.name)||esc(u.email)}" style="font-size:11px;color:var(--red,#e05252);border-color:var(--red,#e05252)">Remove user</button>` : '<span></span>'}
             <button class="row-btn" data-save-user="${u.id}" style="font-size:11px">Save changes</button>
-          </div>` : ''}
+          </div>
         </div>`
       }).join('')
-
-      // Role change — update preset display immediately
-      el.querySelectorAll('[data-role-uid]').forEach(sel => {
-        sel.addEventListener('change', () => {
-          const uid = sel.dataset.roleUid
-          const newRole = sel.value
-          const newPreset = ROLE_PRESETS[newRole] ?? ROLE_PRESETS.member
-          PERM_KEYS.forEach(k => {
-            const cb = el.querySelector(`[data-perm="${uid}:${k}"]`)
-            if (cb && !cb.disabled) cb.checked = newPreset[k]
-          })
-        })
-      })
 
       // Save user
       el.querySelectorAll('[data-save-user]').forEach(btn => {
         btn.addEventListener('click', async () => {
           const uid = btn.dataset.saveUser
-          const role = el.querySelector(`[data-role-uid="${uid}"]`)?.value ?? 'member'
+          const roleSel = el.querySelector(`[data-role-uid="${uid}"]`)
+          const name = el.querySelector(`[data-name="${uid}"]`)?.value.trim() || null
+          const email = el.querySelector(`[data-email="${uid}"]`)?.value.trim() || ''
           const default_role = el.querySelector(`[data-default-role="${uid}"]`)?.value.trim() || null
-          const preset = ROLE_PRESETS[role] ?? ROLE_PRESETS.member
-          const perms = {}
-          PERM_KEYS.forEach(k => {
-            const cb = el.querySelector(`[data-perm="${uid}:${k}"]`)
-            if (cb) {
-              const val = cb.checked
-              // Only store if it differs from preset (override)
-              if (val !== preset[k]) perms[k] = val
-            }
-          })
+          if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { this.toast('Please enter a valid email address'); return }
+          // Role select is disabled for self, so fall back to the existing role
+          const role = (roleSel && !roleSel.disabled) ? roleSel.value : (this.allUsers?.find(x => x.id === uid)?.role ?? 'user')
           try {
-            await updateAppUser(uid, { role, permissions: perms, default_role })
-            // Update in-memory allUsers so crew dropdown reflects changes immediately
+            await updateAppUser(uid, { name, email, role, default_role })
+            // Update in-memory allUsers so crew dropdowns reflect changes immediately
             const u = this.allUsers?.find(x => x.id === uid)
-            if (u) { u.role = role; u.permissions = perms; u.default_role = default_role }
+            if (u) { u.name = name; u.email = email; u.role = role; u.default_role = default_role }
+            if (this.appUser?.id === uid) { this.appUser.name = name; this.appUser.email = email; this.appUser.default_role = default_role }
             this.toast('User updated')
             this._loadUsersPanel(mc)
           } catch(e) { console.error(e); this.toast('Error saving user') }

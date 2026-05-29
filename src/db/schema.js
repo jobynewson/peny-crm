@@ -170,9 +170,9 @@ export const app_users = pgTable('app_users', {
   clerk_id:     text('clerk_id').notNull().unique(),
   email:        text('email').notNull(),
   name:         text('name'),
-  role:         text('role').notNull().default('member'),
-  permissions:  jsonb('permissions').notNull().default({}),
-  default_role: text('default_role'),   // e.g. "Camera Operator" — used when adding to crew
+  role:         text('role').notNull().default('user'),   // superadmin | user | viewer
+  permissions:  jsonb('permissions').notNull().default({}),  // legacy — no longer used
+  default_role: text('default_role'),   // job title, e.g. "Camera Operator" — also used when adding to crew
   invited_by:   text('invited_by'),
   created_at:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updated_at:   timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

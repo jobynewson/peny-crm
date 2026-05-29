@@ -155,6 +155,13 @@ export async function runMigrations() {
   `
   await sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS expense_recipients JSONB NOT NULL DEFAULT '[]'::jsonb`
   await sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS mileage_rate NUMERIC(6,2) NOT NULL DEFAULT 45`
+
+  // Migrate the legacy role tiers to the three-tier model and drop the old
+  // per-permission overrides (permissions are now derived purely from role).
+  await sql`UPDATE app_users SET role = 'superadmin' WHERE role = 'admin'`
+  await sql`UPDATE app_users SET role = 'user'       WHERE role = 'member'`
+  await sql`UPDATE app_users SET role = 'viewer'     WHERE role = 'readonly'`
+  await sql`UPDATE app_users SET permissions = '{}'::jsonb WHERE permissions <> '{}'::jsonb`
 }
 
 // ── Workspace ─────────────────────────────────────────────────────────────────
@@ -309,30 +316,43 @@ export async function getActivityLog(entityId, limit = 30) {
 }
 
 // ── Users & permissions ───────────────────────────────────────────────────────
+// Three tiers:
+//   superadmin — full access, manages the workspace and can edit people's
+//                names/email addresses
+//   user       — can do most things (view/edit contacts, projects, budgets,
+//                export) and set their own job title in settings
+//   viewer     — read-only, can't change anything
 export const ROLE_PRESETS = {
-  admin: {
+  superadmin: {
     contacts_view: true, contacts_edit: true,
     projects_view: true, projects_edit: true,
     budgets_view:  true, budgets_edit:  true,
-    export:        true, settings:      true,
+    export:        true, settings:      true, manage_users: true,
   },
-  member: {
+  user: {
     contacts_view: true, contacts_edit: true,
     projects_view: true, projects_edit: true,
     budgets_view:  true, budgets_edit:  true,
-    export:        true, settings:      false,
+    export:        true, settings:      true, manage_users: false,
   },
-  readonly: {
+  viewer: {
     contacts_view: true, contacts_edit: false,
     projects_view: true, projects_edit: false,
     budgets_view:  true, budgets_edit:  false,
-    export:        false, settings:     false,
+    export:        false, settings:     false, manage_users: false,
   },
 }
 
+export const ROLE_LABELS = {
+  superadmin: 'Superadmin',
+  user:       'User',
+  viewer:     'Viewer',
+}
+
+// Permissions are derived purely from the role — there are no per-permission
+// overrides any more.
 export function resolvePermissions(user) {
-  const preset = ROLE_PRESETS[user.role] ?? ROLE_PRESETS.member
-  return { ...preset, ...(user.permissions ?? {}) }
+  return ROLE_PRESETS[user.role] ?? ROLE_PRESETS.user
 }
 
 export async function getOrCreateAppUser(clerkUser) {
@@ -341,7 +361,7 @@ export async function getOrCreateAppUser(clerkUser) {
   if (existing[0]) return existing[0]
 
   const allUsers = await db.select({ id: app_users.id }).from(app_users)
-  const role = allUsers.length === 0 ? 'admin' : 'member'
+  const role = allUsers.length === 0 ? 'superadmin' : 'user'
 
   const [created] = await db.insert(app_users).values({
     clerk_id: clerkUser.id,
