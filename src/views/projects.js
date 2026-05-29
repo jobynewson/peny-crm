@@ -2186,7 +2186,7 @@ export class ProjectsView {
         let resolvedAddr = addrVal
         if (addrVal?.startsWith('http') && (addrVal.includes('goo.gl') || addrVal.includes('maps.app'))) {
           try {
-            const r = await fetch(`/api/resolve?url=${encodeURIComponent(addrVal)}`)
+            const r = await fetch(`/api/maps?action=resolve&url=${encodeURIComponent(addrVal)}`)
             const d = await r.json()
             if (d.url) resolvedAddr = d.url
           } catch(e){}
@@ -4412,7 +4412,7 @@ export class ProjectsView {
       let resolvedAddr = addrVal
       if (addrVal?.startsWith('http') && (addrVal.includes('goo.gl') || addrVal.includes('maps.app'))) {
         try {
-          const r = await fetch(`/api/resolve?url=${encodeURIComponent(addrVal)}`)
+          const r = await fetch(`/api/maps?action=resolve&url=${encodeURIComponent(addrVal)}`)
           const d = await r.json()
           if (d.url) resolvedAddr = d.url
         } catch(e) { /* fall through with original */ }
@@ -4456,7 +4456,7 @@ export class ProjectsView {
       if (!lat) { this.app.toast('Could not find location — try pasting a Google Maps URL'); return null }
 
       // Query our proxy (avoids CORS issues with direct Overpass requests)
-      const res = await fetch(`/api/nearby?lat=${lat}&lng=${lng}`)
+      const res = await fetch(`/api/maps?action=nearby&lat=${lat}&lng=${lng}`)
       if (!res.ok) throw new Error('Nearby API error')
       const data = await res.json()
 
