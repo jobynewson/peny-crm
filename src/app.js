@@ -1059,7 +1059,7 @@ export class App {
       }
     }
     const editDeadlines = [
-      ...(this.teamCalendarEntries || []).filter(e => e.is_deadline).map(e => ({ date: e.end_date || e.entry_date, label: e.label, assignee_id: e.assignee_id })),
+      ...(this.teamCalendarEntries || []).filter(e => e.is_deadline).map(e => ({ date: e.end_date || e.entry_date, label: e.label, assignee_id: e.assignee_id, is_complete: !!e.is_complete })),
       ...ppsDeadlines,
     ].filter(e => e.date && e.date <= dStr(fourteenDaysLater))
      .sort((a, b) => a.date.localeCompare(b.date))
@@ -1135,7 +1135,7 @@ export class App {
               ${sorted.map(d => {
                 const daysUntil = d.due ? Math.round((new Date(d.due + 'T00:00:00') - todayMs) / 86400000) : null
                 const duePill = daysUntil === null ? ''
-                  : daysUntil < 0  ? `<span class="db-due-pill db-due-pill--overdue" style="font-size:9px;padding:1px 5px">${Math.abs(daysUntil)}d late</span>`
+                  : daysUntil < 0 && !d.done ? `<span class="db-due-pill db-due-pill--overdue" style="font-size:9px;padding:1px 5px">${Math.abs(daysUntil)}d late</span>`
                   : daysUntil === 0 ? `<span class="db-due-pill db-due-pill--today" style="font-size:9px;padding:1px 5px">Today</span>`
                   : `<span class="db-due-pill" style="font-size:9px;padding:1px 5px">${new Date(d.due + 'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</span>`
                 const assignee = d.assignee_id ? this.allUsers.find(u => u.id === d.assignee_id) : null
@@ -1248,7 +1248,7 @@ export class App {
 
         const deadlineDuePill = entry => {
           const d = Math.round((new Date(entry.date + 'T00:00:00').getTime() - todayMs) / 86400000)
-          return d < 0 ? `<span class="db-due-pill db-due-pill--overdue">${Math.abs(d)}d overdue</span>`
+          return d < 0 && !entry.is_complete ? `<span class="db-due-pill db-due-pill--overdue">${Math.abs(d)}d overdue</span>`
                : d === 0 ? `<span class="db-due-pill db-due-pill--today">Today</span>`
                : `<span class="db-due-pill">${new Date(entry.date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>`
         }
