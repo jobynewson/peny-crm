@@ -156,9 +156,15 @@ export class PostProductionView {
         const { left, width } = pct(b.start_date, b.end_date)
         const color = b.color || ph.color || '#C47E3A'
         const opacity = b.is_complete ? 0.45 : 0.8
-        return `<div style="position:absolute;left:${left}%;width:${width}%;top:4px;bottom:4px;background:${color};opacity:${opacity};border-radius:3px;overflow:hidden;display:flex;align-items:center;padding:0 4px;box-sizing:border-box" title="${b.title || ''}">
+        const labelEnd = b.start_date === b.end_date
+          ? fmtDateShort(b.start_date)
+          : `${fmtDateShort(b.start_date)} – ${fmtDateShort(b.end_date)}`
+        const rightPct = (parseFloat(left) + parseFloat(width)).toFixed(2)
+        return `
+        <div style="position:absolute;left:${left}%;width:${width}%;top:4px;bottom:4px;background:${color};opacity:${opacity};border-radius:3px;overflow:hidden;display:flex;align-items:center;padding:0 4px;box-sizing:border-box" title="${b.title || ''}">
           ${b.title ? `<span style="font-size:8px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;letter-spacing:0.3px;text-transform:uppercase">${b.is_complete ? '✓ ' : ''}${b.title}</span>` : ''}
-        </div>`
+        </div>
+        <div style="position:absolute;left:calc(${rightPct}% + 3px);top:50%;transform:translateY(-50%);white-space:nowrap;font-size:8px;color:#555;line-height:1">${labelEnd}</div>`
       }).join('')
       return `<tr>
         <td style="padding:0 10px 0 0;white-space:nowrap;font-size:10px;font-weight:600;color:#333;width:130px;min-width:130px;vertical-align:middle">
