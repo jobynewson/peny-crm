@@ -41,6 +41,10 @@ export const settings = pgTable('settings', {
   days_since_timer: jsonb('days_since_timer'),
   // Email: receive daily roundup of all reminders sent to all users
   reminder_roundup: boolean('reminder_roundup').notNull().default(false),
+  // Expense tracker: who receives the monthly expense email (array of clerk_ids)
+  expense_recipients: jsonb('expense_recipients').notNull().default([]),
+  // Mileage reimbursement rate in pence per mile (default HMRC rate)
+  mileage_rate: numeric('mileage_rate', { precision: 6, scale: 2 }).notNull().default('45'),
   ...timestamps,
 })
 
@@ -436,6 +440,31 @@ export const credentials = pgTable('credentials', {
   category:   text('category'),
   sort_order: integer('sort_order').notNull().default(0),
   ...timestamps,
+})
+
+// ── Expense entries ───────────────────────────────────────────────────────────
+export const expense_entries = pgTable('expense_entries', {
+  id:            uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  workspace_id:  text('workspace_id').notNull(),
+  clerk_user_id: text('clerk_user_id').notNull(),
+  entry_date:    date('entry_date').notNull(),
+  type:          text('type').notNull(),           // 'mileage' | 'expense' | 'overnight'
+  miles:         numeric('miles', { precision: 8, scale: 2 }),
+  amount:        numeric('amount', { precision: 10, scale: 2 }),
+  overnights:    integer('overnights'),
+  description:   text('description'),
+  project_id:    uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
+  other_title:   text('other_title'),
+  created_at:    timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// ── Expense submissions (per user per month) ──────────────────────────────────
+export const expense_submissions = pgTable('expense_submissions', {
+  id:            uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  workspace_id:  text('workspace_id').notNull(),
+  clerk_user_id: text('clerk_user_id').notNull(),
+  month_key:     text('month_key').notNull(),      // 'YYYY-MM'
+  submitted_at:  timestamp('submitted_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
 // ── User notes (private per user, keyed by Clerk ID) ──────────────────────────

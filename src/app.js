@@ -9,6 +9,7 @@ import { MarketingView } from './views/marketing.js'
 import { TimeTrackView } from './views/timetrack.js'
 import { PasswordManagerView } from './views/password-manager.js'
 import { TeamCalendarView } from './views/team-calendar.js'
+import { ExpensesView } from './views/expenses.js'
 
 export class App {
   constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, onSignOut }) {
@@ -36,6 +37,7 @@ export class App {
     this.timeTrackView        = new TimeTrackView(this)
     this.passwordManagerView  = new PasswordManagerView(this)
     this.teamCalendarView     = new TeamCalendarView(this)
+    this.expensesView         = new ExpensesView(this)
     window.app = this
   }
 
@@ -387,6 +389,7 @@ export class App {
         </div>
         <div class="nav-bottom">
           <div class="sidebar-tt" id="sidebar-tt">${this._renderSidebarTT()}</div>
+          <div class="nav-item ${this.currentView==='expenses'?'active':''}" data-view="expenses">${this.iconExpenses()} Expenses</div>
           <div class="nav-item ${this.currentView==='password-manager'?'active':''}" data-view="password-manager">${this.iconPasswordManager()} Passwords</div>
           ${this.permissions.settings ? `<div class="nav-item" data-view="settings">${this.iconSettings()} Settings</div>` : ''}
           <div class="nav-item" id="dev-request-btn" style="color:#596773;font-size:13px">
@@ -566,7 +569,7 @@ export class App {
     if (!hash) return
     const parts = hash.split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager']
+    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses']
     if (!validViews.includes(view)) return
     this.currentView = view
     if (view === 'projects' && id) {
@@ -586,7 +589,7 @@ export class App {
     const hash = location.hash.slice(1)
     const parts = (hash || 'dashboard').split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager']
+    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses']
     if (!validViews.includes(view)) { this.currentView = 'dashboard'; this.render(); return }
 
     this.currentView = view
@@ -622,6 +625,8 @@ export class App {
       this.timeTrackView.render(mc)
     } else if (this.currentView === 'password-manager') {
       this.passwordManagerView.render(mc)
+    } else if (this.currentView === 'expenses') {
+      this.expensesView.render(mc)
     } else if (this.currentView === 'calendar') {
       this.teamCalendarView.renderFullPage(mc)
     } else if (this.currentView === 'dashboard') {
@@ -634,7 +639,7 @@ export class App {
   viewTitle() {
     if (this.currentView === 'projects' && this.projectsView?.currentId) return this.projects.find(p=>p.id===this.projectsView.currentId)?.name ?? 'Project'
     if (this.currentView === 'budgets'  && this.budgetsView?.currentId)  return this.budgets.find(b=>b.id===this.budgetsView.currentId)?.name  ?? 'Budget'
-    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',calendar:'Team Calendar',settings:'Settings',marketing:'Marketing',timetrack:'Time tracker','story-planner':'Story Planner','password-manager':'Passwords'}[this.currentView] ?? ''
+    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',calendar:'Team Calendar',settings:'Settings',marketing:'Marketing',timetrack:'Time tracker','story-planner':'Story Planner','password-manager':'Passwords',expenses:'Expenses'}[this.currentView] ?? ''
   }
 
   updateTitle() {
@@ -2086,6 +2091,31 @@ export class App {
             </label>
             <div><button class="btn-primary" id="settings-save-roundup-btn">Save</button></div>
           </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Expense tracker</span></div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">On the second-to-last working day of each month, a summary of all team expenses is automatically emailed to the recipients below.</div>
+            <div class="field">
+              <div class="field-label">Mileage rate (pence per mile)</div>
+              <input type="number" id="s-mileage-rate" value="${s.mileage_rate ?? 45}" min="0" step="0.1" style="width:100px" />
+            </div>
+            <div class="field">
+              <div class="field-label">Expense email recipients</div>
+              <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:6px">Select team members who should receive the monthly expense report.</div>
+              <div id="exp-recipients-list" style="display:flex;flex-direction:column;gap:6px">
+                ${(this.allUsers ?? []).map(u => {
+                  const checked = (s.expense_recipients ?? []).includes(u.clerk_id)
+                  return `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text-primary)">
+                    <input type="checkbox" class="exp-recipient-check" data-clerk-id="${u.clerk_id}" ${checked ? 'checked' : ''} style="width:15px;height:15px;cursor:pointer;accent-color:var(--accent)" />
+                    ${u.name ? `<span>${u.name}</span><span style="font-size:11px;color:var(--text-tertiary)">${u.email}</span>` : `<span>${u.email}</span>`}
+                  </label>`
+                }).join('')}
+              </div>
+            </div>
+            <div><button class="btn-primary" id="settings-save-expenses-btn">Save</button></div>
+          </div>
         </div>` : ''}
 
         <div class="panel">
@@ -2126,6 +2156,7 @@ export class App {
     mc.querySelector('#settings-save-cd-btn')?.addEventListener('click', () => this._saveCountdownTimer(mc))
     mc.querySelector('#settings-clear-cd-btn')?.addEventListener('click', () => this._clearCountdownTimer(mc))
     mc.querySelector('#settings-save-roundup-btn')?.addEventListener('click', () => this._saveReminderRoundup(mc))
+    mc.querySelector('#settings-save-expenses-btn')?.addEventListener('click', () => this._saveExpenseSettings(mc))
 
     if (isAdmin) {
       this._loadUsersPanel(mc)
@@ -2451,6 +2482,8 @@ export class App {
       countdown_timer:         this.settings?.countdown_timer ?? null,
       days_since_timer:        this.settings?.days_since_timer ?? null,
       reminder_roundup:        this.settings?.reminder_roundup ?? false,
+      expense_recipients:      this.settings?.expense_recipients ?? [],
+      mileage_rate:            this.settings?.mileage_rate ?? 45,
     }
     try { const [updated] = await upsertSettings(this.userId, data); this.settings = updated; this.toast('Settings saved') }
     catch (e) { console.error(e); this.toast('Error saving settings') }
@@ -2464,6 +2497,17 @@ export class App {
       this.settings = updated
       this.toast(enabled ? 'Roundup emails enabled' : 'Roundup emails disabled')
     } catch (e) { console.error(e); this.toast('Error saving preference') }
+  }
+
+  async _saveExpenseSettings(mc) {
+    const rate = parseFloat(mc.querySelector('#s-mileage-rate')?.value || '45')
+    const recipients = [...mc.querySelectorAll('.exp-recipient-check:checked')].map(el => el.dataset.clerkId)
+    const data = { ...this.settings, mileage_rate: rate, expense_recipients: recipients }
+    try {
+      const [updated] = await upsertSettings(this.userId, data)
+      this.settings = updated
+      this.toast('Expense settings saved')
+    } catch (e) { console.error(e); this.toast('Error saving expense settings') }
   }
 
   async _saveDaysSinceTimer(mc) {
@@ -3040,6 +3084,7 @@ export class App {
   iconStoryPlanner() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="2" width="13" height="3.5" rx="0.8"/><rect x="1.5" y="6.5" width="13" height="3.5" rx="0.8"/><rect x="1.5" y="11" width="8" height="3.5" rx="0.8"/></svg>` }
   iconSettings() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M11.4 4.6l-1.4 1.4M4.6 11.4l-1.4 1.4"/></svg>` }
   iconPasswordManager() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/><circle cx="8" cy="11" r="1" fill="currentColor" stroke="none"/></svg>` }
+  iconExpenses()        { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="4" width="12" height="9" rx="1.5"/><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M8 7.5v3M6.5 9h3"/></svg>` }
   iconSignOut()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M10 11l4-4-4-4M14 8H6"/></svg>` }
   iconTheme() {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark'

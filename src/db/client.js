@@ -8,6 +8,7 @@ import {
   app_users, time_entries, user_notes, social_posts, marketing_cards,
   story_plans, credentials, team_calendar_entries,
   post_production_schedules, pps_phases,
+  expense_entries, expense_submissions,
 } from './schema.js'
 
 const sql = neon(import.meta.env.VITE_DATABASE_URL)
@@ -126,6 +127,34 @@ export async function runMigrations() {
       AND start_date IS NOT NULL
       AND end_date   IS NOT NULL
   `
+  await sql`
+    CREATE TABLE IF NOT EXISTS expense_entries (
+      id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      workspace_id  TEXT NOT NULL,
+      clerk_user_id TEXT NOT NULL,
+      entry_date    DATE NOT NULL,
+      type          TEXT NOT NULL,
+      miles         NUMERIC(8,2),
+      amount        NUMERIC(10,2),
+      overnights    INTEGER,
+      description   TEXT,
+      project_id    UUID REFERENCES projects(id) ON DELETE SET NULL,
+      other_title   TEXT,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS expense_submissions (
+      id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      workspace_id  TEXT NOT NULL,
+      clerk_user_id TEXT NOT NULL,
+      month_key     TEXT NOT NULL,
+      submitted_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(clerk_user_id, month_key)
+    )
+  `
+  await sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS expense_recipients JSONB NOT NULL DEFAULT '[]'::jsonb`
+  await sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS mileage_rate NUMERIC(6,2) NOT NULL DEFAULT 45`
 }
 
 // ── Workspace ─────────────────────────────────────────────────────────────────
@@ -931,4 +960,40 @@ export async function getPpsPhasesForCalendar(workspaceId) {
     WHERE s.user_id = ${workspaceId}
     ORDER BY ph.sort_order
   `).then(r => r.rows ?? r)
+}
+
+// ── Expense entries ───────────────────────────────────────────────────────────
+export async function getExpenseEntries(workspaceId, clerkUserId) {
+  return db.select().from(expense_entries)
+    .where(and(eq(expense_entries.workspace_id, workspaceId), eq(expense_entries.clerk_user_id, clerkUserId)))
+    .orderBy(desc(expense_entries.entry_date))
+}
+export async function getAllExpenseEntriesForMonth(workspaceId, monthKey) {
+  const { sql: dsql } = await import('drizzle-orm')
+  return db.select().from(expense_entries)
+    .where(and(
+      eq(expense_entries.workspace_id, workspaceId),
+      dsql`to_char(${expense_entries.entry_date}, 'YYYY-MM') = ${monthKey}`,
+    ))
+    .orderBy(expense_entries.clerk_user_id, expense_entries.entry_date)
+}
+export async function createExpenseEntry(data) {
+  return db.insert(expense_entries).values(data).returning()
+}
+export async function deleteExpenseEntry(id) {
+  return db.delete(expense_entries).where(eq(expense_entries.id, id))
+}
+
+// ── Expense submissions ───────────────────────────────────────────────────────
+export async function getExpenseSubmissions(workspaceId, clerkUserId) {
+  return db.select().from(expense_submissions)
+    .where(and(eq(expense_submissions.workspace_id, workspaceId), eq(expense_submissions.clerk_user_id, clerkUserId)))
+    .orderBy(desc(expense_submissions.submitted_at))
+}
+export async function createExpenseSubmission(data) {
+  const [row] = await db.insert(expense_submissions)
+    .values(data)
+    .onConflictDoUpdate({ target: [expense_submissions.clerk_user_id, expense_submissions.month_key], set: { submitted_at: new Date() } })
+    .returning()
+  return row
 }
