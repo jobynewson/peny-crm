@@ -1271,10 +1271,11 @@ export class App {
                 ${(p.retainer_items||[]).map((item,ii) => {
                   const mult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}[item.period||'month']||1
                   const allocH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
+                  const periodLabel = {week:'/ wk',month:'/ mo',quarter:'/ qtr',half:'/ 6mo',year:'/ yr'}[item.period||'month']||'/ mo'
                   return allocH ? `<div>
                     <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px">
                       <span style="color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">${esc(item.label)}</span>
-                      <span data-ret-item-label="${p.id}-${ii}" style="color:var(--text-secondary);white-space:nowrap">— / ${allocH}h</span>
+                      <span style="display:flex;align-items:center;gap:4px;flex-shrink:0"><span data-ret-item-label="${p.id}-${ii}" style="color:var(--text-secondary);white-space:nowrap">— / ${allocH}h</span><span style="color:var(--text-tertiary);opacity:0.6;font-size:9px">${periodLabel}</span></span>
                     </div>
                     <div style="height:4px;background:var(--bg-secondary);border-radius:2px;overflow:hidden">
                       <div style="height:100%;width:0%;border-radius:2px;transition:width 0.3s" data-ret-item-bar="${p.id}-${ii}"></div>
