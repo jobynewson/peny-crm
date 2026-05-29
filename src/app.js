@@ -2608,7 +2608,7 @@ export class App {
     style.id = 'app-styles'
     style.textContent = `
       .sidebar{width:260px;flex-shrink:0;background:#1D2125;display:flex;flex-direction:column;overflow:hidden}
-      .logo{padding:14px 16px 14px;display:flex;align-items:center;border-bottom:1px solid rgba(255,255,255,0.06)}
+      .logo{padding:12px 16px;display:flex;align-items:center;border-bottom:1px solid rgba(255,255,255,0.06)}
       .logo img{height:28px;width:auto;display:block;filter:brightness(0) invert(1)}
       .nav-label{font-size:11px;color:#596773;text-transform:uppercase;letter-spacing:0.8px;padding:16px 16px 4px}
       .nav-item{display:flex;align-items:center;gap:10px;padding:8px 16px;font-size:14px;color:#B6C2CF;cursor:pointer;border-radius:var(--radius-sm);margin:1px 8px;transition:background 0.12s,color 0.12s;user-select:none}
