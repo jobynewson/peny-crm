@@ -664,6 +664,13 @@ export class App {
     return [start, end]
   }
 
+  _retainerPreviousPeriod(retainerStart) {
+    const [currentStart] = this._retainerPeriod(retainerStart)
+    if (!currentStart) return [null, null]
+    const prevStart = new Date(Date.UTC(currentStart.getUTCFullYear(), currentStart.getUTCMonth() - 1, currentStart.getUTCDate()))
+    return [prevStart, currentStart]
+  }
+
   // ── Sidebar quick-log widget ─────────────────────────────────────────────────
 
   _sttTrackableLines(project) {
@@ -1059,7 +1066,7 @@ export class App {
       }
     }
     const editDeadlines = [
-      ...(this.teamCalendarEntries || []).filter(e => e.is_deadline).map(e => ({ date: e.end_date || e.entry_date, label: e.label, assignee_id: e.assignee_id })),
+      ...(this.teamCalendarEntries || []).filter(e => e.is_deadline).map(e => ({ date: e.end_date || e.entry_date, label: e.label, assignee_id: e.assignee_id, is_complete: !!e.is_complete })),
       ...ppsDeadlines,
     ].filter(e => e.date && e.date <= dStr(fourteenDaysLater))
      .sort((a, b) => a.date.localeCompare(b.date))
@@ -1135,7 +1142,7 @@ export class App {
               ${sorted.map(d => {
                 const daysUntil = d.due ? Math.round((new Date(d.due + 'T00:00:00') - todayMs) / 86400000) : null
                 const duePill = daysUntil === null ? ''
-                  : daysUntil < 0  ? `<span class="db-due-pill db-due-pill--overdue" style="font-size:9px;padding:1px 5px">${Math.abs(daysUntil)}d late</span>`
+                  : daysUntil < 0 && !d.done ? `<span class="db-due-pill db-due-pill--overdue" style="font-size:9px;padding:1px 5px">${Math.abs(daysUntil)}d late</span>`
                   : daysUntil === 0 ? `<span class="db-due-pill db-due-pill--today" style="font-size:9px;padding:1px 5px">Today</span>`
                   : `<span class="db-due-pill" style="font-size:9px;padding:1px 5px">${new Date(d.due + 'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</span>`
                 const assignee = d.assignee_id ? this.allUsers.find(u => u.id === d.assignee_id) : null
@@ -1248,7 +1255,7 @@ export class App {
 
         const deadlineDuePill = entry => {
           const d = Math.round((new Date(entry.date + 'T00:00:00').getTime() - todayMs) / 86400000)
-          return d < 0 ? `<span class="db-due-pill db-due-pill--overdue">${Math.abs(d)}d overdue</span>`
+          return d < 0 && !entry.is_complete ? `<span class="db-due-pill db-due-pill--overdue">${Math.abs(d)}d overdue</span>`
                : d === 0 ? `<span class="db-due-pill db-due-pill--today">Today</span>`
                : `<span class="db-due-pill">${new Date(entry.date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>`
         }
@@ -1271,10 +1278,11 @@ export class App {
                 ${(p.retainer_items||[]).map((item,ii) => {
                   const mult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}[item.period||'month']||1
                   const allocH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
+                  const periodLabel = {week:'/ wk',month:'/ mo',quarter:'/ qtr',half:'/ 6mo',year:'/ yr'}[item.period||'month']||'/ mo'
                   return allocH ? `<div>
                     <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px">
                       <span style="color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">${esc(item.label)}</span>
-                      <span data-ret-item-label="${p.id}-${ii}" style="color:var(--text-secondary);white-space:nowrap">— / ${allocH}h</span>
+                      <span style="display:flex;align-items:center;gap:4px;flex-shrink:0"><span data-ret-item-label="${p.id}-${ii}" style="color:var(--text-secondary);white-space:nowrap">— / ${allocH}h</span><span style="color:var(--text-tertiary);opacity:0.6;font-size:9px">${periodLabel}</span></span>
                     </div>
                     <div style="height:4px;background:var(--bg-secondary);border-radius:2px;overflow:hidden">
                       <div style="height:100%;width:0%;border-radius:2px;transition:width 0.3s" data-ret-item-bar="${p.id}-${ii}"></div>
@@ -1747,29 +1755,62 @@ export class App {
             ? allEntries.filter(e => { const d = new Date(e.entry_date); return d >= periodStart && d < periodEnd })
             : allEntries
           const logged = entries.reduce((s, e) => s + parseFloat(e.hours), 0)
-          const hours = allocH
-          const pct = Math.min(100, Math.round(logged / hours * 100))
           const alertPctVal = parseFloat(p.retainer_alert) || 80
           const alertEl = mc.querySelector(`[data-ret-alert="${p.id}"]`)
           const items = p.retainer_items || []
+
+          // Compute per-item rollover deltas from previous period
+          const rolloverDeltas = {}
+          if (p.retainer_rollover && periodStart) {
+            const [prevStart, prevEnd] = this._retainerPreviousPeriod(p.retainer_start)
+            if (prevStart) {
+              const prevEntries = allEntries.filter(e => { const d = new Date(e.entry_date); return d >= prevStart && d < prevEnd })
+              const pm4 = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}
+              for (const item of items) {
+                const mult = pm4[item.period||'month'] || 1
+                const prevAllocH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
+                const prevLogged = prevEntries.filter(e => e.line_label === item.label).reduce((s,e) => s + parseFloat(e.hours), 0)
+                rolloverDeltas[item.label] = prevAllocH - prevLogged
+              }
+            }
+          }
+
           if (items.length) {
             const pm3 = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}
+            let totalEffective = 0
             items.forEach((item, ii) => {
               const mult = pm3[item.period||'month'] || 1
-              const aH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
-              if (!aH) return
+              const baseH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
+              if (!baseH) return
+              const delta = rolloverDeltas[item.label] ?? 0
+              const aH = Math.max(0, baseH + delta)
+              totalEffective += aH
               const iL = entries.filter(e => e.line_label === item.label).reduce((s,e) => s + parseFloat(e.hours), 0)
-              const iPct = Math.min(100, Math.round(iL / aH * 100))
+              const iPct = aH > 0 ? Math.min(100, Math.round(iL / aH * 100)) : 100
               const iCol = iPct >= 100 ? '#ef4444' : iPct >= alertPctVal ? '#f59e0b' : '#a78bfa'
               const bar = mc.querySelector(`[data-ret-item-bar="${p.id}-${ii}"]`)
               const lbl = mc.querySelector(`[data-ret-item-label="${p.id}-${ii}"]`)
               if (bar) { bar.style.width = iPct + '%'; bar.style.background = iCol }
-              if (lbl) { lbl.textContent = `${iL.toFixed(1)} / ${aH}h`; lbl.style.color = iPct >= alertPctVal ? iCol : '' }
+              const rolloverNote = delta !== 0 ? ` (${delta > 0 ? '+' : ''}${Math.round(delta)}h)` : ''
+              if (lbl) { lbl.textContent = `${iL.toFixed(1)} / ${aH}h${rolloverNote}`; lbl.style.color = iPct >= alertPctVal ? iCol : '' }
             })
+            const hours = totalEffective || allocH
+            const pct = hours > 0 ? Math.min(100, Math.round(logged / hours * 100)) : 0
             const colour = pct >= 100 ? '#ef4444' : pct >= alertPctVal ? '#f59e0b' : '#a78bfa'
             if (alertEl && pct >= alertPctVal && pct < 100) { alertEl.style.display='block'; alertEl.style.color=colour; alertEl.textContent=`⚠ ${pct}% used overall` }
             if (alertEl && pct >= 100) { alertEl.style.display='block'; alertEl.style.color=colour; alertEl.textContent=`⚠ Over allocation by ${(logged-hours).toFixed(1)}h` }
           } else {
+            // Legacy retainer_hours path — apply rollover on total
+            let hours = allocH
+            if (p.retainer_rollover && periodStart) {
+              const [prevStart, prevEnd] = this._retainerPreviousPeriod(p.retainer_start)
+              if (prevStart) {
+                const prevEntries = allEntries.filter(e => { const d = new Date(e.entry_date); return d >= prevStart && d < prevEnd })
+                const prevLogged = prevEntries.reduce((s,e) => s + parseFloat(e.hours), 0)
+                hours = Math.max(0, hours + (hours - prevLogged))
+              }
+            }
+            const pct = Math.min(100, Math.round(logged / hours * 100))
             const bar = mc.querySelector(`[data-ret-bar="${p.id}"]`)
             const label = mc.querySelector(`[data-ret-label="${p.id}"]`)
             const colour = pct >= 100 ? '#ef4444' : pct >= alertPctVal ? '#f59e0b' : '#a78bfa'
@@ -2608,7 +2649,7 @@ export class App {
     style.id = 'app-styles'
     style.textContent = `
       .sidebar{width:260px;flex-shrink:0;background:#1D2125;display:flex;flex-direction:column;overflow:hidden}
-      .logo{padding:14px 16px 14px;display:flex;align-items:center;border-bottom:1px solid rgba(255,255,255,0.06)}
+      .logo{padding:12px 16px;display:flex;align-items:center;border-bottom:1px solid rgba(255,255,255,0.06)}
       .logo img{height:28px;width:auto;display:block;filter:brightness(0) invert(1)}
       .nav-label{font-size:11px;color:#596773;text-transform:uppercase;letter-spacing:0.8px;padding:16px 16px 4px}
       .nav-item{display:flex;align-items:center;gap:10px;padding:8px 16px;font-size:14px;color:#B6C2CF;cursor:pointer;border-radius:var(--radius-sm);margin:1px 8px;transition:background 0.12s,color 0.12s;user-select:none}
