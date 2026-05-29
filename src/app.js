@@ -1054,7 +1054,7 @@ export class App {
     for (const ph of (ppsPhasesForDash || [])) {
       for (const b of (Array.isArray(ph.blocks) ? ph.blocks : [])) {
         if (b.is_deadline && b.end_date) {
-          ppsDeadlines.push({ date: b.end_date, label: `${ph.project_name ? ph.project_name + ' — ' : ''}${b.title || ph.name}`, assignee_id: b.assignee_id })
+          ppsDeadlines.push({ date: b.end_date, label: `${ph.project_name ? ph.project_name + ' — ' : ''}${b.title || ph.name}`, assignee_id: b.assignee_id, phase_id: ph.id, block_id: b.id, is_complete: !!b.is_complete })
         }
       }
     }
@@ -1351,9 +1351,10 @@ export class App {
             <div class="db-proj-list" style="border-radius:var(--radius-md)">
               ${editDeadlines.map(e => {
                 const assignee = this.allUsers.find(u => u.id === e.assignee_id)
-                return `<div class="db-proj-row" style="display:flex;align-items:center;gap:8px;padding:8px 12px;min-height:unset">
+                return `<div class="db-proj-row db-deadline-row" style="display:flex;align-items:center;gap:8px;padding:8px 12px;min-height:unset;${e.is_complete ? 'opacity:0.45;' : ''}">
+                  ${e.phase_id ? `<input type="checkbox" class="db-deadline-check" data-phase-id="${e.phase_id}" data-block-id="${e.block_id}" ${e.is_complete ? 'checked' : ''} style="cursor:pointer;flex-shrink:0;width:13px;height:13px;accent-color:#6ec96e" />` : ''}
                   ${deadlineDuePill(e)}
-                  <span class="db-proj-name-label" style="flex:1;font-size:12px">${esc(e.label)}</span>
+                  <span class="db-proj-name-label" style="flex:1;font-size:12px;${e.is_complete ? 'text-decoration:line-through;' : ''}">${esc(e.label)}</span>
                   ${assignee ? `<span style="font-size:10px;color:var(--text-tertiary);flex-shrink:0">${esc(assignee.name || assignee.email.split('@')[0])}</span>` : ''}
                 </div>`
               }).join('')}
@@ -1502,6 +1503,34 @@ export class App {
           await updateProject(this.userId, p.id, { [src]: arr })
           this.toast(cb.checked ? '✓ Deliverable marked done' : 'Deliverable unmarked')
         } catch(e) { console.error('Deliverable save failed:', e) }
+      })
+    })
+
+    // --- Edit deadline completion checkboxes ---
+    mc.querySelectorAll('.db-deadline-check').forEach(cb => {
+      cb.addEventListener('click', e => e.stopPropagation())
+      cb.addEventListener('change', async () => {
+        const phaseId = cb.dataset.phaseId
+        const blockId = cb.dataset.blockId
+        const row = cb.closest('.db-deadline-row')
+        if (row) {
+          row.style.opacity = cb.checked ? '0.45' : ''
+          const label = row.querySelector('.db-proj-name-label')
+          if (label) label.style.textDecoration = cb.checked ? 'line-through' : ''
+        }
+        try {
+          const { updatePpsPhase } = await import('./db/client.js')
+          const phases = this.teamCalendarView?._ppsPhasesCache || []
+          const phase = phases.find(p => p.id === phaseId)
+          if (phase && Array.isArray(phase.blocks)) {
+            const block = phase.blocks.find(b => b.id === blockId)
+            if (block) {
+              block.is_complete = cb.checked
+              await updatePpsPhase(phaseId, { blocks: phase.blocks })
+              this.toast(cb.checked ? '✓ Deadline marked complete' : 'Deadline unmarked')
+            }
+          }
+        } catch(e) { console.error('Deadline save failed:', e) }
       })
     })
 

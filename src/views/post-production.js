@@ -208,16 +208,17 @@ export class PostProductionView {
                   const isFirst = firstByBlock[block.id] === ds
                   const isLast  = lastByBlock[block.id]  === ds
                   const color = block.color || ph.color || '#C47E3A'
-                  const rgba25 = _hexRgba(color, 0.22)
-                  const rgba55 = _hexRgba(color, 0.55)
+                  const rgba25 = _hexRgba(color, block.is_complete ? 0.10 : 0.22)
+                  const rgba55 = _hexRgba(color, block.is_complete ? 0.30 : 0.55)
                   const assignee = block.assignee_id ? usersById[block.assignee_id] : null
                   const assigneeName = userName(assignee)
                   const blockTitle = block.title || ''
                   return `<td class="pps-block-cell" data-phase-id="${ph.id}" data-block-id="${block.id}" data-date="${dkey}"
-                    title="Click to edit · drag edges to resize · drag to move${blockTitle ? ' · ' + esc(blockTitle) : ''}${assigneeName ? ' · ' + esc(assigneeName) : ''}"
-                    style="position:relative;border-left:2px solid ${rgba55};${isFirst ? `border-top:2px solid ${rgba55};` : ''}${isLast ? `border-bottom:2px solid ${rgba55};` : ''}background:${rgba25};padding:2px 6px;cursor:grab">
+                    title="Click to edit · drag edges to resize · drag to move${blockTitle ? ' · ' + esc(blockTitle) : ''}${assigneeName ? ' · ' + esc(assigneeName) : ''}${block.is_complete ? ' · ✓ Complete' : ''}"
+                    style="position:relative;border-left:2px solid ${rgba55};${isFirst ? `border-top:2px solid ${rgba55};` : ''}${isLast ? `border-bottom:2px solid ${rgba55};` : ''}background:${rgba25};padding:2px 6px;cursor:grab;${block.is_complete ? 'opacity:0.55;' : ''}">
                     ${isFirst ? `<div class="pps-resize-handle" data-phase-id="${ph.id}" data-block-id="${block.id}" data-edge="start" style="position:absolute;top:0;left:0;right:0;height:6px;cursor:ns-resize;color:${color}"></div>` : ''}
-                    ${isFirst && blockTitle ? `<div style="font-size:9px;font-weight:700;color:${color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:${CELL_W - 12}px;text-transform:uppercase;letter-spacing:0.3px" title="${esc(blockTitle)}">${esc(blockTitle)}</div>` : ''}
+                    ${isFirst && block.is_complete ? `<div style="font-size:9px;color:#6ec96e;font-weight:700;line-height:1.2">✓</div>` : ''}
+                    ${isFirst && blockTitle ? `<div style="font-size:9px;font-weight:700;color:${color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:${CELL_W - 12}px;text-transform:uppercase;letter-spacing:0.3px;${block.is_complete ? 'text-decoration:line-through;' : ''}" title="${esc(blockTitle)}">${esc(blockTitle)}</div>` : ''}
                     ${isFirst && assigneeName ? `<div style="font-size:9px;color:${color};opacity:0.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:${CELL_W - 12}px" title="${esc(assigneeName)}">${esc(abbr(assigneeName))}</div>` : ''}
                     ${isLast ? `<div class="pps-resize-handle" data-phase-id="${ph.id}" data-block-id="${block.id}" data-edge="end" style="position:absolute;bottom:0;left:0;right:0;height:6px;cursor:ns-resize;color:${color}"></div>` : ''}
                   </td>`
@@ -445,7 +446,7 @@ export class PostProductionView {
     const isNew = !block
     const data = block
       ? { ...block }
-      : { id: newId(), title: '', notes: '', start_date: defaultDate || '', end_date: defaultDate || '', color: null, assignee_id: pps.lead_assignee_id || null, is_deadline: false, show_in_portal: false }
+      : { id: newId(), title: '', notes: '', start_date: defaultDate || '', end_date: defaultDate || '', color: null, assignee_id: pps.lead_assignee_id || null, is_deadline: false, is_complete: false, show_in_portal: false }
     let selColor = data.color || ''   // '' = inherit column colour
 
     const render = () => {
@@ -499,6 +500,10 @@ export class PostProductionView {
                 <span>Deadline</span>
                 <span style="font-size:11px;color:var(--text-tertiary)">(shows in dashboard "Edit Deadlines")</span>
               </label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text-primary)">
+                <input type="checkbox" id="ppsb-complete" ${data.is_complete ? 'checked' : ''} style="cursor:pointer;accent-color:#6ec96e;width:14px;height:14px;flex-shrink:0" />
+                <span>Mark as complete</span>
+              </label>
               ${project.portal_token ? `
               <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text-primary)">
                 <input type="checkbox" id="ppsb-portal" ${data.show_in_portal ? 'checked' : ''} style="cursor:pointer;accent-color:var(--accent);width:14px;height:14px;flex-shrink:0" />
@@ -524,6 +529,7 @@ export class PostProductionView {
           data.end_date   = overlay.querySelector('#ppsb-end')?.value ?? data.end_date
           data.assignee_id = overlay.querySelector('#ppsb-assignee')?.value || null
           data.is_deadline = overlay.querySelector('#ppsb-deadline')?.checked ?? data.is_deadline
+          data.is_complete = overlay.querySelector('#ppsb-complete')?.checked ?? data.is_complete
           data.show_in_portal = overlay.querySelector('#ppsb-portal')?.checked ?? data.show_in_portal
           render()
         })
@@ -549,6 +555,7 @@ export class PostProductionView {
           color:          selColor || null,
           assignee_id:    overlay.querySelector('#ppsb-assignee')?.value || null,
           is_deadline:    overlay.querySelector('#ppsb-deadline')?.checked || false,
+          is_complete:    overlay.querySelector('#ppsb-complete')?.checked || false,
           show_in_portal: overlay.querySelector('#ppsb-portal')?.checked ?? (data.show_in_portal || false),
         }
         if (!phase.blocks) phase.blocks = []
