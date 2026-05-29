@@ -59,7 +59,17 @@ export default async function handler(req, res) {
   let ppsPhases = []
   if (scheduleRows[0]) {
     const sched = scheduleRows[0]
-    ppsSchedule = { start_date: sched.start_date, end_date: sched.end_date }
+    // Normalise `date` columns (the pg driver returns Date objects, which
+    // serialise to full ISO strings and break `new Date(str + 'T00:00:00')`
+    // in the portal grid). Coerce to plain YYYY-MM-DD strings.
+    const toDateStr = v => {
+      if (!v) return null
+      if (v instanceof Date) {
+        return `${v.getUTCFullYear()}-${String(v.getUTCMonth() + 1).padStart(2, '0')}-${String(v.getUTCDate()).padStart(2, '0')}`
+      }
+      return String(v).slice(0, 10)
+    }
+    ppsSchedule = { start_date: toDateStr(sched.start_date), end_date: toDateStr(sched.end_date) }
 
     const cols = await sql`
       SELECT id, name, color, blocks, show_in_portal, sort_order

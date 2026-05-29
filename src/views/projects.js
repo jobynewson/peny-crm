@@ -474,6 +474,11 @@ export class ProjectsView {
             : STAGES.map(s => `<option value="${s}" ${p.status===s?'selected':''}>${s}</option>`).join('')}
         </select>
         ${this.app.permissions?.projects_edit ? `<button class="btn-secondary" id="pv-duplicate">Duplicate</button>` : ''}
+        ${p.portal_token
+          ? `<button class="btn-cancel" id="pv-copy-portal" style="font-size:11px">Copy Client Portal Link</button>`
+          : this.app.permissions?.projects_edit
+            ? `<button class="btn-cancel" id="pv-gen-portal" style="font-size:11px">Create Portal Link</button>`
+            : ''}
         ${this.app.permissions?.projects_edit ? `<button class="btn-primary" id="enter-edit">Edit project</button>` : ''}
         <button class="row-btn" id="pv-delete" style="color:#b03020;border-color:rgba(180,50,30,0.2)">Delete</button>
       </div>
@@ -578,11 +583,6 @@ export class ProjectsView {
         <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
           <span>Deliverables <span style="font-size:11px;color:var(--text-tertiary);font-weight:400">(${doneCount}/${delivs.length})</span></span>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
-            ${p.portal_token
-              ? `<button class="btn-cancel" id="pv-copy-portal" style="font-size:11px">Copy Client Portal Link</button>`
-              : this.app.permissions?.projects_edit
-                ? `<button class="btn-cancel" id="pv-gen-portal" style="font-size:11px">Create Portal Link</button>`
-                : ''}
             ${this.app.permissions?.projects_edit ? `
             <button class="btn-cancel" id="pv-mark-all-done" style="font-size:11px">Mark all done</button>
             <button class="btn-cancel" id="pv-reset-delivs" style="font-size:11px">Reset</button>` : ''}
@@ -893,19 +893,6 @@ export class ProjectsView {
           try { await updateProject(this.app.userId, p.id, { shots: p.shots }) } catch(e) { console.error(e) }
         })
       })
-      mc.querySelector('#pv-copy-portal')?.addEventListener('click', async e => {
-        const url = `${location.origin}/portal/${p.portal_token}`
-        await navigator.clipboard.writeText(url)
-        const btn = e.target; btn.textContent = '✓ Copied!'; setTimeout(() => btn.textContent = 'Copy Client Portal Link', 1500)
-      })
-      mc.querySelector('#pv-gen-portal')?.addEventListener('click', async () => {
-        const token = crypto.randomUUID().replace(/-/g,'').slice(0,24)
-        p.portal_token = token
-        const idx = this.app.projects.findIndex(x => x.id === p.id)
-        if (idx >= 0) this.app.projects[idx].portal_token = token
-        try { await updateProject(this.app.userId, p.id, { portal_token: token }) } catch(e) { console.error(e) }
-        this.renderViewer(mc)
-      })
       mc.querySelector('#pv-mark-all-done')?.addEventListener('click', async () => {
         try { p.deliverables.forEach(d => { if(d.text) d.done = true }); await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }); this.renderViewer(mc); this.app.toast('All deliverables marked done') } catch(e) { console.error(e) }
       })
@@ -1046,6 +1033,19 @@ export class ProjectsView {
     mc.querySelector('#pv-status')?.addEventListener('change', e => {
       p.status = e.target.value
       updateProject(this.app.userId, p.id, { status: p.status }).catch(console.error)
+    })
+    mc.querySelector('#pv-copy-portal')?.addEventListener('click', async e => {
+      const url = `${location.origin}/portal/${p.portal_token}`
+      await navigator.clipboard.writeText(url)
+      const btn = e.target; btn.textContent = '✓ Copied!'; setTimeout(() => btn.textContent = 'Copy Client Portal Link', 1500)
+    })
+    mc.querySelector('#pv-gen-portal')?.addEventListener('click', async () => {
+      const token = crypto.randomUUID().replace(/-/g,'').slice(0,24)
+      p.portal_token = token
+      const idx = this.app.projects.findIndex(x => x.id === p.id)
+      if (idx >= 0) this.app.projects[idx].portal_token = token
+      try { await updateProject(this.app.userId, p.id, { portal_token: token }) } catch(e) { console.error(e) }
+      this.renderViewer(mc)
     })
     mc.querySelector('#enter-edit')?.addEventListener('click', () => {
       this.editingId = this.currentId; this.renderEditor(mc)
@@ -3183,6 +3183,26 @@ export class ProjectsView {
         }
       }
 
+      // Apply rollover adjustments when enabled
+      let rolloverTotal = 0
+      if (p.is_retainer && p.retainer_rollover && p.retainer_start && trackableLines.length) {
+        const [prevStart, prevEnd] = this.app._retainerPreviousPeriod(p.retainer_start)
+        if (prevStart) {
+          const prevEntries = allEntries.filter(e => { const d = new Date(e.entry_date); return d >= prevStart && d < prevEnd })
+          const pm = { week:4.33, month:1, quarter:1/3, half:1/6, year:1/12 }
+          for (const item of (p.retainer_items||[])) {
+            const line = trackableLines.find(l => l.label === item.label)
+            if (!line) continue
+            const mult = pm[item.period||'month'] || 1
+            const prevAllocH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
+            const prevLogged = prevEntries.filter(e => e.line_label === item.label).reduce((s,e) => s + parseFloat(e.hours), 0)
+            const delta = prevAllocH - prevLogged
+            rolloverTotal += delta
+            line.allocHours = Math.max(0, line.allocHours + delta)
+          }
+        }
+      }
+
       const allocHours = trackableLines.length
         ? trackableLines.reduce((s, l) => s + l.allocHours, 0)
         : (parseFloat(p.retainer_hours) || 0)
@@ -3207,6 +3227,7 @@ export class ProjectsView {
             <div style="height:100%;width:${pct}%;background:${barColour};border-radius:3px;transition:width 0.3s"></div>
           </div>
           ${p.is_retainer ? `<div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">${periodLabel}</div>` : ''}
+          ${p.is_retainer && p.retainer_rollover && rolloverTotal !== 0 ? `<div style="font-size:10px;color:var(--text-tertiary);margin-top:3px">↩ ${rolloverTotal > 0 ? `+${Math.round(rolloverTotal)}h rolled over from last period` : `${Math.round(rolloverTotal)}h deducted from last period's overrun`}</div>` : ''}
           ${pct >= alertPct && pct < 100 ? `<div style="font-size:11px;color:${barColour};margin-top:4px">⚠ ${pct}% used — ${(allocHours - totalLogged).toFixed(1)}h remaining</div>` : ''}
           ${pct >= 100 && p.is_retainer ? `<div style="font-size:11px;color:${barColour};margin-top:4px">⚠ Over by ${(totalLogged - allocHours).toFixed(1)}h</div>` : ''}
         </div>
@@ -3614,6 +3635,16 @@ export class ProjectsView {
               <div style="font-size:11px;color:var(--text-tertiary);line-height:1.5;margin-top:8px">
                 Period resets on day <strong>${p.retainer_start ? new Date(p.retainer_start).getUTCDate() : '—'}</strong> of each month.
                 Alert fires at <strong>${p.retainer_alert??80}%</strong> of monthly hours.
+              </div>
+
+              <div style="margin-top:12px;padding:10px 12px;background:var(--bg-secondary);border-radius:var(--radius-md)">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                  <input type="checkbox" id="pe-ret-rollover" ${p.retainer_rollover?'checked':''} style="cursor:pointer;width:14px;height:14px;flex-shrink:0" />
+                  <span style="font-size:12px;color:var(--text-secondary);font-weight:500">Roll over unused hours</span>
+                </label>
+                <div style="font-size:11px;color:var(--text-tertiary);margin-top:5px;line-height:1.5;padding-left:22px">
+                  Any unused hours from the previous period are added to this period's allocation. Overruns are deducted. Each item is tracked independently.
+                </div>
               </div>
             </div>` : ''}
           </div>
@@ -4170,6 +4201,7 @@ export class ProjectsView {
     mc.querySelector('#pe-ret-fee')?.addEventListener('change',   e => { p.retainer_fee   = parseFloat(e.target.value)||null; save() })
     mc.querySelector('#pe-ret-start')?.addEventListener('change', e => { p.retainer_start = e.target.value||null; save(); requestAnimationFrame(() => this.renderEditor(mc)) })
     mc.querySelector('#pe-ret-alert')?.addEventListener('change', e => { p.retainer_alert = parseFloat(e.target.value)||80; save() })
+    mc.querySelector('#pe-ret-rollover')?.addEventListener('change', e => { p.retainer_rollover = e.target.checked; save() })
 
     // Retainer items
     if (!Array.isArray(p.retainer_items)) p.retainer_items = []

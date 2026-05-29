@@ -9,6 +9,7 @@ import { MarketingView } from './views/marketing.js'
 import { TimeTrackView } from './views/timetrack.js'
 import { PasswordManagerView } from './views/password-manager.js'
 import { TeamCalendarView } from './views/team-calendar.js'
+import { ExpensesView } from './views/expenses.js'
 
 export class App {
   constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, onSignOut }) {
@@ -36,6 +37,7 @@ export class App {
     this.timeTrackView        = new TimeTrackView(this)
     this.passwordManagerView  = new PasswordManagerView(this)
     this.teamCalendarView     = new TeamCalendarView(this)
+    this.expensesView         = new ExpensesView(this)
     window.app = this
   }
 
@@ -387,6 +389,7 @@ export class App {
         </div>
         <div class="nav-bottom">
           <div class="sidebar-tt" id="sidebar-tt">${this._renderSidebarTT()}</div>
+          <div class="nav-item ${this.currentView==='expenses'?'active':''}" data-view="expenses">${this.iconExpenses()} Expenses</div>
           <div class="nav-item ${this.currentView==='password-manager'?'active':''}" data-view="password-manager">${this.iconPasswordManager()} Passwords</div>
           ${this.permissions.settings ? `<div class="nav-item" data-view="settings">${this.iconSettings()} Settings</div>` : ''}
           <div class="nav-item" id="dev-request-btn" style="color:#596773;font-size:13px">
@@ -566,7 +569,7 @@ export class App {
     if (!hash) return
     const parts = hash.split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager']
+    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses']
     if (!validViews.includes(view)) return
     this.currentView = view
     if (view === 'projects' && id) {
@@ -586,7 +589,7 @@ export class App {
     const hash = location.hash.slice(1)
     const parts = (hash || 'dashboard').split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager']
+    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses']
     if (!validViews.includes(view)) { this.currentView = 'dashboard'; this.render(); return }
 
     this.currentView = view
@@ -622,6 +625,8 @@ export class App {
       this.timeTrackView.render(mc)
     } else if (this.currentView === 'password-manager') {
       this.passwordManagerView.render(mc)
+    } else if (this.currentView === 'expenses') {
+      this.expensesView.render(mc)
     } else if (this.currentView === 'calendar') {
       this.teamCalendarView.renderFullPage(mc)
     } else if (this.currentView === 'dashboard') {
@@ -634,7 +639,7 @@ export class App {
   viewTitle() {
     if (this.currentView === 'projects' && this.projectsView?.currentId) return this.projects.find(p=>p.id===this.projectsView.currentId)?.name ?? 'Project'
     if (this.currentView === 'budgets'  && this.budgetsView?.currentId)  return this.budgets.find(b=>b.id===this.budgetsView.currentId)?.name  ?? 'Budget'
-    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',calendar:'Team Calendar',settings:'Settings',marketing:'Marketing',timetrack:'Time tracker','story-planner':'Story Planner','password-manager':'Passwords'}[this.currentView] ?? ''
+    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',calendar:'Team Calendar',settings:'Settings',marketing:'Marketing',timetrack:'Time tracker','story-planner':'Story Planner','password-manager':'Passwords',expenses:'Expenses'}[this.currentView] ?? ''
   }
 
   updateTitle() {
@@ -662,6 +667,13 @@ export class App {
     if (start > now) start = new Date(Date.UTC(y, m - 1, day))
     const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, day))
     return [start, end]
+  }
+
+  _retainerPreviousPeriod(retainerStart) {
+    const [currentStart] = this._retainerPeriod(retainerStart)
+    if (!currentStart) return [null, null]
+    const prevStart = new Date(Date.UTC(currentStart.getUTCFullYear(), currentStart.getUTCMonth() - 1, currentStart.getUTCDate()))
+    return [prevStart, currentStart]
   }
 
   // ── Sidebar quick-log widget ─────────────────────────────────────────────────
@@ -912,9 +924,9 @@ export class App {
         this.navigate('projects')
         setTimeout(() => document.querySelector('#topbar-btn')?.click(), 50)
       })
-      this._mountDaysSinceWidget(mc)
-      this._mountCountdownWidget(mc)
       this.teamCalendarView.renderDashboardSection(mc)
+      this._mountCountdownWidget(mc)
+      this._mountDaysSinceWidget(mc)
       return
     }
 
@@ -1054,12 +1066,12 @@ export class App {
     for (const ph of (ppsPhasesForDash || [])) {
       for (const b of (Array.isArray(ph.blocks) ? ph.blocks : [])) {
         if (b.is_deadline && b.end_date) {
-          ppsDeadlines.push({ date: b.end_date, label: `${ph.project_name ? ph.project_name + ' — ' : ''}${b.title || ph.name}`, assignee_id: b.assignee_id })
+          ppsDeadlines.push({ date: b.end_date, label: `${ph.project_name ? ph.project_name + ' — ' : ''}${b.title || ph.name}`, assignee_id: b.assignee_id, phase_id: ph.id, block_id: b.id, is_complete: !!b.is_complete })
         }
       }
     }
     const editDeadlines = [
-      ...(this.teamCalendarEntries || []).filter(e => e.is_deadline).map(e => ({ date: e.end_date || e.entry_date, label: e.label, assignee_id: e.assignee_id })),
+      ...(this.teamCalendarEntries || []).filter(e => e.is_deadline).map(e => ({ date: e.end_date || e.entry_date, label: e.label, assignee_id: e.assignee_id, is_complete: !!e.is_complete })),
       ...ppsDeadlines,
     ].filter(e => e.date && e.date <= dStr(fourteenDaysLater))
      .sort((a, b) => a.date.localeCompare(b.date))
@@ -1135,7 +1147,7 @@ export class App {
               ${sorted.map(d => {
                 const daysUntil = d.due ? Math.round((new Date(d.due + 'T00:00:00') - todayMs) / 86400000) : null
                 const duePill = daysUntil === null ? ''
-                  : daysUntil < 0  ? `<span class="db-due-pill db-due-pill--overdue" style="font-size:9px;padding:1px 5px">${Math.abs(daysUntil)}d late</span>`
+                  : daysUntil < 0 && !d.done ? `<span class="db-due-pill db-due-pill--overdue" style="font-size:9px;padding:1px 5px">${Math.abs(daysUntil)}d late</span>`
                   : daysUntil === 0 ? `<span class="db-due-pill db-due-pill--today" style="font-size:9px;padding:1px 5px">Today</span>`
                   : `<span class="db-due-pill" style="font-size:9px;padding:1px 5px">${new Date(d.due + 'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</span>`
                 const assignee = d.assignee_id ? this.allUsers.find(u => u.id === d.assignee_id) : null
@@ -1248,7 +1260,7 @@ export class App {
 
         const deadlineDuePill = entry => {
           const d = Math.round((new Date(entry.date + 'T00:00:00').getTime() - todayMs) / 86400000)
-          return d < 0 ? `<span class="db-due-pill db-due-pill--overdue">${Math.abs(d)}d overdue</span>`
+          return d < 0 && !entry.is_complete ? `<span class="db-due-pill db-due-pill--overdue">${Math.abs(d)}d overdue</span>`
                : d === 0 ? `<span class="db-due-pill db-due-pill--today">Today</span>`
                : `<span class="db-due-pill">${new Date(entry.date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>`
         }
@@ -1271,10 +1283,11 @@ export class App {
                 ${(p.retainer_items||[]).map((item,ii) => {
                   const mult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}[item.period||'month']||1
                   const allocH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
+                  const periodLabel = {week:'/ wk',month:'/ mo',quarter:'/ qtr',half:'/ 6mo',year:'/ yr'}[item.period||'month']||'/ mo'
                   return allocH ? `<div>
                     <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px">
                       <span style="color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">${esc(item.label)}</span>
-                      <span data-ret-item-label="${p.id}-${ii}" style="color:var(--text-secondary);white-space:nowrap">— / ${allocH}h</span>
+                      <span style="display:flex;align-items:center;gap:4px;flex-shrink:0"><span data-ret-item-label="${p.id}-${ii}" style="color:var(--text-secondary);white-space:nowrap">— / ${allocH}h</span><span style="color:var(--text-tertiary);opacity:0.6;font-size:9px">${periodLabel}</span></span>
                     </div>
                     <div style="height:4px;background:var(--bg-secondary);border-radius:2px;overflow:hidden">
                       <div style="height:100%;width:0%;border-radius:2px;transition:width 0.3s" data-ret-item-bar="${p.id}-${ii}"></div>
@@ -1351,9 +1364,10 @@ export class App {
             <div class="db-proj-list" style="border-radius:var(--radius-md)">
               ${editDeadlines.map(e => {
                 const assignee = this.allUsers.find(u => u.id === e.assignee_id)
-                return `<div class="db-proj-row" style="display:flex;align-items:center;gap:8px;padding:8px 12px;min-height:unset">
+                return `<div class="db-proj-row db-deadline-row" style="display:flex;align-items:center;gap:8px;padding:8px 12px;min-height:unset;${e.is_complete ? 'opacity:0.45;' : ''}">
+                  ${e.phase_id ? `<input type="checkbox" class="db-deadline-check" data-phase-id="${e.phase_id}" data-block-id="${e.block_id}" ${e.is_complete ? 'checked' : ''} style="cursor:pointer;flex-shrink:0;width:13px;height:13px;accent-color:#6ec96e" />` : ''}
                   ${deadlineDuePill(e)}
-                  <span class="db-proj-name-label" style="flex:1;font-size:12px">${esc(e.label)}</span>
+                  <span class="db-proj-name-label" style="flex:1;font-size:12px;${e.is_complete ? 'text-decoration:line-through;' : ''}">${esc(e.label)}</span>
                   ${assignee ? `<span style="font-size:10px;color:var(--text-tertiary);flex-shrink:0">${esc(assignee.name || assignee.email.split('@')[0])}</span>` : ''}
                 </div>`
               }).join('')}
@@ -1381,9 +1395,9 @@ export class App {
         <div class="stats-row">${statCards}</div>
       </div>`
 
-    this._mountDaysSinceWidget(mc)
-    this._mountCountdownWidget(mc)
     this.teamCalendarView.renderDashboardSection(mc)
+    this._mountCountdownWidget(mc)
+    this._mountDaysSinceWidget(mc)
 
     // --- Marketing tasks coming due ---
     mc.querySelector('#db-mkt-view-all')?.addEventListener('click', () => this.navigate('marketing'))
@@ -1502,6 +1516,34 @@ export class App {
           await updateProject(this.userId, p.id, { [src]: arr })
           this.toast(cb.checked ? '✓ Deliverable marked done' : 'Deliverable unmarked')
         } catch(e) { console.error('Deliverable save failed:', e) }
+      })
+    })
+
+    // --- Edit deadline completion checkboxes ---
+    mc.querySelectorAll('.db-deadline-check').forEach(cb => {
+      cb.addEventListener('click', e => e.stopPropagation())
+      cb.addEventListener('change', async () => {
+        const phaseId = cb.dataset.phaseId
+        const blockId = cb.dataset.blockId
+        const row = cb.closest('.db-deadline-row')
+        if (row) {
+          row.style.opacity = cb.checked ? '0.45' : ''
+          const label = row.querySelector('.db-proj-name-label')
+          if (label) label.style.textDecoration = cb.checked ? 'line-through' : ''
+        }
+        try {
+          const { updatePpsPhase } = await import('./db/client.js')
+          const phases = this.teamCalendarView?._ppsPhasesCache || []
+          const phase = phases.find(p => p.id === phaseId)
+          if (phase && Array.isArray(phase.blocks)) {
+            const block = phase.blocks.find(b => b.id === blockId)
+            if (block) {
+              block.is_complete = cb.checked
+              await updatePpsPhase(phaseId, { blocks: phase.blocks })
+              this.toast(cb.checked ? '✓ Deadline marked complete' : 'Deadline unmarked')
+            }
+          }
+        } catch(e) { console.error('Deadline save failed:', e) }
       })
     })
 
@@ -1718,29 +1760,62 @@ export class App {
             ? allEntries.filter(e => { const d = new Date(e.entry_date); return d >= periodStart && d < periodEnd })
             : allEntries
           const logged = entries.reduce((s, e) => s + parseFloat(e.hours), 0)
-          const hours = allocH
-          const pct = Math.min(100, Math.round(logged / hours * 100))
           const alertPctVal = parseFloat(p.retainer_alert) || 80
           const alertEl = mc.querySelector(`[data-ret-alert="${p.id}"]`)
           const items = p.retainer_items || []
+
+          // Compute per-item rollover deltas from previous period
+          const rolloverDeltas = {}
+          if (p.retainer_rollover && periodStart) {
+            const [prevStart, prevEnd] = this._retainerPreviousPeriod(p.retainer_start)
+            if (prevStart) {
+              const prevEntries = allEntries.filter(e => { const d = new Date(e.entry_date); return d >= prevStart && d < prevEnd })
+              const pm4 = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}
+              for (const item of items) {
+                const mult = pm4[item.period||'month'] || 1
+                const prevAllocH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
+                const prevLogged = prevEntries.filter(e => e.line_label === item.label).reduce((s,e) => s + parseFloat(e.hours), 0)
+                rolloverDeltas[item.label] = prevAllocH - prevLogged
+              }
+            }
+          }
+
           if (items.length) {
             const pm3 = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}
+            let totalEffective = 0
             items.forEach((item, ii) => {
               const mult = pm3[item.period||'month'] || 1
-              const aH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
-              if (!aH) return
+              const baseH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
+              if (!baseH) return
+              const delta = rolloverDeltas[item.label] ?? 0
+              const aH = Math.max(0, baseH + delta)
+              totalEffective += aH
               const iL = entries.filter(e => e.line_label === item.label).reduce((s,e) => s + parseFloat(e.hours), 0)
-              const iPct = Math.min(100, Math.round(iL / aH * 100))
+              const iPct = aH > 0 ? Math.min(100, Math.round(iL / aH * 100)) : 100
               const iCol = iPct >= 100 ? '#ef4444' : iPct >= alertPctVal ? '#f59e0b' : '#a78bfa'
               const bar = mc.querySelector(`[data-ret-item-bar="${p.id}-${ii}"]`)
               const lbl = mc.querySelector(`[data-ret-item-label="${p.id}-${ii}"]`)
               if (bar) { bar.style.width = iPct + '%'; bar.style.background = iCol }
-              if (lbl) { lbl.textContent = `${iL.toFixed(1)} / ${aH}h`; lbl.style.color = iPct >= alertPctVal ? iCol : '' }
+              const rolloverNote = delta !== 0 ? ` (${delta > 0 ? '+' : ''}${Math.round(delta)}h)` : ''
+              if (lbl) { lbl.textContent = `${iL.toFixed(1)} / ${aH}h${rolloverNote}`; lbl.style.color = iPct >= alertPctVal ? iCol : '' }
             })
+            const hours = totalEffective || allocH
+            const pct = hours > 0 ? Math.min(100, Math.round(logged / hours * 100)) : 0
             const colour = pct >= 100 ? '#ef4444' : pct >= alertPctVal ? '#f59e0b' : '#a78bfa'
             if (alertEl && pct >= alertPctVal && pct < 100) { alertEl.style.display='block'; alertEl.style.color=colour; alertEl.textContent=`⚠ ${pct}% used overall` }
             if (alertEl && pct >= 100) { alertEl.style.display='block'; alertEl.style.color=colour; alertEl.textContent=`⚠ Over allocation by ${(logged-hours).toFixed(1)}h` }
           } else {
+            // Legacy retainer_hours path — apply rollover on total
+            let hours = allocH
+            if (p.retainer_rollover && periodStart) {
+              const [prevStart, prevEnd] = this._retainerPreviousPeriod(p.retainer_start)
+              if (prevStart) {
+                const prevEntries = allEntries.filter(e => { const d = new Date(e.entry_date); return d >= prevStart && d < prevEnd })
+                const prevLogged = prevEntries.reduce((s,e) => s + parseFloat(e.hours), 0)
+                hours = Math.max(0, hours + (hours - prevLogged))
+              }
+            }
+            const pct = Math.min(100, Math.round(logged / hours * 100))
             const bar = mc.querySelector(`[data-ret-bar="${p.id}"]`)
             const label = mc.querySelector(`[data-ret-label="${p.id}"]`)
             const colour = pct >= 100 ? '#ef4444' : pct >= alertPctVal ? '#f59e0b' : '#a78bfa'
@@ -2016,6 +2091,31 @@ export class App {
             </label>
             <div><button class="btn-primary" id="settings-save-roundup-btn">Save</button></div>
           </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Expense tracker</span></div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">On the second-to-last working day of each month, a summary of all team expenses is automatically emailed to the recipients below.</div>
+            <div class="field">
+              <div class="field-label">Mileage rate (pence per mile)</div>
+              <input type="number" id="s-mileage-rate" value="${s.mileage_rate ?? 45}" min="0" step="0.1" style="width:100px" />
+            </div>
+            <div class="field">
+              <div class="field-label">Expense email recipients</div>
+              <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:6px">Select team members who should receive the monthly expense report.</div>
+              <div id="exp-recipients-list" style="display:flex;flex-direction:column;gap:6px">
+                ${(this.allUsers ?? []).map(u => {
+                  const checked = (s.expense_recipients ?? []).includes(u.clerk_id)
+                  return `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text-primary)">
+                    <input type="checkbox" class="exp-recipient-check" data-clerk-id="${u.clerk_id}" ${checked ? 'checked' : ''} style="width:15px;height:15px;cursor:pointer;accent-color:var(--accent)" />
+                    ${u.name ? `<span>${u.name}</span><span style="font-size:11px;color:var(--text-tertiary)">${u.email}</span>` : `<span>${u.email}</span>`}
+                  </label>`
+                }).join('')}
+              </div>
+            </div>
+            <div><button class="btn-primary" id="settings-save-expenses-btn">Save</button></div>
+          </div>
         </div>` : ''}
 
         <div class="panel">
@@ -2056,6 +2156,7 @@ export class App {
     mc.querySelector('#settings-save-cd-btn')?.addEventListener('click', () => this._saveCountdownTimer(mc))
     mc.querySelector('#settings-clear-cd-btn')?.addEventListener('click', () => this._clearCountdownTimer(mc))
     mc.querySelector('#settings-save-roundup-btn')?.addEventListener('click', () => this._saveReminderRoundup(mc))
+    mc.querySelector('#settings-save-expenses-btn')?.addEventListener('click', () => this._saveExpenseSettings(mc))
 
     if (isAdmin) {
       this._loadUsersPanel(mc)
@@ -2381,6 +2482,8 @@ export class App {
       countdown_timer:         this.settings?.countdown_timer ?? null,
       days_since_timer:        this.settings?.days_since_timer ?? null,
       reminder_roundup:        this.settings?.reminder_roundup ?? false,
+      expense_recipients:      this.settings?.expense_recipients ?? [],
+      mileage_rate:            this.settings?.mileage_rate ?? 45,
     }
     try { const [updated] = await upsertSettings(this.userId, data); this.settings = updated; this.toast('Settings saved') }
     catch (e) { console.error(e); this.toast('Error saving settings') }
@@ -2394,6 +2497,17 @@ export class App {
       this.settings = updated
       this.toast(enabled ? 'Roundup emails enabled' : 'Roundup emails disabled')
     } catch (e) { console.error(e); this.toast('Error saving preference') }
+  }
+
+  async _saveExpenseSettings(mc) {
+    const rate = parseFloat(mc.querySelector('#s-mileage-rate')?.value || '45')
+    const recipients = [...mc.querySelectorAll('.exp-recipient-check:checked')].map(el => el.dataset.clerkId)
+    const data = { ...this.settings, mileage_rate: rate, expense_recipients: recipients }
+    try {
+      const [updated] = await upsertSettings(this.userId, data)
+      this.settings = updated
+      this.toast('Expense settings saved')
+    } catch (e) { console.error(e); this.toast('Error saving expense settings') }
   }
 
   async _saveDaysSinceTimer(mc) {
@@ -2420,7 +2534,7 @@ export class App {
     } catch (e) { console.error(e); this.toast('Error removing timer') }
   }
 
-  _mountDaysSinceWidget(_mc) {
+  _mountDaysSinceWidget(mc) {
     document.getElementById('ds-widget-wrap')?.remove()
 
     const ds = this.settings?.days_since_timer
@@ -2440,7 +2554,7 @@ export class App {
         <div class="ds-days">${days}</div>
         <div class="ds-label">days since <span class="ds-name">${esc(ds.name)}</span></div>
       </div>`
-    document.querySelector('.main')?.prepend(wrapper)
+    mc.prepend(wrapper)
   }
 
   async _saveCountdownTimer(mc) {
@@ -2579,7 +2693,7 @@ export class App {
     style.id = 'app-styles'
     style.textContent = `
       .sidebar{width:260px;flex-shrink:0;background:#1D2125;display:flex;flex-direction:column;overflow:hidden}
-      .logo{padding:14px 16px 14px;display:flex;align-items:center;border-bottom:1px solid rgba(255,255,255,0.06)}
+      .logo{padding:12px 16px;display:flex;align-items:center;border-bottom:1px solid rgba(255,255,255,0.06)}
       .logo img{height:28px;width:auto;display:block;filter:brightness(0) invert(1)}
       .nav-label{font-size:11px;color:#596773;text-transform:uppercase;letter-spacing:0.8px;padding:16px 16px 4px}
       .nav-item{display:flex;align-items:center;gap:10px;padding:8px 16px;font-size:14px;color:#B6C2CF;cursor:pointer;border-radius:var(--radius-sm);margin:1px 8px;transition:background 0.12s,color 0.12s;user-select:none}
@@ -2925,10 +3039,11 @@ export class App {
       .notes-delete-btn:hover{background:rgba(239,68,68,0.15);color:#ef4444}
 
       /* ── Days-since widget ── */
-      .ds-widget{display:flex;align-items:center;gap:12px;background:var(--bg-primary);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:10px 18px;margin-bottom:16px;box-shadow:var(--shadow-md)}
-      .ds-days{font-size:28px;font-weight:700;letter-spacing:-1px;color:var(--text-primary);line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap}
-      .ds-label{font-size:12px;color:var(--text-tertiary);line-height:1.4}
-      .ds-name{font-weight:600;color:var(--text-secondary)}
+      #ds-widget-wrap{display:flex;justify-content:center;padding:10px 16px}
+      .ds-widget{display:inline-flex;align-items:baseline;gap:6px;background:#c0392b;color:#fff;border-radius:999px;padding:6px 18px}
+      .ds-days{font-size:18px;font-weight:700;line-height:1;color:#fff}
+      .ds-label{font-size:13px;font-weight:500;color:rgba(255,255,255,0.9)}
+      .ds-name{font-weight:700;color:#fff}
 
       /* ── Countdown widget ── */
       .cd-widget{background:var(--bg-primary);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:28px 24px 24px;margin-bottom:24px;text-align:center;box-shadow:var(--shadow-md);position:relative;overflow:hidden}
@@ -2969,6 +3084,7 @@ export class App {
   iconStoryPlanner() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="2" width="13" height="3.5" rx="0.8"/><rect x="1.5" y="6.5" width="13" height="3.5" rx="0.8"/><rect x="1.5" y="11" width="8" height="3.5" rx="0.8"/></svg>` }
   iconSettings() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M11.4 4.6l-1.4 1.4M4.6 11.4l-1.4 1.4"/></svg>` }
   iconPasswordManager() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/><circle cx="8" cy="11" r="1" fill="currentColor" stroke="none"/></svg>` }
+  iconExpenses()        { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="4" width="12" height="9" rx="1.5"/><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M8 7.5v3M6.5 9h3"/></svg>` }
   iconSignOut()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M10 11l4-4-4-4M14 8H6"/></svg>` }
   iconTheme() {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
