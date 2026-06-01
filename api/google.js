@@ -96,10 +96,16 @@ export default async function handler(req, res) {
   // ── POST — all write operations ───────────────────────────────────────────
   if (req.method !== 'POST') return res.status(405).end()
 
-  try {
-    await verifyClerkToken(req)
-  } catch (err) {
-    return res.status(err.status || 401).json({ error: err.message })
+  // Allow either Clerk auth or internal CRON_SECRET
+  const authHeader = req.headers['authorization']
+  const isCronSecret = process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`
+
+  if (!isCronSecret) {
+    try {
+      await verifyClerkToken(req)
+    } catch (err) {
+      return res.status(err.status || 401).json({ error: err.message })
+    }
   }
 
   const { action, requestId, appUserId } = req.body ?? {}

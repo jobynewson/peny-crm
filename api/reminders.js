@@ -693,7 +693,10 @@ async function handleLeaveApprove(req, res) {
         if (requesterUser[0]?.google_tokens) {
           fetch('/api/google', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${process.env.CRON_SECRET || ''}`,
+            },
             body: JSON.stringify({ action: 'create', requestId: request.id }),
           }).catch(e => console.warn('Google Calendar sync failed (non-fatal):', e))
         }
