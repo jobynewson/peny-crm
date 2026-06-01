@@ -946,8 +946,10 @@ export async function getLeaveRequests(workspaceId) {
     .orderBy(desc(leave_requests.start_date))
 }
 export async function createLeaveRequest(workspaceId, data) {
+  const { randomBytes } = await import('crypto')
+  const approval_token = randomBytes(32).toString('hex')
   const [row] = await db.insert(leave_requests)
-    .values({ user_id: workspaceId, ...data })
+    .values({ user_id: workspaceId, approval_token, ...data })
     .returning()
   return row
 }

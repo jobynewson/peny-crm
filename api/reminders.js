@@ -558,7 +558,11 @@ async function handleLeaveNotify(req, res) {
         <tr><td style="padding:6px 0;color:#777">Duration</td><td style="padding:6px 0">${days}</td></tr>
         ${request.reason ? `<tr><td style="padding:6px 0;color:#777">Note</td><td style="padding:6px 0">${request.reason}</td></tr>` : ''}
       </table>
-      <p>Please log in to approve or decline.</p>`
+      <div style="display:flex;gap:12px;margin:20px 0">
+        <a href="/api/leave?token=${request.approval_token}&action=approve" style="display:inline-block;background:#16a34a;color:#fff;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:500;font-size:14px">Approve</a>
+        <a href="/api/leave?token=${request.approval_token}&action=decline" style="display:inline-block;background:#dc2626;color:#fff;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:500;font-size:14px">Decline</a>
+      </div>
+      <p style="font-size:12px;color:#666">Or log in to the CRM to approve or add a decline reason.</p>`
     for (const r of recipients) {
       if (r.email) await trySend(r.email, `Leave request from ${requester.name || requester.email}`, wrap('New leave request', body))
     }
