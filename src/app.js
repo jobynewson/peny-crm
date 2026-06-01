@@ -2926,6 +2926,26 @@ export class App {
     this._toastTimer = setTimeout(() => el.classList.remove('show'), duration)
   }
 
+  // Run an async action while showing a busy state on the triggering button:
+  // disables it and swaps its label to `label`, then restores the original
+  // label and disabled state when done. Gives the user feedback during DB
+  // writes and prevents accidental double-submits. Safe with a missing button.
+  async withBusy(btn, fn, label = 'Saving…') {
+    if (!btn) return fn()
+    const prevHtml     = btn.innerHTML
+    const prevDisabled = btn.disabled
+    btn.disabled = true
+    btn.setAttribute('data-busy', '1')
+    btn.textContent = label
+    try {
+      return await fn()
+    } finally {
+      btn.removeAttribute('data-busy')
+      btn.disabled = prevDisabled
+      btn.innerHTML = prevHtml
+    }
+  }
+
   injectGlobalStyles() {
     if (document.getElementById('app-styles')) return
     const style = document.createElement('style')
@@ -3011,6 +3031,15 @@ export class App {
       .btn-cancel:hover{background:var(--bg-tertiary)}
       .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(8px);background:#172B4D;color:#fff;padding:10px 18px;border-radius:var(--radius-md);font-size:13px;opacity:0;transition:opacity 0.2s,transform 0.2s;pointer-events:none;z-index:200;white-space:nowrap;box-shadow:0 4px 12px rgba(9,30,66,0.3)}
       .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+      /* ── Accessibility: visible keyboard focus ── */
+      /* :focus-visible matches keyboard/programmatic focus only, so mouse users
+         never see the ring. Gives keyboard & screen-reader users a clear cue. */
+      :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--radius-sm)}
+      .nav-item:focus-visible{outline-offset:-2px}
+      /* ── Async/disabled button affordance ── */
+      button[data-busy]{opacity:0.7;cursor:progress!important;pointer-events:none}
+      button:disabled{opacity:0.55;cursor:not-allowed}
       .av-blue{background:#DEEBFF;color:#0747A6}.av-teal{background:#E3FCEF;color:#006644}.av-coral{background:#FFEBE6;color:#BF2600}.av-purple{background:#EAE6FF;color:#403294}.av-amber{background:#FFFAE6;color:#172B4D}.av-green{background:#E3FCEF;color:#006644}.av-pink{background:#FFECF8;color:#6E2B83}
       .tag-brand{background:#DEEBFF;color:#0747A6}.tag-agency{background:#EAE6FF;color:#403294}.tag-ngo{background:#E3FCEF;color:#006644}.tag-sport{background:#FFFAE6;color:#5A3A00}.tag-corp{background:#F4F5F7;color:#42526E}.tag-sub{background:#FFEBE6;color:#BF2600}
       .budget-layout{display:flex;gap:20px;align-items:flex-start}.budget-main{flex:1;min-width:0}.budget-sidebar-panel{width:210px;flex-shrink:0}

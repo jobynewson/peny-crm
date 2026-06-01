@@ -568,6 +568,7 @@ export class LeaveView {
     const total = this._computeTotal(s.start_date, s.end_date, s.start_half, s.end_half, holidaySet)
     if (total <= 0) { this.app.toast('Select at least one working day'); return }
     const requester = this.users.find(u => u.id === s.requester_id) || this.me
+    await this.app.withBusy(overlay.querySelector('#lm-submit'), async () => {
     try {
       const { createLeaveRequest } = await import('../db/client.js')
       const approval_token = Array.from(crypto.getRandomValues(new Uint8Array(32))).map(x => x.toString(16).padStart(2, '0')).join('')
@@ -592,5 +593,6 @@ export class LeaveView {
       this._tab = 'mine'
       this._rerender()
     } catch (e) { console.error(e); this.app.toast('Could not submit request') }
+    })
   }
 }

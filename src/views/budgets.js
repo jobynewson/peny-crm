@@ -261,6 +261,7 @@ export class BudgetsView {
       sections,
     }
 
+    await this.app.withBusy(mc.querySelector('#budget-save-btn'), async () => {
     try {
       const [created] = await createBudget(this.app.userId, data)
       this.app.budgets.unshift(created)
@@ -285,6 +286,7 @@ export class BudgetsView {
       this.app.updateTitle()
       this.app.toast('Budget created')
     } catch (e) { console.error(e); this.app.toast('Error creating budget') }
+    })
   }
 
   async duplicateBudget(id, mc) {

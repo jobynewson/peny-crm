@@ -382,6 +382,7 @@ export class ContactsView {
       type:     mc.querySelector('#cf-type')?.value   ?? 'brand',
       status:   mc.querySelector('#cf-status')?.value ?? 'Active',
     }
+    await this.app.withBusy(mc.querySelector('#contact-save-btn'), async () => {
     try {
       if (this.editingId) {
         const existing = this.app.contacts.find(c => c.id === this.editingId)
@@ -408,6 +409,7 @@ export class ContactsView {
       console.error(e)
       this.app.toast('Error saving contact')
     }
+    })
   }
 
   openNoteModal(id, mc) {
@@ -425,6 +427,7 @@ export class ContactsView {
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
     const date = `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`
     const notes = Array.isArray(c.notes) ? [{ text, date }, ...c.notes] : [{ text, date }]
+    await this.app.withBusy(mc.querySelector('#note-save-btn'), async () => {
     try {
       const [updated] = await updateContact(this.app.userId, c.id, { notes })
       const idx = this.app.contacts.findIndex(x => x.id === c.id)
@@ -437,6 +440,7 @@ export class ContactsView {
       console.error(e)
       this.app.toast('Error saving note')
     }
+    })
   }
 
   async deleteContact(id) {

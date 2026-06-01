@@ -293,6 +293,7 @@ export class ExpensesView {
       entry.overnights = nights
     }
 
+    await this.app.withBusy(mc.querySelector('#exp-add-btn'), async () => {
     try {
       const { createExpenseEntry } = await import('../db/client.js')
       const [row] = await createExpenseEntry(entry)
@@ -303,6 +304,7 @@ export class ExpensesView {
       console.error(e)
       this.app.toast('Error adding entry')
     }
+    }, 'Adding…')
   }
 
   async _deleteEntry(mc, id) {
@@ -319,6 +321,7 @@ export class ExpensesView {
   }
 
   async _submitMonth(mc, monthKey) {
+    await this.app.withBusy(mc.querySelector('#exp-submit-now-btn'), async () => {
     try {
       const { createExpenseSubmission } = await import('../db/client.js')
       const row = await createExpenseSubmission({ workspace_id: this.app.userId, clerk_user_id: this.app.clerkUserId, month_key: monthKey })
@@ -329,5 +332,6 @@ export class ExpensesView {
       console.error(e)
       this.app.toast('Error submitting expenses')
     }
+    }, 'Submitting…')
   }
 }
