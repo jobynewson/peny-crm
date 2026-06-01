@@ -4,6 +4,7 @@ import {
   getContacts, getProjects, getBudgets, getSettings,
   getOrCreateAppUser, getOrCreateWorkspace, resolvePermissions, getAllAppUsers,
   getSocialPosts, getMarketingCards, runMigrations, getTeamCalendarEntries,
+  getLeaveRequests, getPublicHolidays,
 } from './db/client.js'
 
 async function bootstrap() {
@@ -37,7 +38,7 @@ async function bootstrap() {
   const workspaceId = await getOrCreateWorkspace(clerkUserId)
 
   // 4. Load all shared workspace data in parallel
-  const [contactsData, projectsData, budgetsData, settingsData, allUsersData, socialPostsData, marketingCardsData, teamCalendarData] = await Promise.all([
+  const [contactsData, projectsData, budgetsData, settingsData, allUsersData, socialPostsData, marketingCardsData, teamCalendarData, leaveRequestsData, publicHolidaysData] = await Promise.all([
     getContacts(workspaceId),
     getProjects(workspaceId),
     getBudgets(workspaceId),
@@ -46,6 +47,8 @@ async function bootstrap() {
     getSocialPosts(workspaceId).catch(() => []),
     getMarketingCards(workspaceId).catch(() => []),
     getTeamCalendarEntries(workspaceId).catch(() => []),
+    getLeaveRequests(workspaceId).catch(() => []),
+    getPublicHolidays(workspaceId).catch(() => []),
   ])
 
   const { App } = await import('./app.js')
@@ -63,6 +66,8 @@ async function bootstrap() {
     socialPosts:           socialPostsData,
     marketingCards:        marketingCardsData,
     teamCalendarEntries:   teamCalendarData,
+    leaveRequests:         leaveRequestsData,
+    publicHolidays:        publicHolidaysData,
     onSignOut: signOut,
   })
 

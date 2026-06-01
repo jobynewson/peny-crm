@@ -27,6 +27,9 @@ export const settings = pgTable('settings', {
   prepared_by:     text('prepared_by'),
   budget_template:      jsonb('budget_template'),
   financial_year_start: integer('financial_year_start').notNull().default(4),
+  // Leave year — may differ from financial year (e.g. 1st Jan vs 6th Apr)
+  leave_year_start_month: integer('leave_year_start_month').notNull().default(4),
+  leave_year_start_day:   integer('leave_year_start_day').notNull().default(1),
   // Default insurance details
   default_insurer_name:    text('default_insurer_name'),
   default_insurer_address: text('default_insurer_address'),
@@ -174,6 +177,11 @@ export const app_users = pgTable('app_users', {
   permissions:  jsonb('permissions').notNull().default({}),  // legacy — no longer used
   default_role: text('default_role'),   // job title, e.g. "Camera Operator" — also used when adding to crew
   invited_by:   text('invited_by'),
+  // Leave planner
+  annual_allowance: numeric('annual_allowance', { precision: 5, scale: 1 }).notNull().default('25'),
+  approver_id:      uuid('approver_id'),   // app_users.id of this person's leave approver
+  // Google Calendar OAuth tokens (server-only — never exposed to the browser)
+  google_tokens:    jsonb('google_tokens'),
   created_at:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updated_at:   timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
@@ -400,6 +408,39 @@ export const team_calendar_entries = pgTable('team_calendar_entries', {
   notes:        text('notes'),
   is_deadline:  boolean('is_deadline').notNull().default(false),
   ...timestamps,
+})
+
+// ── Leave Planner ─────────────────────────────────────────────────────────────
+// Staff leave / holiday requests with an approval workflow. Approved requests
+// are mirrored onto the Team Calendar as `leave` entries (calendar_entry_id).
+export const leave_requests = pgTable('leave_requests', {
+  id:            uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id:       text('user_id').notNull(),                 // workspace owner id (scoping)
+  requester_id:  uuid('requester_id').notNull().references(() => app_users.id, { onDelete: 'cascade' }),
+  approver_id:   uuid('approver_id').references(() => app_users.id, { onDelete: 'set null' }),
+  leave_type:    text('leave_type').notNull().default('holiday'),  // holiday | sick | unpaid | other
+  start_date:    date('start_date').notNull(),
+  end_date:      date('end_date').notNull(),
+  start_half:    boolean('start_half').notNull().default(false),   // first day is a half day
+  end_half:      boolean('end_half').notNull().default(false),     // last day is a half day
+  total_days:    numeric('total_days', { precision: 5, scale: 1 }).notNull().default('0'),
+  status:        text('status').notNull().default('pending'),      // pending | approved | declined | cancelled
+  reason:        text('reason'),
+  decision_note: text('decision_note'),
+  decided_by:    uuid('decided_by'),
+  decided_at:    timestamp('decided_at', { withTimezone: true }),
+  calendar_entry_id: uuid('calendar_entry_id'),
+  gcal_event_id:     text('gcal_event_id'),    // Google Calendar event ID (set when approved, cleared on cancel)
+  ...timestamps,
+})
+
+// ── Public Holidays ───────────────────────────────────────────────────────────
+export const public_holidays = pgTable('public_holidays', {
+  id:           uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id:      text('user_id').notNull(),
+  holiday_date: date('holiday_date').notNull(),
+  name:         text('name').notNull().default('Holiday'),
+  created_at:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
 // ── Post Production Schedules ─────────────────────────────────────────────────
