@@ -9,6 +9,7 @@
 import { neon } from '@neondatabase/serverless'
 import nodemailer from 'nodemailer'
 import { verifyToken } from '@clerk/backend'
+import { syncLeaveRequestGoogle } from './google.js'
 
 export default async function handler(req, res) {
   // ── Leave approval (GET, token-based) ──────────────────────────────────────
@@ -687,21 +688,13 @@ async function handleLeaveApprove(req, res) {
         WHERE id = ${request.id}
       `
 
-      // Sync to Google Calendar (fire-and-forget)
+      // Sync to Google Calendar before responding. A server-side relative
+      // fetch('/api/google') can't be resolved (no origin), so call the shared
+      // helper directly. Best-effort: a sync failure must not fail approval.
       try {
-        const requesterUser = await sql`SELECT google_tokens FROM app_users WHERE id = ${request.requester_id} LIMIT 1`
-        if (requesterUser[0]?.google_tokens) {
-          fetch('/api/google', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${process.env.CRON_SECRET || ''}`,
-            },
-            body: JSON.stringify({ action: 'create', requestId: request.id }),
-          }).catch(e => console.warn('Google Calendar sync failed (non-fatal):', e))
-        }
+        await syncLeaveRequestGoogle(sql, { action: 'create', requestId: request.id })
       } catch (e) {
-        console.warn('Google Calendar sync check failed (non-fatal):', e)
+        console.warn('Google Calendar sync failed (non-fatal):', e)
       }
 
       return res.status(200).send(`
