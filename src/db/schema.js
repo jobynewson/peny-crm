@@ -27,6 +27,9 @@ export const settings = pgTable('settings', {
   prepared_by:     text('prepared_by'),
   budget_template:      jsonb('budget_template'),
   financial_year_start: integer('financial_year_start').notNull().default(4),
+  // Leave year — may differ from financial year (e.g. 1st Jan vs 6th Apr)
+  leave_year_start_month: integer('leave_year_start_month').notNull().default(4),
+  leave_year_start_day:   integer('leave_year_start_day').notNull().default(1),
   // Default insurance details
   default_insurer_name:    text('default_insurer_name'),
   default_insurer_address: text('default_insurer_address'),

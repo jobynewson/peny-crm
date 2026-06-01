@@ -3,11 +3,18 @@
 //   deliverables  — 09:00 UTC daily  — overdue / due ≤3 days
 //   notes         — 21:00 UTC daily  — note reminders due in ~36h
 //   expense-digest — 09:00 UTC daily  — monthly expense summary (2nd-to-last working day only)
+// POST ?type=leave-notify — triggered by frontend on leave request/decision
 
 import { neon } from '@neondatabase/serverless'
 import nodemailer from 'nodemailer'
+import { createClerkClient } from '@clerk/backend'
 
 export default async function handler(req, res) {
+  // ── Leave notification (POST, Clerk auth) ─────────────────────────────────
+  if (req.method === 'POST' && req.query.type === 'leave-notify') {
+    return handleLeaveNotify(req, res)
+  }
+
   const authHeader = req.headers['authorization']
   if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorised' })
@@ -446,6 +453,112 @@ async function handleExpenseDigest(req, res, sql, transporter, todayLabel) {
     }
   }
   return res.status(200).json({ ok: true, month: monthKey, results })
+}
+
+// ── Leave notifications (POST ?type=leave-notify) ─────────────────────────────
+async function handleLeaveNotify(req, res) {
+  const raw = req.headers.authorization?.replace('Bearer ', '').trim()
+  if (!raw) return res.status(401).json({ error: 'Unauthorised' })
+
+  try {
+    const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY })
+    await clerk.verifyToken(raw)
+  } catch {
+    return res.status(401).json({ error: 'Invalid session token' })
+  }
+
+  const { action, requestId } = req.body ?? {}
+  if (!action || !requestId) return res.status(400).json({ error: 'action and requestId required' })
+
+  const sql = neon(process.env.VITE_DATABASE_URL)
+
+  let request, requester, approver, superadmins = []
+  try {
+    const rows = await sql`
+      SELECT r.*,
+        req.name  AS requester_name,  req.email  AS requester_email,
+        app.name  AS approver_name,   app.email  AS approver_email
+      FROM leave_requests r
+      JOIN app_users req ON req.id = r.requester_id
+      LEFT JOIN app_users app ON app.id = r.approver_id
+      WHERE r.id = ${requestId}
+      LIMIT 1`
+    if (!rows[0]) return res.status(404).json({ error: 'Request not found' })
+    request = rows[0]
+    requester = { name: request.requester_name, email: request.requester_email }
+    approver  = request.approver_email ? { name: request.approver_name, email: request.approver_email } : null
+
+    if (!approver) {
+      superadmins = await sql`SELECT name, email FROM app_users WHERE role = 'superadmin' AND email IS NOT NULL`
+    }
+  } catch (err) {
+    return res.status(500).json({ error: err.message })
+  }
+
+  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+    return res.status(200).json({ ok: true, skipped: 'email not configured' })
+  }
+
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
+  })
+  const from = process.env.GMAIL_USER
+  const sendMail = (to, subject, html) => transporter.sendMail({ from, to, subject, html })
+
+  const fmtDate = d => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+  const typeLabel = { holiday: 'Annual leave', sick: 'Sickness', unpaid: 'Unpaid leave', other: 'Other' }[request.leave_type] ?? request.leave_type
+  const dateRange = request.start_date === request.end_date
+    ? fmtDate(request.start_date)
+    : `${fmtDate(request.start_date)} → ${fmtDate(request.end_date)}`
+  const days = `${Number(request.total_days)} day${Number(request.total_days) === 1 ? '' : 's'}`
+
+  const wrap = (title, bodyHtml) => `
+<!DOCTYPE html><html><head><meta charset="utf-8"/></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f5;margin:0;padding:32px 0">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
+    <div style="background:#111;padding:20px 28px">
+      <h1 style="margin:0;font-size:18px;color:#fff;font-weight:600">${title}</h1>
+    </div>
+    <div style="padding:24px 28px;font-size:14px;color:#444;line-height:1.7">${bodyHtml}</div>
+    <div style="padding:14px 28px;border-top:1px solid #f0f0f0;font-size:12px;color:#aaa">Log in to Slate to review and action this request.</div>
+  </div>
+</body></html>`
+
+  try {
+    if (action === 'submitted') {
+      const recipients = approver ? [approver] : superadmins
+      const body = `
+        <p><strong>${requester.name || requester.email}</strong> has submitted a leave request:</p>
+        <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px">
+          <tr><td style="padding:6px 0;color:#777;width:120px">Type</td><td style="padding:6px 0"><strong>${typeLabel}</strong></td></tr>
+          <tr><td style="padding:6px 0;color:#777">Dates</td><td style="padding:6px 0">${dateRange}</td></tr>
+          <tr><td style="padding:6px 0;color:#777">Duration</td><td style="padding:6px 0">${days}</td></tr>
+          ${request.reason ? `<tr><td style="padding:6px 0;color:#777">Note</td><td style="padding:6px 0">${request.reason}</td></tr>` : ''}
+        </table>
+        <p>Please log in to approve or decline.</p>`
+      for (const r of recipients) {
+        if (r.email) await sendMail(r.email, `Leave request from ${requester.name || requester.email}`, wrap('New leave request', body)).catch(() => {})
+      }
+    } else if (action === 'decided') {
+      if (!requester.email) return res.status(200).json({ ok: true, skipped: 'no requester email' })
+      const statusLabel = request.status === 'approved' ? 'approved ✓' : 'declined ✗'
+      const accentColor = request.status === 'approved' ? '#16a34a' : '#dc2626'
+      const body = `
+        <p>Your leave request has been <strong style="color:${accentColor}">${statusLabel}</strong>.</p>
+        <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px">
+          <tr><td style="padding:6px 0;color:#777;width:120px">Type</td><td style="padding:6px 0">${typeLabel}</td></tr>
+          <tr><td style="padding:6px 0;color:#777">Dates</td><td style="padding:6px 0">${dateRange}</td></tr>
+          <tr><td style="padding:6px 0;color:#777">Duration</td><td style="padding:6px 0">${days}</td></tr>
+          ${request.decision_note ? `<tr><td style="padding:6px 0;color:#777">Note</td><td style="padding:6px 0">${request.decision_note}</td></tr>` : ''}
+        </table>`
+      await sendMail(requester.email, `Your leave request has been ${request.status}`, wrap('Leave request update', body)).catch(() => {})
+    }
+  } catch (err) {
+    return res.status(500).json({ error: err.message })
+  }
+
+  return res.status(200).json({ ok: true })
 }
 
 function isSecondToLastWorkingDay(date) {

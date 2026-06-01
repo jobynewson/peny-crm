@@ -2065,9 +2065,37 @@ export class App {
               <input type="text" id="hol-name" placeholder="e.g. Christmas Day" style="flex:1;min-width:140px;font-size:13px;padding:7px 10px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
               <button class="btn-primary" id="hol-add-btn">Add</button>
             </div>
+            <div style="display:flex;align-items:center;gap:8px;padding-top:4px;border-top:1px solid var(--border-light)">
+              <span style="font-size:12px;color:var(--text-tertiary)">Or import from GOV.UK:</span>
+              <select id="hol-sync-year" style="font-size:12px;padding:5px 8px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font)">
+                ${[-1, 0, 1].map(offset => { const y = new Date().getFullYear() + offset; return `<option value="${y}" ${offset===0?'selected':''}>${y}</option>` }).join('')}
+              </select>
+              <button class="row-btn" id="hol-sync-btn" style="font-size:12px">Sync England &amp; Wales bank holidays</button>
+            </div>
             <div id="holidays-list"><div style="font-size:12px;color:var(--text-tertiary)">Loading…</div></div>
           </div>
         </div>` : ''}
+
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Leave settings</span></div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Set the date each year when leave allowances reset. Default is 1st April to match the UK financial year.</div>
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+              <div class="field" style="margin:0">
+                <div class="field-label">Leave year starts on</div>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input type="number" id="s-leave-day" value="${s.leave_year_start_day??1}" min="1" max="31" style="width:64px;padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);outline:none" />
+                  <select id="s-leave-month" style="padding:7px 10px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font)">
+                    ${['January','February','March','April','May','June','July','August','September','October','November','December'].map((m,i) =>
+                      `<option value="${i+1}" ${(s.leave_year_start_month??4)===(i+1)?'selected':''}>${m}</option>`
+                    ).join('')}
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div><button class="btn-primary" id="settings-save-leave-btn">Save</button></div>
+          </div>
+        </div>
 
         ${isAdmin ? `
         <div class="panel">
@@ -2181,6 +2209,7 @@ export class App {
     mc.querySelector('#settings-clear-cd-btn')?.addEventListener('click', () => this._clearCountdownTimer(mc))
     mc.querySelector('#settings-save-roundup-btn')?.addEventListener('click', () => this._saveReminderRoundup(mc))
     mc.querySelector('#settings-save-expenses-btn')?.addEventListener('click', () => this._saveExpenseSettings(mc))
+    mc.querySelector('#settings-save-leave-btn')?.addEventListener('click', () => this._saveLeaveSettings(mc))
 
     if (isAdmin) {
       this._loadUsersPanel(mc)
@@ -2188,6 +2217,7 @@ export class App {
       this._mountTemplateEditor(mc)
       this._renderHolidaysPanel(mc)
       mc.querySelector('#hol-add-btn')?.addEventListener('click', () => this._addHoliday(mc))
+      mc.querySelector('#hol-sync-btn')?.addEventListener('click', () => this._syncUKHolidays(mc))
     }
   }
 
@@ -2488,6 +2518,37 @@ export class App {
     } catch(e) { console.error(e); this.toast('Could not add holiday') }
   }
 
+  async _syncUKHolidays(mc) {
+    const year = parseInt(mc.querySelector('#hol-sync-year')?.value) || new Date().getFullYear()
+    const btn  = mc.querySelector('#hol-sync-btn')
+    if (btn) { btn.disabled = true; btn.textContent = 'Syncing…' }
+    try {
+      const resp = await fetch('https://www.gov.uk/bank-holidays.json')
+      if (!resp.ok) throw new Error(`GOV.UK API returned ${resp.status}`)
+      const data = await resp.json()
+      const events = (data['england-and-wales']?.events ?? [])
+        .filter(e => e.date?.startsWith(String(year)))
+      if (!events.length) { this.toast(`No holidays found for ${year}`); return }
+
+      const { createPublicHoliday } = await import('./db/client.js')
+      const existing = new Set((this.publicHolidays ?? []).map(h => h.holiday_date))
+      let added = 0
+      for (const ev of events) {
+        if (existing.has(ev.date)) continue
+        const created = await createPublicHoliday(this.userId, { holiday_date: ev.date, name: ev.title })
+        if (!this.publicHolidays) this.publicHolidays = []
+        this.publicHolidays.push(created)
+        added++
+      }
+      this._renderHolidaysPanel(mc)
+      this.toast(added ? `Added ${added} bank holiday${added === 1 ? '' : 's'} for ${year}` : `All ${year} holidays already added`)
+    } catch(e) {
+      console.error(e); this.toast('Could not sync bank holidays — check network')
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Sync England & Wales bank holidays' }
+    }
+  }
+
   async _sendInvite(mc) {
     const emailEl = mc.querySelector('#invite-email')
     const email = emailEl?.value.trim()
@@ -2571,6 +2632,19 @@ export class App {
       this.settings = updated
       this.toast('Expense settings saved')
     } catch (e) { console.error(e); this.toast('Error saving expense settings') }
+  }
+
+  async _saveLeaveSettings(mc) {
+    const month = parseInt(mc.querySelector('#s-leave-month')?.value || '4')
+    const day   = parseInt(mc.querySelector('#s-leave-day')?.value   || '1')
+    if (!month || month < 1 || month > 12) { this.toast('Invalid month'); return }
+    if (!day || day < 1 || day > 31) { this.toast('Invalid day'); return }
+    const data = { ...this.settings, leave_year_start_month: month, leave_year_start_day: day }
+    try {
+      const [updated] = await upsertSettings(this.userId, data)
+      this.settings = updated
+      this.toast('Leave year start saved')
+    } catch (e) { console.error(e); this.toast('Error saving leave settings') }
   }
 
   async _saveDaysSinceTimer(mc) {

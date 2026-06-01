@@ -26,19 +26,19 @@ export function dateKey(d) {
   return `${y}-${m}-${dd}`
 }
 
-// First day of the leave year that contains `ref`, based on the financial year
-// start month from settings (1 = January … 4 = April).
-export function leaveYearStart(fyMonth, ref = new Date()) {
+// First day of the leave year that contains `ref`.
+export function leaveYearStart(fyMonth, fyDay = 1, ref = new Date()) {
   const m = (Number(fyMonth) || 4) - 1
-  let start = new Date(ref.getFullYear(), m, 1)
-  if (ref < start) start = new Date(ref.getFullYear() - 1, m, 1)
+  const d = Math.max(1, Number(fyDay) || 1)
+  let start = new Date(ref.getFullYear(), m, d)
+  if (ref < start) start = new Date(ref.getFullYear() - 1, m, d)
   start.setHours(0, 0, 0, 0)
   return start
 }
 
 // Days approved + pending for one person within the current leave year.
-export function leaveBalance(user, requests, fyMonth) {
-  const start = leaveYearStart(fyMonth)
+export function leaveBalance(user, requests, fyMonth, fyDay = 1) {
+  const start = leaveYearStart(fyMonth, fyDay)
   const end = new Date(start); end.setFullYear(end.getFullYear() + 1)
   const startKey = dateKey(start), endKey = dateKey(end)
   let booked = 0, pending = 0
@@ -75,7 +75,8 @@ export class LeaveView {
   get holidays() { return this.app.publicHolidays || [] }
   get users()    { return this.app.allUsers || [] }
   get me()       { return this.app.appUser }
-  get fyMonth()  { return this.app.settings?.financial_year_start ?? 4 }
+  get fyMonth()  { return (this.app.settings?.leave_year_start_month || this.app.settings?.financial_year_start) ?? 4 }
+  get fyDay()    { return this.app.settings?.leave_year_start_day ?? 1 }
   get isAdmin()  { return this.me?.role === 'superadmin' }
   get canBook()  { return this.me?.role !== 'viewer' }
 
@@ -119,7 +120,7 @@ export class LeaveView {
 
   // ── Render ──────────────────────────────────────────────────────────────────
   render(mc) {
-    const bal = this.me ? leaveBalance(this.me, this.requests, this.fyMonth) : null
+    const bal = this.me ? leaveBalance(this.me, this.requests, this.fyMonth, this.fyDay) : null
     const approvals = pendingApprovalsFor(this.me, this.requests)
 
     const tabs = [
@@ -155,7 +156,7 @@ export class LeaveView {
       </div>`
     return `
       <div class="panel" style="overflow:hidden">
-        <div class="panel-header"><span class="panel-title">My allowance · ${esc(leaveYearStart(this.fyMonth).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }))} – ${esc(new Date(leaveYearStart(this.fyMonth).getFullYear() + 1, leaveYearStart(this.fyMonth).getMonth(), 0).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }))}</span></div>
+        <div class="panel-header"><span class="panel-title">My allowance · ${esc(leaveYearStart(this.fyMonth, this.fyDay).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }))} – ${esc(new Date(leaveYearStart(this.fyMonth, this.fyDay).getFullYear() + 1, leaveYearStart(this.fyMonth, this.fyDay).getMonth(), 0).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }))}</span></div>
         <div style="display:flex;flex-wrap:wrap">
           ${cell('Allowance', bal.allowance, null)}
           ${cell('Booked', bal.booked, '#0891b2')}
@@ -318,7 +319,7 @@ export class LeaveView {
           </tr></thead>
           <tbody>
             ${this.users.map(u => {
-              const b = leaveBalance(u, this.requests, this.fyMonth)
+              const b = leaveBalance(u, this.requests, this.fyMonth, this.fyDay)
               return `<tr style="border-bottom:1px solid var(--border-light)">
                 <td style="padding:9px 12px;color:var(--text-primary)">${esc(u.name || u.email)}</td>
                 <td style="padding:9px 12px;color:var(--text-tertiary)">${u.approver_id ? esc(this._userName(u.approver_id)) : '—'}</td>
@@ -388,6 +389,7 @@ export class LeaveView {
       const updated = await updateLeaveRequest(this.app.userId, id, patch)
       this._replace(updated)
       this.app.toast(status === 'approved' ? 'Leave approved' : 'Leave declined')
+      this._sendNotify('decided', id)
       this._rerender()
     } catch (e) { console.error(e); this.app.toast('Could not update request') }
   }
@@ -400,6 +402,21 @@ export class LeaveView {
   _rerender() {
     if (this.app.currentView === 'leave') this.render(document.getElementById('main-content'))
     this.app.updateLeaveBadge?.()
+  }
+
+  // Fire-and-forget: notify the relevant person by email. Never blocks UI.
+  async _sendNotify(action, requestId) {
+    try {
+      const { getAuthToken } = await import('../auth/clerk.js')
+      const token = await getAuthToken()
+      await fetch('/api/reminders?type=leave-notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action, requestId }),
+      })
+    } catch (e) {
+      console.warn('Leave email notification failed (non-fatal):', e)
+    }
   }
 
   // ── Book leave modal ──────────────────────────────────────────────────────
@@ -425,7 +442,7 @@ export class LeaveView {
       const single = start === end
       const total = this._computeTotal(start, end, startHalf, endHalf, holidaySet)
       const requester = this.users.find(u => u.id === requesterId) || this.me
-      const bal = leaveBalance(requester, this.requests, this.fyMonth)
+      const bal = leaveBalance(requester, this.requests, this.fyMonth, this.fyDay)
       const deducts = LEAVE_TYPES[type]?.deducts
       const projected = Math.round((bal.remaining - (deducts ? total : 0)) * 10) / 10
       const approverName = requester.approver_id ? this._userName(requester.approver_id) : null
@@ -548,6 +565,7 @@ export class LeaveView {
       this.app.leaveRequests.unshift(created)
       overlay.remove()
       this.app.toast('Leave request submitted')
+      this._sendNotify('submitted', created.id)
       this._tab = 'mine'
       this._rerender()
     } catch (e) { console.error(e); this.app.toast('Could not submit request') }

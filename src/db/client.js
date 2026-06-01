@@ -83,6 +83,8 @@ export async function runMigrations() {
   await sql`ALTER TABLE team_calendar_entries ADD COLUMN IF NOT EXISTS end_date DATE`
   await sql`ALTER TABLE team_calendar_entries ADD COLUMN IF NOT EXISTS is_deadline BOOLEAN NOT NULL DEFAULT false`
   // ── Leave planner ──────────────────────────────────────────────────────────
+  await sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS leave_year_start_month INTEGER NOT NULL DEFAULT 4`
+  await sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS leave_year_start_day   INTEGER NOT NULL DEFAULT 1`
   await sql`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS annual_allowance NUMERIC(5,1) NOT NULL DEFAULT 25`
   await sql`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS approver_id UUID`
   await sql`
