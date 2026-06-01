@@ -431,6 +431,7 @@ export const leave_requests = pgTable('leave_requests', {
   decided_at:    timestamp('decided_at', { withTimezone: true }),
   calendar_entry_id: uuid('calendar_entry_id'),
   gcal_event_id:     text('gcal_event_id'),    // Google Calendar event ID (set when approved, cleared on cancel)
+  approval_token:    text('approval_token'),   // token for email approval without login
   ...timestamps,
 })
 
