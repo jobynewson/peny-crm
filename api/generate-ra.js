@@ -1,7 +1,7 @@
 // api/generate-ra.js
 // POST /api/generate-ra — generates a risk assessment from shoot + project data
 import { neon } from '@neondatabase/serverless'
-import { createClerkClient } from '@clerk/backend'
+import { verifyToken } from '@clerk/backend'
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -14,8 +14,7 @@ export default async function handler(req, res) {
   if (!raw) return res.status(401).json({ error: 'Unauthorised' })
   let userId
   try {
-    const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY })
-    const payload = await clerk.verifyToken(raw)
+    const payload = await verifyToken(raw, { secretKey: process.env.CLERK_SECRET_KEY })
     userId = payload.sub
   } catch {
     return res.status(401).json({ error: 'Invalid session token' })

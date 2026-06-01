@@ -7,7 +7,7 @@
 
 import { neon } from '@neondatabase/serverless'
 import nodemailer from 'nodemailer'
-import { createClerkClient } from '@clerk/backend'
+import { verifyToken } from '@clerk/backend'
 
 export default async function handler(req, res) {
   // ── Leave notification (POST, Clerk auth) ─────────────────────────────────
@@ -461,8 +461,7 @@ async function handleLeaveNotify(req, res) {
   if (!raw) return res.status(401).json({ error: 'Unauthorised' })
 
   try {
-    const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY })
-    await clerk.verifyToken(raw)
+    await verifyToken(raw, { secretKey: process.env.CLERK_SECRET_KEY })
   } catch {
     return res.status(401).json({ error: 'Invalid session token' })
   }

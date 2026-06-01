@@ -1,5 +1,5 @@
 // api/invite.js
-import { createClerkClient } from '@clerk/backend'
+import { createClerkClient, verifyToken } from '@clerk/backend'
 import { neon } from '@neondatabase/serverless'
 
 export default async function handler(req, res) {
@@ -18,8 +18,7 @@ export default async function handler(req, res) {
 
     let callerUserId
     try {
-      const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY })
-      const payload = await clerk.verifyToken(raw)
+      const payload = await verifyToken(raw, { secretKey: process.env.CLERK_SECRET_KEY })
       callerUserId = payload.sub
     } catch {
       return res.status(401).json({ error: 'Invalid session token' })

@@ -6,13 +6,12 @@
 // POST ?action=delete        — Delete a calendar event       (Clerk auth required)
 
 import { neon } from '@neondatabase/serverless'
-import { createClerkClient } from '@clerk/backend'
+import { verifyToken } from '@clerk/backend'
 
 async function verifyClerkToken(req) {
   const raw = req.headers.authorization?.replace('Bearer ', '').trim()
   if (!raw) throw Object.assign(new Error('Unauthorised'), { status: 401 })
-  const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY })
-  await clerk.verifyToken(raw)
+  await verifyToken(raw, { secretKey: process.env.CLERK_SECRET_KEY })
 }
 
 async function ensureFreshToken(sql, tokens, requesterId) {

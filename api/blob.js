@@ -5,7 +5,7 @@
 //   GET    /api/blob?url=<blobUrl>  — proxy private blob for <img> tags
 
 import { put, del } from '@vercel/blob'
-import { createClerkClient } from '@clerk/backend'
+import { verifyToken } from '@clerk/backend'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -17,8 +17,7 @@ async function requireAuth(req, res) {
   const raw = req.headers.authorization?.replace('Bearer ', '').trim()
   if (!raw) { res.status(401).json({ error: 'Unauthorised' }); return null }
   try {
-    const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY })
-    const payload = await clerk.verifyToken(raw)
+    const payload = await verifyToken(raw, { secretKey: process.env.CLERK_SECRET_KEY })
     return payload.sub
   } catch {
     res.status(401).json({ error: 'Invalid session token' }); return null
