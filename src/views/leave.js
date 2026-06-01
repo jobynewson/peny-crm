@@ -570,6 +570,7 @@ export class LeaveView {
     const requester = this.users.find(u => u.id === s.requester_id) || this.me
     try {
       const { createLeaveRequest } = await import('../db/client.js')
+      const approval_token = Array.from(crypto.getRandomValues(new Uint8Array(32))).map(x => x.toString(16).padStart(2, '0')).join('')
       const created = await createLeaveRequest(this.app.userId, {
         requester_id: s.requester_id,
         approver_id:  requester.approver_id || null,
@@ -581,6 +582,7 @@ export class LeaveView {
         total_days:   String(total),
         reason:       s.reason || null,
         status:       'pending',
+        approval_token,
       })
       if (!this.app.leaveRequests) this.app.leaveRequests = []
       this.app.leaveRequests.unshift(created)
