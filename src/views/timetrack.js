@@ -240,7 +240,7 @@ export class TimeTrackView {
 
       logEl.querySelectorAll('.tt-del-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
-          if (!confirm('Delete this entry?')) return
+          if (!await this.app.confirm({ title: 'Delete this entry?', confirmLabel: 'Delete' })) return
           try {
             const { deleteTimeEntry } = await import('../db/client.js')
             await deleteTimeEntry(btn.dataset.eid)

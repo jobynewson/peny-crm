@@ -344,7 +344,8 @@ export class LeaveView {
 
   async _cancel(id) {
     const r = this.requests.find(x => x.id === id)
-    if (!r || !confirm('Cancel this leave request?')) return
+    if (!r) return
+    if (!await this.app.confirm({ title: 'Cancel leave request?', confirmLabel: 'Cancel request', cancelLabel: 'Keep' })) return
     try {
       const { updateLeaveRequest, deleteTeamCalendarEntry } = await import('../db/client.js')
       const updated = await updateLeaveRequest(this.app.userId, id, { status: 'cancelled' })
@@ -356,7 +357,7 @@ export class LeaveView {
       this.app.toast('Leave cancelled')
       this._syncGoogleCalendar('delete', id)
       this._rerender()
-    } catch (e) { console.error(e); this.app.toast('Could not cancel leave') }
+    } catch (e) { console.error(e); this.app.toastError('Could not cancel leave', () => this._cancel(id)) }
   }
 
   async _decide(id, status) {
@@ -494,11 +495,11 @@ export class LeaveView {
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
               <div>
-                <div class="leave-lbl">From</div>
+                <div class="leave-lbl">From<span class="req">*</span></div>
                 <input type="date" id="lm-start" class="leave-input" value="${start}" style="color-scheme:var(--color-scheme,light)">
               </div>
               <div>
-                <div class="leave-lbl">To</div>
+                <div class="leave-lbl">To<span class="req">*</span></div>
                 <input type="date" id="lm-end" class="leave-input" value="${end}" min="${start}" style="color-scheme:var(--color-scheme,light)">
               </div>
             </div>
@@ -566,7 +567,8 @@ export class LeaveView {
   async _submit(s, overlay) {
     const holidaySet = this._holidaySet()
     const total = this._computeTotal(s.start_date, s.end_date, s.start_half, s.end_half, holidaySet)
-    if (total <= 0) { this.app.toast('Select at least one working day'); return }
+    this.app.clearFieldErrors(overlay)
+    if (total <= 0) { this.app.fieldError(overlay.querySelector('#lm-end'), 'Select at least one working day'); return }
     const requester = this.users.find(u => u.id === s.requester_id) || this.me
     await this.app.withBusy(overlay.querySelector('#lm-submit'), async () => {
     try {
@@ -592,7 +594,7 @@ export class LeaveView {
       this._sendNotify('submitted', created.id)
       this._tab = 'mine'
       this._rerender()
-    } catch (e) { console.error(e); this.app.toast('Could not submit request') }
+    } catch (e) { console.error(e); this.app.toastError('Could not submit request', () => this._submit(s, overlay)) }
     })
   }
 }

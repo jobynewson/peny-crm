@@ -68,16 +68,16 @@ export class ExpensesView {
             </div>
             <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
               <div class="field" style="flex:0 0 auto">
-                <div class="field-label">Date</div>
+                <div class="field-label">Date<span class="req">*</span></div>
                 <input type="date" id="exp-date" value="${now.toISOString().slice(0, 10)}" style="color-scheme:var(--color-scheme,light)" />
               </div>
               ${this._addType === 'mileage' ? `
                 <div class="field" style="flex:0 0 auto">
-                  <div class="field-label">Miles</div>
+                  <div class="field-label">Miles<span class="req">*</span></div>
                   <input type="number" id="exp-miles" placeholder="0" min="0" step="0.1" style="width:88px" />
                 </div>` : this._addType === 'expense' ? `
                 <div class="field" style="flex:0 0 auto">
-                  <div class="field-label">Amount (£)</div>
+                  <div class="field-label">Amount (£)<span class="req">*</span></div>
                   <input type="number" id="exp-amount" placeholder="0.00" min="0" step="0.01" style="width:96px" />
                 </div>` : `
                 <div class="field" style="flex:0 0 auto">
@@ -262,8 +262,9 @@ export class ExpensesView {
   }
 
   async _addEntry(mc, currentMonthKey) {
+    this.app.clearFieldErrors(mc)
     const date = mc.querySelector('#exp-date')?.value
-    if (!date) { this.app.toast('Please select a date'); return }
+    if (!date) { this.app.fieldError(mc.querySelector('#exp-date'), 'Pick a date'); return }
 
     const projVal = mc.querySelector('#exp-project')?.value || ''
     const projectId = projVal && projVal !== '__other__' ? projVal : null
@@ -281,15 +282,15 @@ export class ExpensesView {
 
     if (this._addType === 'mileage') {
       const miles = parseFloat(mc.querySelector('#exp-miles')?.value || '0')
-      if (!miles) { this.app.toast('Please enter miles'); return }
+      if (!miles) { this.app.fieldError(mc.querySelector('#exp-miles'), 'Enter miles'); return }
       entry.miles = miles
     } else if (this._addType === 'expense') {
       const amount = parseFloat(mc.querySelector('#exp-amount')?.value || '0')
-      if (!amount) { this.app.toast('Please enter an amount'); return }
+      if (!amount) { this.app.fieldError(mc.querySelector('#exp-amount'), 'Enter an amount'); return }
       entry.amount = amount
     } else {
       const nights = parseInt(mc.querySelector('#exp-overnights')?.value || '0')
-      if (!nights) { this.app.toast('Please enter number of nights'); return }
+      if (!nights) { this.app.fieldError(mc.querySelector('#exp-overnights'), 'Enter nights'); return }
       entry.overnights = nights
     }
 
@@ -302,7 +303,7 @@ export class ExpensesView {
       this._render(mc)
     } catch(e) {
       console.error(e)
-      this.app.toast('Error adding entry')
+      this.app.toastError('Error adding entry', () => this._addEntry(mc, currentMonthKey))
     }
     }, 'Adding…')
   }
@@ -330,7 +331,7 @@ export class ExpensesView {
       this._render(mc)
     } catch(e) {
       console.error(e)
-      this.app.toast('Error submitting expenses')
+      this.app.toastError('Error submitting expenses', () => this._submitMonth(mc, monthKey))
     }
     }, 'Submitting…')
   }

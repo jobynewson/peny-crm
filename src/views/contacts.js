@@ -106,8 +106,8 @@ export class ContactsView {
           </div>
           <div class="modal-body">
             <div class="field-row">
-              <div class="field"><div class="field-label">First name</div><input id="cf-first" type="text" value="${esc(c?.first_name)}" placeholder="Sarah" /></div>
-              <div class="field"><div class="field-label">Last name</div><input id="cf-last" type="text" value="${esc(c?.last_name)}" placeholder="Renfrew" /></div>
+              <div class="field"><div class="field-label">First name<span class="req">*</span></div><input id="cf-first" type="text" value="${esc(c?.first_name)}" placeholder="Sarah" /></div>
+              <div class="field"><div class="field-label">Last name<span class="req">*</span></div><input id="cf-last" type="text" value="${esc(c?.last_name)}" placeholder="Renfrew" /></div>
             </div>
             <div class="field"><div class="field-label">Role / title</div><input id="cf-role" type="text" value="${esc(c?.role)}" placeholder="Marketing Director" /></div>
             <div class="field"><div class="field-label">Company</div><input id="cf-company" type="text" value="${esc(c?.company)}" placeholder="Kinetic Brand Co." /></div>
@@ -143,7 +143,7 @@ export class ContactsView {
         <div class="modal" style="width:380px">
           <div class="modal-header"><span class="modal-title">Add note</span><button class="modal-close" data-close="note-modal">×</button></div>
           <div class="modal-body">
-            <div class="field"><div class="field-label">Note</div><textarea id="nf-text" style="min-height:100px" placeholder="Write your note here..."></textarea></div>
+            <div class="field"><div class="field-label">Note<span class="req">*</span></div><textarea id="nf-text" style="min-height:100px" placeholder="Write your note here..."></textarea></div>
           </div>
           <div class="modal-footer">
             <button class="btn-cancel" data-close="note-modal">Cancel</button>
@@ -370,7 +370,12 @@ export class ContactsView {
   async saveContact(mc) {
     const first = mc.querySelector('#cf-first')?.value.trim()
     const last  = mc.querySelector('#cf-last')?.value.trim()
-    if (!first || !last) { this.app.toast('Please enter a name'); return }
+    this.app.clearFieldErrors(mc.querySelector('#contact-modal'))
+    if (!first || !last) {
+      if (!first) this.app.fieldError(mc.querySelector('#cf-first'), 'First name is required')
+      if (!last)  this.app.fieldError(mc.querySelector('#cf-last'),  'Last name is required')
+      return
+    }
     const data = {
       first_name: first,
       last_name:  last,
@@ -407,7 +412,7 @@ export class ContactsView {
       this.render(mc)
     } catch (e) {
       console.error(e)
-      this.app.toast('Error saving contact')
+      this.app.toastError('Error saving contact', () => this.saveContact(mc))
     }
     })
   }
@@ -420,7 +425,8 @@ export class ContactsView {
 
   async saveNote(mc) {
     const text = mc.querySelector('#nf-text')?.value.trim()
-    if (!text) { this.app.toast('Note cannot be empty'); return }
+    this.app.clearFieldErrors(mc.querySelector('#note-modal'))
+    if (!text) { this.app.fieldError(mc.querySelector('#nf-text'), 'Note cannot be empty'); return }
     const c = this.app.contacts.find(x => x.id === this.noteTargetId)
     if (!c) return
     const d = new Date()
@@ -438,13 +444,13 @@ export class ContactsView {
       logActivity(this.app.userId, 'contact', c.id, `${c.first_name} ${c.last_name}`, `Note added: "${text.slice(0,60)}${text.length>60?'…':''}"` ).catch(console.error)
     } catch (e) {
       console.error(e)
-      this.app.toast('Error saving note')
+      this.app.toastError('Error saving note', () => this.saveNote(mc))
     }
     })
   }
 
   async deleteContact(id) {
-    if (!confirm('Delete this contact? This cannot be undone.')) return
+    if (!await this.app.confirm({ title: 'Delete contact?', message: 'This cannot be undone.', confirmLabel: 'Delete' })) return
     try {
       await deleteContact(this.app.userId, id)
       this.app.contacts = this.app.contacts.filter(c => c.id !== id)
@@ -455,7 +461,7 @@ export class ContactsView {
       this.app.toast('Contact deleted')
     } catch (e) {
       console.error(e)
-      this.app.toast('Error deleting contact')
+      this.app.toastError('Error deleting contact', () => this.deleteContact(id))
     }
   }
 }

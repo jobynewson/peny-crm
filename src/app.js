@@ -1981,7 +1981,7 @@ export class App {
   }
 
   async _deleteNote(id) {
-    if (!confirm('Delete this note?')) return
+    if (!await this.confirm({ title: 'Delete this note?', confirmLabel: 'Delete' })) return
     try {
       const { deleteUserNote } = await import('./db/client.js')
       await deleteUserNote(this.clerkUserId, id)
@@ -2362,8 +2362,8 @@ export class App {
         render()
       })
       el.querySelectorAll('[data-tpl-del-sec]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          if (!confirm('Remove this section from the template?')) return
+        btn.addEventListener('click', async () => {
+          if (!await this.confirm({ title: 'Remove section?', message: 'Remove this section from the template?', confirmLabel: 'Remove' })) return
           template.splice(+btn.dataset.tplDelSec, 1); render()
         })
       })
@@ -2412,8 +2412,8 @@ export class App {
 
       // Save / reset
       el.querySelector('#tpl-save')?.addEventListener('click', () => this._saveBudgetTemplate(template))
-      el.querySelector('#tpl-reset')?.addEventListener('click', () => {
-        if (!confirm('Reset to built-in defaults? Your custom template will be lost.')) return
+      el.querySelector('#tpl-reset')?.addEventListener('click', async () => {
+        if (!await this.confirm({ title: 'Reset to defaults?', message: 'Your custom template will be lost.', confirmLabel: 'Reset', danger: false })) return
         template = JSON.parse(JSON.stringify(SECTIONS))
         render()
       })
@@ -2529,7 +2529,7 @@ export class App {
         btn.addEventListener('click', async () => {
           const uid = btn.dataset.removeUser
           const name = btn.dataset.removeName
-          if (!confirm(`Remove ${name} from the workspace? They will lose access immediately.`)) return
+          if (!await this.confirm({ title: 'Remove user?', message: `${name} will lose access to the workspace immediately.`, confirmLabel: 'Remove' })) return
           try {
             await deleteAppUser(uid)
             this.allUsers = (this.allUsers ?? []).filter(x => x.id !== uid)
@@ -2546,7 +2546,7 @@ export class App {
       el.querySelectorAll('[data-gcal-disconnect]').forEach(btn => {
         btn.addEventListener('click', async () => {
           const uid = btn.dataset.gcalDisconnect
-          if (!confirm('Disconnect Google Calendar? Existing calendar events will not be deleted.')) return
+          if (!await this.confirm({ title: 'Disconnect Google Calendar?', message: 'Existing calendar events will not be deleted.', confirmLabel: 'Disconnect' })) return
           try {
             const { getAuthToken } = await import('./auth/clerk.js')
             const token = await getAuthToken()
@@ -2926,6 +2926,111 @@ export class App {
     this._toastTimer = setTimeout(() => el.classList.remove('show'), duration)
   }
 
+  // Toast with an inline action button (e.g. "Retry"). Stays up longer than a
+  // plain toast so the user has time to act. Clicking the action dismisses it.
+  toastAction(msg, actionLabel, onAction, duration = 7000) {
+    let el = document.getElementById('app-toast')
+    if (!el) { el = document.createElement('div'); el.id = 'app-toast'; el.className = 'toast'; document.body.appendChild(el) }
+    el.textContent = ''
+    const span = document.createElement('span'); span.textContent = msg
+    const btn = document.createElement('button'); btn.className = 'toast-action'; btn.textContent = actionLabel
+    el.append(span, btn)
+    el.classList.add('show')
+    clearTimeout(this._toastTimer)
+    this._toastTimer = setTimeout(() => el.classList.remove('show'), duration)
+    btn.addEventListener('click', () => { clearTimeout(this._toastTimer); el.classList.remove('show'); onAction?.() })
+  }
+
+  // Surface a failed operation. When a retry callback is supplied, the toast
+  // offers a "Retry" button so a transient network failure isn't a dead end.
+  toastError(msg, retryFn) {
+    if (retryFn) this.toastAction(msg, 'Retry', retryFn)
+    else this.toast(msg)
+  }
+
+  // Themed replacement for the native confirm() dialog. Returns a Promise that
+  // resolves true (confirmed) or false (cancelled). Accepts a plain string or
+  // an options object { title, message, confirmLabel, cancelLabel, danger }.
+  // Esc / backdrop click cancels; Enter confirms.
+  confirm(opts = {}) {
+    if (typeof opts === 'string') opts = { message: opts }
+    const {
+      title = 'Are you sure?', message = '',
+      confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = true,
+    } = opts
+    const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    return new Promise(resolve => {
+      const backdrop = document.createElement('div')
+      backdrop.className = 'confirm-backdrop'
+      backdrop.id = 'app-confirm-overlay'
+      backdrop.innerHTML = `
+        <div class="confirm-box" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+          <div class="confirm-body">
+            <div class="confirm-title">${esc(title)}</div>
+            ${message ? `<div class="confirm-msg">${esc(message)}</div>` : ''}
+          </div>
+          <div class="confirm-actions">
+            <button class="btn-cancel" data-confirm="cancel">${esc(cancelLabel)}</button>
+            <button class="${danger ? 'btn-danger' : 'btn-primary'}" data-confirm="ok">${esc(confirmLabel)}</button>
+          </div>
+        </div>`
+      let done = false
+      const close = val => {
+        if (done) return
+        done = true
+        document.removeEventListener('keydown', onKey, true)
+        backdrop.remove()
+        resolve(val)
+      }
+      // Capture phase + stopPropagation so the global Esc handler doesn't also fire.
+      const onKey = e => {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(false) }
+        else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); close(true) }
+      }
+      backdrop.addEventListener('click', e => { if (e.target === backdrop) close(false) })
+      backdrop.querySelector('[data-confirm="cancel"]').addEventListener('click', () => close(false))
+      backdrop.querySelector('[data-confirm="ok"]').addEventListener('click', () => close(true))
+      document.addEventListener('keydown', onKey, true)
+      document.body.appendChild(backdrop)
+      setTimeout(() => backdrop.querySelector('[data-confirm="ok"]')?.focus(), 10)
+    })
+  }
+
+  // ── Inline form validation ──────────────────────────────────────────────────
+  // Mark a field invalid with a message shown directly beneath it, instead of a
+  // transient toast that doesn't say which field is wrong. The error clears as
+  // soon as the user edits the field. The first invalid field in a form is focused.
+  fieldError(el, msg) {
+    if (!el) return
+    const scope = el.closest('.modal-backdrop, .confirm-box, .modal-content') || document
+    const isFirst = !scope.querySelector('.is-invalid')
+    el.classList.add('is-invalid')
+    const field = el.closest('.field') || el.parentElement
+    if (field) {
+      field.querySelector(':scope > .field-err')?.remove()
+      const err = document.createElement('div')
+      err.className = 'field-err'
+      err.textContent = msg
+      field.appendChild(err)
+    }
+    const clear = () => {
+      el.classList.remove('is-invalid')
+      ;(el.closest('.field') || el.parentElement)?.querySelector(':scope > .field-err')?.remove()
+      el.removeEventListener('input', clear)
+      el.removeEventListener('change', clear)
+    }
+    el.addEventListener('input', clear)
+    el.addEventListener('change', clear)
+    if (isFirst) el.focus()
+  }
+
+  // Clear all inline validation state within a scope (defaults to whole document).
+  clearFieldErrors(scope) {
+    scope = scope || document
+    scope.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'))
+    scope.querySelectorAll('.field-err').forEach(el => el.remove())
+  }
+
   // Run an async action while showing a busy state on the triggering button:
   // disables it and swaps its label to `label`, then restores the original
   // label and disabled state when done. Gives the user feedback during DB
@@ -3040,6 +3145,25 @@ export class App {
       /* ── Async/disabled button affordance ── */
       button[data-busy]{opacity:0.7;cursor:progress!important;pointer-events:none}
       button:disabled{opacity:0.55;cursor:not-allowed}
+
+      /* ── Toast action button (e.g. Retry) ── */
+      .toast{display:inline-flex;align-items:center;gap:16px}
+      .toast-action{background:none;border:none;color:#85B8FF;font-weight:600;font-size:13px;cursor:pointer;font-family:var(--font);padding:0;white-space:nowrap;pointer-events:auto}
+      .toast-action:hover{text-decoration:underline}
+
+      /* ── Inline form validation ── */
+      .is-invalid{border-color:var(--danger)!important;box-shadow:0 0 0 2px var(--danger-subtle)!important}
+      .field-err{font-size:11px;color:var(--danger);margin-top:4px;line-height:1.4}
+      .req{color:var(--danger);margin-left:2px;font-weight:600}
+
+      /* ── Themed confirm dialog ── */
+      .confirm-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:10000;padding:16px}
+      .confirm-box{background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:400px;box-shadow:var(--shadow-lg);overflow:hidden;animation:confirm-in 0.12s ease-out}
+      @keyframes confirm-in{from{opacity:0;transform:translateY(6px) scale(0.98)}to{opacity:1;transform:none}}
+      .confirm-body{padding:22px 22px 18px}
+      .confirm-title{font-size:15px;font-weight:600;color:var(--text-primary);margin-bottom:8px}
+      .confirm-msg{font-size:13px;color:var(--text-secondary);line-height:1.55}
+      .confirm-actions{display:flex;justify-content:flex-end;gap:8px;padding:0 22px 20px}
       .av-blue{background:#DEEBFF;color:#0747A6}.av-teal{background:#E3FCEF;color:#006644}.av-coral{background:#FFEBE6;color:#BF2600}.av-purple{background:#EAE6FF;color:#403294}.av-amber{background:#FFFAE6;color:#172B4D}.av-green{background:#E3FCEF;color:#006644}.av-pink{background:#FFECF8;color:#6E2B83}
       .tag-brand{background:#DEEBFF;color:#0747A6}.tag-agency{background:#EAE6FF;color:#403294}.tag-ngo{background:#E3FCEF;color:#006644}.tag-sport{background:#FFFAE6;color:#5A3A00}.tag-corp{background:#F4F5F7;color:#42526E}.tag-sub{background:#FFEBE6;color:#BF2600}
       .budget-layout{display:flex;gap:20px;align-items:flex-start}.budget-main{flex:1;min-width:0}.budget-sidebar-panel{width:210px;flex-shrink:0}

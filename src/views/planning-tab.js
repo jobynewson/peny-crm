@@ -248,7 +248,7 @@ export function bindPlanningTab(mc, p, userId) {
     if (!file) return
 
     if (file.size > 20 * 1024 * 1024) {
-      alert('Image is too large — please use a file under 20 MB.')
+      window.app?.toast('Image is too large — use a file under 20 MB')
       e.target.value = ''
       return
     }
@@ -307,7 +307,7 @@ export function bindPlanningTab(mc, p, userId) {
       rerender()
     } catch (err) {
       console.error(err)
-      alert(`Image upload failed: ${err.message}`)
+      window.app?.toast('Image upload failed')
     } finally {
       btn.innerHTML = original
       btn.disabled = false

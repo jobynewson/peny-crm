@@ -122,7 +122,7 @@ export class PostProductionView {
     const schedStart = pps.start_date
     const schedEnd   = pps.end_date
     if (!schedStart || !schedEnd) {
-      alert('Set a schedule range before exporting.')
+      this.app.toast('Set a schedule range before exporting')
       return
     }
     const tStart = new Date(schedStart + 'T00:00:00')
@@ -259,7 +259,7 @@ export class PostProductionView {
 </html>`
 
     const win = window.open('', '_blank')
-    if (!win) { alert('Allow pop-ups to export PDF.'); return }
+    if (!win) { this.app.toast('Allow pop-ups to export PDF'); return }
     win.document.write(html)
     win.document.close()
   }
@@ -760,7 +760,8 @@ export class PostProductionView {
       })
 
       overlay.querySelector('#ppsb-del')?.addEventListener('click', async () => {
-        if (isNew || !confirm('Delete this block?')) return
+        if (isNew) return
+        if (!await this.app.confirm({ title: 'Delete this block?', confirmLabel: 'Delete' })) return
         const prev = phase.blocks.slice()
         phase.blocks = phase.blocks.filter(b => b.id !== data.id)
         try {
@@ -860,7 +861,8 @@ export class PostProductionView {
       })
 
       overlay.querySelector('#ppsc-del')?.addEventListener('click', async () => {
-        if (!phase || !confirm('Delete this column and all its blocks?')) return
+        if (!phase) return
+        if (!await this.app.confirm({ title: 'Delete column?', message: 'This deletes the column and all its blocks.', confirmLabel: 'Delete' })) return
         try {
           const { deletePpsPhase } = await import('../db/client.js')
           await deletePpsPhase(phase.id)

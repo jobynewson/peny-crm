@@ -158,14 +158,14 @@ export class PasswordManagerView {
 
     mc.querySelectorAll('.pm-delete').forEach(btn => {
       btn.addEventListener('click', async () => {
-        if (!confirm('Delete this credential?')) return
+        if (!await this.app.confirm({ title: 'Delete credential?', confirmLabel: 'Delete' })) return
         try {
           const { deleteCredential } = await import('../db/client.js')
           await deleteCredential(this.app.userId, btn.dataset.id)
           this.credentials = this.credentials.filter(c => c.id !== btn.dataset.id)
           this.visibleIds.delete(btn.dataset.id)
           this._render(mc)
-        } catch(e) { alert('Failed to delete: ' + e.message) }
+        } catch(e) { console.error(e); this.app.toast('Failed to delete credential') }
       })
     })
   }

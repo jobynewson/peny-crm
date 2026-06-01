@@ -139,7 +139,7 @@ export class BudgetsView {
         <div class="modal" style="width:440px">
           <div class="modal-header"><span class="modal-title">New budget</span><button class="modal-close" data-close="budget-new-modal">×</button></div>
           <div class="modal-body">
-            <div class="field"><div class="field-label">Budget title</div><input id="bf-name" type="text" placeholder="e.g. Brand Film — Q2 2025" /></div>
+            <div class="field"><div class="field-label">Budget title<span class="req">*</span></div><input id="bf-name" type="text" placeholder="e.g. Brand Film — Q2 2025" /></div>
             <div class="field"><div class="field-label">Client (optional)</div>
               <select id="bf-client">
                 <option value="">— no client —</option>
@@ -218,7 +218,8 @@ export class BudgetsView {
 
   async saveNew(mc) {
     const name = mc.querySelector('#bf-name')?.value.trim()
-    if (!name) { this.app.toast('Please enter a budget title'); return }
+    this.app.clearFieldErrors(mc.querySelector('#budget-new-modal'))
+    if (!name) { this.app.fieldError(mc.querySelector('#bf-name'), 'Budget title is required'); return }
 
     // Use workspace template if set, otherwise fall back to built-in SECTIONS
     const templateDefs = this.app.settings?.budget_template ?? SECTIONS
@@ -285,7 +286,7 @@ export class BudgetsView {
       this.render(mc)
       this.app.updateTitle()
       this.app.toast('Budget created')
-    } catch (e) { console.error(e); this.app.toast('Error creating budget') }
+    } catch (e) { console.error(e); this.app.toastError('Error creating budget', () => this.saveNew(mc)) }
     })
   }
 
@@ -315,7 +316,7 @@ export class BudgetsView {
   }
 
   async deleteBudget(id, mc) {
-    if (!confirm('Delete this budget?')) return
+    if (!await this.app.confirm({ title: 'Delete budget?', message: 'This cannot be undone.', confirmLabel: 'Delete' })) return
     try {
       await deleteBudget(this.app.userId, id)
       this.app.budgets = this.app.budgets.filter(b => b.id !== id)
@@ -773,7 +774,7 @@ export class BudgetsView {
     }
     mc.querySelector('#be-gen-quote')?.addEventListener('click', genQuote)
     mc.querySelector('#be-regen-quote')?.addEventListener('click', async () => {
-      if (!confirm('Regenerate quote link? The old link will stop working.')) return
+      if (!await this.app.confirm({ title: 'Regenerate quote link?', message: 'The old link will stop working.', confirmLabel: 'Regenerate', danger: false })) return
       await genQuote()
     })
     mc.querySelector('#be-copy-quote')?.addEventListener('click', async e => {
@@ -942,7 +943,7 @@ export class BudgetsView {
       })
       listEl.querySelectorAll('[data-del-ver]').forEach(btn => {
         btn.addEventListener('click', async () => {
-          if (!confirm('Delete this version?')) return
+          if (!await this.app.confirm({ title: 'Delete this version?', confirmLabel: 'Delete' })) return
           await deleteBudgetVersion(btn.dataset.delVer)
           this._loadVersionList(mc, b)
         })
@@ -952,7 +953,8 @@ export class BudgetsView {
 
   async _restoreVersion(versionId, versions, b, mc) {
     const v = versions.find(x => x.id === versionId)
-    if (!v || !confirm(`Restore "${v.name}"? This will overwrite the current budget. A snapshot of the current state will be saved first.`)) return
+    if (!v) return
+    if (!await this.app.confirm({ title: 'Restore this version?', message: `"${v.name}" will overwrite the current budget. A snapshot of the current state is saved first.`, confirmLabel: 'Restore', danger: false })) return
     try {
       // Save current state as auto-snapshot before overwriting
       const currentSnap = {

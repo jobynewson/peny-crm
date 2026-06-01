@@ -682,7 +682,7 @@ export class StoryPlannerView {
   }
 
   async _deletePlan(mc, planId, title) {
-    if (!confirm(`Delete "${title || 'this plan'}"? All blocks will be lost.`)) return
+    if (!await this.app.confirm({ title: `Delete "${title || 'this plan'}"?`, message: 'All blocks will be lost.', confirmLabel: 'Delete' })) return
     try {
       await deleteStoryPlan(this.app.userId, planId)
       this.plans = (this.plans || []).filter(p => p.id !== planId)

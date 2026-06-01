@@ -270,7 +270,7 @@ export class MarketingView {
       overlay.querySelector('#mkt-save')?.addEventListener('click', () => this._saveCard(overlay, card, defaultStatus))
 
       overlay.querySelector('#mkt-delete')?.addEventListener('click', async () => {
-        if (!confirm('Delete this card?')) return
+        if (!await this.app.confirm({ title: 'Delete this card?', confirmLabel: 'Delete' })) return
         try {
           const { deleteMarketingCard } = await import('../db/client.js')
           await deleteMarketingCard(this.app.userId, card.id)
@@ -502,7 +502,7 @@ export class MarketingView {
     mc.querySelectorAll('.social-delete-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const id = btn.dataset.socialId
-        if (!confirm('Delete this post idea?')) return
+        if (!await this.app.confirm({ title: 'Delete post idea?', confirmLabel: 'Delete' })) return
         try {
           const { deleteSocialPost } = await import('../db/client.js')
           await deleteSocialPost(this.app.userId, id)

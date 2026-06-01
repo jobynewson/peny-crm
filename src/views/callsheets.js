@@ -705,7 +705,7 @@ export class CallSheetsView {
 
     // Delete
     mc.querySelector('#cs-delete')?.addEventListener('click', async () => {
-      if (!confirm('Delete this call sheet? This cannot be undone.')) return
+      if (!await this.app.confirm({ title: 'Delete call sheet?', message: 'This cannot be undone.', confirmLabel: 'Delete' })) return
       try {
         await deleteCallSheet(s.id)
         this.app.toast('Call sheet deleted')

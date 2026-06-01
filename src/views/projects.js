@@ -1070,7 +1070,7 @@ export class ProjectsView {
       } catch(e) { console.error(e); this.app.toast('Error duplicating project') }
     })
     mc.querySelector('#pv-delete')?.addEventListener('click', async () => {
-      if (!confirm(`Delete "${p.name}"? This cannot be undone.`)) return
+      if (!await this.app.confirm({ title: `Delete "${p.name}"?`, message: 'This cannot be undone.', confirmLabel: 'Delete' })) return
       try {
         await deleteProject(this.app.userId, p.id)
         this.app.projects = this.app.projects.filter(x => x.id !== p.id)
@@ -1943,7 +1943,7 @@ export class ProjectsView {
 
     // Delete
     overlay.querySelector('#se-delete')?.addEventListener('click', async () => {
-      if (!confirm('Delete this shoot? This cannot be undone.')) return
+      if (!await this.app.confirm({ title: 'Delete shoot?', message: 'This cannot be undone.', confirmLabel: 'Delete' })) return
       try {
         const { deleteShoot } = await import('../db/client.js')
         await deleteShoot(sh.id)
@@ -2368,8 +2368,8 @@ export class ProjectsView {
       })
     })
     overlay.querySelectorAll('#se-ra-body [data-ra-rem]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (!confirm('Remove this hazard row?')) return
+      btn.addEventListener('click', async () => {
+        if (!await this.app.confirm({ title: 'Remove hazard row?', confirmLabel: 'Remove' })) return
         sh.risk_assessment.hazards.splice(+btn.dataset.raRem, 1)
         this._refreshShootRA(overlay, sh, save); save()
       })
@@ -2402,7 +2402,7 @@ export class ProjectsView {
   async _generateRA(overlay, sh, save) {
     const btn = overlay.querySelector('#se-ra-generate')
     const hadOne = sh.risk_assessment?.hazards?.length > 0
-    if (hadOne && !confirm('This will replace the existing risk assessment. Continue?')) return
+    if (hadOne && !await this.app.confirm({ title: 'Replace risk assessment?', message: 'This will replace the existing risk assessment.', confirmLabel: 'Replace', danger: false })) return
     btn.disabled = true; btn.textContent = '✨ Generating…'
     try {
       const { getAuthToken } = await import('../auth/clerk.js')
@@ -2469,11 +2469,11 @@ export class ProjectsView {
       picker.querySelector('#ra-pick-close')?.addEventListener('click', () => picker.remove())
       picker.addEventListener('click', e => { if (e.target === picker) picker.remove() })
       picker.querySelectorAll('.ra-pick-item').forEach(el => {
-        el.addEventListener('click', () => {
+        el.addEventListener('click', async () => {
           const source = available.find(s => s.id === el.dataset.pickId)
           if (!source?.risk_assessment) return
           const hadOne = sh.risk_assessment?.hazards?.length > 0
-          if (hadOne && !confirm('This will replace the existing risk assessment. Continue?')) return
+          if (hadOne && !await this.app.confirm({ title: 'Replace risk assessment?', message: 'This will replace the existing risk assessment.', confirmLabel: 'Replace', danger: false })) return
           // Deep clone hazards; keep assessor info from target
           const existing = sh.risk_assessment || {}
           sh.risk_assessment = {
@@ -3264,7 +3264,7 @@ export class ProjectsView {
 
       el.querySelectorAll('[data-del-entry]').forEach(btn => {
         btn.addEventListener('click', async () => {
-          if (!confirm('Delete this time entry?')) return
+          if (!await this.app.confirm({ title: 'Delete time entry?', confirmLabel: 'Delete' })) return
           await deleteTimeEntry(btn.dataset.delEntry)
           this._loadTimePanel(mc, p)
         })
@@ -3387,7 +3387,7 @@ export class ProjectsView {
       navigator.clipboard.writeText(`${appUrl}/track/${p.track_token}`).then(() => this.app.toast('Link copied'))
     })
     mc.querySelector('#revoke-track-link')?.addEventListener('click', async () => {
-      if (!confirm('Revoke this link? Anyone with it will no longer be able to log time.')) return
+      if (!await this.app.confirm({ title: 'Revoke link?', message: 'Anyone with it will no longer be able to log time.', confirmLabel: 'Revoke' })) return
       await setTrackToken(this.app.userId, p.id, null)
       p.track_token = null
       const idx = this.app.projects.findIndex(x => x.id === p.id)
@@ -3425,7 +3425,7 @@ export class ProjectsView {
         </div>`).join('')
       el.querySelectorAll('[data-del-wl]').forEach(btn => {
         btn.addEventListener('click', async () => {
-          if (!confirm('Delete this work log entry?')) return
+          if (!await this.app.confirm({ title: 'Delete work log entry?', confirmLabel: 'Delete' })) return
           try {
             const { deleteWorkLogEntry } = await import('../db/client.js')
             await deleteWorkLogEntry(btn.dataset.delWl)
@@ -4667,7 +4667,7 @@ export class ProjectsView {
   }
 
   async deleteProject(id, mc) {
-    if (!confirm('Delete this project? This cannot be undone.')) return
+    if (!await this.app.confirm({ title: 'Delete project?', message: 'This cannot be undone.', confirmLabel: 'Delete' })) return
     try {
       await deleteProject(this.app.userId, id)
       this.app.projects = this.app.projects.filter(p => p.id !== id)

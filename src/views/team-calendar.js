@@ -1114,8 +1114,8 @@ export class TeamCalendarView {
       overlay.querySelector('#tc-m-close')?.addEventListener('click', () => overlay.remove())
       overlay.querySelector('#tc-m-cancel')?.addEventListener('click', () => overlay.remove())
       overlay.querySelector('#tc-m-save')?.addEventListener('click', () => this._saveFromModal(overlay, entry, section))
-      overlay.querySelector('#tc-m-delete')?.addEventListener('click', () => {
-        if (entry && confirm('Delete this calendar entry?')) { this._deleteEntry(entry.id, section); overlay.remove() }
+      overlay.querySelector('#tc-m-delete')?.addEventListener('click', async () => {
+        if (entry && await this.app.confirm({ title: 'Delete calendar entry?', confirmLabel: 'Delete' })) { this._deleteEntry(entry.id, section); overlay.remove() }
       })
       overlay.querySelector('#tc-m-copy')?.addEventListener('click', () => {
         if (entry) { this._clipboard = { ...entry }; overlay.remove(); this._refreshGrid(section) }
