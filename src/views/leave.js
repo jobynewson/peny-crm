@@ -426,11 +426,15 @@ export class LeaveView {
     try {
       const { getAuthToken } = await import('../auth/clerk.js')
       const token = await getAuthToken()
-      await fetch('/api/reminders?type=leave-notify', {
+      const res = await fetch('/api/reminders?type=leave-notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ action, requestId }),
       })
+      const data = await res.json().catch(() => null)
+      if (!res.ok || data?.results?.some(r => r.error)) {
+        console.warn('Leave email notification reported a problem:', res.status, data)
+      }
     } catch (e) {
       console.warn('Leave email notification failed (non-fatal):', e)
     }

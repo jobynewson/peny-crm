@@ -525,40 +525,56 @@ async function handleLeaveNotify(req, res) {
   </div>
 </body></html>`
 
-  try {
-    if (action === 'submitted') {
-      const recipients = approver ? [approver] : superadmins
-      const body = `
-        <p><strong>${requester.name || requester.email}</strong> has submitted a leave request:</p>
-        <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px">
-          <tr><td style="padding:6px 0;color:#777;width:120px">Type</td><td style="padding:6px 0"><strong>${typeLabel}</strong></td></tr>
-          <tr><td style="padding:6px 0;color:#777">Dates</td><td style="padding:6px 0">${dateRange}</td></tr>
-          <tr><td style="padding:6px 0;color:#777">Duration</td><td style="padding:6px 0">${days}</td></tr>
-          ${request.reason ? `<tr><td style="padding:6px 0;color:#777">Note</td><td style="padding:6px 0">${request.reason}</td></tr>` : ''}
-        </table>
-        <p>Please log in to approve or decline.</p>`
-      for (const r of recipients) {
-        if (r.email) await sendMail(r.email, `Leave request from ${requester.name || requester.email}`, wrap('New leave request', body)).catch(() => {})
-      }
-    } else if (action === 'decided') {
-      if (!requester.email) return res.status(200).json({ ok: true, skipped: 'no requester email' })
-      const statusLabel = request.status === 'approved' ? 'approved ✓' : 'declined ✗'
-      const accentColor = request.status === 'approved' ? '#16a34a' : '#dc2626'
-      const body = `
-        <p>Your leave request has been <strong style="color:${accentColor}">${statusLabel}</strong>.</p>
-        <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px">
-          <tr><td style="padding:6px 0;color:#777;width:120px">Type</td><td style="padding:6px 0">${typeLabel}</td></tr>
-          <tr><td style="padding:6px 0;color:#777">Dates</td><td style="padding:6px 0">${dateRange}</td></tr>
-          <tr><td style="padding:6px 0;color:#777">Duration</td><td style="padding:6px 0">${days}</td></tr>
-          ${request.decision_note ? `<tr><td style="padding:6px 0;color:#777">Note</td><td style="padding:6px 0">${request.decision_note}</td></tr>` : ''}
-        </table>`
-      await sendMail(requester.email, `Your leave request has been ${request.status}`, wrap('Leave request update', body)).catch(() => {})
+  // Collect per-recipient outcomes so a swallowed failure (bad credentials,
+  // Gmail rejection, etc.) is reported in the response instead of vanishing.
+  const results = []
+  const trySend = async (to, subject, html) => {
+    try {
+      const info = await sendMail(to, subject, html)
+      results.push({ to, ok: true, messageId: info?.messageId ?? null })
+    } catch (err) {
+      console.error(`Leave email to ${to} failed:`, err)
+      results.push({ to, error: err.message })
     }
-  } catch (err) {
-    return res.status(500).json({ error: err.message })
   }
 
-  return res.status(200).json({ ok: true })
+  if (action === 'submitted') {
+    const recipients = approver ? [approver] : superadmins
+    const body = `
+      <p><strong>${requester.name || requester.email}</strong> has submitted a leave request:</p>
+      <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px">
+        <tr><td style="padding:6px 0;color:#777;width:120px">Type</td><td style="padding:6px 0"><strong>${typeLabel}</strong></td></tr>
+        <tr><td style="padding:6px 0;color:#777">Dates</td><td style="padding:6px 0">${dateRange}</td></tr>
+        <tr><td style="padding:6px 0;color:#777">Duration</td><td style="padding:6px 0">${days}</td></tr>
+        ${request.reason ? `<tr><td style="padding:6px 0;color:#777">Note</td><td style="padding:6px 0">${request.reason}</td></tr>` : ''}
+      </table>
+      <p>Please log in to approve or decline.</p>`
+    for (const r of recipients) {
+      if (r.email) await trySend(r.email, `Leave request from ${requester.name || requester.email}`, wrap('New leave request', body))
+    }
+    if (!results.length) return res.status(200).json({ ok: true, skipped: 'no recipient email', recipients: recipients.length })
+  } else if (action === 'decided') {
+    if (!requester.email) return res.status(200).json({ ok: true, skipped: 'no requester email' })
+    const statusLabel = request.status === 'approved' ? 'approved ✓' : 'declined ✗'
+    const accentColor = request.status === 'approved' ? '#16a34a' : '#dc2626'
+    const body = `
+      <p>Your leave request has been <strong style="color:${accentColor}">${statusLabel}</strong>.</p>
+      <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px">
+        <tr><td style="padding:6px 0;color:#777;width:120px">Type</td><td style="padding:6px 0">${typeLabel}</td></tr>
+        <tr><td style="padding:6px 0;color:#777">Dates</td><td style="padding:6px 0">${dateRange}</td></tr>
+        <tr><td style="padding:6px 0;color:#777">Duration</td><td style="padding:6px 0">${days}</td></tr>
+        ${request.decision_note ? `<tr><td style="padding:6px 0;color:#777">Note</td><td style="padding:6px 0">${request.decision_note}</td></tr>` : ''}
+      </table>`
+    await trySend(requester.email, `Your leave request has been ${request.status}`, wrap('Leave request update', body))
+  }
+
+  // Surface failures: if every attempted send errored, return 502 so the caller
+  // (and any test) sees the real reason rather than a misleading success.
+  const failures = results.filter(r => r.error)
+  if (failures.length && failures.length === results.length) {
+    return res.status(502).json({ ok: false, error: 'All leave emails failed to send', results })
+  }
+  return res.status(200).json({ ok: true, results })
 }
 
 function isSecondToLastWorkingDay(date) {
