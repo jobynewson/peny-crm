@@ -1993,9 +1993,49 @@ export class App {
   renderSettings(mc) {
     const s = this.settings ?? {}
     const isAdmin = this.appUser?.role === 'superadmin'
-    mc.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;max-width:1100px">
-      <div style="display:flex;flex-direction:column;gap:16px">
-        ${isAdmin ? `
+    const tab = this._settingsTab ?? 'account'
+
+    const tabs = [
+      { id: 'account', label: 'My account' },
+      { id: 'workspace', label: 'Workspace' },
+    ]
+
+    // ── User-level panels ───────────────────────────────────────────────
+    const accountPanel = `
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Account</span></div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
+            <div style="font-size:13px;color:var(--text-secondary)">
+              Signed in as <strong>${this.user.primaryEmailAddress?.emailAddress??''}</strong>
+              <span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary);margin-left:8px;text-transform:capitalize">${this.appUser?.role??'user'}</span>
+            </div>
+            <div class="field">
+              <div class="field-label">Your role / job title</div>
+              <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:6px">Shown when you're added to call sheets and crew lists.</div>
+              <div style="display:flex;gap:8px">
+                <input type="text" id="account-job-title" value="${(this.appUser?.default_role??'').replace(/"/g,'&quot;')}" placeholder="e.g. Camera Operator" style="flex:1;padding:8px 11px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+                <button class="btn-primary" id="account-job-title-save">Save</button>
+              </div>
+            </div>
+            <button class="btn-cancel" style="width:fit-content" id="signout-settings">Sign out</button>
+          </div>
+        </div>`
+
+    const roundupPanel = `
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Reminder roundup</span></div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Receive a daily email listing all the reminder emails sent to your team that day. Not sent at weekends.</div>
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;color:var(--text-primary)">
+              <input type="checkbox" id="s-reminder-roundup" ${s.reminder_roundup ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent)" />
+              Send me a reminder roundup email each day
+            </label>
+            <div><button class="btn-primary" id="settings-save-roundup-btn">Save</button></div>
+          </div>
+        </div>`
+
+    // ── Workspace-level panels ──────────────────────────────────────────
+    const companyPanels = isAdmin ? `
         <div class="panel">
           <div class="panel-header"><span class="panel-title">Company details</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
@@ -2051,9 +2091,9 @@ export class App {
             </div>
             <div><button class="btn-primary" id="settings-save-btn-3">Save settings</button></div>
           </div>
-        </div>` : ''}
+        </div>` : ''
 
-        ${isAdmin ? `
+    const usersHolidaysPanels = isAdmin ? `
         <div class="panel">
           <div class="panel-header"><span class="panel-title">Users</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
@@ -2084,8 +2124,9 @@ export class App {
             </div>
             <div id="holidays-list"><div style="font-size:12px;color:var(--text-tertiary)">Loading…</div></div>
           </div>
-        </div>` : ''}
+        </div>` : ''
 
+    const leavePanel = `
         <div class="panel">
           <div class="panel-header"><span class="panel-title">Leave settings</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
@@ -2105,9 +2146,9 @@ export class App {
             </div>
             <div><button class="btn-primary" id="settings-save-leave-btn">Save</button></div>
           </div>
-        </div>
+        </div>`
 
-        ${isAdmin ? `
+    const timerExpensePanels = isAdmin ? `
         <div class="panel">
           <div class="panel-header"><span class="panel-title">Dashboard days-since timer</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
@@ -2135,18 +2176,6 @@ export class App {
         </div>
 
         <div class="panel">
-          <div class="panel-header"><span class="panel-title">Reminder roundup</span></div>
-          <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
-            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Receive a daily email listing all the reminder emails sent to your team that day. Not sent at weekends.</div>
-            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;color:var(--text-primary)">
-              <input type="checkbox" id="s-reminder-roundup" ${s.reminder_roundup ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent)" />
-              Send me a reminder roundup email each day
-            </label>
-            <div><button class="btn-primary" id="settings-save-roundup-btn">Save</button></div>
-          </div>
-        </div>
-
-        <div class="panel">
           <div class="panel-header"><span class="panel-title">Expense tracker</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
             <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">On the second-to-last working day of each month, a summary of all team expenses is automatically emailed to the recipients below.</div>
@@ -2169,30 +2198,9 @@ export class App {
             </div>
             <div><button class="btn-primary" id="settings-save-expenses-btn">Save</button></div>
           </div>
-        </div>` : ''}
+        </div>` : ''
 
-        <div class="panel">
-          <div class="panel-header"><span class="panel-title">Account</span></div>
-          <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
-            <div style="font-size:13px;color:var(--text-secondary)">
-              Signed in as <strong>${this.user.primaryEmailAddress?.emailAddress??''}</strong>
-              <span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary);margin-left:8px;text-transform:capitalize">${this.appUser?.role??'user'}</span>
-            </div>
-            <div class="field">
-              <div class="field-label">Your role / job title</div>
-              <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:6px">Shown when you're added to call sheets and crew lists.</div>
-              <div style="display:flex;gap:8px">
-                <input type="text" id="account-job-title" value="${(this.appUser?.default_role??'').replace(/"/g,'&quot;')}" placeholder="e.g. Camera Operator" style="flex:1;padding:8px 11px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
-                <button class="btn-primary" id="account-job-title-save">Save</button>
-              </div>
-            </div>
-            <button class="btn-cancel" style="width:fit-content" id="signout-settings">Sign out</button>
-          </div>
-        </div>
-      </div>
-
-      <div style="display:flex;flex-direction:column;gap:16px">
-        ${isAdmin ? `
+    const budgetPanel = isAdmin ? `
         <div class="panel">
           <div class="panel-header"><span class="panel-title">Budget template</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:12px">
@@ -2204,9 +2212,40 @@ export class App {
               <div style="font-size:12px;color:var(--text-tertiary)">Loading template…</div>
             </div>
           </div>
-        </div>` : '<div></div>'}
-      </div>
+        </div>` : '<div></div>'
+
+    // ── Assemble tabs ───────────────────────────────────────────────────
+    const tabBar = `<div style="display:flex;gap:0;border-bottom:1px solid var(--border-light);margin-bottom:20px">
+      ${tabs.map(t => `
+        <button class="settings-tab" data-tab="${t.id}"
+          style="padding:8px 16px;font-size:13px;font-family:var(--font);cursor:pointer;background:none;border:none;border-bottom:2px solid ${tab===t.id?'var(--accent)':'transparent'};color:${tab===t.id?'var(--accent)':'var(--text-secondary)'};font-weight:${tab===t.id?'600':'400'};transition:all 0.15s;margin-bottom:-1px">
+          ${t.label}
+        </button>`).join('')}
     </div>`
+
+    if (tab === 'account') {
+      mc.innerHTML = tabBar + `<div style="display:flex;flex-direction:column;gap:16px;max-width:560px">
+        ${accountPanel}
+        ${roundupPanel}
+      </div>`
+    } else {
+      mc.innerHTML = tabBar + `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;max-width:1100px">
+        <div style="display:flex;flex-direction:column;gap:16px">
+          ${companyPanels}
+          ${usersHolidaysPanels}
+          ${leavePanel}
+          ${timerExpensePanels}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:16px">
+          ${budgetPanel}
+        </div>
+      </div>`
+    }
+
+    mc.querySelectorAll('.settings-tab').forEach(btn => btn.addEventListener('click', () => {
+      this._settingsTab = btn.dataset.tab
+      this.renderSettings(mc)
+    }))
 
     mc.querySelector('#settings-save-btn')?.addEventListener('click', () => this.saveSettings(mc))
     mc.querySelector('#settings-save-btn-2')?.addEventListener('click', () => this.saveSettings(mc))
@@ -2221,7 +2260,7 @@ export class App {
     mc.querySelector('#settings-save-expenses-btn')?.addEventListener('click', () => this._saveExpenseSettings(mc))
     mc.querySelector('#settings-save-leave-btn')?.addEventListener('click', () => this._saveLeaveSettings(mc))
 
-    if (isAdmin) {
+    if (isAdmin && tab === 'workspace') {
       this._loadUsersPanel(mc)
       mc.querySelector('#invite-btn')?.addEventListener('click', () => this._sendInvite(mc))
       this._mountTemplateEditor(mc)
