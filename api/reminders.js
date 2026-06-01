@@ -43,7 +43,12 @@ export default async function handler(req, res) {
     return handleExpenseDigest(req, res, sql, transporter, todayLabel)
   }
 
-  const dateStr = (d) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  const dateStr = (d) => {
+    if (!d) return 'Invalid date'
+    const dateObj = typeof d === 'string' ? new Date(d + 'T00:00:00') : (d instanceof Date ? d : new Date(d))
+    if (isNaN(dateObj.getTime())) return 'Invalid date'
+    return dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  }
   const todayLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
   const emailWrap = (title, greeting, bodyHtml) => `
@@ -505,7 +510,13 @@ async function handleLeaveNotify(req, res) {
   const from = process.env.GMAIL_USER
   const sendMail = (to, subject, html) => transporter.sendMail({ from, to, subject, html })
 
-  const fmtDate = d => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+  const fmtDate = d => {
+    if (!d) return 'Invalid date'
+    const dateStr = typeof d === 'string' ? d : (d instanceof Date ? d.toISOString().split('T')[0] : String(d))
+    const parsed = new Date(dateStr + 'T00:00:00')
+    if (isNaN(parsed.getTime())) return 'Invalid date'
+    return parsed.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+  }
   const typeLabel = { holiday: 'Annual leave', sick: 'Sickness', unpaid: 'Unpaid leave', other: 'Other' }[request.leave_type] ?? request.leave_type
   const dateRange = request.start_date === request.end_date
     ? fmtDate(request.start_date)
