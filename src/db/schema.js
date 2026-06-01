@@ -180,6 +180,8 @@ export const app_users = pgTable('app_users', {
   // Leave planner
   annual_allowance: numeric('annual_allowance', { precision: 5, scale: 1 }).notNull().default('25'),
   approver_id:      uuid('approver_id'),   // app_users.id of this person's leave approver
+  // Google Calendar OAuth tokens (server-only — never exposed to the browser)
+  google_tokens:    jsonb('google_tokens'),
   created_at:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updated_at:   timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
@@ -428,6 +430,7 @@ export const leave_requests = pgTable('leave_requests', {
   decided_by:    uuid('decided_by'),
   decided_at:    timestamp('decided_at', { withTimezone: true }),
   calendar_entry_id: uuid('calendar_entry_id'),
+  gcal_event_id:     text('gcal_event_id'),    // Google Calendar event ID (set when approved, cleared on cancel)
   ...timestamps,
 })
 

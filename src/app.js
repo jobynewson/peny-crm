@@ -56,6 +56,16 @@ export class App {
     this._bindDateRangeLinks()
     // Handle browser back/forward
     window.addEventListener('popstate', (e) => this._handlePopState(e))
+    // Handle post-Google-OAuth redirect (?gc_connected=1 or ?gc_error=...)
+    const urlParams = new URLSearchParams(location.search)
+    if (urlParams.has('gc_connected')) {
+      setTimeout(() => this.toast('Google Calendar connected!'), 400)
+      history.replaceState(null, '', location.pathname + location.hash)
+    } else if (urlParams.has('gc_error')) {
+      const msg = urlParams.get('gc_error')
+      setTimeout(() => this.toast(`Google Calendar error: ${msg || 'unknown'}`), 400)
+      history.replaceState(null, '', location.pathname + location.hash)
+    }
   }
 
   // When a start date in a range changes, keep its paired end date in step so the
@@ -2432,6 +2442,18 @@ export class App {
               ${users.filter(x => x.id !== u.id).map(x => `<option value="${x.id}" ${u.approver_id === x.id ? 'selected' : ''}>${esc(x.name || x.email)}</option>`).join('')}
             </select>
           </div>
+          <div style="margin-top:8px;display:flex;align-items:center;gap:10px">
+            <div style="font-size:12px;color:var(--text-secondary);white-space:nowrap">Google Calendar:</div>
+            ${isSelf
+              ? u.google_calendar_connected
+                ? `<span style="font-size:12px;color:#16a34a;font-weight:500">✓ Connected</span>
+                   <button class="row-btn" data-gcal-disconnect="${u.id}" style="font-size:11px;color:var(--red,#e05252);border-color:var(--red,#e05252)">Disconnect</button>`
+                : `<button class="row-btn" data-gcal-connect="${u.id}" style="font-size:11px">Connect Google Calendar</button>
+                   <span style="font-size:11px;color:var(--text-tertiary)">Approved leave will appear on your personal calendar</span>`
+              : u.google_calendar_connected
+                ? `<span style="font-size:12px;color:#16a34a">✓ Connected</span>`
+                : `<span style="font-size:12px;color:var(--text-tertiary)">Not connected</span>`}
+          </div>
           <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
             ${!isSelf ? `<button class="row-btn" data-remove-user="${u.id}" data-remove-name="${esc(u.name)||esc(u.email)}" style="font-size:11px;color:var(--red,#e05252);border-color:var(--red,#e05252)">Remove user</button>` : '<span></span>'}
             <button class="row-btn" data-save-user="${u.id}" style="font-size:11px">Save changes</button>
@@ -2477,7 +2499,48 @@ export class App {
           } catch(e) { console.error(e); this.toast('Error removing user') }
         })
       })
+      // Google Calendar — connect
+      el.querySelectorAll('[data-gcal-connect]').forEach(btn => {
+        btn.addEventListener('click', () => this._startGoogleOAuth())
+      })
+      // Google Calendar — disconnect
+      el.querySelectorAll('[data-gcal-disconnect]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const uid = btn.dataset.gcalDisconnect
+          if (!confirm('Disconnect Google Calendar? Existing calendar events will not be deleted.')) return
+          try {
+            const { getAuthToken } = await import('./auth/clerk.js')
+            const token = await getAuthToken()
+            const r = await fetch('/api/google-auth?action=disconnect', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ appUserId: uid }),
+            })
+            if (!r.ok) throw new Error(await r.text())
+            const u = this.allUsers?.find(x => x.id === uid)
+            if (u) u.google_calendar_connected = false
+            this.toast('Google Calendar disconnected')
+            this._loadUsersPanel(mc)
+          } catch(e) { console.error(e); this.toast('Error disconnecting Google Calendar') }
+        })
+      })
     } catch(e) { console.error(e); el.innerHTML = '<div style="font-size:12px;color:var(--text-tertiary)">Could not load users</div>' }
+  }
+
+  _startGoogleOAuth() {
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID
+    if (!clientId) { this.toast('VITE_GOOGLE_CLIENT_ID is not configured'); return }
+    const state = btoa(JSON.stringify({ appUserId: this.appUser?.id }))
+    const params = new URLSearchParams({
+      client_id:     clientId,
+      redirect_uri:  `${location.origin}/api/google-auth`,
+      response_type: 'code',
+      scope:         'https://www.googleapis.com/auth/calendar.events',
+      access_type:   'offline',
+      prompt:        'consent',
+      state,
+    })
+    location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`
   }
 
   _renderHolidaysPanel(mc) {

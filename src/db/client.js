@@ -118,6 +118,8 @@ export async function runMigrations() {
       created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `
+  await sql`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS google_tokens JSONB`
+  await sql`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS gcal_event_id TEXT`
   await sql`ALTER TABLE post_production_schedules ADD COLUMN IF NOT EXISTS lead_assignee_id UUID`
   await sql`
     CREATE TABLE IF NOT EXISTS post_production_schedules (
@@ -414,7 +416,12 @@ export async function getOrCreateAppUser(clerkUser) {
 }
 
 export async function getAllAppUsers() {
-  return db.select().from(app_users).orderBy(app_users.created_at)
+  const rows = await db.select().from(app_users).orderBy(app_users.created_at)
+  // Strip raw OAuth tokens — never expose refresh_token to the browser
+  return rows.map(({ google_tokens, ...rest }) => ({
+    ...rest,
+    google_calendar_connected: !!(google_tokens?.refresh_token),
+  }))
 }
 
 export async function updateAppUser(id, data) {

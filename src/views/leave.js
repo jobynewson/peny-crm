@@ -354,6 +354,7 @@ export class LeaveView {
       }
       this._replace(updated)
       this.app.toast('Leave cancelled')
+      this._syncGoogleCalendar('delete', id)
       this._rerender()
     } catch (e) { console.error(e); this.app.toast('Could not cancel leave') }
   }
@@ -390,6 +391,7 @@ export class LeaveView {
       this._replace(updated)
       this.app.toast(status === 'approved' ? 'Leave approved' : 'Leave declined')
       this._sendNotify('decided', id)
+      if (status === 'approved') this._syncGoogleCalendar('create', id)
       this._rerender()
     } catch (e) { console.error(e); this.app.toast('Could not update request') }
   }
@@ -402,6 +404,21 @@ export class LeaveView {
   _rerender() {
     if (this.app.currentView === 'leave') this.render(document.getElementById('main-content'))
     this.app.updateLeaveBadge?.()
+  }
+
+  // Fire-and-forget: create or delete a Google Calendar event for a leave request.
+  async _syncGoogleCalendar(action, requestId) {
+    try {
+      const { getAuthToken } = await import('../auth/clerk.js')
+      const token = await getAuthToken()
+      fetch('/api/google-calendar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action, requestId }),
+      }).catch(e => console.warn('Google Calendar sync failed (non-fatal):', e))
+    } catch (e) {
+      console.warn('Google Calendar sync failed (non-fatal):', e)
+    }
   }
 
   // Fire-and-forget: notify the relevant person by email. Never blocks UI.
