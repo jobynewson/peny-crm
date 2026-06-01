@@ -9,10 +9,11 @@ import { MarketingView } from './views/marketing.js'
 import { TimeTrackView } from './views/timetrack.js'
 import { PasswordManagerView } from './views/password-manager.js'
 import { TeamCalendarView } from './views/team-calendar.js'
+import { LeaveView, pendingApprovalsFor } from './views/leave.js'
 import { ExpensesView } from './views/expenses.js'
 
 export class App {
-  constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, onSignOut }) {
+  constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, leaveRequests, publicHolidays, onSignOut }) {
     this.userId         = userId
     this.clerkUserId    = clerkUserId
     this.user           = user
@@ -26,6 +27,8 @@ export class App {
     this.socialPosts    = socialPosts ?? []
     this.marketingCards = marketingCards ?? []
     this.teamCalendarEntries = teamCalendarEntries ?? []
+    this.leaveRequests  = leaveRequests ?? []
+    this.publicHolidays = publicHolidays ?? []
     this.onSignOut      = onSignOut
     this.currentView    = 'dashboard'
     this.contactsView    = new ContactsView(this)
@@ -38,6 +41,7 @@ export class App {
     this.passwordManagerView  = new PasswordManagerView(this)
     this.teamCalendarView     = new TeamCalendarView(this)
     this.expensesView         = new ExpensesView(this)
+    this.leaveView            = new LeaveView(this)
     window.app = this
   }
 
@@ -389,6 +393,7 @@ export class App {
         </div>
         <div class="nav-bottom">
           <div class="sidebar-tt" id="sidebar-tt">${this._renderSidebarTT()}</div>
+          <div class="nav-item ${this.currentView==='leave'?'active':''}" data-view="leave">${this.iconLeave()} Leave${this._leaveBadgeHtml()}</div>
           <div class="nav-item ${this.currentView==='expenses'?'active':''}" data-view="expenses">${this.iconExpenses()} Expenses</div>
           <div class="nav-item ${this.currentView==='password-manager'?'active':''}" data-view="password-manager">${this.iconPasswordManager()} Passwords</div>
           ${this.permissions.settings ? `<div class="nav-item" data-view="settings">${this.iconSettings()} Settings</div>` : ''}
@@ -569,7 +574,7 @@ export class App {
     if (!hash) return
     const parts = hash.split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses']
+    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses','leave']
     if (!validViews.includes(view)) return
     this.currentView = view
     if (view === 'projects' && id) {
@@ -589,7 +594,7 @@ export class App {
     const hash = location.hash.slice(1)
     const parts = (hash || 'dashboard').split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses']
+    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses','leave']
     if (!validViews.includes(view)) { this.currentView = 'dashboard'; this.render(); return }
 
     this.currentView = view
@@ -627,6 +632,8 @@ export class App {
       this.passwordManagerView.render(mc)
     } else if (this.currentView === 'expenses') {
       this.expensesView.render(mc)
+    } else if (this.currentView === 'leave') {
+      this.leaveView.render(mc)
     } else if (this.currentView === 'calendar') {
       this.teamCalendarView.renderFullPage(mc)
     } else if (this.currentView === 'dashboard') {
@@ -639,7 +646,7 @@ export class App {
   viewTitle() {
     if (this.currentView === 'projects' && this.projectsView?.currentId) return this.projects.find(p=>p.id===this.projectsView.currentId)?.name ?? 'Project'
     if (this.currentView === 'budgets'  && this.budgetsView?.currentId)  return this.budgets.find(b=>b.id===this.budgetsView.currentId)?.name  ?? 'Budget'
-    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',calendar:'Team Calendar',settings:'Settings',marketing:'Marketing',timetrack:'Time tracker','story-planner':'Story Planner','password-manager':'Passwords',expenses:'Expenses'}[this.currentView] ?? ''
+    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',calendar:'Team Calendar',settings:'Settings',marketing:'Marketing',timetrack:'Time tracker','story-planner':'Story Planner','password-manager':'Passwords',expenses:'Expenses',leave:'Leave'}[this.currentView] ?? ''
   }
 
   updateTitle() {
@@ -2047,6 +2054,19 @@ export class App {
             </div>
             <div id="users-list"><div style="font-size:12px;color:var(--text-tertiary)">Loading users…</div></div>
           </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Public holidays</span></div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Public holidays are skipped when calculating how many days a leave request costs. Weekends are always excluded automatically.</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <input type="date" id="hol-date" style="font-size:13px;padding:7px 10px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;color-scheme:var(--color-scheme,light)" />
+              <input type="text" id="hol-name" placeholder="e.g. Christmas Day" style="flex:1;min-width:140px;font-size:13px;padding:7px 10px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+              <button class="btn-primary" id="hol-add-btn">Add</button>
+            </div>
+            <div id="holidays-list"><div style="font-size:12px;color:var(--text-tertiary)">Loading…</div></div>
+          </div>
         </div>` : ''}
 
         ${isAdmin ? `
@@ -2166,6 +2186,8 @@ export class App {
       this._loadUsersPanel(mc)
       mc.querySelector('#invite-btn')?.addEventListener('click', () => this._sendInvite(mc))
       this._mountTemplateEditor(mc)
+      this._renderHolidaysPanel(mc)
+      mc.querySelector('#hol-add-btn')?.addEventListener('click', () => this._addHoliday(mc))
     }
   }
 
@@ -2370,6 +2392,16 @@ export class App {
             <input type="text" value="${esc(u.default_role)}" placeholder="e.g. Camera Operator" data-default-role="${u.id}"
               style="flex:1;font-size:12px;padding:4px 8px;border:1px solid var(--border-light);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
           </div>
+          <div style="margin-top:8px;display:grid;grid-template-columns:auto 90px 1fr;gap:8px;align-items:center">
+            <div style="font-size:12px;color:var(--text-secondary);white-space:nowrap">Leave allowance / approver:</div>
+            <input type="number" value="${esc(u.annual_allowance ?? 25)}" min="0" step="0.5" data-allowance="${u.id}" title="Annual leave allowance (days)"
+              style="font-size:12px;padding:4px 8px;border:1px solid var(--border-light);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
+            <select data-approver="${u.id}" title="Who approves this person's leave"
+              style="font-size:12px;padding:4px 8px;border:1px solid var(--border-light);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none">
+              <option value="">— No approver (superadmins) —</option>
+              ${users.filter(x => x.id !== u.id).map(x => `<option value="${x.id}" ${u.approver_id === x.id ? 'selected' : ''}>${esc(x.name || x.email)}</option>`).join('')}
+            </select>
+          </div>
           <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
             ${!isSelf ? `<button class="row-btn" data-remove-user="${u.id}" data-remove-name="${esc(u.name)||esc(u.email)}" style="font-size:11px;color:var(--red,#e05252);border-color:var(--red,#e05252)">Remove user</button>` : '<span></span>'}
             <button class="row-btn" data-save-user="${u.id}" style="font-size:11px">Save changes</button>
@@ -2385,14 +2417,16 @@ export class App {
           const name = el.querySelector(`[data-name="${uid}"]`)?.value.trim() || null
           const email = el.querySelector(`[data-email="${uid}"]`)?.value.trim() || ''
           const default_role = el.querySelector(`[data-default-role="${uid}"]`)?.value.trim() || null
+          const annual_allowance = el.querySelector(`[data-allowance="${uid}"]`)?.value || '25'
+          const approver_id = el.querySelector(`[data-approver="${uid}"]`)?.value || null
           if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { this.toast('Please enter a valid email address'); return }
           // Role select is disabled for self, so fall back to the existing role
           const role = (roleSel && !roleSel.disabled) ? roleSel.value : (this.allUsers?.find(x => x.id === uid)?.role ?? 'user')
           try {
-            await updateAppUser(uid, { name, email, role, default_role })
+            await updateAppUser(uid, { name, email, role, default_role, annual_allowance, approver_id })
             // Update in-memory allUsers so crew dropdowns reflect changes immediately
             const u = this.allUsers?.find(x => x.id === uid)
-            if (u) { u.name = name; u.email = email; u.role = role; u.default_role = default_role }
+            if (u) { u.name = name; u.email = email; u.role = role; u.default_role = default_role; u.annual_allowance = annual_allowance; u.approver_id = approver_id }
             if (this.appUser?.id === uid) { this.appUser.name = name; this.appUser.email = email; this.appUser.default_role = default_role }
             this.toast('User updated')
             this._loadUsersPanel(mc)
@@ -2414,6 +2448,44 @@ export class App {
         })
       })
     } catch(e) { console.error(e); el.innerHTML = '<div style="font-size:12px;color:var(--text-tertiary)">Could not load users</div>' }
+  }
+
+  _renderHolidaysPanel(mc) {
+    const el = mc.querySelector('#holidays-list')
+    if (!el) return
+    const esc = v => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')
+    const hols = [...(this.publicHolidays ?? [])].sort((a, b) => a.holiday_date.localeCompare(b.holiday_date))
+    if (!hols.length) { el.innerHTML = '<div style="font-size:12px;color:var(--text-tertiary)">No public holidays added yet.</div>'; return }
+    el.innerHTML = hols.map(h => `
+      <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border-light)">
+        <div style="font-size:13px;color:var(--text-primary);width:120px">${new Date(h.holiday_date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+        <div style="flex:1;font-size:13px;color:var(--text-secondary)">${esc(h.name)}</div>
+        <button class="row-btn" data-del-hol="${h.id}" style="font-size:11px;color:var(--red,#e05252);border-color:var(--red,#e05252)">Remove</button>
+      </div>`).join('')
+    el.querySelectorAll('[data-del-hol]').forEach(btn => btn.addEventListener('click', async () => {
+      try {
+        const { deletePublicHoliday } = await import('./db/client.js')
+        await deletePublicHoliday(this.userId, btn.dataset.delHol)
+        this.publicHolidays = (this.publicHolidays ?? []).filter(x => x.id !== btn.dataset.delHol)
+        this._renderHolidaysPanel(mc)
+      } catch(e) { console.error(e); this.toast('Could not remove holiday') }
+    }))
+  }
+
+  async _addHoliday(mc) {
+    const date = mc.querySelector('#hol-date')?.value
+    const name = mc.querySelector('#hol-name')?.value.trim() || 'Holiday'
+    if (!date) { this.toast('Pick a date'); return }
+    try {
+      const { createPublicHoliday } = await import('./db/client.js')
+      const created = await createPublicHoliday(this.userId, { holiday_date: date, name })
+      if (!this.publicHolidays) this.publicHolidays = []
+      this.publicHolidays.push(created)
+      mc.querySelector('#hol-date').value = ''
+      mc.querySelector('#hol-name').value = ''
+      this._renderHolidaysPanel(mc)
+      this.toast('Public holiday added')
+    } catch(e) { console.error(e); this.toast('Could not add holiday') }
   }
 
   async _sendInvite(mc) {
@@ -3076,6 +3148,18 @@ export class App {
   iconSettings() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M11.4 4.6l-1.4 1.4M4.6 11.4l-1.4 1.4"/></svg>` }
   iconPasswordManager() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/><circle cx="8" cy="11" r="1" fill="currentColor" stroke="none"/></svg>` }
   iconExpenses()        { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="4" width="12" height="9" rx="1.5"/><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M8 7.5v3M6.5 9h3"/></svg>` }
+  iconLeave()           { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 2c2.5 1.5 3.5 4 2.5 7-.8 2.4-2.5 4-2.5 4s-1.7-1.6-2.5-4C4.5 6 5.5 3.5 8 2z"/><path d="M8 6v7"/></svg>` }
+  _leaveBadgeHtml() {
+    const n = pendingApprovalsFor(this.appUser, this.leaveRequests).length
+    return n ? `<span class="leave-nav-badge" style="margin-left:auto;background:#d97706;color:#fff;font-size:10px;font-weight:600;border-radius:10px;padding:1px 7px;min-width:16px;text-align:center">${n}</span>` : ''
+  }
+  updateLeaveBadge() {
+    const item = document.querySelector('.nav-item[data-view="leave"]')
+    if (!item) return
+    item.querySelector('.leave-nav-badge')?.remove()
+    const html = this._leaveBadgeHtml()
+    if (html) item.insertAdjacentHTML('beforeend', html)
+  }
   iconSignOut()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M10 11l4-4-4-4M14 8H6"/></svg>` }
   iconTheme() {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark'

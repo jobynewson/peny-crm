@@ -9,6 +9,7 @@ import {
   story_plans, credentials, team_calendar_entries,
   post_production_schedules, pps_phases,
   expense_entries, expense_submissions,
+  leave_requests, public_holidays,
 } from './schema.js'
 
 const sql = neon(import.meta.env.VITE_DATABASE_URL)
@@ -81,6 +82,40 @@ export async function runMigrations() {
   `
   await sql`ALTER TABLE team_calendar_entries ADD COLUMN IF NOT EXISTS end_date DATE`
   await sql`ALTER TABLE team_calendar_entries ADD COLUMN IF NOT EXISTS is_deadline BOOLEAN NOT NULL DEFAULT false`
+  // ── Leave planner ──────────────────────────────────────────────────────────
+  await sql`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS annual_allowance NUMERIC(5,1) NOT NULL DEFAULT 25`
+  await sql`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS approver_id UUID`
+  await sql`
+    CREATE TABLE IF NOT EXISTS leave_requests (
+      id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id           TEXT NOT NULL,
+      requester_id      UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+      approver_id       UUID REFERENCES app_users(id) ON DELETE SET NULL,
+      leave_type        TEXT NOT NULL DEFAULT 'holiday',
+      start_date        DATE NOT NULL,
+      end_date          DATE NOT NULL,
+      start_half        BOOLEAN NOT NULL DEFAULT false,
+      end_half          BOOLEAN NOT NULL DEFAULT false,
+      total_days        NUMERIC(5,1) NOT NULL DEFAULT 0,
+      status            TEXT NOT NULL DEFAULT 'pending',
+      reason            TEXT,
+      decision_note     TEXT,
+      decided_by        UUID,
+      decided_at        TIMESTAMPTZ,
+      calendar_entry_id UUID,
+      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS public_holidays (
+      id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id      TEXT NOT NULL,
+      holiday_date DATE NOT NULL,
+      name         TEXT NOT NULL DEFAULT 'Holiday',
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
   await sql`ALTER TABLE post_production_schedules ADD COLUMN IF NOT EXISTS lead_assignee_id UUID`
   await sql`
     CREATE TABLE IF NOT EXISTS post_production_schedules (
@@ -893,6 +928,46 @@ export async function updateTeamCalendarEntry(workspaceId, id, data) {
 export async function deleteTeamCalendarEntry(workspaceId, id) {
   return db.delete(team_calendar_entries)
     .where(and(eq(team_calendar_entries.id, id), eq(team_calendar_entries.user_id, workspaceId)))
+}
+
+// ── Leave planner ─────────────────────────────────────────────────────────────
+export async function getLeaveRequests(workspaceId) {
+  return db.select().from(leave_requests)
+    .where(eq(leave_requests.user_id, workspaceId))
+    .orderBy(desc(leave_requests.start_date))
+}
+export async function createLeaveRequest(workspaceId, data) {
+  const [row] = await db.insert(leave_requests)
+    .values({ user_id: workspaceId, ...data })
+    .returning()
+  return row
+}
+export async function updateLeaveRequest(workspaceId, id, data) {
+  const [row] = await db.update(leave_requests)
+    .set({ ...data, updated_at: new Date() })
+    .where(and(eq(leave_requests.id, id), eq(leave_requests.user_id, workspaceId)))
+    .returning()
+  return row
+}
+export async function deleteLeaveRequest(workspaceId, id) {
+  return db.delete(leave_requests)
+    .where(and(eq(leave_requests.id, id), eq(leave_requests.user_id, workspaceId)))
+}
+
+export async function getPublicHolidays(workspaceId) {
+  return db.select().from(public_holidays)
+    .where(eq(public_holidays.user_id, workspaceId))
+    .orderBy(public_holidays.holiday_date)
+}
+export async function createPublicHoliday(workspaceId, data) {
+  const [row] = await db.insert(public_holidays)
+    .values({ user_id: workspaceId, ...data })
+    .returning()
+  return row
+}
+export async function deletePublicHoliday(workspaceId, id) {
+  return db.delete(public_holidays)
+    .where(and(eq(public_holidays.id, id), eq(public_holidays.user_id, workspaceId)))
 }
 
 // ── Post Production Schedule ──────────────────────────────────────────────────

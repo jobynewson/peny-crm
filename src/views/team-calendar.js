@@ -1,5 +1,5 @@
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-const TYPE_COLORS = { shoot: '#4CAF50', post_production: '#C47E3A', other: '#7B6EAB' }
+const TYPE_COLORS = { shoot: '#4CAF50', post_production: '#C47E3A', leave: '#0891b2', other: '#7B6EAB' }
 const ENTRY_TYPE_LABELS = { shoot: 'Shoot', post_production: 'Post Production', other: 'Other' }
 
 export class TeamCalendarView {

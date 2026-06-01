@@ -509,3 +509,24 @@ body.is-resizing .tc-chip-overlay {
   font-weight: 700;
   color: #fff;
 }
+
+/* ── Leave planner modal fields ───────────────────────────────────────────── */
+.leave-lbl {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 5px;
+}
+.leave-input {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 13px;
+  border: 1px solid var(--border-med);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: var(--font);
+  outline: none;
+  box-sizing: border-box;
+}
