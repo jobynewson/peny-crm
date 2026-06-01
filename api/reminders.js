@@ -687,6 +687,20 @@ async function handleLeaveApprove(req, res) {
         WHERE id = ${request.id}
       `
 
+      // Sync to Google Calendar (fire-and-forget)
+      try {
+        const requesterUser = await sql`SELECT google_tokens FROM app_users WHERE id = ${request.requester_id} LIMIT 1`
+        if (requesterUser[0]?.google_tokens) {
+          fetch('/api/google', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'create', requestId: request.id }),
+          }).catch(e => console.warn('Google Calendar sync failed (non-fatal):', e))
+        }
+      } catch (e) {
+        console.warn('Google Calendar sync check failed (non-fatal):', e)
+      }
+
       return res.status(200).send(`
         <!DOCTYPE html>
         <html>
