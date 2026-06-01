@@ -48,9 +48,8 @@ export class ExpensesView {
       byMonth[mk].push(e)
     }
 
-    const submittedMonths = new Set((this.submissions ?? []).map(s => s.month_key))
     const currentEntries = byMonth[currentMonthKey] ?? []
-    const isCurrentSubmitted = submittedMonths.has(currentMonthKey)
+    const isCurrentSubmitted = this._isMonthSubmitted(currentMonthKey, currentEntries)
     const pastMonths = Object.keys(byMonth).filter(mk => mk < currentMonthKey).sort((a, b) => b.localeCompare(a))
 
     const projects = this.app.projects ?? []
@@ -113,6 +112,10 @@ export class ExpensesView {
               ? `<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:#d1fae5;color:#065f46;border-radius:20px;font-size:12px;font-weight:500">${CHECK_ICON} Submitted</span>`
               : `<button class="btn-primary" id="exp-submit-now-btn" style="font-size:12px;padding:5px 12px">Submit expenses now</button>`}
           </div>
+          <div style="display:flex;align-items:flex-start;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border-light);font-size:12px;color:var(--text-tertiary);line-height:1.5">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" style="flex-shrink:0;margin-top:1px"><circle cx="8" cy="8" r="6.5"/><path d="M8 7v4M8 4.5v.5"/></svg>
+            <span>Expenses submit automatically each month in time for payroll.${isCurrentSubmitted ? '' : ` Use <strong style="color:var(--text-secondary);font-weight:600">Submit expenses now</strong> only if you want to send this month's expenses early.`}</span>
+          </div>
           ${this._renderEntries(currentEntries, mileageRate, projects)}
         </div>
 
@@ -120,7 +123,7 @@ export class ExpensesView {
         ${pastMonths.length ? `
           <div style="font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:8px;padding-left:2px">Previous months</div>
           ${pastMonths.map(mk => {
-            const submitted = submittedMonths.has(mk)
+            const submitted = this._isMonthSubmitted(mk, byMonth[mk])
             return `
               <div class="panel" style="margin-bottom:10px">
                 <div class="exp-month-head" data-mk="${mk}" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;cursor:pointer;user-select:none">
@@ -145,6 +148,22 @@ export class ExpensesView {
   _fmtMonth(mk) {
     const [y, m] = mk.split('-')
     return new Date(parseInt(y), parseInt(m) - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+  }
+
+  // The single submission row for a month, if one exists.
+  _monthSubmission(mk) {
+    return (this.submissions ?? []).find(s => s.month_key === mk) || null
+  }
+
+  // A month only counts as submitted while nothing has changed since: if any
+  // entry was added after the last submission, those expenses are un-submitted,
+  // so the "Submit now" button resets to its initial state and a re-submit is
+  // needed. (Re-submitting bumps submitted_at, clearing the flag again.)
+  _isMonthSubmitted(mk, entries) {
+    const sub = this._monthSubmission(mk)
+    if (!sub) return false
+    const submittedAt = new Date(sub.submitted_at).getTime()
+    return !(entries ?? []).some(e => e.created_at && new Date(e.created_at).getTime() > submittedAt)
   }
 
   _summary(entries, mileageRate) {
