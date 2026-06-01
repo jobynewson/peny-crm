@@ -411,7 +411,7 @@ export class LeaveView {
     try {
       const { getAuthToken } = await import('../auth/clerk.js')
       const token = await getAuthToken()
-      fetch('/api/google-calendar', {
+      fetch('/api/google', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ action, requestId }),

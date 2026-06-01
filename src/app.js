@@ -2511,10 +2511,10 @@ export class App {
           try {
             const { getAuthToken } = await import('./auth/clerk.js')
             const token = await getAuthToken()
-            const r = await fetch('/api/google-auth?action=disconnect', {
+            const r = await fetch('/api/google', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-              body: JSON.stringify({ appUserId: uid }),
+              body: JSON.stringify({ action: 'disconnect', appUserId: uid }),
             })
             if (!r.ok) throw new Error(await r.text())
             const u = this.allUsers?.find(x => x.id === uid)
@@ -2533,7 +2533,7 @@ export class App {
     const state = btoa(JSON.stringify({ appUserId: this.appUser?.id }))
     const params = new URLSearchParams({
       client_id:     clientId,
-      redirect_uri:  `${location.origin}/api/google-auth`,
+      redirect_uri:  `${location.origin}/api/google`,
       response_type: 'code',
       scope:         'https://www.googleapis.com/auth/calendar.events',
       access_type:   'offline',
