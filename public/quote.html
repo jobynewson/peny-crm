@@ -47,6 +47,16 @@
     .q-footer { text-align:center; font-size:11px; color:#bbb; margin-top:32px }
     .q-badge { display:inline-block; background:rgba(110,201,110,0.15); color:#3a8a3a; border:0.5px solid rgba(110,201,110,0.3); border-radius:20px; padding:4px 12px; font-size:11px; font-weight:500; margin-bottom:16px }
 
+    /* Currency switcher */
+    .q-ccy-bar { display:flex; align-items:center; justify-content:flex-end; gap:10px 14px; flex-wrap:wrap; margin-bottom:16px }
+    .q-ccy-label { font-size:12px; color:#999; margin-right:auto }
+    .q-ccy-switch { display:inline-flex; border:0.5px solid #e0e0da; border-radius:20px; overflow:hidden; background:#fff }
+    .q-ccy-btn { padding:6px 14px; font-size:12px; line-height:1; border:none; background:transparent; color:#666; cursor:pointer; font-family:var(--font); transition:background 0.12s, color 0.12s }
+    .q-ccy-btn:not(:last-child) { border-right:0.5px solid #ececdf }
+    .q-ccy-btn.active { background:#1a1a18; color:#fff }
+    .q-fx-note { width:100%; text-align:right; font-size:11px; color:#999; line-height:1.5; display:flex; align-items:center; justify-content:flex-end; gap:7px; flex-wrap:wrap }
+    .q-fx-dot { display:inline-block; width:6px; height:6px; border-radius:50%; flex-shrink:0 }
+
     .loading { text-align:center; padding:80px; color:#aaa }
     .error { text-align:center; padding:80px; color:#888 }
     .error h2 { font-size:20px; margin-bottom:8px; color:#444 }
@@ -64,7 +74,45 @@ if (!res.ok) { document.getElementById('root').innerHTML = '<div class="error"><
 const { budget, sections, client, studio } = await res.json()
 
 const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
-const gbp = n => '£' + (Math.round(n)||0).toLocaleString('en-GB')
+
+// ── Currency / FX ─────────────────────────────────────────────────────────────
+// The quote is issued in GBP; this lets the client view it converted to USD/EUR
+// using live ECB reference rates (free, no-key Frankfurter API) with an offline
+// fallback. gbp() honours the chosen display currency set via setMoney().
+const CURRENCIES = { GBP:{symbol:'£'}, USD:{symbol:'$'}, EUR:{symbol:'€'} }
+const FX_FALLBACK = { USD: 1.27, EUR: 1.17 }   // indicative GBP→X rates if live rates can't be fetched
+let MONEY = { code:'GBP', symbol:'£', rate:1 }
+let fxRates = null, fxMeta = null
+function setMoney(code, rates) {
+  if (!CURRENCIES[code]) code = 'GBP'
+  const rate = code === 'GBP' ? 1 : (Number(rates?.[code]) || FX_FALLBACK[code] || 1)
+  MONEY = { code, symbol: CURRENCIES[code].symbol, rate }
+}
+const gbp = n => MONEY.symbol + (Math.round((Number(n)||0) * MONEY.rate)).toLocaleString('en-GB')
+
+async function ensureRates() {
+  const FRESH = 6 * 60 * 60 * 1000  // 6h
+  const fresh = m => m && m.source === 'ECB' && (Date.now() - m.ts) < FRESH
+  if (fresh(fxMeta)) return fxRates
+  try {
+    const c = JSON.parse(localStorage.getItem('slate_fx_gbp') || 'null')
+    if (fresh(c)) { fxRates = c.rates; fxMeta = c; return fxRates }
+  } catch {}
+  try {
+    const r = await fetch('https://api.frankfurter.app/latest?from=GBP&to=USD,EUR')
+    if (!r.ok) throw new Error('FX HTTP ' + r.status)
+    const d = await r.json()
+    const rates = { USD: Number(d?.rates?.USD), EUR: Number(d?.rates?.EUR) }
+    if (!rates.USD || !rates.EUR) throw new Error('FX rates missing')
+    fxRates = rates
+    fxMeta = { ts: Date.now(), date: d.date || null, source: 'ECB', rates }
+    try { localStorage.setItem('slate_fx_gbp', JSON.stringify(fxMeta)) } catch {}
+  } catch (e) {
+    if (!fxRates) fxRates = { ...FX_FALLBACK }
+    fxMeta = { ts: Date.now(), date: null, source: 'estimate', rates: fxRates }
+  }
+  return fxRates
+}
 
 const fmtDate = s => s ? new Date(s).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}) : ''
 
@@ -101,63 +149,105 @@ const grand = afterCustom + vat
 
 document.title = `Quote — ${budget.name}`
 
-const sectionsHTML = sections.map(sec => {
-  const lines = (sec.lines||[]).filter(l => hasVisibleValue(l))
-  if (!lines.length) return ''
-  const secTotal = lines.reduce((t,l) => t+lineTotal(l), 0)
-  return `<div class="q-section">
-    <div class="q-sec-head">
-      <span class="q-sec-code">${esc(sec.code)}</span>
-      <span class="q-sec-name">${esc(sec.label)}</span>
-      <span class="q-sec-total">${gbp(secTotal)}</span>
+const root = document.getElementById('root')
+let ccy = (() => { try { return localStorage.getItem('slate_quote_ccy') || 'GBP' } catch { return 'GBP' } })()
+if (!CURRENCIES[ccy]) ccy = 'GBP'
+
+// Currency switcher + (when converted) a note on the rate and its source
+function ccyBarHTML() {
+  let note = ''
+  if (ccy !== 'GBP') {
+    const live = fxMeta?.source === 'ECB'
+    const src = live ? ('ECB reference rate' + (fxMeta?.date ? ' · ' + fmtDate(fxMeta.date) : '')) : 'indicative estimate'
+    note = `<div class="q-fx-note"><span class="q-fx-dot" style="background:${live?'#6ec96e':'#d6a020'}"></span>Converted from GBP at 1 £ = ${MONEY.rate.toFixed(4)} ${ccy} — ${src}. Indicative only; this quote is issued in GBP.</div>`
+  }
+  return `<div class="q-ccy-bar">
+    <span class="q-ccy-label">View in</span>
+    <div class="q-ccy-switch">
+      ${Object.keys(CURRENCIES).map(c => `<button class="q-ccy-btn${c===ccy?' active':''}" data-ccy="${c}">${CURRENCIES[c].symbol} ${c}</button>`).join('')}
     </div>
-    <table class="q-lines">
-      <thead><tr><th>Item</th><th class="r">Total</th></tr></thead>
-      <tbody>
-        ${lines.map(l => {
-          const t = lineTotal(l)
-          const disc = parseFloat(l.discount)||0
-          return `<tr>
-            <td>
-              ${esc(l.item)}
-              ${l.notes?`<div class="q-line-note">${esc(l.notes)}</div>`:''}
-              ${disc>0?`<div class="q-disc">${disc}% discount applied</div>`:''}
-            </td>
-            <td class="r">${disc>=100?gbp(0):t>0?gbp(t):''}</td>
-          </tr>`
-        }).join('')}
-      </tbody>
-    </table>
+    ${note}
   </div>`
-}).join('')
+}
 
-const totalsHTML = `<div class="q-totals">
-  <div class="q-tot-row"><span class="q-tot-label">Net total</span><span class="q-tot-val">${gbp(net)}</span></div>
-  ${(parseFloat(budget.markup)||0)>0 ? `<div class="q-tot-row"><span class="q-tot-label">Production fee (${budget.markup}%)</span><span class="q-tot-val">${gbp(mu)}</span></div>` : ''}
-  ${ins>0 ? `<div class="q-tot-row"><span class="q-tot-label">Insurance (2.5%)</span><span class="q-tot-val">${gbp(ins)}</span></div>` : ''}
-  ${custom>0 ? `<div class="q-tot-row"><span class="q-tot-label">Additional (${budget.custom_pct}%)</span><span class="q-tot-val">${gbp(custom)}</span></div>` : ''}
-  ${budget.vat ? `<div class="q-tot-row"><span class="q-tot-label">VAT (20%)</span><span class="q-tot-val">${gbp(vat)}</span></div>` : ''}
-  <div class="q-tot-row"><span>Grand total${budget.vat?' (inc. VAT)':''}</span><span class="q-tot-val">${gbp(grand)}</span></div>
-</div>`
+function render() {
+  setMoney(ccy, fxRates)
 
-document.getElementById('root').innerHTML = `
-  <div class="q-header">
-    <div>
-      <img src="/slate-logo-white.png" alt="${esc(studio?.name||'')}" class="q-logo" onerror="this.style.display='none'" />
-      <div class="q-title">${esc(budget.name)}</div>
-      <div class="q-meta">Prepared${budget.prepared_by?' by '+esc(budget.prepared_by):''} · ${fmtDate(budget.created_at)}${client?' · For '+esc(client.company||client.name):''}</div>
+  const sectionsHTML = sections.map(sec => {
+    const lines = (sec.lines||[]).filter(l => hasVisibleValue(l))
+    if (!lines.length) return ''
+    const secTotal = lines.reduce((t,l) => t+lineTotal(l), 0)
+    return `<div class="q-section">
+      <div class="q-sec-head">
+        <span class="q-sec-code">${esc(sec.code)}</span>
+        <span class="q-sec-name">${esc(sec.label)}</span>
+        <span class="q-sec-total">${gbp(secTotal)}</span>
+      </div>
+      <table class="q-lines">
+        <thead><tr><th>Item</th><th class="r">Total</th></tr></thead>
+        <tbody>
+          ${lines.map(l => {
+            const t = lineTotal(l)
+            const disc = parseFloat(l.discount)||0
+            return `<tr>
+              <td>
+                ${esc(l.item)}
+                ${l.notes?`<div class="q-line-note">${esc(l.notes)}</div>`:''}
+                ${disc>0?`<div class="q-disc">${disc}% discount applied</div>`:''}
+              </td>
+              <td class="r">${disc>=100?gbp(0):t>0?gbp(t):''}</td>
+            </tr>`
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`
+  }).join('')
+
+  const totalsHTML = `<div class="q-totals">
+    <div class="q-tot-row"><span class="q-tot-label">Net total</span><span class="q-tot-val">${gbp(net)}</span></div>
+    ${(parseFloat(budget.markup)||0)>0 ? `<div class="q-tot-row"><span class="q-tot-label">Production fee (${budget.markup}%)</span><span class="q-tot-val">${gbp(mu)}</span></div>` : ''}
+    ${ins>0 ? `<div class="q-tot-row"><span class="q-tot-label">Insurance (2.5%)</span><span class="q-tot-val">${gbp(ins)}</span></div>` : ''}
+    ${custom>0 ? `<div class="q-tot-row"><span class="q-tot-label">Additional (${budget.custom_pct}%)</span><span class="q-tot-val">${gbp(custom)}</span></div>` : ''}
+    ${budget.vat ? `<div class="q-tot-row"><span class="q-tot-label">VAT (20%)</span><span class="q-tot-val">${gbp(vat)}</span></div>` : ''}
+    <div class="q-tot-row"><span>Grand total${budget.vat?' (inc. VAT)':''}</span><span class="q-tot-val">${gbp(grand)}</span></div>
+  </div>`
+
+  root.innerHTML = `
+    <div class="q-header">
+      <div>
+        <img src="/slate-logo-white.png" alt="${esc(studio?.name||'')}" class="q-logo" onerror="this.style.display='none'" />
+        <div class="q-title">${esc(budget.name)}</div>
+        <div class="q-meta">Prepared${budget.prepared_by?' by '+esc(budget.prepared_by):''} · ${fmtDate(budget.created_at)}${client?' · For '+esc(client.company||client.name):''}</div>
+      </div>
+      <div class="q-studio" style="text-align:right">
+        <strong>${esc(studio?.name||'')}</strong>
+        ${esc(studio?.email||'')}${studio?.phone?'<br>'+esc(studio.phone):''}
+        ${studio?.vat_number?'<br>VAT: '+esc(studio.vat_number):''}
+      </div>
     </div>
-    <div class="q-studio" style="text-align:right">
-      <strong>${esc(studio?.name||'')}</strong>
-      ${esc(studio?.email||'')}${studio?.phone?'<br>'+esc(studio.phone):''}
-      ${studio?.vat_number?'<br>VAT: '+esc(studio.vat_number):''}
-    </div>
-  </div>
-  ${budget.signed_off ? '<div style="text-align:center"><span class="q-badge">✓ Quote approved</span></div>' : ''}
-  ${sectionsHTML}
-  ${totalsHTML}
-  ${budget.notes ? `<div class="q-notes">${esc(budget.notes)}</div>` : ''}
-  <div class="q-footer">Powered by Slate${studio?.website?' · '+esc(studio.website):''}</div>`
+    ${budget.signed_off ? '<div style="text-align:center"><span class="q-badge">✓ Quote approved</span></div>' : ''}
+    ${ccyBarHTML()}
+    ${sectionsHTML}
+    ${totalsHTML}
+    ${budget.notes ? `<div class="q-notes">${esc(budget.notes)}</div>` : ''}
+    <div class="q-footer">Powered by Slate${studio?.website?' · '+esc(studio.website):''}</div>`
+
+  root.querySelectorAll('.q-ccy-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const code = btn.dataset.ccy
+      // Re-clicking the active non-GBP button while on an estimate retries the live fetch
+      if (code === ccy && (code === 'GBP' || fxMeta?.source === 'ECB')) return
+      ccy = code
+      try { localStorage.setItem('slate_quote_ccy', code) } catch {}
+      if (code !== 'GBP' && fxMeta?.source !== 'ECB') { btn.style.opacity = '0.55'; await ensureRates() }
+      render()
+    })
+  })
+}
+
+render()
+// If a non-GBP currency is remembered but we don't have live rates yet, fetch & re-render
+if (ccy !== 'GBP' && fxMeta?.source !== 'ECB') ensureRates().then(render)
 </script>
 </body>
 </html>
