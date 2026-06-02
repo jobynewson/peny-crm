@@ -23,11 +23,13 @@ const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').re
 // USD or EUR. budNet/budTotal/secNet/lineTotal continue to return raw GBP numbers.
 const CURRENCIES = { GBP:{symbol:'£',label:'GBP'}, USD:{symbol:'$',label:'USD'}, EUR:{symbol:'€',label:'EUR'} }
 const FX_FALLBACK = { USD: 1.27, EUR: 1.17 }   // indicative GBP→X rates, used only when live rates can't be fetched
-let MONEY = { code:'GBP', symbol:'£', rate:1 }
-function setMoney(code, rates) {
+let MONEY = { code:'GBP', symbol:'£', rate:1, baseRate:1, markupPct:0 }
+// markupPct (e.g. 3) is an FX margin added to the live USD/EUR rate. GBP is never marked up.
+function setMoney(code, rates, markupPct) {
   if (!CURRENCIES[code]) code = 'GBP'
-  const rate = code === 'GBP' ? 1 : (Number(rates?.[code]) || FX_FALLBACK[code] || 1)
-  MONEY = { code, symbol: CURRENCIES[code].symbol, rate }
+  const baseRate = code === 'GBP' ? 1 : (Number(rates?.[code]) || FX_FALLBACK[code] || 1)
+  const mk = code === 'GBP' ? 0 : (Number(markupPct) >= 0 ? Number(markupPct) : 0)
+  MONEY = { code, symbol: CURRENCIES[code].symbol, rate: baseRate * (1 + mk/100), baseRate, markupPct: mk }
 }
 const gbpA = n => MONEY.symbol + Math.round((Number(n)||0) * MONEY.rate).toLocaleString('en-GB')
 const moy = () => { const d = new Date(); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] + ' ' + d.getFullYear() }
@@ -79,6 +81,12 @@ export class BudgetsView {
     this.displayCurrency = (() => { try { return localStorage.getItem('slate_budget_ccy') || 'GBP' } catch { return 'GBP' } })()
     this._fxRates = null   // { USD, EUR } — GBP→X multipliers
     this._fxMeta  = null   // { ts, date, source:'ECB'|'estimate', rates }
+  }
+
+  // FX margin (%) added to USD/EUR exchange rates. Configurable in Settings; defaults to 3%.
+  _fxMarkup() {
+    const v = parseFloat(this.app.settings?.fx_markup_pct)
+    return isFinite(v) && v >= 0 ? v : 3
   }
 
   // Fetch live GBP→USD/EUR rates from the free, no-key Frankfurter API (ECB-backed,
@@ -400,9 +408,10 @@ export class BudgetsView {
     const src = live
       ? `ECB reference rate${m?.date ? ' · ' + new Date(m.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : ''}`
       : 'indicative offline estimate'
+    const mkNote = MONEY.markupPct > 0 ? ` incl. ${MONEY.markupPct}% FX margin` : ''
     return `<div id="bv-fx-note" style="font-size:11px;color:var(--text-tertiary);margin:-4px 0 14px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">
       <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${live?'#6ec96e':'#d6a020'};flex-shrink:0"></span>
-      Converted from GBP at 1 £ = ${MONEY.rate.toFixed(4)} ${ccy} — ${src}. Figures are indicative; the budget is held in GBP.
+      Converted from GBP at 1 £ = ${MONEY.rate.toFixed(4)} ${ccy}${mkNote} — ${src}. Figures are indicative; the budget is held in GBP.
     </div>`
   }
 
@@ -423,7 +432,7 @@ export class BudgetsView {
 
     // Apply the chosen display currency to all figures below (base data stays GBP)
     const ccy = CURRENCIES[this.displayCurrency] ? this.displayCurrency : 'GBP'
-    setMoney(ccy, this._fxRates)
+    setMoney(ccy, this._fxRates, this._fxMarkup())
     // Showing a foreign currency without live rates yet → fetch & upgrade once (throttled)
     if (ccy !== 'GBP' && this._fxMeta?.source !== 'ECB' && (Date.now() - (this._fxLastAuto || 0) > 30000)) {
       this._fxLastAuto = Date.now()
@@ -1113,7 +1122,7 @@ export class BudgetsView {
 
   exportCSV(b) {
     // Export in the currently-selected display currency (base figures are GBP)
-    setMoney(this.displayCurrency, this._fxRates)
+    setMoney(this.displayCurrency, this._fxRates, this._fxMarkup())
     const ccy = MONEY.code, rate = MONEY.rate
     const cv = n => Math.round((Number(n)||0) * rate)   // GBP → chosen currency
     const cl = this.app.contacts.find(c => c.id === b.client_id)
@@ -1125,7 +1134,7 @@ export class BudgetsView {
     const pr = parseFloat(b.prep_rate)||100
     const fxRow = ccy === 'GBP' ? [] : [
       ['Currency', ccy],
-      ['Exchange rate', '1 GBP = ' + rate.toFixed(4) + ' ' + ccy],
+      ['Exchange rate', '1 GBP = ' + rate.toFixed(4) + ' ' + ccy + (MONEY.markupPct > 0 ? ' (incl. ' + MONEY.markupPct + '% FX margin)' : '')],
       ['Rate source', this._fxMeta?.source === 'ECB' ? ('ECB' + (this._fxMeta?.date ? ' ' + this._fxMeta.date : '')) : 'Indicative estimate'],
     ]
     let rows = [
@@ -1164,10 +1173,11 @@ export class BudgetsView {
 
   exportPDF(b) {
     // Render in the currently-selected display currency (base figures are GBP)
-    setMoney(this.displayCurrency, this._fxRates)
+    setMoney(this.displayCurrency, this._fxRates, this._fxMarkup())
     const ccy = MONEY.code
+    const pdfMk = MONEY.markupPct > 0 ? ` incl. ${MONEY.markupPct}% FX margin` : ''
     const fxNote = ccy === 'GBP' ? '' :
-      `Converted from GBP at 1 £ = ${MONEY.rate.toFixed(4)} ${ccy} · ${this._fxMeta?.source === 'ECB' ? ('ECB reference rate' + (this._fxMeta?.date ? ' ' + this._fxMeta.date : '')) : 'indicative estimate'}. Figures are indicative; the budget is held in GBP.`
+      `Converted from GBP at 1 £ = ${MONEY.rate.toFixed(4)} ${ccy}${pdfMk} · ${this._fxMeta?.source === 'ECB' ? ('ECB reference rate' + (this._fxMeta?.date ? ' ' + this._fxMeta.date : '')) : 'indicative estimate'}. Figures are indicative; the budget is held in GBP.`
     const cl = this.app.contacts.find(c => c.id === b.client_id)
     const s  = this.app.settings || {}
     const pdfTr = parseFloat(b.travel_rate)||50

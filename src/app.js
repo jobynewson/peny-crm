@@ -2198,6 +2198,18 @@ export class App {
             </div>
             <div><button class="btn-primary" id="settings-save-expenses-btn">Save</button></div>
           </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Currency &amp; exchange rates</span></div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Budgets are held in GBP. When a budget is shown or exported in USD or EUR, this margin is added on top of the live exchange rate to cover currency fluctuation and conversion costs.</div>
+            <div class="field">
+              <div class="field-label">FX margin (%)</div>
+              <input type="number" id="s-fx-markup" value="${s.fx_markup_pct ?? 3}" min="0" max="100" step="0.1" style="width:100px" />
+            </div>
+            <div><button class="btn-primary" id="settings-save-fx-btn">Save</button></div>
+          </div>
         </div>` : ''
 
     const budgetPanel = isAdmin ? `
@@ -2258,6 +2270,7 @@ export class App {
     mc.querySelector('#settings-clear-cd-btn')?.addEventListener('click', () => this._clearCountdownTimer(mc))
     mc.querySelector('#settings-save-roundup-btn')?.addEventListener('click', () => this._saveReminderRoundup(mc))
     mc.querySelector('#settings-save-expenses-btn')?.addEventListener('click', () => this._saveExpenseSettings(mc))
+    mc.querySelector('#settings-save-fx-btn')?.addEventListener('click', () => this._saveFxSettings(mc))
     mc.querySelector('#settings-save-leave-btn')?.addEventListener('click', () => this._saveLeaveSettings(mc))
 
     if (isAdmin && tab === 'workspace') {
@@ -2710,6 +2723,7 @@ export class App {
       reminder_roundup:        this.settings?.reminder_roundup ?? false,
       expense_recipients:      this.settings?.expense_recipients ?? [],
       mileage_rate:            this.settings?.mileage_rate ?? 45,
+      fx_markup_pct:           this.settings?.fx_markup_pct ?? 3,
     }
     try { const [updated] = await upsertSettings(this.userId, data); this.settings = updated; this.toast('Settings saved') }
     catch (e) { console.error(e); this.toast('Error saving settings') }
@@ -2734,6 +2748,17 @@ export class App {
       this.settings = updated
       this.toast('Expense settings saved')
     } catch (e) { console.error(e); this.toast('Error saving expense settings') }
+  }
+
+  async _saveFxSettings(mc) {
+    const pct = parseFloat(mc.querySelector('#s-fx-markup')?.value)
+    if (!isFinite(pct) || pct < 0 || pct > 100) { this.toast('Enter an FX margin between 0 and 100'); return }
+    const data = { ...this.settings, fx_markup_pct: pct }
+    try {
+      const [updated] = await upsertSettings(this.userId, data)
+      this.settings = updated
+      this.toast('Currency settings saved')
+    } catch (e) { console.error(e); this.toast('Error saving currency settings') }
   }
 
   async _saveLeaveSettings(mc) {

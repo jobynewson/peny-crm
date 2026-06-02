@@ -48,6 +48,8 @@ export const settings = pgTable('settings', {
   expense_recipients: jsonb('expense_recipients').notNull().default([]),
   // Mileage reimbursement rate in pence per mile (default HMRC rate)
   mileage_rate: numeric('mileage_rate', { precision: 6, scale: 2 }).notNull().default('45'),
+  // FX margin added to live exchange rates when showing budgets in USD/EUR (percent)
+  fx_markup_pct: numeric('fx_markup_pct', { precision: 5, scale: 2 }).notNull().default('3'),
   ...timestamps,
 })
 
