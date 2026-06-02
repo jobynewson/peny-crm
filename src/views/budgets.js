@@ -15,7 +15,21 @@ export const SECTIONS = [
 ]
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')
-const gbpA = n => '£' + Math.round(n).toLocaleString('en-GB')
+
+// ── Currency / FX ─────────────────────────────────────────────────────────────
+// Budget figures are always stored and calculated in GBP. MONEY is a module-level
+// display context the view sets (via setMoney) before rendering or exporting, so the
+// shared money formatter (gbpA) can render the same underlying GBP figures in GBP,
+// USD or EUR. budNet/budTotal/secNet/lineTotal continue to return raw GBP numbers.
+const CURRENCIES = { GBP:{symbol:'£',label:'GBP'}, USD:{symbol:'$',label:'USD'}, EUR:{symbol:'€',label:'EUR'} }
+const FX_FALLBACK = { USD: 1.27, EUR: 1.17 }   // indicative GBP→X rates, used only when live rates can't be fetched
+let MONEY = { code:'GBP', symbol:'£', rate:1 }
+function setMoney(code, rates) {
+  if (!CURRENCIES[code]) code = 'GBP'
+  const rate = code === 'GBP' ? 1 : (Number(rates?.[code]) || FX_FALLBACK[code] || 1)
+  MONEY = { code, symbol: CURRENCIES[code].symbol, rate }
+}
+const gbpA = n => MONEY.symbol + Math.round((Number(n)||0) * MONEY.rate).toLocaleString('en-GB')
 const moy = () => { const d = new Date(); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] + ' ' + d.getFullYear() }
 
 function lineTotal(l, travelRate, prepRate) {
@@ -61,6 +75,47 @@ export class BudgetsView {
     this.app = app
     this.currentId = null
     this.editingId = null
+    // Display currency for the viewer + exports (base data is always GBP)
+    this.displayCurrency = (() => { try { return localStorage.getItem('slate_budget_ccy') || 'GBP' } catch { return 'GBP' } })()
+    this._fxRates = null   // { USD, EUR } — GBP→X multipliers
+    this._fxMeta  = null   // { ts, date, source:'ECB'|'estimate', rates }
+  }
+
+  // Fetch live GBP→USD/EUR rates from the free, no-key Frankfurter API (ECB-backed,
+  // CORS-enabled), cached in localStorage for 6h. Falls back to indicative rates
+  // offline. De-dupes concurrent calls via an in-flight promise.
+  async _ensureRates() {
+    const FRESH = 6 * 60 * 60 * 1000  // 6h
+    const fresh = m => m && m.source === 'ECB' && (Date.now() - m.ts) < FRESH
+    if (fresh(this._fxMeta)) return this._fxRates
+    if (!this._fxCheckedLS) {
+      this._fxCheckedLS = true
+      try {
+        const c = JSON.parse(localStorage.getItem('slate_fx_gbp') || 'null')
+        if (fresh(c)) { this._fxRates = c.rates; this._fxMeta = c; return this._fxRates }
+      } catch {}
+    }
+    if (this._fxInflight) return this._fxInflight
+    this._fxInflight = (async () => {
+      try {
+        const res = await fetch('https://api.frankfurter.app/latest?from=GBP&to=USD,EUR')
+        if (!res.ok) throw new Error('FX HTTP ' + res.status)
+        const data = await res.json()
+        const rates = { USD: Number(data?.rates?.USD), EUR: Number(data?.rates?.EUR) }
+        if (!rates.USD || !rates.EUR) throw new Error('FX rates missing')
+        this._fxRates = rates
+        this._fxMeta  = { ts: Date.now(), date: data.date || null, source: 'ECB', rates }
+        try { localStorage.setItem('slate_fx_gbp', JSON.stringify(this._fxMeta)) } catch {}
+      } catch (e) {
+        console.warn('FX fetch failed, using fallback rates:', e)
+        if (!this._fxRates) this._fxRates = { ...FX_FALLBACK }
+        this._fxMeta = { ts: Date.now(), date: null, source: 'estimate', rates: this._fxRates }
+      } finally {
+        this._fxInflight = null
+      }
+      return this._fxRates
+    })()
+    return this._fxInflight
   }
 
   render(mc) {
@@ -75,6 +130,7 @@ export class BudgetsView {
   // ── List ────────────────────────────────────────────────────────────────────
 
   renderList(mc) {
+    setMoney('GBP')   // list shows source figures in GBP
     const { budgets, contacts, projects } = this.app
     const total = budgets.reduce((s,b) => s + budTotal(b), 0)
     mc.innerHTML = `
@@ -327,6 +383,29 @@ export class BudgetsView {
 
   // ── Viewer (read-only) ───────────────────────────────────────────────────────
 
+  // £ / $ / € segmented switcher shown in the viewer header
+  ccySwitcherHTML() {
+    const ccy = CURRENCIES[this.displayCurrency] ? this.displayCurrency : 'GBP'
+    return `<div style="display:inline-flex;align-items:center;border:0.5px solid var(--border-med);border-radius:var(--radius-pill);overflow:hidden;height:fit-content">
+      ${Object.keys(CURRENCIES).map(c => `<button class="bv-ccy" data-ccy="${c}" title="Show figures in ${c}" style="padding:5px 11px;font-size:12px;line-height:1;border:none;cursor:pointer;font-family:var(--font);transition:background 0.12s,color 0.12s;background:${c===ccy?'var(--accent)':'transparent'};color:${c===ccy?'#fff':'var(--text-secondary)'}">${CURRENCIES[c].symbol} ${c}</button>`).join('')}
+    </div>`
+  }
+
+  // Caption under the header noting the rate and its source when not in GBP
+  fxNoteHTML() {
+    const ccy = CURRENCIES[this.displayCurrency] ? this.displayCurrency : 'GBP'
+    if (ccy === 'GBP') return ''
+    const m = this._fxMeta
+    const live = m?.source === 'ECB'
+    const src = live
+      ? `ECB reference rate${m?.date ? ' · ' + new Date(m.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : ''}`
+      : 'indicative offline estimate'
+    return `<div id="bv-fx-note" style="font-size:11px;color:var(--text-tertiary);margin:-4px 0 14px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+      <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${live?'#6ec96e':'#d6a020'};flex-shrink:0"></span>
+      Converted from GBP at 1 £ = ${MONEY.rate.toFixed(4)} ${ccy} — ${src}. Figures are indicative; the budget is held in GBP.
+    </div>`
+  }
+
   renderViewer(mc) {
     const b = this.app.budgets.find(x => x.id === this.currentId)
     if (!b) { this.currentId = null; this.renderList(mc); return }
@@ -342,16 +421,29 @@ export class BudgetsView {
     const activeSecs = (b.sections||[]).filter(s => s.enabled && ((s.lines||[]).some(l => hasVisibleValue(l))))
     const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 
+    // Apply the chosen display currency to all figures below (base data stays GBP)
+    const ccy = CURRENCIES[this.displayCurrency] ? this.displayCurrency : 'GBP'
+    setMoney(ccy, this._fxRates)
+    // Showing a foreign currency without live rates yet → fetch & upgrade once (throttled)
+    if (ccy !== 'GBP' && this._fxMeta?.source !== 'ECB' && (Date.now() - (this._fxLastAuto || 0) > 30000)) {
+      this._fxLastAuto = Date.now()
+      this._ensureRates().then(() => {
+        if (this.currentId === b.id && this.editingId !== this.currentId) this.renderViewer(mc)
+      })
+    }
+
     mc.innerHTML = `
       <div class="bh-row">
         <button class="btn-secondary" id="bv-back">← All budgets</button>
         <h2 style="flex:1;font-size:15px;font-weight:500">${esc(b.name)}</h2>
+        ${this.ccySwitcherHTML()}
         <button class="btn-secondary" id="bv-history" style="font-size:12px">History</button>
         <button class="btn-secondary" id="bv-dup" style="font-size:12px">Duplicate</button>
         <button class="btn-secondary" id="bv-csv">Export CSV</button>
         <button class="btn-secondary" id="bv-pdf">Export PDF</button>
         ${this.app.permissions?.budgets_edit ? `<button class="btn-primary" id="bv-edit">Edit budget</button>` : ''}
       </div>
+      ${this.fxNoteHTML()}
       <div id="bv-history-panel" style="display:none;background:var(--bg-secondary);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:16px"></div>
       ${b.notes ? `<div style="background:var(--bg-secondary);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:16px;font-size:13px;color:var(--text-secondary);line-height:1.6;white-space:pre-line">${esc(b.notes)}</div>` : ''}
       <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
@@ -470,6 +562,24 @@ export class BudgetsView {
       } catch(e) { console.error(e); this.app.toast('Error updating invoice status') }
     })
 
+    mc.querySelectorAll('.bv-ccy').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const code = btn.dataset.ccy
+        // Re-clicking the active non-GBP button while on an estimate retries the live fetch
+        const sameAndFresh = code === this.displayCurrency && (code === 'GBP' || this._fxMeta?.source === 'ECB')
+        if (sameAndFresh) return
+        this.displayCurrency = code
+        try { localStorage.setItem('slate_budget_ccy', code) } catch {}
+        if (code !== 'GBP' && this._fxMeta?.source !== 'ECB') {
+          btn.style.opacity = '0.55'
+          const note = mc.querySelector('#bv-fx-note')
+          if (note) note.lastChild && (note.lastChild.textContent = ' Fetching live rate…')
+          await this._ensureRates()
+        }
+        this.renderViewer(mc)
+      })
+    })
+
     mc.querySelector('#bv-back')?.addEventListener('click', () => {
       this.currentId = null; this.editingId = null; this.renderList(mc); this.app.updateTitle()
     })
@@ -508,6 +618,7 @@ export class BudgetsView {
   // ── Editor ──────────────────────────────────────────────────────────────────
 
   renderEditor(mc) {
+    setMoney('GBP')   // source figures are edited in GBP
     const b = this.app.budgets.find(x => x.id === this.currentId)
     if (!b) { this.currentId = null; this.renderList(mc); return }
     const sections = Array.isArray(b.sections) ? b.sections : []
@@ -1001,6 +1112,10 @@ export class BudgetsView {
   // ── CSV Export ──────────────────────────────────────────────────────────────
 
   exportCSV(b) {
+    // Export in the currently-selected display currency (base figures are GBP)
+    setMoney(this.displayCurrency, this._fxRates)
+    const ccy = MONEY.code, rate = MONEY.rate
+    const cv = n => Math.round((Number(n)||0) * rate)   // GBP → chosen currency
     const cl = this.app.contacts.find(c => c.id === b.client_id)
     const net = budNet(b), mu = net*((parseFloat(b.markup)||0)/100)
     const insVal = b.insurance ? net*0.025 : 0, afterFee = net+insVal+mu
@@ -1008,10 +1123,16 @@ export class BudgetsView {
     const vatVal = b.vat ? afterCustom*0.2 : 0
     const tot = afterCustom + vatVal
     const pr = parseFloat(b.prep_rate)||100
+    const fxRow = ccy === 'GBP' ? [] : [
+      ['Currency', ccy],
+      ['Exchange rate', '1 GBP = ' + rate.toFixed(4) + ' ' + ccy],
+      ['Rate source', this._fxMeta?.source === 'ECB' ? ('ECB' + (this._fxMeta?.date ? ' ' + this._fxMeta.date : '')) : 'Indicative estimate'],
+    ]
     let rows = [
       ['Budget',b.name],['Client',cl?cl.first_name+' '+cl.last_name:''],
-      ['Production fee %',b.markup],['Custom add-on %',b.custom_pct||0],['Travel rate %',b.travel_rate??50],['Master discount %',b.discount||0],['VAT',b.vat?'Yes':'No'],[''],
-      ['Section','Item','Notes','Prep Days','Shoot Days','Qty','Travel Days','Rate (£)','Discount %','Total (£)']
+      ['Production fee %',b.markup],['Custom add-on %',b.custom_pct||0],['Travel rate %',b.travel_rate??50],['Master discount %',b.discount||0],['VAT',b.vat?'Yes':'No'],
+      ...fxRow, [''],
+      ['Section','Item','Notes','Prep Days','Shoot Days','Qty','Travel Days','Rate ('+ccy+')','Discount %','Total ('+ccy+')']
     ]
     const tr = parseFloat(b.travel_rate)||50
     ;(b.sections||[]).filter(s=>s.enabled).forEach(s => {
@@ -1020,27 +1141,33 @@ export class BudgetsView {
       al.forEach(l => {
         const pDays = parseFloat(l.prepDays)||0, sDays = parseFloat(l.days)||0, tDays = parseFloat(l.travelDays)||0
         const useDays = pDays > 0 || sDays > 0 || tDays > 0
-        rows.push([s.code+' — '+s.label, l.item, l.notes||'', useDays?pDays:'N/A', useDays?sDays:'N/A', l.qty??0, useDays?tDays:'N/A', l.rate||0, l.discount||0, Math.round(lineTotal(l,tr,pr))])
+        rows.push([s.code+' — '+s.label, l.item, l.notes||'', useDays?pDays:'N/A', useDays?sDays:'N/A', l.qty??0, useDays?tDays:'N/A', cv(l.rate||0), l.discount||0, cv(lineTotal(l,tr,pr))])
       })
-      rows.push([s.code+' SUBTOTAL','','','','','','','','',Math.round(secNet(s,tr,pr))]); rows.push([])
+      rows.push([s.code+' SUBTOTAL','','','','','','','','',cv(secNet(s,tr,pr))]); rows.push([])
     })
-    rows.push(['NET TOTAL','','','','','','','',Math.round(net)])
-    if ((parseFloat(b.markup)||0)>0)     rows.push(['PRODUCTION FEE ('+b.markup+'%)','','','','','','','',Math.round(mu)])
-    if ((parseFloat(b.custom_pct)||0)>0) rows.push(['CUSTOM ADD-ON ('+b.custom_pct+'%)','','','','','','','',Math.round(customVal)])
-    if (b.vat)                           rows.push(['VAT (20%)','','','','','','','',Math.round(vatVal)])
-    if (b.insurance && insVal > 0) rows.push(['INSURANCE (2.5%)','','','','','','','',Math.round(insVal)])
-    rows.push(['GRAND TOTAL','','','','','','','',Math.round(tot)])
+    rows.push(['NET TOTAL','','','','','','','',cv(net)])
+    if ((parseFloat(b.markup)||0)>0)     rows.push(['PRODUCTION FEE ('+b.markup+'%)','','','','','','','',cv(mu)])
+    if ((parseFloat(b.custom_pct)||0)>0) rows.push(['CUSTOM ADD-ON ('+b.custom_pct+'%)','','','','','','','',cv(customVal)])
+    if (b.vat)                           rows.push(['VAT (20%)','','','','','','','',cv(vatVal)])
+    if (b.insurance && insVal > 0) rows.push(['INSURANCE (2.5%)','','','','','','','',cv(insVal)])
+    rows.push(['GRAND TOTAL','','','','','','','',cv(tot)])
     const csv = rows.map(r => r.map(v => '"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n')
     const a = document.createElement('a')
     a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv)
-    a.download = (b.name||'budget').replace(/[^a-z0-9]/gi,'_') + '.csv'
+    a.download = (b.name||'budget').replace(/[^a-z0-9]/gi,'_') + (ccy === 'GBP' ? '' : '_' + ccy) + '.csv'
     a.click()
-    this.app.toast('CSV exported')
+    this.app.toast(ccy === 'GBP' ? 'CSV exported' : `CSV exported (${ccy})`)
+    setMoney('GBP')   // restore GBP so editor live-updates stay in source currency
   }
 
   // ── PDF Export ──────────────────────────────────────────────────────────────
 
   exportPDF(b) {
+    // Render in the currently-selected display currency (base figures are GBP)
+    setMoney(this.displayCurrency, this._fxRates)
+    const ccy = MONEY.code
+    const fxNote = ccy === 'GBP' ? '' :
+      `Converted from GBP at 1 £ = ${MONEY.rate.toFixed(4)} ${ccy} · ${this._fxMeta?.source === 'ECB' ? ('ECB reference rate' + (this._fxMeta?.date ? ' ' + this._fxMeta.date : '')) : 'indicative estimate'}. Figures are indicative; the budget is held in GBP.`
     const cl = this.app.contacts.find(c => c.id === b.client_id)
     const s  = this.app.settings || {}
     const pdfTr = parseFloat(b.travel_rate)||50
@@ -1078,6 +1205,7 @@ export class BudgetsView {
             ${b.vat?`<div class="pdf-cover-total-row"><span class="tk">VAT (20%)</span><span class="tv">${gbpA(vatVal)}</span></div>`:''}
             <div class="pdf-cover-total-row grand"><span class="tk">Grand total</span><span class="tv">${gbpA(tot)}</span></div>
           </div>
+          ${fxNote ? `<div style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:16px;line-height:1.5">${fxNote}</div>` : ''}
         </div>
         <div class="pdf-cover-footer">
           <div class="pdf-cover-meta">
@@ -1144,6 +1272,7 @@ export class BudgetsView {
           ${b.vat?`<div class="pdf-detail-total-row"><span class="dk">VAT (20%)</span><span>${gbpA(vatVal)}</span></div>`:''}
           <div class="pdf-detail-total-row grand"><span class="dk">Grand total</span><span>${gbpA(tot)}</span></div>
         </div>
+        ${fxNote ? `<div style="font-size:10px;color:#999;margin-top:10px;text-align:right;line-height:1.5">${fxNote}</div>` : ''}
         <div class="pdf-detail-footer">
           <span>${[(b.quote_email||s.email),s.website].filter(Boolean).join(' · ')}${(b.prepared_by||s.prepared_by)?' · Prepared by '+(b.prepared_by||s.prepared_by):''}</span>
           <span>Quote valid until ${validStr}</span>
@@ -1152,8 +1281,9 @@ export class BudgetsView {
 
     let ts = document.getElementById('pdf-topsheet')
     if (!ts) { ts = document.createElement('div'); ts.id = 'pdf-topsheet'; document.body.appendChild(ts) }
-    ts.innerHTML = coverHTML + detailHTML
+    ts.innerHTML = coverHTML + detailHTML   // gbpA already evaluated into the markup above
+    setMoney('GBP')   // restore GBP so editor live-updates stay in source currency
     setTimeout(() => window.print(), 150)
-    this.app.toast('Opening print dialog…')
+    this.app.toast(ccy === 'GBP' ? 'Opening print dialog…' : `Opening print dialog… (${ccy})`)
   }
 }
