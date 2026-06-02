@@ -613,6 +613,7 @@ export class App {
     this.projectsView.editingId = null
     this.budgetsView.currentId  = (view === 'budgets' && id) ? id : null
     this.budgetsView.editingId  = null
+    this.budgetsView.returnTo   = null   // history nav doesn't carry the project drilldown origin
     this.render()
   }
 
@@ -670,7 +671,7 @@ export class App {
   }
 
   openProject(id) { this.currentView = 'projects'; this.projectsView.currentId = id; this.render() }
-  openBudget(id)  { this.currentView = 'budgets';  this.budgetsView.currentId  = id; this.render() }
+  openBudget(id, returnTo = null) { this.currentView = 'budgets'; this.budgetsView.currentId = id; this.budgetsView.returnTo = returnTo; this.render() }
 
   // Returns [periodStart, periodEnd] Date objects for the current retainer period
   _retainerPeriod(retainerStart) {

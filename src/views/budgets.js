@@ -75,6 +75,7 @@ export class BudgetsView {
     this.app = app
     this.currentId = null
     this.editingId = null
+    this.returnTo = null   // origin to return to from the detail view, e.g. { view:'projects', id, tab }
     // Display currency for the viewer + exports (base data is always GBP)
     this.displayCurrency = (() => { try { return localStorage.getItem('slate_budget_ccy') || 'GBP' } catch { return 'GBP' } })()
     this._fxRates = null   // { USD, EUR } — GBP→X multipliers
@@ -131,6 +132,7 @@ export class BudgetsView {
 
   renderList(mc) {
     setMoney('GBP')   // list shows source figures in GBP
+    this.returnTo = null   // we're at the top of the budgets section now
     const { budgets, contacts, projects } = this.app
     const total = budgets.reduce((s,b) => s + budTotal(b), 0)
     mc.innerHTML = `
@@ -331,6 +333,8 @@ export class BudgetsView {
           proj.budget_ids.push(created.id)
           await import('../db/client.js').then(m => m.linkBudgetToProject(proj.id, created.id))
         }
+        // Created from a project → back returns to that project's Budget tab
+        this.returnTo = { view: 'projects', id: this._pendingProjectId, tab: 'budget' }
         this._pendingProjectId = null
         this._pendingCrew = null
       }
@@ -365,6 +369,7 @@ export class BudgetsView {
       this.app.budgets.unshift(created)
       this.currentId = created.id
       this.editingId = created.id
+      this.returnTo = null   // the copy is a new, unlinked budget — back goes to the list
       this.render(mc)
       this.app.updateTitle()
       this.app.toast('Budget duplicated — now editing copy')
@@ -382,6 +387,31 @@ export class BudgetsView {
   }
 
   // ── Viewer (read-only) ───────────────────────────────────────────────────────
+
+  // Label for the detail-view back button — names the originating project when the
+  // budget was opened from one, otherwise falls back to the budgets list
+  _backLabel() {
+    const rt = this.returnTo
+    if (rt?.view === 'projects') {
+      const p = this.app.projects.find(x => x.id === rt.id)
+      if (p) { const n = (p.name||'Project'); return '← ' + esc(n.length > 22 ? n.slice(0,21)+'…' : n) }
+    }
+    return '← All budgets'
+  }
+
+  // Leaves the budget detail view, returning to the originating project (on the tab
+  // it was opened from) when there is one, otherwise to the budgets list
+  _goBack(mc) {
+    const rt = this.returnTo
+    this.currentId = null; this.editingId = null; this.returnTo = null
+    if (rt?.view === 'projects' && this.app.projects.some(p => p.id === rt.id)) {
+      this.app.projectsView._pvTab = rt.tab || 'budget'
+      this.app.openProject(rt.id)
+    } else {
+      this.renderList(mc)
+    }
+    this.app.updateTitle()
+  }
 
   // £ / $ / € segmented switcher shown in the viewer header
   ccySwitcherHTML() {
@@ -434,7 +464,7 @@ export class BudgetsView {
 
     mc.innerHTML = `
       <div class="bh-row">
-        <button class="btn-secondary" id="bv-back">← All budgets</button>
+        <button class="btn-secondary" id="bv-back">${this._backLabel()}</button>
         <h2 style="flex:1;font-size:15px;font-weight:500">${esc(b.name)}</h2>
         ${this.ccySwitcherHTML()}
         <button class="btn-secondary" id="bv-history" style="font-size:12px">History</button>
@@ -580,9 +610,7 @@ export class BudgetsView {
       })
     })
 
-    mc.querySelector('#bv-back')?.addEventListener('click', () => {
-      this.currentId = null; this.editingId = null; this.renderList(mc); this.app.updateTitle()
-    })
+    mc.querySelector('#bv-back')?.addEventListener('click', () => this._goBack(mc))
     mc.querySelector('#bv-edit')?.addEventListener('click', () => {
       this.editingId = this.currentId; this.render(mc)
     })
@@ -632,7 +660,7 @@ export class BudgetsView {
 
     mc.innerHTML = `
       <div class="bh-row">
-        <button class="btn-secondary" id="back-to-list">← All budgets</button>
+        <button class="btn-secondary" id="back-to-list">${this._backLabel()}</button>
         <input type="text" id="be-name" value="${esc(b.name)}" style="flex:1;font-size:15px;font-weight:500;background:transparent;border:none;outline:none;border-bottom:1.5px solid transparent;padding:2px 4px;border-radius:0;color:var(--text-primary);font-family:var(--font);transition:border-color 0.15s" onfocus="this.style.borderBottomColor='var(--border-strong)'" onblur="this.style.borderBottomColor='transparent'" placeholder="Budget title" />
         <button class="btn-secondary" id="be-csv">Export CSV</button>
         <button class="btn-secondary" id="be-pdf">Export PDF</button>
@@ -818,7 +846,7 @@ export class BudgetsView {
         <div class="bsum-row grand"><span class="sk">Grand total</span><span class="sv">${gbpA(tot)}</span></div>`
     }
 
-    mc.querySelector('#back-to-list')?.addEventListener('click', () => { this.currentId = null; this.editingId = null; this.renderList(mc); this.app.updateTitle() })
+    mc.querySelector('#back-to-list')?.addEventListener('click', () => this._goBack(mc))
     mc.querySelector('#be-save-close')?.addEventListener('click', () => { this.editingId = null; this.render(mc); this.app.updateTitle() })
     mc.querySelector('#be-name')?.addEventListener('change', e => {
       const val = e.target.value.trim()

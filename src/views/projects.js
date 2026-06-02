@@ -927,7 +927,7 @@ export class ProjectsView {
         this.app.budgetsView.openNewModalFromProject(p)
       })
       mc.querySelectorAll('[data-open-budget]').forEach(el => {
-        el.addEventListener('click', () => this.app.openBudget(el.dataset.openBudget))
+        el.addEventListener('click', () => this.app.openBudget(el.dataset.openBudget, { view:'projects', id: p.id, tab: this._pvTab || 'budget' }))
       })
     }
     if (tab === 'planning') {
@@ -1015,7 +1015,7 @@ export class ProjectsView {
       })
     })
     mc.querySelectorAll('[data-open-budget]').forEach(el => {
-      el.addEventListener('click', () => this.app.openBudget(el.dataset.openBudget))
+      el.addEventListener('click', () => this.app.openBudget(el.dataset.openBudget, { view:'projects', id: p.id, tab: this._pvTab || 'overview' }))
     })
   }
 
