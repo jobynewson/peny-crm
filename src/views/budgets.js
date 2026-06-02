@@ -561,11 +561,11 @@ export class BudgetsView {
           invoiced_by:   b.invoiced_by ?? null,
           include_in_pipeline: b.signed_off,
         })
-        const idx = this.app.budgets.findIndex(x => x.id === b.id)
-        if (idx >= 0) Object.assign(this.app.budgets[idx], { signed_off: b.signed_off, signed_off_at: b.signed_off_at, signed_off_by: b.signed_off_by, invoiced: b.invoiced, invoiced_at: b.invoiced_at, invoiced_by: b.invoiced_by })
-        this.app.toast(b.signed_off ? '✓ Budget signed off' : 'Sign-off removed')
-        this.renderViewer(mc)
-      } catch(e) { console.error(e); this.app.toast('Error updating sign-off') }
+      } catch(e) { console.error(e); this.app.toast('Error updating sign-off'); return }
+      const idx = this.app.budgets.findIndex(x => x.id === b.id)
+      if (idx >= 0) Object.assign(this.app.budgets[idx], { signed_off: b.signed_off, signed_off_at: b.signed_off_at, signed_off_by: b.signed_off_by, invoiced: b.invoiced, invoiced_at: b.invoiced_at, invoiced_by: b.invoiced_by })
+      this.app.toast(b.signed_off ? '✓ Budget signed off' : 'Sign-off removed')
+      this.renderViewer(mc)
     })
 
     mc.querySelector('#bv-invoiced-toggle')?.addEventListener('click', async () => {
@@ -578,11 +578,11 @@ export class BudgetsView {
           invoiced_at: b.invoiced_at ?? null,
           invoiced_by: b.invoiced_by ?? null,
         })
-        const idx = this.app.budgets.findIndex(x => x.id === b.id)
-        if (idx >= 0) Object.assign(this.app.budgets[idx], { invoiced: b.invoiced, invoiced_at: b.invoiced_at, invoiced_by: b.invoiced_by })
-        this.app.toast(b.invoiced ? '✓ Marked as invoiced' : 'Invoice status removed')
-        this.renderViewer(mc)
-      } catch(e) { console.error(e); this.app.toast('Error updating invoice status') }
+      } catch(e) { console.error(e); this.app.toast('Error updating invoice status'); return }
+      const idx = this.app.budgets.findIndex(x => x.id === b.id)
+      if (idx >= 0) Object.assign(this.app.budgets[idx], { invoiced: b.invoiced, invoiced_at: b.invoiced_at, invoiced_by: b.invoiced_by })
+      this.app.toast(b.invoiced ? '✓ Marked as invoiced' : 'Invoice status removed')
+      this.renderViewer(mc)
     })
 
     mc.querySelectorAll('.bv-ccy').forEach(btn => {
