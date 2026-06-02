@@ -89,6 +89,20 @@ export class BudgetsView {
     return isFinite(v) && v >= 0 ? v : 3
   }
 
+  // Convert a GBP amount to USD/EUR using live (or fallback) rates plus the FX margin.
+  _convGBP(gbp, code) {
+    const base = Number(this._fxRates?.[code]) || FX_FALLBACK[code] || 1
+    const rate = base * (1 + this._fxMarkup()/100)
+    return CURRENCIES[code].symbol + Math.round((Number(gbp)||0) * rate).toLocaleString('en-GB')
+  }
+
+  // Small USD/EUR equivalents shown under the editor's GBP grand total.
+  _editorFxRowsHTML(tot) {
+    const sub = 'font-size:11px;color:var(--text-tertiary)'
+    return `<div class="bsum-row" style="padding-top:3px"><span class="sk" style="${sub}">Total USD</span><span class="sv" style="${sub}">${this._convGBP(tot,'USD')}</span></div>
+            <div class="bsum-row"><span class="sk" style="${sub}">Total EUR</span><span class="sv" style="${sub}">${this._convGBP(tot,'EUR')}</span></div>`
+  }
+
   // Fetch live GBP→USD/EUR rates from the free, no-key Frankfurter API (ECB-backed,
   // CORS-enabled), cached in localStorage for 6h. Falls back to indicative rates
   // offline. De-dupes concurrent calls via an in-flight promise.
@@ -675,6 +689,7 @@ export class BudgetsView {
             ${b.insurance&&insVal>0?`<div class="bsum-row"><span class="sk">Insurance (2.5%)</span><span class="sv">${gbpA(insVal)}</span></div>`:""}
             ${b.vat ? `<div class="bsum-row"><span class="sk">VAT (20%)</span><span class="sv">${gbpA(vatVal)}</span></div>` : ''}
             <div class="bsum-row grand"><span class="sk">Grand total</span><span class="sv">${gbpA(tot)}</span></div>
+            ${this._editorFxRowsHTML(tot)}
           </div>
           <div style="margin-top:14px;display:flex;flex-direction:column;gap:10px">
             <label style="display:flex;align-items:center;gap:9px;padding:10px 12px;background:var(--bg-secondary);border-radius:var(--radius-md);cursor:pointer;font-size:13px;color:var(--text-secondary)">
@@ -717,6 +732,14 @@ export class BudgetsView {
           </div>
         </div>
       </div>`
+
+    // Pull live rates for the USD/EUR equivalents (throttled); re-render once upgraded
+    if (this._fxMeta?.source !== 'ECB' && (Date.now() - (this._fxLastAuto || 0) > 30000)) {
+      this._fxLastAuto = Date.now()
+      this._ensureRates().then(() => {
+        if (this.currentId === b.id && this.editingId === this.currentId) this.renderEditor(mc)
+      })
+    }
 
     this.bindEditor(mc, b)
   }
@@ -824,7 +847,8 @@ export class BudgetsView {
         ${(parseFloat(b.custom_pct)||0)>0?`<div class="bsum-row"><span class="sk">Add-on (${b.custom_pct}%)</span><span class="sv">${gbpA(customVal)}</span></div>`:''}
         ${b.insurance&&insVal>0?`<div class="bsum-row"><span class="sk">Insurance (2.5%)</span><span class="sv">${gbpA(insVal)}</span></div>`:""}
             ${b.vat?`<div class="bsum-row"><span class="sk">VAT (20%)</span><span class="sv">${gbpA(vatVal)}</span></div>`:''}
-        <div class="bsum-row grand"><span class="sk">Grand total</span><span class="sv">${gbpA(tot)}</span></div>`
+        <div class="bsum-row grand"><span class="sk">Grand total</span><span class="sv">${gbpA(tot)}</span></div>
+        ${this._editorFxRowsHTML(tot)}`
     }
 
     mc.querySelector('#back-to-list')?.addEventListener('click', () => { this.currentId = null; this.editingId = null; this.renderList(mc); this.app.updateTitle() })
