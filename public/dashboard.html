@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Studio Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+    :root {
+      --bg: #0f0f0f; --surface: #1a1a1a; --surface2: #222; --surface3: #2c2c2c;
+      --border: #2a2a2a; --border2: #353535;
+      --text: #e8e8e4; --text-sec: #9a9a90; --text-ter: #5a5a54;
+      --accent: #4a90d9; --green: #4CAF50; --amber: #f59e0b; --purple: #7B6EAB;
+      --post: #C47E3A; --leave: #0891b2; --red: #ef4444;
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    html, body { height: 100% }
+    body { background: var(--bg); color: var(--text); font-family: var(--font); display: flex; flex-direction: column; overflow: hidden }
+
+    .full-center { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 18px; color: var(--text-ter); text-align: center }
+    .error-state h2 { font-size: 26px; margin-bottom: 10px }
+    .error-state p  { color: var(--text-sec); font-size: 16px }
+
+    /* ── Header ── */
+    .hdr { flex-shrink: 0; display: flex; align-items: center; gap: 18px; padding: 18px 28px; background: var(--surface); border-bottom: 1px solid var(--border) }
+    .hdr-logo { height: 26px; opacity: 0.9 }
+    .hdr-sep { width: 1px; height: 24px; background: var(--border2) }
+    .hdr-co { font-size: 20px; font-weight: 600; letter-spacing: 0.2px }
+    .hdr-right { margin-left: auto; display: flex; align-items: baseline; gap: 16px }
+    .hdr-clock { font-size: 30px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: 0.5px }
+    .hdr-date { font-size: 16px; color: var(--text-sec) }
+    .hdr-stale { font-size: 12px; color: var(--amber); margin-left: 4px }
+
+    /* ── Grid ── */
+    .grid { flex: 1; display: grid; grid-template-columns: 1.35fr 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 18px; padding: 18px 22px; overflow: hidden }
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; display: flex; flex-direction: column; overflow: hidden }
+    .panel-cal { grid-row: 1 / span 2 }
+    .panel-hd { flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 14px 18px 10px; }
+    .panel-ttl { font-size: 13px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-ter); font-weight: 600 }
+    .panel-count { font-size: 12px; color: var(--text-ter); background: var(--surface2); border-radius: 20px; padding: 1px 9px; margin-left: auto }
+    .panel-body { flex: 1; overflow-y: auto; padding: 0 18px 14px }
+    .panel-body::-webkit-scrollbar { width: 8px }
+    .panel-body::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 4px }
+    .empty { font-size: 14px; color: var(--text-ter); padding: 10px 0 }
+
+    /* ── Calendar ── */
+    .cal-day { margin-bottom: 14px }
+    .cal-day-hd { display: flex; align-items: baseline; gap: 8px; padding: 6px 0 6px; border-bottom: 1px solid var(--border); margin-bottom: 6px; position: sticky; top: 0; background: var(--surface); z-index: 1 }
+    .cal-day-name { font-size: 14px; font-weight: 600 }
+    .cal-day-name.today { color: var(--accent) }
+    .cal-day-date { font-size: 12px; color: var(--text-ter) }
+    .cal-today-badge { font-size: 10px; font-weight: 700; background: var(--accent); color: #fff; border-radius: 4px; padding: 1px 6px; margin-left: 4px }
+    .cal-hol { font-size: 11px; color: var(--amber); margin-left: auto }
+    .cal-evt { display: flex; align-items: center; gap: 10px; padding: 6px 0 }
+    .cal-bar { width: 4px; align-self: stretch; min-height: 26px; border-radius: 3px; flex-shrink: 0 }
+    .cal-evt-main { flex: 1; min-width: 0 }
+    .cal-evt-label { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+    .cal-evt-sub { font-size: 12px; color: var(--text-sec); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+    .cal-evt-who { font-size: 12px; color: var(--text-sec); flex-shrink: 0; max-width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+    .cal-dl { font-size: 10px; font-weight: 700; color: var(--red); background: rgba(239,68,68,0.12); border-radius: 4px; padding: 1px 6px; flex-shrink: 0 }
+
+    /* ── Deliverables ── */
+    .deliv-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 0.5px solid var(--border) }
+    .deliv-row:last-child { border-bottom: none }
+    .deliv-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-ter); flex-shrink: 0; margin-top: 6px }
+    .deliv-dot.overdue { background: var(--red) } .deliv-dot.soon { background: var(--amber) }
+    .deliv-info { flex: 1; min-width: 0 }
+    .deliv-text { font-size: 14px; line-height: 1.35 }
+    .deliv-meta { font-size: 12px; color: var(--text-ter); margin-top: 2px }
+    .deliv-due { font-size: 12px; flex-shrink: 0; color: var(--text-sec); text-align: right; white-space: nowrap }
+    .deliv-due.overdue { color: var(--red); font-weight: 600 }
+    .deliv-due.soon { color: var(--amber); font-weight: 600 }
+
+    /* ── Projects ── */
+    .proj-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 0.5px solid var(--border) }
+    .proj-row:last-child { border-bottom: none }
+    .proj-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.25) }
+    .proj-info { flex: 1; min-width: 0 }
+    .proj-name { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+    .proj-client { font-size: 12px; color: var(--text-sec); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+    .proj-stage { font-size: 11px; color: var(--text-sec); flex-shrink: 0; white-space: nowrap }
+
+    /* ── Hours (time tracked + retainers) ── */
+    .ht-total { display: flex; align-items: baseline; gap: 8px; padding: 4px 0 12px }
+    .ht-total-num { font-size: 38px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1 }
+    .ht-total-unit { font-size: 14px; color: var(--text-sec) }
+    .ht-total-cap { font-size: 12px; color: var(--text-ter); margin-left: auto }
+    .bar-row { padding: 7px 0 }
+    .bar-hd { display: flex; align-items: baseline; gap: 8px; margin-bottom: 5px }
+    .bar-name { font-size: 13px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+    .bar-val { font-size: 12px; color: var(--text-sec); flex-shrink: 0; font-variant-numeric: tabular-nums }
+    .bar-track { height: 7px; background: var(--surface3); border-radius: 4px; overflow: hidden }
+    .bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s }
+    .ret-sub { font-size: 11px; color: var(--text-ter); margin-top: 3px }
+  </style>
+</head>
+<body>
+  <div id="root" class="full-center">Loading…</div>
+
+  <script type="module">
+    // Token from /dashboard/<token> path, or ?token= query.
+    const fromPath = location.pathname.split('/dashboard/')[1]?.split('/')[0]
+    const token = fromPath || new URLSearchParams(location.search).get('token')
+
+    const root = document.getElementById('root')
+    const REFRESH_MS = 3 * 60 * 1000  // re-fetch data every 3 minutes
+
+    const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    const DOW   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+    const DOWF  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
+    const MONTH = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+    const parseDay = s => s ? new Date(s + 'T00:00:00') : null
+    const fmtShort = s => { const d = parseDay(s); return d ? `${d.getDate()} ${MONTH[d.getMonth()]}` : '' }
+
+    if (!token) {
+      showError('Invalid link', 'This dashboard link is not valid.')
+      throw new Error('No token')
+    }
+
+    function showError(title, msg) {
+      root.className = 'full-center'
+      root.innerHTML = `<div class="error-state"><h2>${esc(title)}</h2><p>${esc(msg)}</p></div>`
+    }
+
+    let lastGood = null
+
+    async function load() {
+      let data
+      try {
+        const res = await fetch(`/api/dashboard?token=${encodeURIComponent(token)}`)
+        if (res.status === 404) return showError('Not found', "This dashboard link has expired or doesn't exist.")
+        if (!res.ok) throw new Error('HTTP ' + res.status)
+        data = await res.json()
+        lastGood = data
+      } catch (e) {
+        // Transient failure — keep showing the last good render if we have one.
+        if (lastGood) { render(lastGood, true); return }
+        showError('Unavailable', 'Could not load the dashboard. Retrying…')
+        return
+      }
+      render(data, false)
+    }
+
+    function clock() {
+      const el = document.getElementById('dash-clock')
+      if (!el) return
+      const now = new Date()
+      el.textContent = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    }
+
+    function dueMeta(due, today) {
+      if (!due) return { cls: '', text: 'No date' }
+      const d = parseDay(due), t = parseDay(today)
+      const days = Math.round((d - t) / 86400000)
+      if (days < 0)  return { cls: 'overdue', text: `${Math.abs(days)}d overdue` }
+      if (days === 0) return { cls: 'soon', text: 'Due today' }
+      if (days <= 3) return { cls: 'soon', text: `${days}d left` }
+      return { cls: '', text: fmtShort(due) }
+    }
+
+    function render(d, stale) {
+      const today = d.today
+
+      // ── Calendar: group events by day across the range ──
+      const days = []
+      const start = parseDay(d.range.start), end = parseDay(d.range.end)
+      for (let x = new Date(start); x <= end; x.setDate(x.getDate() + 1)) days.push(new Date(x))
+      const iso = dt => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`
+      const holByDay = {}
+      for (const h of (d.holidays || [])) holByDay[h.date] = h.name
+
+      let calHTML = ''
+      let shownDays = 0
+      for (const dt of days) {
+        const ds = iso(dt)
+        const evts = d.calendar.filter(e => ds >= e.start && ds <= e.end)
+        const hol = holByDay[ds]
+        if (!evts.length && !hol) continue
+        if (shownDays++ > 21) break
+        const isToday = ds === today
+        calHTML += `<div class="cal-day">
+          <div class="cal-day-hd">
+            <span class="cal-day-name ${isToday ? 'today' : ''}">${DOWF[dt.getDay()]}</span>
+            <span class="cal-day-date">${dt.getDate()} ${MONTH[dt.getMonth()]}</span>
+            ${isToday ? '<span class="cal-today-badge">TODAY</span>' : ''}
+            ${hol ? `<span class="cal-hol">${esc(hol)}</span>` : ''}
+          </div>
+          ${evts.map(e => `
+            <div class="cal-evt">
+              <div class="cal-bar" style="background:${esc(e.color)}"></div>
+              <div class="cal-evt-main">
+                <div class="cal-evt-label">${esc(e.label)}</div>
+                <div class="cal-evt-sub">${esc(e.project || e.typeLabel)}</div>
+              </div>
+              ${e.isDeadline ? '<span class="cal-dl">DEADLINE</span>' : ''}
+              ${e.assignee ? `<div class="cal-evt-who">${esc(e.assignee)}</div>` : ''}
+            </div>`).join('')}
+        </div>`
+      }
+      if (!calHTML) calHTML = `<div class="empty">Nothing scheduled in the coming weeks.</div>`
+
+      // ── Deliverables ──
+      const delivShown = d.deliverables.slice(0, 30)
+      const delivHTML = delivShown.length ? delivShown.map(dl => {
+        const m = dueMeta(dl.due, today)
+        return `<div class="deliv-row">
+          <div class="deliv-dot ${m.cls}"></div>
+          <div class="deliv-info">
+            <div class="deliv-text">${esc(dl.text)}</div>
+            <div class="deliv-meta">${esc(dl.project)}</div>
+          </div>
+          <div class="deliv-due ${m.cls}">${esc(m.text)}</div>
+        </div>`
+      }).join('') : `<div class="empty">No open deliverables.</div>`
+
+      // ── Live projects ──
+      const projHTML = d.liveProjects.length ? d.liveProjects.map(p => `
+        <div class="proj-row">
+          <div class="proj-dot" style="background:${esc(p.dot)}"></div>
+          <div class="proj-info">
+            <div class="proj-name">${esc(p.name)}</div>
+            ${p.client ? `<div class="proj-client">${esc(p.client)}</div>` : ''}
+          </div>
+          <div class="proj-stage">${esc(p.status)}</div>
+        </div>`).join('') : `<div class="empty">No live projects.</div>`
+
+      // ── Time tracked ──
+      const tt = d.timeTracked
+      const ttBars = tt.byProject.slice(0, 8)
+      const ttMax = Math.max(1, ...ttBars.map(b => b.hours))
+      const ttHTML = `
+        <div class="ht-total">
+          <span class="ht-total-num">${tt.totalHours}</span>
+          <span class="ht-total-unit">hrs</span>
+          <span class="ht-total-cap">${esc(tt.monthLabel)}</span>
+        </div>
+        ${ttBars.length ? ttBars.map(b => `
+          <div class="bar-row">
+            <div class="bar-hd"><span class="bar-name">${esc(b.name)}</span><span class="bar-val">${b.hours}h</span></div>
+            <div class="bar-track"><div class="bar-fill" style="width:${(b.hours/ttMax*100).toFixed(1)}%;background:var(--accent)"></div></div>
+          </div>`).join('') : `<div class="empty">No hours logged this month.</div>`}`
+
+      // ── Retainer hours ──
+      const retHTML = d.retainers.length ? d.retainers.map(r => {
+        const hasAlloc = r.allocation != null && r.allocation > 0
+        const pct = hasAlloc ? Math.min(100, r.pct) : 0
+        const over = hasAlloc && r.pct > 100
+        const warn = hasAlloc && r.pct >= r.alert
+        const col = over ? 'var(--red)' : warn ? 'var(--amber)' : 'var(--green)'
+        return `<div class="bar-row">
+          <div class="bar-hd">
+            <span class="bar-name">${esc(r.name)}</span>
+            <span class="bar-val">${r.used}${hasAlloc ? ' / ' + r.allocation : ''} h</span>
+          </div>
+          ${hasAlloc ? `<div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div>
+          <div class="ret-sub">${over ? `${(r.pct-100)} % over allocation` : `${r.pct}% used · ${r.remaining}h remaining`}${r.periodStart ? ' · since ' + fmtShort(r.periodStart) : ''}</div>`
+            : `<div class="ret-sub">${r.used}h logged this period · no hour allocation set</div>`}
+        </div>`
+      }).join('') : `<div class="empty">No retainer projects.</div>`
+
+      // ── Assemble ──
+      root.className = ''
+      root.style = ''
+      root.innerHTML = `
+        <header class="hdr">
+          <img src="/slate-logo-white.png" alt="" class="hdr-logo" onerror="this.style.display='none'" />
+          <div class="hdr-sep"></div>
+          <div class="hdr-co">${esc(d.company)}</div>
+          <div class="hdr-right">
+            <div class="hdr-date">${new Date(today + 'T00:00:00').toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long' })}</div>
+            <div class="hdr-clock" id="dash-clock">--:--</div>
+            ${stale ? '<span class="hdr-stale">⚠ reconnecting…</span>' : ''}
+          </div>
+        </header>
+        <div class="grid">
+          <section class="panel panel-cal">
+            <div class="panel-hd"><span class="panel-ttl">Schedule</span></div>
+            <div class="panel-body">${calHTML}</div>
+          </section>
+          <section class="panel">
+            <div class="panel-hd"><span class="panel-ttl">Deliverables</span><span class="panel-count">${d.deliverables.length}</span></div>
+            <div class="panel-body">${delivHTML}</div>
+          </section>
+          <section class="panel">
+            <div class="panel-hd"><span class="panel-ttl">Live Projects</span><span class="panel-count">${d.liveProjects.length}</span></div>
+            <div class="panel-body">${projHTML}</div>
+          </section>
+          <section class="panel">
+            <div class="panel-hd"><span class="panel-ttl">Time Tracked</span></div>
+            <div class="panel-body">${ttHTML}</div>
+          </section>
+          <section class="panel">
+            <div class="panel-hd"><span class="panel-ttl">Retainer Hours</span><span class="panel-count">${d.retainers.length}</span></div>
+            <div class="panel-body">${retHTML}</div>
+          </section>
+        </div>`
+      clock()
+    }
+
+    load()
+    setInterval(load, REFRESH_MS)
+    setInterval(clock, 15000)
+  </script>
+</body>
+</html>
