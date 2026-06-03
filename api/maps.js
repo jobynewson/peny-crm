@@ -1,11 +1,40 @@
 // api/maps.js
-// Combined location/maps proxy — two actions via ?action= query param
+// Combined location/maps proxy — three actions via ?action= query param
 //
 // GET /api/maps?action=resolve&url=https://maps.app.goo.gl/...
 //   Resolves Google Maps short URLs server-side to get the full URL with coordinates.
 //
 // GET /api/maps?action=nearby&lat=51.23&lng=-2.45
 //   Proxies Overpass API to find nearby hospitals, police, fire stations, and rail.
+//
+// GET /api/maps?action=place&q=<name>&lat=&lng=
+//   Looks up a place's phone number via Google Places (Text Search). Rate-limited
+//   and budgeted to stay inside the Places API free tier.
+
+import { neon } from '@neondatabase/serverless'
+import { isRateLimited, getClientIp } from './_ratelimit.js'
+
+// ── Google Places monthly budget tracking ────────────────────────────────────
+// A phone-returning Text Search bills on the Places "Pro" SKU, which includes
+// 5,000 free events/month. We cap conservatively below that (per call, and each
+// "Nearby" click makes up to 2 calls). Override with GOOGLE_PLACES_MONTHLY_CAP.
+const PLACES_SERVICE = 'google_places'
+
+function currentPeriod() {
+  const d = new Date()
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
+async function placesUsedThisMonth(sql) {
+  const rows = await sql`SELECT count FROM api_usage WHERE service = ${PLACES_SERVICE} AND period = ${currentPeriod()}`
+  return Number(rows[0]?.count ?? 0)
+}
+
+async function recordPlacesCall(sql) {
+  await sql`
+    INSERT INTO api_usage (service, period, count) VALUES (${PLACES_SERVICE}, ${currentPeriod()}, 1)
+    ON CONFLICT (service, period) DO UPDATE SET count = api_usage.count + 1`
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -100,6 +129,28 @@ export default async function handler(req, res) {
     if (!key) return res.status(200).json({ phone: null, source: null })
     if (!q || !lat || !lng) return res.status(400).json({ error: 'q, lat and lng required' })
 
+    // Burst guard — stops a runaway client loop from draining the budget.
+    // In-memory/per-instance, so it only catches rapid-fire bursts.
+    if (isRateLimited(getClientIp(req), { windowMs: 60_000, max: 20 })) {
+      return res.status(200).json({ phone: null, source: null, reason: 'rate_limited' })
+    }
+
+    // Monthly budget guard — never call Google once we've hit the free-tier cap.
+    const cap = Number(process.env.GOOGLE_PLACES_MONTHLY_CAP || 4500)
+    let dbSql = null
+    try {
+      if (process.env.VITE_DATABASE_URL) {
+        dbSql = neon(process.env.VITE_DATABASE_URL)
+        if (await placesUsedThisMonth(dbSql) >= cap) {
+          return res.status(200).json({ phone: null, source: null, reason: 'budget' })
+        }
+      }
+    } catch (err) {
+      // Fail open on counter errors — the Cloud Console quota is the hard backstop
+      console.warn('Places usage check failed:', err.message)
+      dbSql = null
+    }
+
     try {
       const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
         method: 'POST',
@@ -116,6 +167,8 @@ export default async function handler(req, res) {
         }),
         signal: AbortSignal.timeout(8000),
       })
+      // A request was sent to Google, so it counts against the monthly budget
+      if (dbSql) recordPlacesCall(dbSql).catch(e => console.warn('Places usage record failed:', e.message))
       if (!response.ok) return res.status(200).json({ phone: null, source: null })
       const data = await response.json()
       const place = data.places?.[0]
