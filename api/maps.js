@@ -89,5 +89,43 @@ export default async function handler(req, res) {
     return res.status(502).json({ error: 'All Overpass endpoints failed — try again shortly' })
   }
 
-  return res.status(400).json({ error: 'action must be "resolve" or "nearby"' })
+  // ── Look up a place's phone number via Google Places (enrichment) ───────────
+  // GET /api/maps?action=place&q=Hereford County Hospital&lat=52.05&lng=-2.71
+  // Returns { phone, source }. Degrades gracefully to { phone:null } when no
+  // GOOGLE_MAPS_API_KEY is configured or Google has no match, so the caller can
+  // fall back to the OpenStreetMap phone tag (or leave the field blank).
+  if (action === 'place') {
+    const { q, lat, lng } = req.query
+    const key = process.env.GOOGLE_MAPS_API_KEY
+    if (!key) return res.status(200).json({ phone: null, source: null })
+    if (!q || !lat || !lng) return res.status(400).json({ error: 'q, lat and lng required' })
+
+    try {
+      const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': key,
+          // Field mask keeps this on the cheapest billable SKU that still returns a phone
+          'X-Goog-FieldMask': 'places.nationalPhoneNumber,places.internationalPhoneNumber,places.displayName',
+        },
+        body: JSON.stringify({
+          textQuery: q,
+          maxResultCount: 1,
+          locationBias: { circle: { center: { latitude: Number(lat), longitude: Number(lng) }, radius: 30000 } },
+        }),
+        signal: AbortSignal.timeout(8000),
+      })
+      if (!response.ok) return res.status(200).json({ phone: null, source: null })
+      const data = await response.json()
+      const place = data.places?.[0]
+      const phone = place?.nationalPhoneNumber || place?.internationalPhoneNumber || null
+      return res.status(200).json({ phone, source: phone ? 'google' : null })
+    } catch (err) {
+      console.warn('Places lookup failed:', err.message)
+      return res.status(200).json({ phone: null, source: null })
+    }
+  }
+
+  return res.status(400).json({ error: 'action must be "resolve", "nearby" or "place"' })
 }
