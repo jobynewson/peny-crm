@@ -2760,7 +2760,7 @@ export class ProjectsView {
     const fmtDT   = s => { try { return new Date(s).toLocaleString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) } catch { return String(s) } }
 
     const studio = this.app.settings || {}
-    const logoUrl = studio.logo_url || '/slate-logo.png'
+    const logoUrl = studio.logo_url || '/peny-logo.png'
 
     // Cascade insurance: shoot → project → settings
     const insurer = {
@@ -2826,9 +2826,27 @@ export class ProjectsView {
         <td class="lbl">${showRole ? esc_(c.role||'') : ''}</td>
         <td class="val" style="padding:0">
           <table style="width:100%;border-collapse:collapse"><tr>
-            <td style="width:170px;padding:4px 6px;font-weight:600">${esc_(c.name)}</td>
-            <td style="padding:4px 6px;color:#666;font-size:10px">${esc_(email)}</td>
-            <td style="width:150px;padding:4px 6px;color:#666;white-space:nowrap">${phone}</td>
+            <td style="padding:4px 6px"><span class="pname">${esc_(c.name)}</span></td>
+            <td style="padding:4px 6px;color:#666;font-size:9.5px">${esc_(email)}</td>
+            <td style="width:150px;padding:4px 6px;color:#666;white-space:nowrap;text-align:right">${phone}</td>
+          </tr></table>
+        </td>
+      </tr>`
+    }
+
+    // Person row: name + inline role (RH) + optional email + phone — phone always on one line.
+    // Used by Client and Talent so the job title lives in the content column, not the label column.
+    const personRow = (c, labelText='', showEmail=true) => {
+      const email = showEmail ? findEmail(c.name) : ''
+      const phone = c.phone ? `Mob: ${esc_(c.phone)}` : (c.co ? `c/o ${esc_(c.co)}` : '')
+      const role  = c.role ? `<span class="role">${esc_(c.role)}</span>` : ''
+      return `<tr>
+        <td class="lbl">${labelText ? esc_(labelText) : ''}</td>
+        <td class="val" style="padding:0">
+          <table style="width:100%;border-collapse:collapse"><tr>
+            <td style="padding:4px 6px"><span class="pname">${esc_(c.name)}</span>${role}</td>
+            ${email ? `<td style="padding:4px 6px;color:#666;font-size:9.5px;white-space:nowrap">${esc_(email)}</td>` : ''}
+            <td style="padding:4px 6px;color:#666;white-space:nowrap;text-align:right">${phone}</td>
           </tr></table>
         </td>
       </tr>`
@@ -2836,9 +2854,8 @@ export class ProjectsView {
 
     // ── Build sections ───────────────────────────────────────────────────────
 
-    // JOB NAME
+    // JOB NAME (first section — no leading rule, it sits under the header border)
     const secJobName = [
-      hr(),
       row('Job name', p.name + (sh.name ? ` — ${sh.name}` : '')),
     ].join('')
 
@@ -2848,44 +2865,18 @@ export class ProjectsView {
       ? `<tr><td class="lbl"></td><td class="val" style="font-style:italic;color:#666;font-size:10px;padding:4px 6px">${esc_(csNotes.client)}</td></tr>`
       : ''
 
-    // CLIENT
+    // CLIENT — job title shown in the content column (right), not as a label
     const secClient = (client_display || clientCrew.length) ? [
       hr(),
       row('Client', client_display||'', false),
-      ...clientCrew.map((c,i) => {
-        const email = findEmail(c.name)
-        const phone = c.phone ? `Mob: ${esc_(c.phone)}` : ''
-        return `<tr>
-          <td class="lbl">${esc_(c.role||'')}</td>
-          <td class="val" style="padding:0">
-            <table style="width:100%;border-collapse:collapse"><tr>
-              <td style="width:170px;padding:4px 6px;font-weight:600">${esc_(c.name)}</td>
-              <td style="padding:4px 6px;color:#666;font-size:10px">${esc_(email)}</td>
-              <td style="width:150px;padding:4px 6px;color:#666;white-space:nowrap">${phone}</td>
-            </tr></table>
-          </td>
-        </tr>`
-      }),
+      ...clientCrew.map((c,i) => personRow(c, '', true)),
       clientNotesRow,
     ].join('') : ''
 
-    // TALENT
+    // TALENT — role inline beside the name, phone kept on a single line
     const secTalent = talentCrew.length ? [
       hr(),
-      ...talentCrew.map((c,i) => {
-        const phone = c.phone ? `Mob: ${esc_(c.phone)}` : ''
-        const co    = c.co    ? `c/o ${esc_(c.co)}`     : ''
-        return `<tr>
-          <td class="lbl">${i===0?'Talent':''}</td>
-          <td class="val" style="padding:0">
-            <table style="width:100%;border-collapse:collapse"><tr>
-              <td style="width:170px;padding:4px 6px;font-weight:600">${esc_(c.name)}</td>
-              <td style="width:140px;padding:4px 6px;color:#666">${esc_(c.role||'')}</td>
-              <td style="padding:4px 6px;color:#666">${co || phone}</td>
-            </tr></table>
-          </td>
-        </tr>`
-      }),
+      ...talentCrew.map((c,i) => personRow(c, i===0 ? 'Talent' : '', false)),
     ].join('') : ''
 
     // PRODUCTION COMPANY
@@ -3061,22 +3052,36 @@ export class ProjectsView {
         table.cs { width: 100%; border-collapse: collapse }
 
         td { padding: 4px 6px; vertical-align: top }
+        /* Left-hand titles: tight column so content sits close to the labels */
         td.lbl {
-          width: 160px; min-width: 160px; font-size: 9px; font-weight: 700;
+          width: 120px; min-width: 120px; font-size: 9px; font-weight: 700;
           text-transform: uppercase; letter-spacing: 0.6px; color: #555;
-          padding-right: 14px; padding-top: 6px; white-space: nowrap
+          padding-right: 10px; padding-top: 6px
         }
         td.val { font-size: 10.5px }
 
         tr.hr td { border-top: 0.5px solid #bbb; height: 0; padding: 4px 0 0 0 }
-        tr.section-head td { padding-top: 8px; font-weight: 700; text-transform: uppercase; font-size: 9px; letter-spacing: 0.6px; color: #555; border-top: 0.5px solid #bbb }
+        /* No own border — the leading rule (hr) draws the single divider above the heading */
+        tr.section-head td { padding-top: 8px; font-weight: 700; text-transform: uppercase; font-size: 9px; letter-spacing: 0.6px; color: #555 }
         tr.section-head td.lbl { color: #1a1a1a }
 
-        .crew-name { font-weight: 600 }
-        .crew-role { margin-left: 1.5em; color: #444 }
+        /* One bold tier for content emphasis (600); labels/headings stay 700 */
+        strong, .pname { font-weight: 600 }
+        .role { margin-left: 8px; font-size: 9px; color: #888; text-transform: none; letter-spacing: 0 }
         .dim { color: #666 }
         .sched-time { font-weight: 600; min-width: 40px; display: inline-block }
         .cat-label { font-weight: 700; font-size: 9.5px; text-transform: none; letter-spacing: 0; color: #1a1a1a }
+
+        /* Keep each section together — pushes a whole section to the next page
+           rather than letting it straddle the page boundary */
+        tbody.sec { break-inside: avoid; page-break-inside: avoid }
+
+        .pdf-footer {
+          margin-top: 16px; padding-top: 8px; border-top: 2px solid #1a1a1a;
+          display: flex; align-items: center; justify-content: space-between;
+          font-size: 9px; letter-spacing: 0.4px; color: #888
+        }
+        .pdf-footer img { height: 16px; opacity: 0.85 }
 
         @media print {
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact }
@@ -3086,30 +3091,21 @@ export class ProjectsView {
     </head><body>
 
     <div class="pdf-header">
-      <img src="${logoUrl}" alt="${esc_(studio.company_name||'')}" onerror="this.style.display='none'" />
+      <img src="${logoUrl}" alt="${esc_(studio.company_name||'Peny')}" onerror="this.style.display='none'" />
       <div class="pdf-title">CALLSHEET</div>
     </div>
 
     <table class="cs">
-      ${secJobName}
-      ${secClient}
-      ${secTalent}
-      ${secTalentNotes}
-      ${secProduction}
-      ${secDates}
-      ${secLocation}
-      ${secHotels}
-      ${secSchedule}
-      ${secMainUnit}
-      ${secEquipment}
-      ${secCatering}
-      ${secInsurance}
-      ${secEmergency}
-      ${secHS}
-      ${secNotes}
-      ${secInvoicing}
-      ${hr()}
+      ${[secJobName, secClient, secTalent, secTalentNotes, secProduction, secDates,
+         secLocation, secHotels, secSchedule, secMainUnit, secEquipment, secCatering,
+         secInsurance, secEmergency, secHS, secNotes, secInvoicing]
+        .map(s => s ? `<tbody class="sec">${s}</tbody>` : '').join('')}
     </table>
+
+    <div class="pdf-footer">
+      <img src="/peny-logo.png" alt="Peny" onerror="this.style.display='none'" />
+      <span>Produced by Peny &middot; wearepeny.com</span>
+    </div>
 
     <script>window.onload = () => window.print()<\/script>
     </body></html>`
