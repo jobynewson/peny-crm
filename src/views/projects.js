@@ -1302,13 +1302,13 @@ export class ProjectsView {
               </div>
               <div class="bsec-body">
                 <div style="padding:14px;display:flex;flex-direction:column;gap:10px">
-                  ${[['Hospital','se-hosp','nearest_hospital'],['Police','se-police','nearest_police'],['Fire','se-fire','nearest_fire']].map(([label,id,key]) => `
-                  <div style="display:grid;grid-template-columns:1.3fr 1.6fr 1fr;gap:8px">
+                  ${[['Hospital','se-hosp','nearest_hospital',true],['Police','se-police','nearest_police',true],['Fire','se-fire','nearest_fire',false]].map(([label,id,key,phone]) => `
+                  <div style="display:grid;grid-template-columns:${phone?'1.3fr 1.6fr 1fr':'1fr 1fr'};gap:8px">
                     <div><div class="proj-field-label">${label} name</div><input type="text" class="proj-input" id="${id}-name" value="${esc(sh[key+'_name']||'')}" placeholder="${label} name" /></div>
                     <div><div class="proj-field-label">${label} address</div><input type="text" class="proj-input" id="${id}-addr" value="${esc(sh[key+'_address']||'')}" placeholder="Address" /></div>
-                    <div><div class="proj-field-label">${label} phone</div><input type="text" class="proj-input" id="${id}-phone" value="${esc(sh[key+'_phone']||'')}" placeholder="Non-emergency" /></div>
+                    ${phone?`<div><div class="proj-field-label">${label} phone</div><input type="text" class="proj-input" id="${id}-phone" value="${esc(sh[key+'_phone']||'')}" placeholder="Non-emergency" /></div>`:''}
                   </div>`).join('')}
-                  <div style="font-size:11px;color:var(--text-sec,#888)">📞 Fetched numbers are switchboard / non-emergency lines — always call <strong>999</strong> (or 112) in an emergency.</div>
+                  <div style="font-size:11px;color:var(--text-sec,#888)">📞 Fetched numbers are switchboard / non-emergency lines — always call <strong>999</strong> (or 112) in an emergency. Fire brigade: 999 only.</div>
                 </div>
               </div>
             </div>
@@ -1891,7 +1891,6 @@ export class ProjectsView {
         nearest_police_phone:     overlay.querySelector('#se-police-phone')?.value.trim() || null,
         nearest_fire_name:        overlay.querySelector('#se-fire-name')?.value.trim() || null,
         nearest_fire_address:     overlay.querySelector('#se-fire-addr')?.value.trim() || null,
-        nearest_fire_phone:       overlay.querySelector('#se-fire-phone')?.value.trim() || null,
         weather_text:      overlay.querySelector('#se-weather')?.value.trim() || null,
         weather_fetched_at: sh.weather_fetched_at || null,
         hs_notes:          overlay.querySelector('#se-hs')?.value.trim() || null,
@@ -2061,7 +2060,7 @@ export class ProjectsView {
     bindRigs()
 
     // Top-level fields — autosave on change (no longer includes #se-date / #se-general-call)
-    overlay.querySelectorAll('#se-name,#se-status,#se-loc-name,#se-loc-addr,#se-parking,#se-transport,#se-weather,#se-hs,#se-notes,#se-hosp-name,#se-hosp-addr,#se-hosp-phone,#se-police-name,#se-police-addr,#se-police-phone,#se-fire-name,#se-fire-addr,#se-fire-phone,#se-client-display,#se-ins-name,#se-ins-addr,#se-ins-email,#se-ins-contact,#se-inv-email,#se-inv-ref').forEach(el => {
+    overlay.querySelectorAll('#se-name,#se-status,#se-loc-name,#se-loc-addr,#se-parking,#se-transport,#se-weather,#se-hs,#se-notes,#se-hosp-name,#se-hosp-addr,#se-hosp-phone,#se-police-name,#se-police-addr,#se-police-phone,#se-fire-name,#se-fire-addr,#se-client-display,#se-ins-name,#se-ins-addr,#se-ins-email,#se-ins-contact,#se-inv-email,#se-inv-ref').forEach(el => {
       el.addEventListener('change', save)
     })
 
@@ -2226,7 +2225,7 @@ export class ProjectsView {
       if (result.transport) { setField('#se-transport', result.transport.name) }
       if (result.hospital)  { setField('#se-hosp-name',   result.hospital.name);  setField('#se-hosp-addr',   result.hospital.address);  setField('#se-hosp-phone',   result.hospital.phone) }
       if (result.police)    { setField('#se-police-name', result.police.name);    setField('#se-police-addr', result.police.address);    setField('#se-police-phone', result.police.phone) }
-      if (result.fire)      { setField('#se-fire-name',   result.fire.name);      setField('#se-fire-addr',   result.fire.address);      setField('#se-fire-phone',   result.fire.phone) }
+      if (result.fire)      { setField('#se-fire-name',   result.fire.name);      setField('#se-fire-addr',   result.fire.address) }
       save()
       this.app.toast('Nearby services found ✓')
     })
@@ -4222,7 +4221,8 @@ export class ProjectsView {
           if (r.ok) { const d = await r.json(); if (d.phone) svc.phone = d.phone }
         } catch(e) { /* keep OSM fallback */ }
       }
-      await Promise.all([enrichPhone(hospital), enrichPhone(police), enrichPhone(fire)])
+      // Fire brigade is always 999, so we don't look up a fire phone number
+      await Promise.all([enrichPhone(hospital), enrichPhone(police)])
 
       return { hospital, police, fire, transport }
     } catch(e) {
