@@ -280,9 +280,11 @@ export async function handleDashboard(req, res, sql) {
   }
 
   // ── Post-production phase blocks → post_production entries ──
-  const userRows = await sql`SELECT id, name FROM app_users`
+  const userRows = await sql`SELECT id, name, email FROM app_users WHERE clerk_id IS NOT NULL ORDER BY name`
   const userName = {}
-  for (const u of userRows) userName[u.id] = u.name
+  for (const u of userRows) userName[u.id] = u.name || u.email || 'Unknown'
+  // Exposed for calendar column headers on the office screen
+  const teamMembers = userRows.map(u => ({ id: u.id, name: userName[u.id] }))
   const ppsRows = await sql`
     SELECT ph.id, ph.name, ph.color, ph.blocks, p.name AS project_name
     FROM pps_phases ph
@@ -328,6 +330,7 @@ export async function handleDashboard(req, res, sql) {
     today: todayStr,
     range: { start: rangeStart, end: rangeEnd },
     timers,
+    teamMembers,
     liveProjects,
     deliverables,
     calendar,
