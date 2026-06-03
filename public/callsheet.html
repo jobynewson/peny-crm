@@ -357,17 +357,19 @@
     // Emergency services
     const emergencyHTML = (() => {
       const svcs = []
-      if (sheet.nearest_hospital_name||sheet.nearest_hospital_address) svcs.push({icon:'🏥',label:'Hospital A&E',name:sheet.nearest_hospital_name,addr:sheet.nearest_hospital_address})
-      if (sheet.nearest_police_name||sheet.nearest_police_address) svcs.push({icon:'🚔',label:'Police',name:sheet.nearest_police_name,addr:sheet.nearest_police_address})
-      if (sheet.nearest_fire_name||sheet.nearest_fire_address) svcs.push({icon:'🚒',label:'Fire station',name:sheet.nearest_fire_name,addr:sheet.nearest_fire_address})
+      if (sheet.nearest_hospital_name||sheet.nearest_hospital_address) svcs.push({icon:'🏥',label:'Hospital A&E',name:sheet.nearest_hospital_name,addr:sheet.nearest_hospital_address,phone:sheet.nearest_hospital_phone})
+      if (sheet.nearest_police_name||sheet.nearest_police_address) svcs.push({icon:'🚔',label:'Police',name:sheet.nearest_police_name,addr:sheet.nearest_police_address,phone:sheet.nearest_police_phone})
+      if (sheet.nearest_fire_name||sheet.nearest_fire_address) svcs.push({icon:'🚒',label:'Fire station',name:sheet.nearest_fire_name,addr:sheet.nearest_fire_address,phone:sheet.nearest_fire_phone})
       if (!svcs.length) return ''
       return `<div class="section"><div class="section-head">Emergency Services</div>${svcs.map(sv => `
         <div class="row">
           <div class="row-label">${sv.icon} ${sv.label}</div>
           <div style="font-size:14px;font-weight:500">${esc(sv.name||'')}</div>
           ${sv.addr ? `<div style="font-size:12px;color:var(--text-sec);margin-top:2px">${esc(sv.addr)}</div>` : ''}
+          ${sv.phone ? `<div style="font-size:13px;margin-top:4px">📞 <a href="tel:${esc(String(sv.phone).replace(/[^+\d]/g,''))}" style="font-weight:500">${esc(sv.phone)}</a> <span style="font-size:11px;color:var(--text-sec)">(non-emergency)</span></div>` : ''}
           ${sv.addr ? `<a href="https://maps.google.com/?q=${encodeURIComponent(sv.addr)}" target="_blank" class="maps-btn" style="margin-top:8px;display:inline-flex">${mapPin} Directions</a>` : ''}
-        </div>`).join('')}</div>`
+        </div>`).join('')}
+        <div style="font-size:11px;color:var(--text-sec);margin-top:8px">In an emergency always call <strong>999</strong> (or 112). Listed numbers are non-emergency / switchboard lines.</div></div>`
     })()
 
     // H&S
