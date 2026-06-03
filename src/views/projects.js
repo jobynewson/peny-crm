@@ -4203,26 +4203,41 @@ export class ProjectsView {
         return { name: `${name} railway station, ${km}km` }
       }
 
-      const hospital  = toResult(nearest('amenity','hospital'))
+      let hospital    = toResult(nearest('amenity','hospital'))
       const police    = toResult(nearest('amenity','police'))
       const fire      = toResult(nearest('amenity','fire_station'))
       const transport = toTransport(nearest('railway','station'))
 
+      // Google Places lookup — returns { name, address, phone } or null. Degrades
+      // gracefully (no key / no match / over budget all yield null).
+      const googleLookup = async (q, biasLat, biasLng) => {
+        try {
+          const r = await fetch(`/api/maps?action=place&q=${encodeURIComponent(q)}&lat=${biasLat}&lng=${biasLng}`)
+          if (!r.ok) return null
+          return await r.json()
+        } catch(e) { return null }
+      }
+      // Enrich an OSM result: fill the phone and any address OSM was missing
+      const enrich = async svc => {
+        if (!svc?.name || svc.lat == null || svc.lng == null) return
+        const g = await googleLookup(svc.name, svc.lat, svc.lng)
+        if (!g) return
+        if (g.phone) svc.phone = g.phone
+        if (!svc.address && g.address) svc.address = g.address
+      }
+      // Fire brigade is always 999, so we don't look up a fire phone number
+      await Promise.all([enrich(hospital), enrich(police)])
+
+      // OSM often has no hospital in rural areas — fall back to finding the
+      // nearest one via Google (which also gives its address + phone)
+      if (!hospital) {
+        const g = await googleLookup('hospital', lat, lng)
+        if (g?.name) hospital = { name: g.name, address: g.address || null, phone: g.phone || null }
+      }
+
       if (!hospital && !police && !fire && !transport) {
         this.app.toast('No results found — try a more specific location'); return null
       }
-
-      // Enrich phone numbers via Google Places (falls back to the OSM phone tag,
-      // then blank, when no Google key is configured or there's no match)
-      const enrichPhone = async svc => {
-        if (!svc?.name || svc.lat == null || svc.lng == null) return
-        try {
-          const r = await fetch(`/api/maps?action=place&q=${encodeURIComponent(svc.name)}&lat=${svc.lat}&lng=${svc.lng}`)
-          if (r.ok) { const d = await r.json(); if (d.phone) svc.phone = d.phone }
-        } catch(e) { /* keep OSM fallback */ }
-      }
-      // Fire brigade is always 999, so we don't look up a fire phone number
-      await Promise.all([enrichPhone(hospital), enrichPhone(police)])
 
       return { hospital, police, fire, transport }
     } catch(e) {
