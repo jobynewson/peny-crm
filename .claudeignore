@@ -1,0 +1,21 @@
+# Dependencies and build artifacts
+node_modules/
+dist/
+.env
+.env.local
+package-lock.json
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# IDE and build caches
+.idea/
+.vscode/
+*.log
+.cache/
+
+# Version control
+.git/
