@@ -80,9 +80,9 @@ export default async function handler(req, res) {
 
     const radius = 30000  // 30km — wider for rural areas
     const query = `[out:json][timeout:25];(
-      node["amenity"="hospital"]["emergency"="yes"](around:${radius},${lat},${lng});
-      way["amenity"="hospital"]["emergency"="yes"](around:${radius},${lat},${lng});
-      relation["amenity"="hospital"]["emergency"="yes"](around:${radius},${lat},${lng});
+      node["amenity"="hospital"](around:${radius},${lat},${lng});
+      way["amenity"="hospital"](around:${radius},${lat},${lng});
+      relation["amenity"="hospital"](around:${radius},${lat},${lng});
       node["amenity"="police"](around:${radius},${lat},${lng});
       way["amenity"="police"](around:${radius},${lat},${lng});
       relation["amenity"="police"](around:${radius},${lat},${lng});
@@ -118,15 +118,16 @@ export default async function handler(req, res) {
     return res.status(502).json({ error: 'All Overpass endpoints failed — try again shortly' })
   }
 
-  // ── Look up a place's phone number via Google Places (enrichment) ───────────
+  // ── Look up a place via Google Places (enrichment / discovery) ─────────────
   // GET /api/maps?action=place&q=Hereford County Hospital&lat=52.05&lng=-2.71
-  // Returns { phone, source }. Degrades gracefully to { phone:null } when no
-  // GOOGLE_MAPS_API_KEY is configured or Google has no match, so the caller can
-  // fall back to the OpenStreetMap phone tag (or leave the field blank).
+  // Returns { name, address, phone, source }. Used both to enrich an OSM result
+  // (fill phone + missing address) and to discover a service OSM didn't have
+  // (e.g. q=hospital). Degrades gracefully to nulls when no GOOGLE_MAPS_API_KEY
+  // is configured or Google has no match, so the caller can fall back.
   if (action === 'place') {
     const { q, lat, lng } = req.query
     const key = process.env.GOOGLE_MAPS_API_KEY
-    if (!key) return res.status(200).json({ phone: null, source: null })
+    if (!key) return res.status(200).json({ name: null, address: null, phone: null, source: null })
     if (!q || !lat || !lng) return res.status(400).json({ error: 'q, lat and lng required' })
 
     // Burst guard — stops a runaway client loop from draining the budget.
@@ -157,8 +158,8 @@ export default async function handler(req, res) {
         headers: {
           'Content-Type': 'application/json',
           'X-Goog-Api-Key': key,
-          // Field mask keeps this on the cheapest billable SKU that still returns a phone
-          'X-Goog-FieldMask': 'places.nationalPhoneNumber,places.internationalPhoneNumber,places.displayName',
+          // Phone + address fields bill on the Places "Pro" SKU (5,000 free/month)
+          'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.internationalPhoneNumber',
         },
         body: JSON.stringify({
           textQuery: q,
@@ -169,14 +170,19 @@ export default async function handler(req, res) {
       })
       // A request was sent to Google, so it counts against the monthly budget
       if (dbSql) recordPlacesCall(dbSql).catch(e => console.warn('Places usage record failed:', e.message))
-      if (!response.ok) return res.status(200).json({ phone: null, source: null })
+      if (!response.ok) return res.status(200).json({ name: null, address: null, phone: null, source: null })
       const data = await response.json()
       const place = data.places?.[0]
       const phone = place?.nationalPhoneNumber || place?.internationalPhoneNumber || null
-      return res.status(200).json({ phone, source: phone ? 'google' : null })
+      return res.status(200).json({
+        name:    place?.displayName?.text || null,
+        address: place?.formattedAddress || null,
+        phone,
+        source:  place ? 'google' : null,
+      })
     } catch (err) {
       console.warn('Places lookup failed:', err.message)
-      return res.status(200).json({ phone: null, source: null })
+      return res.status(200).json({ name: null, address: null, phone: null, source: null })
     }
   }
 
