@@ -694,7 +694,9 @@ export class ProjectsView {
               <div style="font-size:14px;font-weight:500;margin-bottom:3px">${esc(label)}</div>
               <div style="font-size:12px;color:var(--text-tertiary)">${esc(d)}${esc(dEnd)}${gc?' · GC '+esc(gc):''}${sh.location_name?' · '+esc(sh.location_name):''}</div>
             </div>
-            <div style="display:flex;align-items:center;gap:12px;flex-shrink:0">
+            <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+              <button class="btn-cancel" data-shoot-pdf="${sh.id}" style="font-size:11px;padding:3px 8px" title="Generate call sheet PDF" onclick="event.stopPropagation()">📄 PDF</button>
+              ${sh.shoot_token ? `<button class="btn-cancel" data-shoot-link="${sh.shoot_token}" style="font-size:11px;padding:3px 8px" title="Copy HTML callsheet link" onclick="event.stopPropagation()">🔗 Link</button>` : ''}
               <span style="font-size:10px;color:${statusColor};text-transform:uppercase;letter-spacing:0.4px">${esc(sh.status||'draft')}</span>
               ${sh.shoot_token ? `<a href="/pack/${sh.shoot_token}" target="_blank" class="btn-cancel" style="font-size:11px;padding:3px 8px;text-decoration:none" onclick="event.stopPropagation()">📦 Pack</a>` : ''}
             </div>
@@ -909,6 +911,7 @@ export class ProjectsView {
       mc.querySelectorAll('[data-open-shoot]').forEach(el => {
         el.addEventListener('click', () => this._openShootEditor(mc, p, el.dataset.openShoot))
       })
+      this._bindShootRowActions(mc.querySelector('#pv-shoots-list'), p)
     }
     if (tab === 'post-production') {
       const container = mc.querySelector('#pv-pps-container')
@@ -1145,14 +1148,44 @@ export class ProjectsView {
             <div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(label)}</div>
             <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">${esc(d)}${sh.general_call?' · '+esc(sh.general_call):''}</div>
           </div>
-          <span style="font-size:10px;color:${statusColor};text-transform:uppercase;letter-spacing:0.4px">${esc(sh.status||'draft')}</span>
+          <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+            <button class="btn-cancel" data-shoot-pdf="${sh.id}" style="font-size:11px;padding:3px 8px" title="Generate call sheet PDF" onclick="event.stopPropagation()">📄 PDF</button>
+            ${sh.shoot_token ? `<button class="btn-cancel" data-shoot-link="${sh.shoot_token}" style="font-size:11px;padding:3px 8px" title="Copy HTML callsheet link" onclick="event.stopPropagation()">🔗 Link</button>` : ''}
+            <span style="font-size:10px;color:${statusColor};text-transform:uppercase;letter-spacing:0.4px">${esc(sh.status||'draft')}</span>
+          </div>
         </div>`
       }).join('') : '<div style="font-size:12px;color:var(--text-tertiary);padding:4px 0">No shoots yet</div>'
       // Rebind
       listEl.querySelectorAll('[data-open-shoot]').forEach(el => {
         el.addEventListener('click', () => this._openShootEditor(mc, p, el.dataset.openShoot))
       })
+      this._bindShootRowActions(listEl, p)
     } catch(e) { console.error(e) }
+  }
+
+  // Bind the per-row "Generate PDF" and "Copy callsheet link" buttons in the shoots list.
+  _bindShootRowActions(scope, p) {
+    if (!scope) return
+    scope.querySelectorAll('[data-shoot-pdf]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation()
+        const sh = (p._shoots||[]).find(s => String(s.id) === btn.dataset.shootPdf)
+        if (sh) this._generateShootPDF(sh, p)
+      })
+    })
+    scope.querySelectorAll('[data-shoot-link]').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation()
+        const url = `${location.origin}/call/${btn.dataset.shootLink}`
+        try {
+          await navigator.clipboard.writeText(url)
+          const orig = btn.textContent
+          btn.textContent = '✓ Copied'
+          setTimeout(() => { btn.textContent = orig }, 1500)
+          this.app.toast?.('Callsheet link copied')
+        } catch { this.app.toast?.('Copy failed — copy it from the shoot editor') }
+      })
+    })
   }
 
   async _createShoot(mc, p) {
