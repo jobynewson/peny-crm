@@ -50,6 +50,23 @@ index.html                # App HTML shell
 - Client-side only (no server routes needed)
 - `vercel.json` rewrites all paths to `index.html` for SPA routing to work on refresh
 
+### Serverless Functions (Vercel) — HARD LIMIT OF 12
+- Every non-underscore `*.js` file in `/api` becomes its own Vercel Serverless
+  Function. **The Hobby (free) plan deploys a maximum of 12 functions — at 13
+  the deployment fails.** We must ALWAYS stay at or below 12.
+- **Before adding any new `/api/*.js` file, count the existing ones**
+  (`ls api/*.js | grep -v '/_' | wc -l`). If we're already at 12, do NOT add a
+  new file — extend an existing function instead.
+- **How to add an endpoint without adding a function:**
+  - Files prefixed with `_` (e.g. `api/_ratelimit.js`, `api/_dashboard.js`) are
+    ignored by Vercel's function detection. Put shared logic / extra handlers in
+    a `_`-prefixed module and have an existing function delegate to it.
+  - Route within an existing function on a query param. Example: the public
+    office dashboard lives in `api/_dashboard.js` and is invoked by
+    `api/portal.js` when `?view=dashboard` — it is NOT a separate function.
+- Current functions (12): `ai`, `blob`, `callsheet`, `generate-ra`, `google`,
+  `invite`, `maps`, `packing`, `portal`, `quote`, `reminders`, `track`.
+
 ### Views
 - Each feature (contacts, projects, etc.) has a view module in `src/views/`
 - View modules export a `render()` function that returns HTML
@@ -68,6 +85,9 @@ npm run preview      # Preview production build
 Required (set in `.env.local` for local development, Vercel dashboard for production):
 - `VITE_CLERK_PUBLISHABLE_KEY` - Public Clerk API key
 - `VITE_DATABASE_URL` - Neon PostgreSQL connection string (use pooled connection)
+- `DASHBOARD_TOKEN` - Fixed secret token gating the public office-display
+  dashboard at `/dashboard/<token>` (served by `public/dashboard.html`, data
+  from `/api/portal?view=dashboard`). Unset = the dashboard returns 503.
 
 ## Common Tasks
 

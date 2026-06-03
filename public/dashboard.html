@@ -128,7 +128,7 @@
     async function load() {
       let data
       try {
-        const res = await fetch(`/api/dashboard?token=${encodeURIComponent(token)}`)
+        const res = await fetch(`/api/portal?view=dashboard&token=${encodeURIComponent(token)}`)
         if (res.status === 404) return showError('Not found', "This dashboard link has expired or doesn't exist.")
         if (!res.ok) throw new Error('HTTP ' + res.status)
         data = await res.json()

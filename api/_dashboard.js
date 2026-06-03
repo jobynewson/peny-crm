@@ -1,15 +1,16 @@
-// api/dashboard.js
-// Public office-display endpoint — no authentication required.
-// GET /api/dashboard?token=xxx → whole-workspace overview for a permanent
+// api/_dashboard.js
+// Public office-display handler — whole-workspace overview for a permanent
 // office screen: calendar, deliverables, live projects, time tracked + retainer
 // hours. Deliberately exposes NO financial information (no fees, rates, budget
 // totals or amounts of any kind).
 //
+// NOTE: this is NOT its own serverless function. Files prefixed with `_` are
+// ignored by Vercel's function detection, so this code lives here but is invoked
+// by api/portal.js (on ?view=dashboard) to keep the project within the Hobby
+// plan's 12-function limit. See claude.md.
+//
 // Access is gated by a single fixed token held in the DASHBOARD_TOKEN env var,
 // so the link is totally separate from the authenticated app.
-
-import { neon } from '@neondatabase/serverless'
-import { isRateLimited, getClientIp } from './_ratelimit.js'
 
 // Mirror the app's calendar palette (src/views/team-calendar.js).
 const TYPE_COLORS = { shoot: '#4CAF50', post_production: '#C47E3A', leave: '#0891b2', other: '#7B6EAB' }
@@ -41,24 +42,13 @@ function retainerPeriodStart(retainerStart, now) {
   return ps
 }
 
-export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
-  if (req.method === 'OPTIONS') return res.status(200).end()
-  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
-
-  if (isRateLimited(getClientIp(req))) {
-    return res.status(429).json({ error: 'Too many requests' })
-  }
-
+// Invoked by api/portal.js. CORS, method check and rate limiting are already
+// handled by the caller; `sql` is a ready neon() client.
+export async function handleDashboard(req, res, sql) {
   const { token } = req.query
   const expected = process.env.DASHBOARD_TOKEN
   if (!expected) return res.status(503).json({ error: 'Dashboard link not configured' })
-  // Constant-ish comparison — token is a single fixed secret.
   if (!token || token !== expected) return res.status(404).json({ error: 'Dashboard link not found' })
-
-  const sql = neon(process.env.VITE_DATABASE_URL)
 
   // All data is scoped to the single workspace owner.
   const wsRows = await sql`SELECT owner_id FROM workspace ORDER BY created_at ASC LIMIT 1`

@@ -4,6 +4,7 @@
 
 import { neon } from '@neondatabase/serverless'
 import { isRateLimited, getClientIp } from './_ratelimit.js'
+import { handleDashboard } from './_dashboard.js'
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -16,10 +17,15 @@ export default async function handler(req, res) {
     return res.status(429).json({ error: 'Too many requests' })
   }
 
+  const sql = neon(process.env.VITE_DATABASE_URL)
+
+  // The public office dashboard shares this function (rather than its own file)
+  // to stay within Vercel's 12-function limit — see claude.md. Delegates on
+  // ?view=dashboard; the project portal logic below is otherwise unchanged.
+  if (req.query.view === 'dashboard') return handleDashboard(req, res, sql)
+
   const { token } = req.query
   if (!token) return res.status(400).json({ error: 'Token required' })
-
-  const sql = neon(process.env.VITE_DATABASE_URL)
 
   const rows = await sql`
     SELECT
