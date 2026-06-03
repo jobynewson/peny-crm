@@ -1274,7 +1274,6 @@ export class ProjectsView {
           <div style="font-size:11px;color:var(--text-tertiary)">${esc(p.name)}</div>
         </div>
         <span id="se-indicator" style="font-size:11px;color:var(--text-tertiary)"></span>
-        <button class="btn-secondary" id="se-gen-pdf" style="flex-shrink:0;font-size:12px">📄 Generate call sheet PDF</button>
         <button class="row-btn" id="se-delete" style="color:#b03020;border-color:rgba(180,50,30,0.2);flex-shrink:0">Delete</button>
       </div>
 
@@ -1570,6 +1569,7 @@ export class ProjectsView {
                   <input type="text" class="proj-input" readonly value="${esc(shareUrl)}" style="font-size:11px;flex:1" id="se-share-url" />
                   <button class="btn-secondary" id="se-copy-share" style="font-size:11px;padding:4px 10px">Copy</button>
                 </div>
+                <button class="btn-secondary" id="se-gen-pdf" style="font-size:11px;width:100%;margin-top:10px">📄 Generate call sheet PDF</button>
               </div>
             </div>
             <div class="proj-panel" id="se-crew-links-panel">
