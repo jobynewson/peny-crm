@@ -31,6 +31,21 @@
     .hdr-date { font-size: 16px; color: var(--text-sec) }
     .hdr-stale { font-size: 12px; color: var(--amber); margin-left: 4px }
 
+    /* ── Timers bar ── */
+    .timers { flex-shrink: 0; display: flex; gap: 18px; padding: 14px 22px 0 }
+    .timer-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 22px; display: flex; align-items: center; gap: 18px }
+    .timer-card.cd { background: linear-gradient(135deg, #1a1a1a, #20242c) }
+    .timer-name { font-size: 13px; color: var(--text-sec); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600 }
+    .cd-units { display: flex; align-items: flex-end; gap: 10px }
+    .cd-unit { display: flex; flex-direction: column; align-items: center; min-width: 46px }
+    .cd-num { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1 }
+    .cd-lbl { font-size: 10px; color: var(--text-ter); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px }
+    .cd-sep { font-size: 28px; font-weight: 700; color: var(--text-ter); align-self: flex-start; line-height: 1.1 }
+    .cd-wrap { font-size: 26px; font-weight: 700; color: var(--green) }
+    .ds-num { font-size: 38px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; color: var(--accent) }
+    .ds-card-label { font-size: 13px; color: var(--text-sec) }
+    .ds-card-label .ds-name { color: var(--text); font-weight: 600 }
+
     /* ── Grid ── */
     .grid { flex: 1; display: grid; grid-template-columns: 1.35fr 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 18px; padding: 18px 22px; overflow: hidden }
     .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; display: flex; flex-direction: column; overflow: hidden }
@@ -124,6 +139,25 @@
     }
 
     let lastGood = null
+
+    // ── Live countdown (ticks every second, independent of the 3-min refetch) ──
+    let cdTarget = null, cdName = ''
+    const pad = n => String(n).padStart(2, '0')
+    function tickCountdown() {
+      const card = document.getElementById('cd-card')
+      if (!card || cdTarget == null) return
+      const diff = cdTarget - Date.now()
+      if (diff > 0) {
+        const t = Math.floor(diff / 1000)
+        const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v }
+        set('cd-d', Math.floor(t / 86400))
+        set('cd-h', pad(Math.floor((t % 86400) / 3600)))
+        set('cd-m', pad(Math.floor((t % 3600) / 60)))
+        set('cd-s', pad(t % 60))
+      } else if (!card.querySelector('.cd-wrap')) {
+        card.innerHTML = `<div class="timer-name">${esc(cdName)}</div><div class="cd-wrap">🎉 It's a wrap!</div>`
+      }
+    }
 
     async function load() {
       let data
@@ -259,6 +293,43 @@
         </div>`
       }).join('') : `<div class="empty">No retainer projects.</div>`
 
+      // ── Timers (countdown + time-since) ──
+      const tm = d.timers || {}
+      cdTarget = null; cdName = ''
+      let cdCardHTML = ''
+      if (tm.countdown) {
+        cdName = tm.countdown.name
+        const tgt = new Date(tm.countdown.target)
+        if (!isNaN(tgt.getTime())) {
+          cdTarget = tgt.getTime()
+          cdCardHTML = `<div class="timer-card cd" id="cd-card">
+            <div class="timer-name">${esc(cdName)}</div>
+            <div class="cd-units">
+              <div class="cd-unit"><div class="cd-num" id="cd-d">--</div><div class="cd-lbl">days</div></div>
+              <div class="cd-sep">:</div>
+              <div class="cd-unit"><div class="cd-num" id="cd-h">--</div><div class="cd-lbl">hrs</div></div>
+              <div class="cd-sep">:</div>
+              <div class="cd-unit"><div class="cd-num" id="cd-m">--</div><div class="cd-lbl">min</div></div>
+              <div class="cd-sep">:</div>
+              <div class="cd-unit"><div class="cd-num" id="cd-s">--</div><div class="cd-lbl">sec</div></div>
+            </div>
+          </div>`
+        }
+      }
+      let dsCardHTML = ''
+      if (tm.daysSince) {
+        const since = parseDay(tm.daysSince.since)
+        if (since) {
+          const todayMs = parseDay(today).getTime()
+          const days = Math.floor((todayMs - since.getTime()) / 86400000)
+          dsCardHTML = `<div class="timer-card ds">
+            <div class="ds-num">${days}</div>
+            <div class="ds-card-label">days since <span class="ds-name">${esc(tm.daysSince.name)}</span></div>
+          </div>`
+        }
+      }
+      const timersHTML = (cdCardHTML || dsCardHTML) ? `<div class="timers">${cdCardHTML}${dsCardHTML}</div>` : ''
+
       // ── Assemble ──
       root.className = ''
       root.style = ''
@@ -273,6 +344,7 @@
             ${stale ? '<span class="hdr-stale">⚠ reconnecting…</span>' : ''}
           </div>
         </header>
+        ${timersHTML}
         <div class="grid">
           <section class="panel panel-cal">
             <div class="panel-hd"><span class="panel-ttl">Schedule</span></div>
@@ -296,11 +368,13 @@
           </section>
         </div>`
       clock()
+      tickCountdown()
     }
 
     load()
     setInterval(load, REFRESH_MS)
     setInterval(clock, 15000)
+    setInterval(tickCountdown, 1000)
   </script>
 </body>
 </html>

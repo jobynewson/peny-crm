@@ -55,8 +55,22 @@ export async function handleDashboard(req, res, sql) {
   if (!wsRows[0]) return res.status(404).json({ error: 'No workspace found' })
   const uid = wsRows[0].owner_id
 
-  const settingsRows = await sql`SELECT company_name FROM settings WHERE user_id = ${uid} LIMIT 1`
+  const settingsRows = await sql`
+    SELECT company_name, countdown_timer, days_since_timer
+    FROM settings WHERE user_id = ${uid} LIMIT 1
+  `
   const companyName = settingsRows[0]?.company_name || 'Slate'
+  const parseObj = v => {
+    if (v && typeof v === 'object') return v
+    if (typeof v === 'string') { try { return JSON.parse(v) } catch { return null } }
+    return null
+  }
+  const cd = parseObj(settingsRows[0]?.countdown_timer)
+  const ds = parseObj(settingsRows[0]?.days_since_timer)
+  const timers = {
+    countdown: cd?.name && cd?.target ? { name: cd.name, target: cd.target } : null,
+    daysSince: ds?.name && ds?.since ? { name: ds.name, since: ds.since } : null,
+  }
 
   const now = new Date()
   const todayStr = toDateStr(now)
@@ -228,6 +242,79 @@ export async function handleDashboard(req, res, sql) {
     isDeadline: !!e.is_deadline,
   }))
 
+  // The team calendar in the app also shows entries DERIVED at render time from
+  // shoots and post-production schedules (they are not stored in
+  // team_calendar_entries). Replicate that here so the office Schedule isn't
+  // empty when the workspace plans via shoots / PPS rather than manual entries.
+  // See src/views/team-calendar.js (_buildShootEntries / _buildPpsEntries).
+  const inRange = d => d && d >= rangeStart && d <= rangeEnd
+
+  // ── Shoots → shoot entries (one per shoot per scheduled date in range) ──
+  const shootRows = await sql`
+    SELECT s.id, s.name, s.shoot_date, s.shoot_dates, s.crew, p.name AS project_name
+    FROM shoots s
+    LEFT JOIN projects p ON p.id = s.project_id
+    WHERE s.user_id = ${uid}
+  `
+  for (const s of shootRows) {
+    const sd = parseJson(s.shoot_dates)
+    let dates = sd.length ? sd.map(x => toDateStr(x?.date)).filter(Boolean) : []
+    if (!dates.length && s.shoot_date) dates = [toDateStr(s.shoot_date)]
+    const crew = parseJson(s.crew).map(m => m?.name).filter(Boolean)
+    const who = crew.length ? (crew.length > 3 ? `${crew.slice(0, 3).join(', ')} +${crew.length - 3}` : crew.join(', ')) : null
+    for (const date of dates) {
+      if (!inRange(date)) continue
+      calendar.push({
+        id: `shoot-${s.id}-${date}`,
+        start: date,
+        end: date,
+        type: 'shoot',
+        typeLabel: TYPE_LABELS.shoot,
+        label: `Shoot — ${s.project_name || 'Project'}${s.name ? ': ' + s.name : ''}`,
+        project: s.project_name || null,
+        assignee: who,
+        color: TYPE_COLORS.shoot,
+        isDeadline: false,
+      })
+    }
+  }
+
+  // ── Post-production phase blocks → post_production entries ──
+  const userRows = await sql`SELECT id, name FROM app_users`
+  const userName = {}
+  for (const u of userRows) userName[u.id] = u.name
+  const ppsRows = await sql`
+    SELECT ph.id, ph.name, ph.color, ph.blocks, p.name AS project_name
+    FROM pps_phases ph
+    JOIN post_production_schedules ps ON ps.id = ph.schedule_id
+    LEFT JOIN projects p ON p.id = ps.project_id
+    WHERE ps.user_id = ${uid}
+  `
+  for (const ph of ppsRows) {
+    for (const b of parseJson(ph.blocks)) {
+      const bStart = toDateStr(b?.start_date)
+      const bEnd = toDateStr(b?.end_date) || bStart
+      if (!bStart) continue
+      // Overlaps the window?
+      if (bStart > rangeEnd || bEnd < rangeStart) continue
+      const stage = b.title || ph.name
+      calendar.push({
+        id: `pps-${b.id || ph.id + '-' + bStart}`,
+        start: bStart,
+        end: bEnd,
+        type: 'post_production',
+        typeLabel: TYPE_LABELS.post_production,
+        label: `${ph.project_name ? ph.project_name + ' — ' : ''}${stage}`,
+        project: ph.project_name || null,
+        assignee: b.assignee_id ? (userName[b.assignee_id] || null) : null,
+        color: b.color || ph.color || TYPE_COLORS.post_production,
+        isDeadline: !!b.is_deadline,
+      })
+    }
+  }
+
+  calendar.sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0))
+
   // Public holidays in range — shown as calendar context.
   const holRows = await sql`
     SELECT holiday_date, name FROM public_holidays
@@ -240,6 +327,7 @@ export async function handleDashboard(req, res, sql) {
     company: companyName,
     today: todayStr,
     range: { start: rangeStart, end: rangeEnd },
+    timers,
     liveProjects,
     deliverables,
     calendar,
