@@ -540,6 +540,7 @@ export class ProjectsView {
     if (tab === 'overview') {
       this._loadProjectActivity(mc, p.id)
       this._loadWorkLog(mc, p)
+      this._loadTimeTracking(mc, p)
     }
   }
 
@@ -658,6 +659,13 @@ export class ProjectsView {
             </div>`).join('')}
         </div>
       </div>` : ''}
+
+      <div class="proj-panel">
+        <div class="proj-panel-head">Time tracking</div>
+        <div id="pv-timetrack" style="padding:12px 14px">
+          <div style="font-size:11px;color:var(--text-tertiary);padding:10px 0">Loading…</div>
+        </div>
+      </div>
 
       <div class="proj-panel">
         <div class="proj-panel-head">Work log</div>
@@ -3209,6 +3217,115 @@ export class ProjectsView {
         finally { submitBtn.disabled = false; submitBtn.textContent = 'Add entry' }
       })
     }
+  }
+
+  async _loadTimeTracking(mc, p) {
+    const el = mc.querySelector('#pv-timetrack')
+    if (!el) return
+
+    const fmtDate = s => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : ''
+    const fmtH = n => (Math.round(n * 10) / 10).toLocaleString('en-GB')
+    const canEdit = !!this.app.permissions?.projects_edit
+
+    let entries
+    try {
+      entries = await getTimeEntries(p.id)
+    } catch (e) {
+      console.error(e)
+      el.innerHTML = '<div style="font-size:11px;color:var(--text-tertiary);padding:8px 0">Could not load time entries</div>'
+      return
+    }
+
+    if (!entries.length) {
+      el.innerHTML = '<div style="font-size:11px;color:var(--text-tertiary);padding:8px 0">No time logged yet. Use the Time Tracker to log hours against this project.</div>'
+      return
+    }
+
+    const totalHours = entries.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0)
+
+    // Breakdown by task (line_label)
+    const byTask = new Map()
+    for (const e of entries) {
+      const key = e.line_label || 'Unspecified'
+      byTask.set(key, (byTask.get(key) || 0) + (parseFloat(e.hours) || 0))
+    }
+    const taskRows = [...byTask.entries()].sort((a, b) => b[1] - a[1])
+
+    // Breakdown by person (crew_name)
+    const byPerson = new Map()
+    for (const e of entries) {
+      const key = e.crew_name || 'Unknown'
+      byPerson.set(key, (byPerson.get(key) || 0) + (parseFloat(e.hours) || 0))
+    }
+    const personRows = [...byPerson.entries()].sort((a, b) => b[1] - a[1])
+
+    const bar = (label, hours) => {
+      const pct = totalHours > 0 ? Math.round((hours / totalHours) * 100) : 0
+      return `
+        <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border-light)">
+          <span style="flex:1;min-width:0;font-size:13px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(label)}">${esc(label)}</span>
+          <div style="width:90px;height:6px;background:var(--bg-secondary);border-radius:3px;overflow:hidden;flex-shrink:0">
+            <div style="width:${pct}%;height:100%;background:var(--accent)"></div>
+          </div>
+          <span style="font-size:12px;color:var(--text-secondary);width:54px;text-align:right;flex-shrink:0">${fmtH(hours)}h</span>
+          <span style="font-size:11px;color:var(--text-tertiary);width:34px;text-align:right;flex-shrink:0">${pct}%</span>
+        </div>`
+    }
+    const breakdownRows = (rows) => rows.map(([label, hours]) => bar(label, hours)).join('')
+
+    el.innerHTML = `
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px">
+        <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Total tracked</div>
+        <div style="font-size:18px;font-weight:600;color:var(--text-primary)">${fmtH(totalHours)}h</div>
+      </div>
+
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <button class="tt-bd-tab btn-cancel" data-bd="task" style="font-size:11px;padding:3px 10px">By task</button>
+        <button class="tt-bd-tab btn-cancel" data-bd="person" style="font-size:11px;padding:3px 10px">By person</button>
+      </div>
+      <div id="pv-tt-breakdown" style="margin-bottom:16px"></div>
+
+      <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Log (${entries.length})</div>
+      <div>
+        ${entries.map(e => `
+          <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-light)">
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap">
+                <span style="font-size:13px;font-weight:500;color:var(--text-primary)">${esc(e.line_label)}</span>
+                <span style="font-size:11px;color:var(--text-tertiary)">${fmtDate(e.entry_date)}</span>
+              </div>
+              <div style="font-size:11px;color:var(--text-tertiary);margin-top:1px">${esc(e.crew_name)}${e.note ? ' · ' + esc(e.note) : ''}</div>
+            </div>
+            <span style="font-size:13px;font-weight:600;color:var(--accent);flex-shrink:0">${fmtH(parseFloat(e.hours) || 0)}h</span>
+            ${canEdit ? `<button data-del-tt="${e.id}" style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:13px;padding:0;flex-shrink:0" title="Delete">×</button>` : ''}
+          </div>`).join('')}
+      </div>`
+
+    // Breakdown tab switching
+    const bdEl = el.querySelector('#pv-tt-breakdown')
+    const tabs = el.querySelectorAll('.tt-bd-tab')
+    const showBreakdown = (which) => {
+      if (bdEl) bdEl.innerHTML = breakdownRows(which === 'person' ? personRows : taskRows)
+      tabs.forEach(t => {
+        const on = t.dataset.bd === which
+        t.style.background = on ? 'var(--accent)' : ''
+        t.style.color = on ? '#fff' : ''
+        t.style.borderColor = on ? 'var(--accent)' : ''
+      })
+    }
+    tabs.forEach(t => t.addEventListener('click', () => showBreakdown(t.dataset.bd)))
+    showBreakdown('task')
+
+    // Delete handlers
+    el.querySelectorAll('[data-del-tt]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!await this.app.confirm({ title: 'Delete this time entry?', confirmLabel: 'Delete' })) return
+        try {
+          await deleteTimeEntry(btn.dataset.delTt)
+          this._loadTimeTracking(mc, p)
+        } catch (err) { console.error(err); this.app.toast('Error deleting entry') }
+      })
+    })
   }
 
   async _loadProjectActivity(mc, projectId) {
