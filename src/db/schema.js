@@ -344,6 +344,8 @@ export const shoots = pgTable('shoots', {
   crew_section_notes: jsonb('crew_section_notes').notNull().default({}),
   shoot_camera_setups: jsonb('shoot_camera_setups').notNull().default([]),
   shoot_dates:       jsonb('shoot_dates').notNull().default([]),
+  // Per-section callsheet visibility — { [sectionKey]: boolean }. Missing/true = shown.
+  section_visibility: jsonb('section_visibility').notNull().default({}),
   // Display-only client override
   client_display:    text('client_display'),
   // Per-shoot insurance override (falls back to project, then settings)

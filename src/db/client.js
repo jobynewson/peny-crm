@@ -199,6 +199,8 @@ export async function runMigrations() {
   // per-permission overrides (permissions are now derived purely from role).
   // The old CHECK constraint only allowed admin/member/readonly, so it must be
   // replaced before remapping the values (and before any new user is inserted).
+  await sql`ALTER TABLE shoots ADD COLUMN IF NOT EXISTS section_visibility JSONB NOT NULL DEFAULT '{}'::jsonb`
+
   await sql`ALTER TABLE app_users DROP CONSTRAINT IF EXISTS app_users_role_check`
   await sql`UPDATE app_users SET role = 'superadmin' WHERE role = 'admin'`
   await sql`UPDATE app_users SET role = 'user'       WHERE role = 'member'`
@@ -693,7 +695,7 @@ export async function createShoot(userId, projectId, data) {
       equipment, client_display,
       insurer_name, insurer_address, insurer_email, insurer_contact,
       invoicing_email, invoicing_job_ref,
-      crew_section_notes, catering
+      crew_section_notes, catering, section_visibility
     ) VALUES (
       ${projectId}, ${userId}, ${data.name||null}, ${data.shoot_date||null}, 'draft', ${token},
       ${data.general_call||null}, ${data.location_name||null}, ${data.location_address||null}, ${data.location_map_link||null},
@@ -713,7 +715,8 @@ export async function createShoot(userId, projectId, data) {
       ${data.insurer_email||null}, ${data.insurer_contact||null},
       ${data.invoicing_email||null}, ${data.invoicing_job_ref||null},
       ${JSON.stringify(data.crew_section_notes||{})}::jsonb,
-      ${JSON.stringify(data.catering||{})}::jsonb
+      ${JSON.stringify(data.catering||{})}::jsonb,
+      ${JSON.stringify(data.section_visibility||{})}::jsonb
     ) RETURNING *
   `).then(r => r.rows ?? r)
   return shoot
@@ -761,6 +764,7 @@ export async function updateShoot(id, data) {
       crew_section_notes = ${JSON.stringify(data.crew_section_notes||{})}::jsonb,
       catering = ${JSON.stringify(data.catering||{})}::jsonb,
       shoot_camera_setups = ${JSON.stringify(data.shoot_camera_setups||[])}::jsonb,
+      section_visibility = ${JSON.stringify(data.section_visibility||{})}::jsonb,
       updated_at = NOW()
     WHERE id = ${id} RETURNING *
   `).then(r => r.rows ?? r)

@@ -1257,9 +1257,21 @@ export class ProjectsView {
       sh.equipment = Array.isArray(sh.equipment) ? sh.equipment : []
       sh.crew_section_notes = (sh.crew_section_notes && typeof sh.crew_section_notes === 'object') ? sh.crew_section_notes : {}
       sh.catering = (sh.catering && typeof sh.catering === 'object') ? sh.catering : {}
+      sh.section_visibility = (sh.section_visibility && typeof sh.section_visibility === 'object') ? sh.section_visibility : {}
       sh.shoot_camera_setups = Array.isArray(sh.shoot_camera_setups) ? sh.shoot_camera_setups : []
       this._renderShootEditor(mc, p, sh)
     } catch(e) { console.error(e); this.app.toast('Error loading shoot') }
+  }
+
+  // A small "in callsheet" toggle for a section accordion header.
+  // When unchecked, the matching section is omitted from the PDF and web callsheet.
+  _sectionToggle(sh, key) {
+    const vis = (sh.section_visibility && typeof sh.section_visibility === 'object') ? sh.section_visibility : {}
+    const on = vis[key] !== false
+    return `<label class="se-sec-toggle" title="Include this section in the PDF &amp; web callsheet" onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:5px;margin-right:8px;cursor:pointer;user-select:none;flex-shrink:0">
+      <input type="checkbox" data-section-toggle="${key}" ${on?'checked':''} style="margin:0;cursor:pointer" />
+      <span style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px">In callsheet</span>
+    </label>`
   }
 
   _renderShootEditor(mc, p, sh) {
@@ -1294,6 +1306,7 @@ export class ProjectsView {
               <div class="bsec-head enabled" data-se-panel="dates">
                 <span class="bsec-name" style="flex:1">Shoot dates &amp; general call times</span>
                 <button class="btn-secondary" id="se-add-day" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add day</button>
+                ${this._sectionToggle(sh,'dates')}
                 <span class="bsec-chev">▶</span>
               </div>
               <div class="bsec-body">
@@ -1319,6 +1332,7 @@ export class ProjectsView {
               <div class="bsec-head enabled" data-se-panel="location">
                 <span class="bsec-name" style="flex:1">Primary location</span>
                 <button class="btn-secondary" id="se-fetch-weather" style="font-size:11px;padding:3px 10px;margin-right:8px">🌤 Weather</button><button class="btn-secondary" id="se-find-nearby" style="font-size:11px;padding:3px 10px;margin-right:8px">📍 Nearby</button>
+                ${this._sectionToggle(sh,'location')}
                 <span class="bsec-chev">▶</span>
               </div>
               <div class="bsec-body">
@@ -1337,7 +1351,7 @@ export class ProjectsView {
             <div class="bsec-wrap" id="sep-emergency">
               <div class="bsec-head enabled" data-se-panel="emergency">
                 <span class="bsec-name" style="flex:1">Emergency services</span>
-                
+                ${this._sectionToggle(sh,'emergency')}
                 <span class="bsec-chev">▶</span>
               </div>
               <div class="bsec-body">
@@ -1357,6 +1371,7 @@ export class ProjectsView {
               <div class="bsec-head enabled" data-se-panel="locations">
                 <span class="bsec-name" style="flex:1">Additional locations</span>
                 <button class="btn-secondary" id="se-add-loc" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add</button>
+                ${this._sectionToggle(sh,'locations')}
                 <span class="bsec-chev">▶</span>
               </div>
               <div class="bsec-body">
@@ -1370,6 +1385,7 @@ export class ProjectsView {
               <div class="bsec-head enabled" data-se-panel="schedule">
                 <span class="bsec-name" style="flex:1">Schedule / run of show</span>
                 <button class="btn-secondary" id="se-add-sched" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add row</button>
+                ${this._sectionToggle(sh,'schedule')}
                 <span class="bsec-chev">▶</span>
               </div>
               <div class="bsec-body">
@@ -1389,6 +1405,7 @@ export class ProjectsView {
                   <span class="bsec-name" style="flex:1">${label}</span>
                   ${fillBtn}
                   <button class="btn-secondary" data-add-crew-type="${type}" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add</button>
+                  ${this._sectionToggle(sh,`crew-${type}`)}
                   <span class="bsec-chev">▶</span>
                 </div>
                 <div class="bsec-body">
@@ -1406,6 +1423,7 @@ export class ProjectsView {
               <div class="bsec-head enabled" data-se-panel="hotels">
                 <span class="bsec-name" style="flex:1">Accommodation</span>
                 <button class="btn-secondary" id="se-add-hotel" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add hotel</button>
+                ${this._sectionToggle(sh,'hotels')}
                 <span class="bsec-chev">▶</span>
               </div>
               <div class="bsec-body">
@@ -1437,6 +1455,7 @@ export class ProjectsView {
               <div class="bsec-head enabled" data-se-panel="equipment">
                 <span class="bsec-name" style="flex:1">Equipment</span>
                 <button class="btn-secondary" id="se-add-equip" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add category</button>
+                ${this._sectionToggle(sh,'equipment')}
                 <span class="bsec-chev">▶</span>
               </div>
               <div class="bsec-body">
@@ -1449,7 +1468,7 @@ export class ProjectsView {
             <div class="bsec-wrap" id="sep-catering">
               <div class="bsec-head enabled" data-se-panel="catering">
                 <span class="bsec-name" style="flex:1">Catering</span>
-                
+                ${this._sectionToggle(sh,'catering')}
                 <span class="bsec-chev">▶</span>
               </div>
               <div class="bsec-body">
@@ -1481,7 +1500,7 @@ export class ProjectsView {
             <div class="bsec-wrap" id="sep-insurance">
               <div class="bsec-head enabled" data-se-panel="insurance">
                 <span class="bsec-name" style="flex:1">Insurance</span>
-                
+                ${this._sectionToggle(sh,'insurance')}
                 <span class="bsec-chev ">▶</span>
               </div>
               <div class="bsec-body ">
@@ -1507,7 +1526,7 @@ export class ProjectsView {
             <div class="bsec-wrap" id="sep-invoicing">
               <div class="bsec-head enabled" data-se-panel="invoicing">
                 <span class="bsec-name" style="flex:1">Invoicing</span>
-                
+                ${this._sectionToggle(sh,'invoicing')}
                 <span class="bsec-chev ">▶</span>
               </div>
               <div class="bsec-body ">
@@ -1523,7 +1542,7 @@ export class ProjectsView {
             <div class="bsec-wrap" id="sep-hs">
               <div class="bsec-head enabled" data-se-panel="hs">
                 <span class="bsec-name" style="flex:1">Health &amp; safety notes</span>
-                
+                ${this._sectionToggle(sh,'hs')}
                 <span class="bsec-chev">▶</span>
               </div>
               <div class="bsec-body">
@@ -1549,7 +1568,7 @@ export class ProjectsView {
             <div class="bsec-wrap" id="sep-notes">
               <div class="bsec-head enabled" data-se-panel="notes">
                 <span class="bsec-name" style="flex:1">Notes</span>
-                
+                ${this._sectionToggle(sh,'notes')}
                 <span class="bsec-chev">▶</span>
               </div>
               <div class="bsec-body">
@@ -1943,6 +1962,7 @@ export class ProjectsView {
         equipment: sh.equipment || [],
         crew_section_notes: sh.crew_section_notes || {},
         catering: sh.catering || {},
+        section_visibility: sh.section_visibility || {},
         shoot_camera_setups: sh.shoot_camera_setups || [],
         risk_assessment: sh.risk_assessment || {},
         client_display:    overlay.querySelector('#se-client-display')?.value.trim() || null,
@@ -1999,6 +2019,18 @@ export class ProjectsView {
         const chev = wrap?.querySelector('.bsec-chev')
         body?.classList.toggle('open')
         chev?.classList.toggle('open')
+      })
+    })
+
+    // Per-section "In callsheet" toggles — control inclusion in the PDF & web callsheet
+    if (!sh.section_visibility || typeof sh.section_visibility !== 'object') sh.section_visibility = {}
+    overlay.querySelectorAll('[data-section-toggle]').forEach(cb => {
+      const wrap = cb.closest('.bsec-wrap')
+      if (wrap && !cb.checked) wrap.style.opacity = '0.6'
+      cb.addEventListener('change', () => {
+        sh.section_visibility[cb.dataset.sectionToggle] = cb.checked
+        if (wrap) wrap.style.opacity = cb.checked ? '' : '0.6'
+        save()
       })
     })
 
@@ -2803,6 +2835,10 @@ export class ProjectsView {
     const studio = this.app.settings || {}
     const logoUrl = studio.logo_url || '/peny-logo.png'
 
+    // Per-section visibility — a section is shown unless explicitly toggled off
+    const vis = (sh.section_visibility && typeof sh.section_visibility === 'object') ? sh.section_visibility : {}
+    const showSec = key => vis[key] !== false
+
     // Cascade insurance: shoot → project → settings
     const insurer = {
       name:    sh.insurer_name    || p.insurer_name    || studio.default_insurer_name    || null,
@@ -2907,7 +2943,7 @@ export class ProjectsView {
       : ''
 
     // CLIENT — job title shown in the content column (right), not as a label
-    const secClient = (client_display || clientCrew.length) ? [
+    const secClient = showSec('crew-client') && (client_display || clientCrew.length) ? [
       hr(),
       row('Client', client_display||'', false),
       ...clientCrew.map((c,i) => personRow(c, '', true)),
@@ -2915,7 +2951,7 @@ export class ProjectsView {
     ].join('') : ''
 
     // TALENT — role inline beside the name, phone kept on a single line
-    const secTalent = talentCrew.length ? [
+    const secTalent = showSec('crew-on_camera') && talentCrew.length ? [
       hr(),
       ...talentCrew.map((c,i) => personRow(c, i===0 ? 'Talent' : '', false)),
     ].join('') : ''
@@ -2929,7 +2965,7 @@ export class ProjectsView {
     ].join('') : ''
 
     // SHOOT DATES
-    const secDates = effDates.length ? [
+    const secDates = showSec('dates') && effDates.length ? [
       hr(),
       ...effDates.map((d,i) => {
         const label = i===0 ? 'Shoot dates' : ''
@@ -2939,7 +2975,7 @@ export class ProjectsView {
     ].join('') : ''
 
     // LOCATION
-    const secLocation = (sh.location_name||sh.location_address||sh.location_map_link) ? [
+    const secLocation = showSec('location') && (sh.location_name||sh.location_address||sh.location_map_link) ? [
       hr(),
       row('Location address', sh.location_name ? `<strong>${esc_(sh.location_name)}</strong>` : '', true),
       sh.location_address ? cont(sh.location_address) : '',
@@ -2950,7 +2986,7 @@ export class ProjectsView {
     ].join('') : ''
 
     // HOTELS
-    const secHotels = hotels.length ? [
+    const secHotels = showSec('hotels') && hotels.length ? [
       hr(),
       ...hotels.flatMap((h, hi) => {
         const isFirst = hi === 0
@@ -2975,7 +3011,7 @@ export class ProjectsView {
 
     // SCHEDULE — grouped by date if multi-day
     const secSchedule = (() => {
-      if (!schedule.length) return ''
+      if (!showSec('schedule') || !schedule.length) return ''
       const fmtDateShort = d => d ? new Date(d).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'}) : ''
       const hasDateField = schedule.some(s => s.date)
       if (!hasDateField || effDates.length <= 1) {
@@ -3006,7 +3042,7 @@ export class ProjectsView {
     })()
 
     // MAIN UNIT
-    const secMainUnit = mainCrew.length || csNotes.crew ? [
+    const secMainUnit = showSec('crew-crew') && (mainCrew.length || csNotes.crew) ? [
       hr(),
       `<tr class="section-head"><td class="lbl">Main unit</td><td class="val"></td></tr>`,
       ...mainCrew.map(c => crewRow(c)),
@@ -3014,20 +3050,20 @@ export class ProjectsView {
     ].join('') : ''
 
     // ON CAMERA notes
-    const secTalentNotes = csNotes.on_camera ? [
+    const secTalentNotes = showSec('crew-on_camera') && csNotes.on_camera ? [
       hr(),
       `<tr><td class="lbl">On camera</td><td class="val" style="font-style:italic;color:#666;font-size:10px;padding:4px 6px">${esc_(csNotes.on_camera)}</td></tr>`,
     ].join('') : ''
 
     // CATERING
     const catering = (sh.catering && typeof sh.catering === 'object') ? sh.catering : {}
-    const secCatering = (catering.supplier || catering.notes) ? [
+    const secCatering = showSec('catering') && (catering.supplier || catering.notes) ? [
       hr(),
       `<tr><td class="lbl">Catering</td><td class="val">${catering.supplier?`<span style="font-weight:600">C/O ${esc_(catering.supplier)}</span><br>`:''}${catering.notes?`<span class="dim">${nl(catering.notes)}</span>`:''}</td></tr>`,
     ].join('') : ''
 
     // EQUIPMENT
-    const secEquipment = equipment.length ? [
+    const secEquipment = showSec('equipment') && equipment.length ? [
       hr(),
       `<tr class="section-head"><td class="lbl">Equipment</td><td class="val"></td></tr>`,
       ...equipment.flatMap((e, ei) => [
@@ -3036,7 +3072,7 @@ export class ProjectsView {
     ].join('') : ''
 
     // INSURANCE
-    const secInsurance = insurer.name ? [
+    const secInsurance = showSec('insurance') && insurer.name ? [
       hr(),
       `<tr><td class="lbl">Insurance</td><td class="val"><strong>${esc_(insurer.name)}</strong></td></tr>`,
       insurer.address ? `<tr><td class="lbl"></td><td class="val dim">${esc_(insurer.address)}</td></tr>` : '',
@@ -3045,7 +3081,7 @@ export class ProjectsView {
     ].join('') : ''
 
     // HOSPITAL / EMERGENCY SERVICES
-    const secEmergency = (sh.nearest_hospital_name||sh.nearest_police_name||sh.nearest_fire_name) ? [
+    const secEmergency = showSec('emergency') && (sh.nearest_hospital_name||sh.nearest_police_name||sh.nearest_fire_name) ? [
       hr(),
       sh.nearest_hospital_name ? `<tr><td class="lbl">Hospital A&amp;E</td><td class="val"><strong>${esc_(sh.nearest_hospital_name)}</strong>${sh.nearest_hospital_address?`<br><span class="dim">${esc_(sh.nearest_hospital_address)}</span>`:''}${sh.nearest_hospital_phone?`<br><span class="dim">📞 ${esc_(sh.nearest_hospital_phone)}</span>`:''}</td></tr>` : '',
       sh.nearest_police_name   ? `<tr><td class="lbl">Police</td><td class="val"><strong>${esc_(sh.nearest_police_name)}</strong>${sh.nearest_police_address?`<br><span class="dim">${esc_(sh.nearest_police_address)}</span>`:''}${sh.nearest_police_phone?`<br><span class="dim">📞 ${esc_(sh.nearest_police_phone)}</span>`:''}</td></tr>` : '',
@@ -3054,19 +3090,19 @@ export class ProjectsView {
     ].join('') : ''
 
     // H&S NOTES
-    const secHS = sh.hs_notes ? [
+    const secHS = showSec('hs') && sh.hs_notes ? [
       hr(),
       `<tr><td class="lbl">H&amp;S notes</td><td class="val">${nl(sh.hs_notes)}</td></tr>`,
     ].join('') : ''
 
     // SHOOT NOTES
-    const secNotes = sh.notes ? [
+    const secNotes = showSec('notes') && sh.notes ? [
       hr(),
       `<tr><td class="lbl">Notes</td><td class="val" style="background:#fffdf0">${nl(sh.notes)}</td></tr>`,
     ].join('') : ''
 
     // INVOICING
-    const secInvoicing = (invoicing.email||invoicing.job_ref||invoicing.boilerplate) ? [
+    const secInvoicing = showSec('invoicing') && (invoicing.email||invoicing.job_ref||invoicing.boilerplate) ? [
       hr(),
       `<tr class="section-head"><td class="lbl">Invoicing</td><td class="val"></td></tr>`,
       invoicing.email   ? `<tr><td class="lbl">Email address</td><td class="val"><a href="mailto:${esc_(invoicing.email)}" style="color:#1a1a1a">${esc_(invoicing.email)}</a></td></tr>` : '',
