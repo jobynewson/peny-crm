@@ -346,6 +346,8 @@ export const shoots = pgTable('shoots', {
   shoot_dates:       jsonb('shoot_dates').notNull().default([]),
   // Per-section callsheet visibility — { [sectionKey]: boolean }. Missing/true = shown.
   section_visibility: jsonb('section_visibility').notNull().default({}),
+  // Whether call times are shown on the callsheet (defaults to on)
+  show_call_times:   boolean('show_call_times').notNull().default(true),
   // Display-only client override
   client_display:    text('client_display'),
   // Per-shoot insurance override (falls back to project, then settings)

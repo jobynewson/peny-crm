@@ -1963,6 +1963,7 @@ export class ProjectsView {
         crew_section_notes: sh.crew_section_notes || {},
         catering: sh.catering || {},
         section_visibility: sh.section_visibility || {},
+        show_call_times:   sh.show_call_times !== false,
         shoot_camera_setups: sh.shoot_camera_setups || [],
         risk_assessment: sh.risk_assessment || {},
         client_display:    overlay.querySelector('#se-client-display')?.value.trim() || null,
