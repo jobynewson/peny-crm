@@ -110,10 +110,10 @@ export class ContactsView {
           <div class="modal-body">
             <div class="field-row">
               <div class="field"><div class="field-label">First name<span class="req">*</span></div><input id="cf-first" type="text" value="${esc(c?.first_name)}" placeholder="Sarah" /></div>
-              <div class="field"><div class="field-label">Last name<span class="req">*</span></div><input id="cf-last" type="text" value="${esc(c?.last_name)}" placeholder="Renfrew" /></div>
+              <div class="field"><div class="field-label">Last name</div><input id="cf-last" type="text" value="${esc(c?.last_name)}" placeholder="Renfrew" /></div>
             </div>
             <div class="field"><div class="field-label">Role / title</div><input id="cf-role" type="text" value="${esc(c?.role)}" placeholder="Marketing Director" /></div>
-            <div class="field"><div class="field-label">Company</div><input id="cf-company" type="text" value="${esc(c?.company)}" placeholder="Kinetic Brand Co." /></div>
+            <div class="field"><div class="field-label">Company<span style="color:var(--text-tertiary);font-weight:400"> — or last name required</span></div><input id="cf-company" type="text" value="${esc(c?.company)}" placeholder="Kinetic Brand Co." /></div>
             <div class="field-row">
               <div class="field"><div class="field-label">Email</div><input id="cf-email" type="email" value="${esc(c?.email)}" /></div>
               <div class="field"><div class="field-label">Phone</div><input id="cf-phone" type="text" value="${esc(c?.phone)}" /></div>
@@ -223,7 +223,19 @@ export class ContactsView {
 
     // Filter pills
     mc.querySelectorAll('.filter-pill[data-view]').forEach(btn => {
-      btn.addEventListener('click', () => { this.view = btn.dataset.view; this.filter = 'all'; this.render(mc) })
+      btn.addEventListener('click', () => {
+        this.view = btn.dataset.view
+        this.filter = 'all'
+        // Clear the detail panel if the open contact isn't in the new tab.
+        const sel = this.app.contacts.find(c => c.id === this.selectedId)
+        const inTab = sel && (this.view === 'subbies' ? sel.type === 'subcontractor' : sel.type !== 'subcontractor')
+        if (!inTab) {
+          this.selectedId = null
+          const dp = this.app.container.querySelector('#detail-panel')
+          if (dp) dp.innerHTML = '<div class="detail-empty">Select a contact<br>to view details</div>'
+        }
+        this.render(mc)
+      })
     })
 
     // Stat cards apply the matching tab + status filter to the list below.
@@ -400,19 +412,37 @@ export class ContactsView {
   }
 
   async saveContact(mc) {
-    const first = mc.querySelector('#cf-first')?.value.trim()
-    const last  = mc.querySelector('#cf-last')?.value.trim()
+    const first   = mc.querySelector('#cf-first')?.value.trim()
+    const last    = mc.querySelector('#cf-last')?.value.trim()
+    const company = mc.querySelector('#cf-company')?.value.trim()
     this.app.clearFieldErrors(mc.querySelector('#contact-modal'))
-    if (!first || !last) {
-      if (!first) this.app.fieldError(mc.querySelector('#cf-first'), 'First name is required')
-      if (!last)  this.app.fieldError(mc.querySelector('#cf-last'),  'Last name is required')
+    if (!first) { this.app.fieldError(mc.querySelector('#cf-first'), 'First name is required'); return }
+    // A contact needs at least a last name or a company to identify it.
+    if (!last && !company) {
+      this.app.fieldError(mc.querySelector('#cf-last'), 'Add a last name or a company')
+      this.app.fieldError(mc.querySelector('#cf-company'), 'Add a last name or a company')
       return
+    }
+    // Warn on a case-insensitive first+last duplicate (excluding the one being edited).
+    if (last) {
+      const dupe = this.app.contacts.find(c =>
+        c.id !== this.editingId &&
+        (c.first_name || '').trim().toLowerCase() === first.toLowerCase() &&
+        (c.last_name || '').trim().toLowerCase() === last.toLowerCase())
+      if (dupe) {
+        const ok = await this.app.confirm({
+          title: `A contact named '${first} ${last}' already exists`,
+          message: dupe.company ? `Existing: ${dupe.company}. Add this as a separate contact?` : 'Add this as a separate contact?',
+          confirmLabel: 'Add anyway', cancelLabel: 'Cancel', danger: false,
+        })
+        if (!ok) return
+      }
     }
     const data = {
       first_name: first,
-      last_name:  last,
+      last_name:  last || '',
       role:     mc.querySelector('#cf-role')?.value.trim()     || null,
-      company:  mc.querySelector('#cf-company')?.value.trim()  || null,
+      company:  company  || null,
       email:    mc.querySelector('#cf-email')?.value.trim()    || null,
       phone:    mc.querySelector('#cf-phone')?.value.trim()    || null,
       location: mc.querySelector('#cf-location')?.value.trim() || null,

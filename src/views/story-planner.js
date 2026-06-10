@@ -64,11 +64,25 @@ export class StoryPlannerView {
         this._deletePlan(mc, el.dataset.spDelete, el.dataset.spTitle)
       })
     })
+    mc.querySelectorAll('[data-sp-project]').forEach(el => {
+      el.addEventListener('click', e => {
+        e.stopPropagation()
+        const pid = el.dataset.spProject
+        this.currentPlanId = null
+        this.app.currentView = 'projects'
+        this.app.projectsView.currentId = pid
+        this.app.projectsView._pvTab = 'story-plans'
+        this.app.projectsView.editingId = null
+        history.pushState({ view: 'projects' }, '', `#projects/${pid}/story-plans`)
+        this.app.render()
+      })
+    })
   }
 
   _planCardHTML(plan) {
     const blocks = plan.blocks || []
     const totalMins = blocks.reduce((s, b) => s + (parseFloat(b.duration_mins) || 0), 0)
+    const project = plan.project_id ? (this.app.projects || []).find(p => p.id === plan.project_id) : null
     return `
       <div data-sp-open="${plan.id}"
         style="background:var(--bg-secondary);border:0.5px solid var(--border-light);border-radius:var(--radius-md);padding:16px 16px 14px;cursor:pointer;transition:border-color 0.15s;position:relative;min-height:80px"
@@ -80,6 +94,9 @@ export class StoryPlannerView {
         <div style="font-size:12px;color:var(--text-tertiary)">
           ${blocks.length} block${blocks.length !== 1 ? 's' : ''}${totalMins > 0 ? ` · ${fmtDuration(totalMins)}` : ''}
         </div>
+        ${project ? `<button type="button" data-sp-project="${project.id}"
+          style="margin-top:8px;display:inline-flex;align-items:center;gap:4px;background:var(--accent-subtle);border:none;color:var(--accent);font-size:11px;font-weight:500;border-radius:var(--radius-sm);padding:3px 8px;cursor:pointer;font-family:var(--font)"
+          title="Open ${esc(project.name)} → Story Plans">🎬 ${esc(project.name)} →</button>` : ''}
         ${blocks.length > 0 ? `
           <div style="margin-top:10px;display:flex;flex-direction:column;gap:3px">
             ${blocks.slice(0, 3).map(b => `

@@ -444,6 +444,8 @@ export class ProjectsView {
     if (!p) { this.currentId = null; this.renderKanban(mc); return }
 
     if (p.is_retainer && p.retainer_start) this._checkRetainerReset(p)
+    // Files isn't built yet — never land on it (e.g. from an old URL).
+    if (this._pvTab === 'files') this._pvTab = 'overview'
     const tab = this._pvTab || 'overview'
     const { contacts, budgets } = this.app
     const cl = contacts.find(c => c.id === p.client_id)
@@ -458,7 +460,7 @@ export class ProjectsView {
       { id: 'post-production',  label: '🎞 Post Production' },
       { id: 'budget',           label: '💰 Budget' },
       { id: 'planning',         label: '🗂 Planning' },
-      { id: 'files',            label: '📁 Files' },
+      { id: 'files',            label: '📁 Files', disabled: true },
       { id: 'notes',            label: '💬 Notes' },
       { id: 'story-plans',      label: '🎬 Story Plans' },
     ].filter(t => !t.hide)
@@ -487,7 +489,9 @@ export class ProjectsView {
         <div class="proj-main">
           <div style="display:flex;align-items:center;gap:0;border-bottom:1px solid var(--border-light);margin-bottom:20px">
             <div class="proj-tab-bar" style="flex:1;border-bottom:none">
-              ${TABS.map(t => `<button class="proj-tab ${t.id===tab?'active':''}" data-tab="${t.id}">${t.label}</button>`).join('')}
+              ${TABS.map(t => t.disabled
+                ? `<button class="proj-tab proj-tab--disabled" disabled title="Coming soon">${t.label} <span class="proj-tab-soon">Soon</span></button>`
+                : `<button class="proj-tab ${t.id===tab?'active':''}" data-tab="${t.id}">${t.label}</button>`).join('')}
             </div>
             <button class="proj-sidebar-toggle" id="sidebar-toggle" title="${sidebarCollapsed?'Show sidebar':'Hide sidebar'}">${sidebarCollapsed?'▷':'◁'}</button>
           </div>

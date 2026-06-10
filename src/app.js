@@ -178,10 +178,7 @@ export class App {
         } catch(e) { console.error(e); if (msgEl) { msgEl.style.display='block'; msgEl.style.color='#e07070'; msgEl.textContent='Error submitting' } }
       })
 
-      // Enter to submit (Shift+Enter for newline)
-      overlay.querySelector('#dev-req-text')?.addEventListener('keydown', e => {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); overlay.querySelector('#dev-req-submit')?.click() }
-      })
+      // Submit only via the button — Enter inserts a newline as normal.
 
       // Admin: copy all to clipboard
       overlay.querySelector('#dev-req-copy')?.addEventListener('click', async () => {
@@ -797,6 +794,8 @@ export class App {
             : '<option value="">No tracked lines</option>'
         }
       </select>
+      <input id="stt-date" type="date" class="stt-select" style="margin-top:5px;color-scheme:dark"
+        value="${new Date().toISOString().slice(0, 10)}" max="${new Date().toISOString().slice(0, 10)}" title="Date" />
       <div style="display:flex;gap:5px;margin-top:5px">
         <input id="stt-hours" type="number" min="0.5" max="24" step="0.5" placeholder="hrs"
           class="stt-hours" />
@@ -869,7 +868,7 @@ export class App {
       const project  = this.projects.find(p => p.id === pid)
       const budgetId = project ? (this._sttTrackableLines(project).find(l => l.label === task)?.budgetId ?? null) : null
       const name     = this.appUser?.name || this.user?.primaryEmailAddress?.emailAddress || 'Unknown'
-      const date     = new Date().toISOString().slice(0, 10)
+      const date     = wrap.querySelector('#stt-date')?.value || new Date().toISOString().slice(0, 10)
 
       logBtn.disabled = true
       logBtn.textContent = '…'
@@ -3511,6 +3510,9 @@ export class App {
       .proj-tab{padding:10px 16px;font-size:13px;font-weight:500;color:var(--text-tertiary);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;background:none;border-left:none;border-right:none;border-top:none;font-family:var(--font);transition:color 0.1s}
       .proj-tab:hover{color:var(--text-primary)}
       .proj-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+      .proj-tab--disabled{cursor:not-allowed;color:var(--text-tertiary);opacity:0.6}
+      .proj-tab--disabled:hover{color:var(--text-tertiary)}
+      .proj-tab-soon{display:inline-block;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-tertiary);background:var(--bg-tertiary);border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:1px 5px;margin-left:2px;vertical-align:middle}
       .proj-sidebar-toggle{background:none;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:4px 8px;font-size:12px;color:var(--text-tertiary);cursor:pointer;flex-shrink:0}
       .proj-sidebar-toggle:hover{color:var(--text-primary);border-color:var(--border-strong)}
       .proj-panel{background:var(--bg-primary);border:1px solid var(--border-light);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-md)}
