@@ -70,11 +70,14 @@ export class ContactsView {
   }
 
   listHTML() {
+    const q = this.search.toLowerCase().trim()
+    const searching = !!q
     const filtered = this.app.contacts.filter(c => {
-      const q = this.search.toLowerCase()
       const matchQ = !q || (c.first_name+' '+c.last_name).toLowerCase().includes(q) || (c.company??'').toLowerCase().includes(q)
       const matchF = this.filter === 'all' || c.status === this.filter
-      const matchV = this.view === 'subbies' ? c.type === 'subcontractor' : c.type !== 'subcontractor'
+      // While searching, query both Clients and Subcontractors regardless of the
+      // active tab so a result from the other tab isn't hidden.
+      const matchV = searching ? true : (this.view === 'subbies' ? c.type === 'subcontractor' : c.type !== 'subcontractor')
       return matchQ && matchF && matchV
     })
     if (!filtered.length) return '<div class="empty-state">No contacts found</div>'
@@ -230,9 +233,7 @@ export class ContactsView {
     mc.querySelectorAll('.contact-row[data-cid]').forEach(row => {
       row.addEventListener('click', e => {
         if (e.target.closest('button')) return
-        this.selectedId = row.dataset.cid
-        this.showDetail(row.dataset.cid)
-        this.refreshList()
+        this.selectContact(row.dataset.cid)
       })
     })
 
@@ -261,6 +262,25 @@ export class ContactsView {
     mc.querySelector('#note-save-btn')?.addEventListener('click', () => this.saveNote(mc))
   }
 
+  // Select a contact and show its detail. If it belongs to the other tab
+  // (e.g. found via a cross-tab search), switch to that tab automatically.
+  selectContact(cid) {
+    const c = this.app.contacts.find(x => x.id === cid)
+    this.selectedId = cid
+    if (c) {
+      const wantView = c.type === 'subcontractor' ? 'subbies' : 'clients'
+      if (wantView !== this.view) {
+        this.view = wantView
+        this.filter = 'all'
+        this.render(document.getElementById('main-content'))
+        this.showDetail(cid)
+        return
+      }
+    }
+    this.showDetail(cid)
+    this.refreshList()
+  }
+
   refreshList() {
     const list = document.getElementById('contact-list')
     if (list) list.innerHTML = this.listHTML()
@@ -268,9 +288,7 @@ export class ContactsView {
     list?.querySelectorAll('.contact-row[data-cid]').forEach(row => {
       row.addEventListener('click', e => {
         if (e.target.closest('button')) return
-        this.selectedId = row.dataset.cid
-        this.showDetail(row.dataset.cid)
-        this.refreshList()
+        this.selectContact(row.dataset.cid)
       })
     })
     list?.querySelectorAll('[data-edit]').forEach(btn => {

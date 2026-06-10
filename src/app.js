@@ -250,16 +250,34 @@ export class App {
           const text = `${b.name} ${cl?.company||''} ${cl?.first_name||''} ${cl?.last_name||''}`.toLowerCase()
           if (text.includes(q)) results.push({ type:'budget', label: b.name, sub: cl ? `${cl.first_name} ${cl.last_name}` : '', id: b.id })
         })
+        // Marketing cards
+        ;(this.marketingCards || []).forEach(card => {
+          const text = `${card.title||''} ${card.notes||''} ${card.card_type||''}`.toLowerCase()
+          if (text.includes(q)) results.push({ type:'marketing', label: card.title || 'Untitled card', sub: (card.card_type||'').replace(/-/g,' '), card })
+        })
+        // Shoots (lazily loaded — see below)
+        ;(this._searchShootsCache || []).forEach(sh => {
+          const text = `${sh.name||''} ${sh.project_name||''}`.toLowerCase()
+          if (text.includes(q)) results.push({ type:'shoot', label: sh.name || 'Untitled shoot', sub: sh.project_name || '', projectId: sh.project_id })
+        })
+        // Notes
+        ;(this._notes || []).forEach(n => {
+          const title = (n.title||'').trim(), content = (n.content||'').trim()
+          if (!title && !content) return
+          const text = `${title} ${content}`.toLowerCase()
+          if (text.includes(q)) results.push({ type:'note', label: title || 'Untitled note', sub: content ? content.replace(/\s+/g,' ').slice(0,60) : '', id: n.id })
+        })
       }
 
-      const typeIcon = { contact:'👤', project:'🎬', budget:'£' }
-      const typeColour = { contact:'#a78bfa', project:'#4a90d9', budget:'#6ec96e' }
+      const typeIcon   = { contact:'👤', project:'🎬', budget:'£', marketing:'📣', shoot:'🎥', note:'📝' }
+      const typeColour = { contact:'#a78bfa', project:'#4a90d9', budget:'#6ec96e', marketing:'#f59e0b', shoot:'#ef4444', note:'#8590A2' }
+      const typeLabel  = { contact:'Contact', project:'Project', budget:'Budget', marketing:'Card', shoot:'Shoot', note:'Note' }
 
       overlay.innerHTML = `
         <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:520px;overflow:hidden;cursor:default;box-shadow:0 20px 60px rgba(0,0,0,0.4)" onclick="event.stopPropagation()">
           <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border-light)">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--text-tertiary)" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
-            <input id="search-input" placeholder="Search contacts, projects, budgets…" value="${esc(query)}"
+            <input id="search-input" placeholder="Search contacts, projects, budgets, cards, shoots, notes…" value="${esc(query)}"
               style="flex:1;background:transparent;border:none;outline:none;font-size:15px;color:var(--text-primary);font-family:var(--font)" autofocus />
             <kbd style="font-size:11px;color:var(--text-tertiary);background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:2px 6px">Esc</kbd>
           </div>
@@ -274,7 +292,7 @@ export class App {
                   <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.label)}</div>
                   ${r.sub ? `<div style="font-size:11px;color:var(--text-tertiary)">${esc(r.sub)}</div>` : ''}
                 </div>
-                <span style="font-size:10px;color:${typeColour[r.type]};background:${typeColour[r.type]}22;border-radius:var(--radius-md);padding:2px 7px;flex-shrink:0;text-transform:capitalize">${r.type}</span>
+                <span style="font-size:10px;color:${typeColour[r.type]};background:${typeColour[r.type]}22;border-radius:var(--radius-md);padding:2px 7px;flex-shrink:0">${typeLabel[r.type] ?? r.type}</span>
               </div>`).join('')}
           </div>
           ${q.length > 0 && results.length > 0 ? `<div style="padding:8px 16px;font-size:11px;color:var(--text-tertiary);border-top:1px solid var(--border-light)">${results.length} result${results.length!==1?'s':''}</div>` : ''}
@@ -296,9 +314,19 @@ export class App {
         el.addEventListener('click', () => {
           const r = results[+el.dataset.result]
           overlay.remove()
-          if (r.type === 'contact') { this.navigate('contacts'); setTimeout(() => this.contactsView.showDetail(r.id), 50) }
+          if (r.type === 'contact') { this.navigate('contacts'); setTimeout(() => this.contactsView.selectContact(r.id), 50) }
           else if (r.type === 'project') { this.openProject(r.id) }
           else if (r.type === 'budget') { this.openBudget(r.id) }
+          else if (r.type === 'marketing') { this.navigate('marketing'); setTimeout(() => this.marketingView.openCardModal(r.card, r.card.status), 60) }
+          else if (r.type === 'shoot') {
+            this.currentView = 'projects'
+            this.projectsView.currentId = r.projectId
+            this.projectsView._pvTab = 'shoots'
+            this.projectsView.editingId = null
+            history.pushState({ view:'projects' }, '', `#projects/${r.projectId}/shoots`)
+            this.render()
+          }
+          else if (r.type === 'note') { this._openNoteFromSearch(r.id) }
         })
       })
     }
@@ -306,6 +334,33 @@ export class App {
     overlay.addEventListener('click', () => overlay.remove())
     document.body.appendChild(overlay)
     render()
+
+    // Shoots aren't held in memory globally — lazily load them once, then
+    // re-render so they join the index without blocking the palette opening.
+    if (this._searchShootsCache == null && !this._searchShootsLoading) {
+      this._searchShootsLoading = true
+      import('./db/client.js')
+        .then(({ getShootsForCalendar }) => getShootsForCalendar(this.userId))
+        .then(rows => {
+          this._searchShootsCache = rows || []
+          this._searchShootsLoading = false
+          const input = document.querySelector('#search-overlay #search-input')
+          if (input && input.value.trim()) render(input.value)
+        })
+        .catch(e => { console.error('Search shoots load failed:', e); this._searchShootsCache = []; this._searchShootsLoading = false })
+    }
+  }
+
+  // Open and focus a note from a global-search result (notes live in the sidebar).
+  _openNoteFromSearch(id) {
+    if (!this._openNoteIds) this._openNoteIds = new Set()
+    this._openNoteIds.add(id)
+    this._renderNotesList()
+    const card = document.querySelector(`.notes-card[data-note-id="${id}"]`)
+    if (card) {
+      card.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      card.querySelector('.notes-title-input')?.focus()
+    }
   }
 
   _bindKeyboard() {
