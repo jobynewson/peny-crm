@@ -316,11 +316,15 @@ export class App {
           else if (r.type === 'budget') { this.openBudget(r.id) }
           else if (r.type === 'marketing') { this.navigate('marketing'); setTimeout(() => this.marketingView.openCardModal(r.card, r.card.status), 60) }
           else if (r.type === 'shoot') {
+            // The Shoots tab is hidden on post-production projects — land on a
+            // visible tab in that case so the project view isn't left blank.
+            const proj = this.projects.find(p => p.id === r.projectId)
+            const tab = (proj?.project_type === 'post_production') ? 'overview' : 'shoots'
             this.currentView = 'projects'
             this.projectsView.currentId = r.projectId
-            this.projectsView._pvTab = 'shoots'
+            this.projectsView._pvTab = tab
             this.projectsView.editingId = null
-            history.pushState({ view:'projects' }, '', `#projects/${r.projectId}/shoots`)
+            history.pushState({ view:'projects' }, '', `#projects/${r.projectId}/${tab}`)
             this.render()
           }
           else if (r.type === 'note') { this._openNoteFromSearch(r.id) }
@@ -2030,7 +2034,8 @@ export class App {
           if (card.contains(document.activeElement)) return
           const id = card.dataset.noteId
           const note = (this._notes || []).find(n => n.id === id)
-          if (note && note._draft && !note._dbId && !(note.title || '').trim() && !(note.content || '').trim()) {
+          if (note && note._draft && !note._dbId &&
+              !(note.title || '').trim() && !(note.content || '').trim() && !note.due_date && !note.reminder) {
             this._notes = this._notes.filter(n => n.id !== id)
             this._openNoteIds.delete(id)
             this._renderNotesList()
@@ -2074,7 +2079,9 @@ export class App {
     // stable DOM key and store the DB id separately so concurrent title/body
     // blurs don't race or double-create.
     if (note._draft && !note._dbId) {
-      const hasContent = (note.title || '').trim() || (note.content || '').trim()
+      // Persist once there's anything worth keeping — a title, a body, or a
+      // due date / reminder the user deliberately set.
+      const hasContent = (note.title || '').trim() || (note.content || '').trim() || note.due_date || note.reminder
       if (!hasContent) return
       if (!note._createPromise) {
         note._createPromise = (async () => {
@@ -2106,7 +2113,10 @@ export class App {
       const { updateUserNote } = await import('./db/client.js')
       const updated = await updateUserNote(this.clerkUserId, dbId, data)
       if (updated) {
-        Object.assign(note, updated, { id: note.id, _dbId: dbId })
+        // Only sync metadata — keep the locally-typed fields as source of truth
+        // so an out-of-order response can't overwrite a newer edit.
+        note._dbId = dbId
+        note.updated_at = updated.updated_at
         const ts = document.querySelector(`.notes-card[data-note-id="${id}"] .notes-timestamp`)
         if (ts) ts.textContent = 'just now'
       }
