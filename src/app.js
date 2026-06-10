@@ -1252,12 +1252,12 @@ export class App {
     }
 
     const statCards = `
-      <div class="stat-card stat-card--sm"><div class="stat-label">Pipeline</div><div class="stat-value stat-value--sm">${gbp(pipelineValue + retainerPipelineVal)}</div><div class="stat-sub">${regularProjects.length} project${regularProjects.length!==1?'s':''}${retainerPipelineVal>0?' + '+retainers.filter(p=>p.status==='Enquiry').length+' retainer enquir'+(retainers.filter(p=>p.status==='Enquiry').length===1?'y':'ies'):''}</div></div>
-      <div class="stat-card stat-card--sm"><div class="stat-label">Awaiting invoice</div><div class="stat-value stat-value--sm" style="color:#6ec96e">${gbp(awaitingVal)}</div><div class="stat-sub">${awaitingInvoice.length} budget${awaitingInvoice.length!==1?'s':''}</div></div>
-      <div class="stat-card stat-card--sm"><div class="stat-label">Invoiced this month</div><div class="stat-value stat-value--sm" style="color:var(--accent)">${gbp(invoicedMonthVal)}</div><div class="stat-sub">${invoicedThisMonth.length} budget${invoicedThisMonth.length!==1?'s':''}</div></div>
-      <div class="stat-card stat-card--sm"><div class="stat-label">Invoiced this quarter</div><div class="stat-value stat-value--sm" style="color:var(--accent)">${gbp(invoicedQtrVal)}</div><div class="stat-sub">${invoicedThisQtr.length} budget${invoicedThisQtr.length!==1?'s':''}</div></div>
-      <div class="stat-card stat-card--sm"><div class="stat-label">Invoiced this FY</div><div class="stat-value stat-value--sm" style="color:var(--accent)">${gbp(invoicedFYVal)}</div><div class="stat-sub">${fyLabel}</div></div>
-      <div class="stat-card stat-card--sm"><div class="stat-label">Retainer MRR</div><div class="stat-value stat-value--sm" style="color:#a78bfa">${gbp(retainerMRR)}</div><div class="stat-sub">per month</div></div>`
+      <div class="stat-card stat-card--sm stat-card--link" data-db-nav="projects" role="button" tabindex="0" title="View projects"><div class="stat-label">Pipeline</div><div class="stat-value stat-value--sm">${gbp(pipelineValue + retainerPipelineVal)}</div><div class="stat-sub">${regularProjects.length} project${regularProjects.length!==1?'s':''}${retainerPipelineVal>0?' + '+retainers.filter(p=>p.status==='Enquiry').length+' retainer enquir'+(retainers.filter(p=>p.status==='Enquiry').length===1?'y':'ies'):''}</div></div>
+      <div class="stat-card stat-card--sm stat-card--link" data-db-nav="budgets" role="button" tabindex="0" title="View budgets"><div class="stat-label">Awaiting invoice</div><div class="stat-value stat-value--sm" style="color:#6ec96e">${gbp(awaitingVal)}</div><div class="stat-sub">${awaitingInvoice.length} budget${awaitingInvoice.length!==1?'s':''}</div></div>
+      <div class="stat-card stat-card--sm stat-card--link" data-db-nav="budgets" role="button" tabindex="0" title="View budgets"><div class="stat-label">Invoiced this month</div><div class="stat-value stat-value--sm" style="color:var(--accent)">${gbp(invoicedMonthVal)}</div><div class="stat-sub">${invoicedThisMonth.length} budget${invoicedThisMonth.length!==1?'s':''}</div></div>
+      <div class="stat-card stat-card--sm stat-card--link" data-db-nav="budgets" role="button" tabindex="0" title="View budgets"><div class="stat-label">Invoiced this quarter</div><div class="stat-value stat-value--sm" style="color:var(--accent)">${gbp(invoicedQtrVal)}</div><div class="stat-sub">${invoicedThisQtr.length} budget${invoicedThisQtr.length!==1?'s':''}</div></div>
+      <div class="stat-card stat-card--sm stat-card--link" data-db-nav="budgets" role="button" tabindex="0" title="View budgets"><div class="stat-label">Invoiced this FY</div><div class="stat-value stat-value--sm" style="color:var(--accent)">${gbp(invoicedFYVal)}</div><div class="stat-sub">${fyLabel}</div></div>
+      <div class="stat-card stat-card--sm stat-card--link" data-db-nav="projects" role="button" tabindex="0" title="View projects"><div class="stat-label">Retainer MRR</div><div class="stat-value stat-value--sm" style="color:#a78bfa">${gbp(retainerMRR)}</div><div class="stat-sub">per month</div></div>`
 
     mc.innerHTML = `
       <!-- Live Projects -->
@@ -1470,6 +1470,13 @@ export class App {
     this.teamCalendarView.renderDashboardSection(mc)
     this._mountCountdownWidget(mc)
     this._mountDaysSinceWidget(mc)
+
+    // --- Stat cards navigate to their underlying list ---
+    mc.querySelectorAll('[data-db-nav]').forEach(card => {
+      const go = () => this.navigate(card.dataset.dbNav)
+      card.addEventListener('click', go)
+      card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go() } })
+    })
 
     // --- Marketing tasks coming due ---
     mc.querySelector('#db-mkt-view-all')?.addEventListener('click', () => this.navigate('marketing'))
@@ -2961,6 +2968,11 @@ export class App {
     const since = new Date(ds.since + 'T00:00:00')
     if (isNaN(since.getTime())) return
 
+    // Dismissal is persisted per timer (name + start date) so editing the timer
+    // brings the banner back, but a dismissed one stays hidden across sessions.
+    const dismissKey = `${ds.name}|${ds.since}`
+    if (localStorage.getItem('slate-ds-dismissed') === dismissKey) return
+
     const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
     const todayMs = new Date().setHours(0, 0, 0, 0)
     const days = Math.floor((todayMs - since.getTime()) / 86400000)
@@ -2971,7 +2983,12 @@ export class App {
       <div class="ds-widget">
         <div class="ds-days">${days}</div>
         <div class="ds-label">days since <span class="ds-name">${esc(ds.name)}</span></div>
+        <button class="ds-dismiss" title="Dismiss" aria-label="Dismiss">×</button>
       </div>`
+    wrapper.querySelector('.ds-dismiss')?.addEventListener('click', () => {
+      try { localStorage.setItem('slate-ds-dismissed', dismissKey) } catch {}
+      wrapper.remove()
+    })
     mc.prepend(wrapper)
   }
 
@@ -3674,6 +3691,9 @@ export class App {
       .db-enq-row:hover{background:var(--bg-secondary)}
       .db-enq-brief{font-size:11px;color:var(--text-tertiary);flex:1;min-width:100%;margin-top:2px}
       .stat-card--sm{padding:11px 14px}
+      .stat-card--link{cursor:pointer;transition:border-color 0.12s,box-shadow 0.12s,transform 0.06s}
+      .stat-card--link:hover{border-color:var(--accent);box-shadow:0 2px 10px rgba(0,0,0,0.08)}
+      .stat-card--link:active{transform:translateY(1px)}
       .stat-value--sm{font-size:18px;font-weight:600;letter-spacing:-0.3px}
 
       /* ── Sidebar notes ── */
@@ -3714,10 +3734,12 @@ export class App {
 
       /* ── Days-since widget ── */
       #ds-widget-wrap{display:flex;justify-content:center;padding:10px 16px}
-      .ds-widget{display:inline-flex;align-items:baseline;gap:6px;background:#c0392b;color:#fff;border-radius:999px;padding:6px 18px}
+      .ds-widget{display:inline-flex;align-items:center;gap:6px;background:#c0392b;color:#fff;border-radius:999px;padding:6px 8px 6px 18px}
       .ds-days{font-size:18px;font-weight:700;line-height:1;color:#fff}
       .ds-label{font-size:13px;font-weight:500;color:rgba(255,255,255,0.9)}
       .ds-name{font-weight:700;color:#fff}
+      .ds-dismiss{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:none;background:rgba(255,255,255,0.18);color:#fff;font-size:14px;line-height:1;cursor:pointer;font-family:var(--font);padding:0;margin-left:2px;flex-shrink:0}
+      .ds-dismiss:hover{background:rgba(255,255,255,0.32)}
 
       /* ── Countdown widget ── */
       .cd-widget{background:var(--bg-primary);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:28px 24px 24px;margin-bottom:24px;text-align:center;box-shadow:var(--shadow-md);position:relative;overflow:hidden}

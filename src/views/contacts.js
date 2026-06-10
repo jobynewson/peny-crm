@@ -41,10 +41,10 @@ export class ContactsView {
     const { contacts } = this.app
     return `
       <div class="stats-row">
-        <div class="stat-card"><div class="stat-label">Clients</div><div class="stat-value">${contacts.filter(c=>c.type!=='subcontractor').length}</div><div class="stat-sub">total</div></div>
-        <div class="stat-card"><div class="stat-label">Active clients</div><div class="stat-value">${contacts.filter(c=>c.type!=='subcontractor'&&c.status==='Active').length}</div><div class="stat-sub">in live projects</div></div>
-        <div class="stat-card"><div class="stat-label">Subcontractors</div><div class="stat-value">${contacts.filter(c=>c.type==='subcontractor'&&c.status!=='Retired').length}</div><div class="stat-sub">active</div></div>
-        <div class="stat-card"><div class="stat-label">Warm leads</div><div class="stat-value">${contacts.filter(c=>c.type!=='subcontractor'&&c.status==='Warm').length}</div><div class="stat-sub">needs follow-up</div></div>
+        <div class="stat-card stat-card--link" role="button" tabindex="0" data-stat-view="clients" data-stat-filter="all" title="Show all clients"><div class="stat-label">Clients</div><div class="stat-value">${contacts.filter(c=>c.type!=='subcontractor').length}</div><div class="stat-sub">total</div></div>
+        <div class="stat-card stat-card--link" role="button" tabindex="0" data-stat-view="clients" data-stat-filter="Active" title="Show active clients"><div class="stat-label">Active clients</div><div class="stat-value">${contacts.filter(c=>c.type!=='subcontractor'&&c.status==='Active').length}</div><div class="stat-sub">in live projects</div></div>
+        <div class="stat-card stat-card--link" role="button" tabindex="0" data-stat-view="subbies" data-stat-filter="all" title="Show subcontractors"><div class="stat-label">Subcontractors</div><div class="stat-value">${contacts.filter(c=>c.type==='subcontractor'&&c.status!=='Retired').length}</div><div class="stat-sub">active</div></div>
+        <div class="stat-card stat-card--link" role="button" tabindex="0" data-stat-view="clients" data-stat-filter="Warm" title="Show warm leads"><div class="stat-label">Warm leads</div><div class="stat-value">${contacts.filter(c=>c.type!=='subcontractor'&&c.status==='Warm').length}</div><div class="stat-sub">needs follow-up</div></div>
       </div>
       <div class="panel">
         <div class="panel-header">
@@ -224,6 +224,20 @@ export class ContactsView {
     // Filter pills
     mc.querySelectorAll('.filter-pill[data-view]').forEach(btn => {
       btn.addEventListener('click', () => { this.view = btn.dataset.view; this.filter = 'all'; this.render(mc) })
+    })
+
+    // Stat cards apply the matching tab + status filter to the list below.
+    mc.querySelectorAll('.stat-card[data-stat-view]').forEach(card => {
+      const apply = () => {
+        this.search = ''
+        this.view = card.dataset.statView
+        this.filter = card.dataset.statFilter
+        const topSearch = document.getElementById('contact-search')
+        if (topSearch) topSearch.value = ''
+        this.render(mc)
+      }
+      card.addEventListener('click', apply)
+      card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); apply() } })
     })
     mc.querySelectorAll('.filter-pill[data-filter]').forEach(btn => {
       btn.addEventListener('click', () => { this.filter = btn.dataset.filter; this.render(mc) })
