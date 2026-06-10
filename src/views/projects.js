@@ -2824,7 +2824,7 @@ export class ProjectsView {
     this._bindShootHotels(overlay, sh, save)
   }
 
-  _generateShootPDF(sh, p) {
+  async _generateShootPDF(sh, p) {
     const w = window.open('', '_blank')
     if (!w) { this.app.toast('Pop-up blocked — allow pop-ups and try again'); return }
 
@@ -2834,7 +2834,33 @@ export class ProjectsView {
     const fmtDT   = s => { try { return new Date(s).toLocaleString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) } catch { return String(s) } }
 
     const studio = this.app.settings || {}
-    const logoUrl = studio.logo_url || '/peny-logo.png'
+
+    // The PDF is rendered in a window loaded from a blob: URL, where relative
+    // and absolute-path image sources (e.g. "/peny-logo.png") don't resolve
+    // against the app origin — so the branding never loads. Inline the logos as
+    // base64 data URIs up front so they render reliably (and before print()).
+    const toDataUri = async src => {
+      try {
+        const abs = new URL(src, location.origin).href
+        const resp = await fetch(abs)
+        if (!resp.ok) throw new Error('logo fetch failed')
+        const blob = await resp.blob()
+        return await new Promise((resolve, reject) => {
+          const fr = new FileReader()
+          fr.onload  = () => resolve(fr.result)
+          fr.onerror = reject
+          fr.readAsDataURL(blob)
+        })
+      } catch {
+        // Fall back to an origin-qualified absolute URL so the src at least
+        // resolves outside the blob: document context.
+        try { return new URL(src, location.origin).href } catch { return src }
+      }
+    }
+    const [logoUrl, footerLogoUrl] = await Promise.all([
+      toDataUri(studio.logo_url || '/peny-logo.png'),
+      toDataUri('/peny-logo.png'),
+    ])
 
     // Per-section visibility — a section is shown unless explicitly toggled off
     const vis = (sh.section_visibility && typeof sh.section_visibility === 'object') ? sh.section_visibility : {}
@@ -3181,7 +3207,7 @@ export class ProjectsView {
     </table>
 
     <div class="pdf-footer">
-      <img src="/peny-logo.png" alt="Peny" onerror="this.style.display='none'" />
+      <img src="${footerLogoUrl}" alt="Peny" onerror="this.style.display='none'" />
       <span>Produced by Peny &middot; wearepeny.com</span>
     </div>
 
