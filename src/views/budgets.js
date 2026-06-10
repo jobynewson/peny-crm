@@ -1216,12 +1216,12 @@ export class BudgetsView {
     const validDate = new Date(today); validDate.setDate(validDate.getDate()+30)
     const validStr = validDate.getDate()+' '+months[validDate.getMonth()]+' '+validDate.getFullYear()
     const activeSecs = (b.sections||[]).filter(s => s.enabled && (s.lines||[]).some(l => hasVisibleValue(l)))
-    const LOGO_WHITE = '/slate-logo-white.png'
-    const LOGO_BLACK = '/slate-logo.png'
+    const LOGO_WHITE = '/peny-logo-white.png'
+    const LOGO_BLACK = '/peny-logo.png'
 
     const coverHTML = `
       <div class="pdf-cover">
-        <div class="pdf-logo"><img src="${LOGO_WHITE}" alt="Slate" /></div>
+        <div class="pdf-logo"><img src="${LOGO_WHITE}" alt="Peny" /></div>
         <div class="pdf-cover-body">
           <div class="pdf-quote-label">Quote</div>
           <div class="pdf-budget-title">${esc(b.name)}</div>
@@ -1295,7 +1295,7 @@ export class BudgetsView {
             <div class="pdf-detail-label">Quote — Detailed breakdown</div>
             <div class="pdf-detail-title">${esc(b.name)}</div>
           </div>
-          <img src="${LOGO_BLACK}" alt="Slate" />
+          <img src="${LOGO_BLACK}" alt="Peny" />
         </div>
         ${detailSecHTML}
         <div class="pdf-detail-totals">
