@@ -1981,13 +1981,16 @@ export class App {
   }
 
   async _deleteNote(id) {
-    if (!await this.confirm({ title: 'Delete this note?', confirmLabel: 'Delete' })) return
+    const note = (this._notes || []).find(n => n.id === id)
+    const title = (note?.title || '').trim()
+    if (!await this.confirm({ title: title ? `Delete note '${title}'?` : 'Delete this note?', confirmLabel: 'Delete' })) return
     try {
       const { deleteUserNote } = await import('./db/client.js')
       await deleteUserNote(this.clerkUserId, id)
       this._notes = (this._notes || []).filter(n => n.id !== id)
       this._renderNotesList()
-    } catch(e) { console.error('Failed to delete note:', e) }
+      this.toast('Note deleted')
+    } catch(e) { console.error('Failed to delete note:', e); this.toast('Error deleting note') }
   }
 
   renderSettings(mc) {
@@ -3021,6 +3024,52 @@ export class App {
     })
   }
 
+  // Lightweight overflow (⋯) popover menu anchored to a trigger element.
+  // `items` is an array of { label, danger, onClick } or { divider:true }.
+  // Closes on outside click / Esc / selection. Returns a close() fn.
+  openMenu(anchor, items) {
+    document.getElementById('app-menu-pop')?.remove()
+    const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    const pop = document.createElement('div')
+    pop.id = 'app-menu-pop'
+    pop.className = 'menu-pop'
+    pop.innerHTML = items.map((it, i) =>
+      it.divider ? '<div class="menu-pop-divider"></div>'
+        : `<button class="menu-pop-item${it.danger ? ' danger' : ''}" data-mi="${i}">${esc(it.label)}</button>`
+    ).join('')
+    document.body.appendChild(pop)
+    const rect = anchor.getBoundingClientRect()
+    let left = rect.right - pop.offsetWidth
+    if (left < 8) left = 8
+    let top = rect.bottom + 4
+    if (top + pop.offsetHeight > window.innerHeight - 8) top = rect.top - pop.offsetHeight - 4
+    pop.style.top = `${Math.max(8, top)}px`
+    pop.style.left = `${left}px`
+    let done = false
+    const close = () => {
+      if (done) return
+      done = true
+      pop.remove()
+      document.removeEventListener('keydown', onKey, true)
+      document.removeEventListener('mousedown', onDoc, true)
+    }
+    const onKey = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close() } }
+    const onDoc = e => { if (!pop.contains(e.target) && e.target !== anchor && !anchor.contains(e.target)) close() }
+    pop.querySelectorAll('[data-mi]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation()
+        const it = items[+btn.dataset.mi]
+        close()
+        it.onClick?.()
+      })
+    })
+    setTimeout(() => {
+      document.addEventListener('keydown', onKey, true)
+      document.addEventListener('mousedown', onDoc, true)
+    }, 0)
+    return close
+  }
+
   // ── Inline form validation ──────────────────────────────────────────────────
   // Mark a field invalid with a message shown directly beneath it, instead of a
   // transient toast that doesn't say which field is wrong. The error clears as
@@ -3189,6 +3238,16 @@ export class App {
       .confirm-title{font-size:15px;font-weight:600;color:var(--text-primary);margin-bottom:8px}
       .confirm-msg{font-size:13px;color:var(--text-secondary);line-height:1.55}
       .confirm-actions{display:flex;justify-content:flex-end;gap:8px;padding:0 22px 20px}
+
+      /* ── Overflow (⋯) row menu ── */
+      .row-overflow-btn{width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;border-radius:var(--radius-sm);border:1px solid transparent;background:transparent;color:var(--text-tertiary);cursor:pointer;font-family:var(--font);font-size:16px;line-height:1;padding:0;transition:background 0.1s,color 0.1s,border-color 0.1s}
+      .row-overflow-btn:hover{background:var(--bg-tertiary);color:var(--text-primary);border-color:var(--border-light)}
+      .menu-pop{position:fixed;z-index:10001;min-width:150px;background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);padding:4px;animation:confirm-in 0.1s ease-out}
+      .menu-pop-item{display:block;width:100%;text-align:left;background:none;border:none;padding:8px 12px;font-size:13px;color:var(--text-primary);cursor:pointer;font-family:var(--font);border-radius:var(--radius-sm)}
+      .menu-pop-item:hover{background:var(--bg-secondary)}
+      .menu-pop-item.danger{color:var(--danger)}
+      .menu-pop-item.danger:hover{background:var(--danger-subtle)}
+      .menu-pop-divider{height:1px;background:var(--border-light);margin:4px 0}
       .av-blue{background:#DEEBFF;color:#0747A6}.av-teal{background:#E3FCEF;color:#006644}.av-coral{background:#FFEBE6;color:#BF2600}.av-purple{background:#EAE6FF;color:#403294}.av-amber{background:#FFFAE6;color:#172B4D}.av-green{background:#E3FCEF;color:#006644}.av-pink{background:#FFECF8;color:#6E2B83}
       .tag-brand{background:#DEEBFF;color:#0747A6}.tag-agency{background:#EAE6FF;color:#403294}.tag-ngo{background:#E3FCEF;color:#006644}.tag-sport{background:#FFFAE6;color:#5A3A00}.tag-corp{background:#F4F5F7;color:#42526E}.tag-sub{background:#FFEBE6;color:#BF2600}
       .budget-layout{display:flex;gap:20px;align-items:flex-start}.budget-main{flex:1;min-width:0}.budget-sidebar-panel{width:210px;flex-shrink:0}

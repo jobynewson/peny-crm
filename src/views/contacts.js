@@ -450,7 +450,9 @@ export class ContactsView {
   }
 
   async deleteContact(id) {
-    if (!await this.app.confirm({ title: 'Delete contact?', message: 'This cannot be undone.', confirmLabel: 'Delete' })) return
+    const c = this.app.contacts.find(x => x.id === id)
+    const cname = c ? `${c.first_name||''} ${c.last_name||''}`.trim() || c.company : ''
+    if (!await this.app.confirm({ title: cname ? `Delete contact '${cname}'?` : 'Delete contact?', message: 'This cannot be undone.', confirmLabel: 'Delete' })) return
     try {
       await deleteContact(this.app.userId, id)
       this.app.contacts = this.app.contacts.filter(c => c.id !== id)

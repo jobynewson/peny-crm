@@ -1073,7 +1073,7 @@ export class ProjectsView {
       } catch(e) { console.error(e); this.app.toast('Error duplicating project') }
     })
     mc.querySelector('#pv-delete')?.addEventListener('click', async () => {
-      if (!await this.app.confirm({ title: `Delete "${p.name}"?`, message: 'This cannot be undone.', confirmLabel: 'Delete' })) return
+      if (!await this.app.confirm({ title: `Delete project '${p.name}'?`, message: 'This cannot be undone.', confirmLabel: 'Delete' })) return
       try {
         await deleteProject(this.app.userId, p.id)
         this.app.projects = this.app.projects.filter(x => x.id !== p.id)
@@ -4645,7 +4645,8 @@ export class ProjectsView {
   }
 
   async deleteProject(id, mc) {
-    if (!await this.app.confirm({ title: 'Delete project?', message: 'This cannot be undone.', confirmLabel: 'Delete' })) return
+    const p = this.app.projects.find(x => x.id === id)
+    if (!await this.app.confirm({ title: p ? `Delete project '${p.name}'?` : 'Delete project?', message: 'This cannot be undone.', confirmLabel: 'Delete' })) return
     try {
       await deleteProject(this.app.userId, id)
       this.app.projects = this.app.projects.filter(p => p.id !== id)
