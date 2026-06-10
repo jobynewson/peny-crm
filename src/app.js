@@ -457,7 +457,7 @@ export class App {
           <div class="sidebar-tt" id="sidebar-tt">${this._renderSidebarTT()}</div>
           <div class="nav-item ${this.currentView==='leave'?'active':''}" data-view="leave">${this.iconLeave()} Leave${this._leaveBadgeHtml()}</div>
           <div class="nav-item ${this.currentView==='expenses'?'active':''}" data-view="expenses">${this.iconExpenses()} Expenses</div>
-          <div class="nav-item ${this.currentView==='password-manager'?'active':''}" data-view="password-manager">${this.iconPasswordManager()} Passwords</div>
+          ${(this.permissions?.vault || this.appUser?.role === 'superadmin') ? `<div class="nav-item ${this.currentView==='password-manager'?'active':''}" data-view="password-manager">${this.iconPasswordManager()} Passwords</div>` : ''}
           ${this.permissions.settings ? `<div class="nav-item" data-view="settings">${this.iconSettings()} Settings</div>` : ''}
           <div class="nav-item" id="dev-request-btn" style="color:#596773;font-size:13px">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v4M8 11v.5"/></svg>
@@ -691,6 +691,7 @@ export class App {
     } else if (this.currentView === 'timetrack') {
       this.timeTrackView.render(mc)
     } else if (this.currentView === 'password-manager') {
+      if (!(p.vault || this.appUser?.role === 'superadmin')) return locked("You don't have access to Passwords.")
       this.passwordManagerView.render(mc)
     } else if (this.currentView === 'expenses') {
       this.expensesView.render(mc)

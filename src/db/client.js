@@ -374,18 +374,21 @@ export const ROLE_PRESETS = {
     projects_view: true, projects_edit: true,
     budgets_view:  true, budgets_edit:  true,
     export:        true, settings:      true, manage_users: true,
+    vault:         true,
   },
   user: {
     contacts_view: true, contacts_edit: true,
     projects_view: true, projects_edit: true,
     budgets_view:  true, budgets_edit:  true,
     export:        true, settings:      true, manage_users: false,
+    vault:         false,
   },
   viewer: {
     contacts_view: true, contacts_edit: false,
     projects_view: true, projects_edit: false,
     budgets_view:  true, budgets_edit:  false,
     export:        false, settings:     false, manage_users: false,
+    vault:         false,
   },
 }
 
