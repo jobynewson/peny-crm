@@ -3070,6 +3070,41 @@ export class App {
     return close
   }
 
+  // Generic popover anchored to a trigger element, showing arbitrary HTML
+  // (e.g. a legend / help panel). Closes on outside click / Esc.
+  openPopover(anchor, html, { width = 260 } = {}) {
+    document.getElementById('app-popover')?.remove()
+    const pop = document.createElement('div')
+    pop.id = 'app-popover'
+    pop.className = 'app-popover'
+    pop.style.maxWidth = width + 'px'
+    pop.innerHTML = html
+    document.body.appendChild(pop)
+    const rect = anchor.getBoundingClientRect()
+    let left = rect.right - pop.offsetWidth
+    if (left < 8) left = 8
+    if (left + pop.offsetWidth > window.innerWidth - 8) left = window.innerWidth - pop.offsetWidth - 8
+    let top = rect.bottom + 6
+    if (top + pop.offsetHeight > window.innerHeight - 8) top = rect.top - pop.offsetHeight - 6
+    pop.style.top = `${Math.max(8, top)}px`
+    pop.style.left = `${Math.max(8, left)}px`
+    let done = false
+    const close = () => {
+      if (done) return
+      done = true
+      pop.remove()
+      document.removeEventListener('keydown', onKey, true)
+      document.removeEventListener('mousedown', onDoc, true)
+    }
+    const onKey = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close() } }
+    const onDoc = e => { if (!pop.contains(e.target) && e.target !== anchor && !anchor.contains(e.target)) close() }
+    setTimeout(() => {
+      document.addEventListener('keydown', onKey, true)
+      document.addEventListener('mousedown', onDoc, true)
+    }, 0)
+    return close
+  }
+
   // ── Inline form validation ──────────────────────────────────────────────────
   // Mark a field invalid with a message shown directly beneath it, instead of a
   // transient toast that doesn't say which field is wrong. The error clears as
@@ -3248,6 +3283,15 @@ export class App {
       .menu-pop-item.danger{color:var(--danger)}
       .menu-pop-item.danger:hover{background:var(--danger-subtle)}
       .menu-pop-divider{height:1px;background:var(--border-light);margin:4px 0}
+
+      /* ── Generic popover + help (?) trigger ── */
+      .app-popover{position:fixed;z-index:10001;background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);padding:12px 14px;animation:confirm-in 0.1s ease-out}
+      .legend-help-btn{width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;border:1px solid var(--border-med);background:transparent;color:var(--text-tertiary);font-size:11px;line-height:1;cursor:pointer;font-family:var(--font);padding:0;flex-shrink:0}
+      .legend-help-btn:hover{background:var(--bg-secondary);color:var(--text-primary);border-color:var(--text-tertiary)}
+      .legend-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-secondary);padding:3px 0;line-height:1.4}
+      .legend-row b{color:var(--text-primary);font-weight:600}
+      /* "+" add affordance shown on empty calendar cells when hovered */
+      .tc-add-hint,.pps-add-hint{transition:opacity 0.1s}
       .av-blue{background:#DEEBFF;color:#0747A6}.av-teal{background:#E3FCEF;color:#006644}.av-coral{background:#FFEBE6;color:#BF2600}.av-purple{background:#EAE6FF;color:#403294}.av-amber{background:#FFFAE6;color:#172B4D}.av-green{background:#E3FCEF;color:#006644}.av-pink{background:#FFECF8;color:#6E2B83}
       .tag-brand{background:#DEEBFF;color:#0747A6}.tag-agency{background:#EAE6FF;color:#403294}.tag-ngo{background:#E3FCEF;color:#006644}.tag-sport{background:#FFFAE6;color:#5A3A00}.tag-corp{background:#F4F5F7;color:#42526E}.tag-sub{background:#FFEBE6;color:#BF2600}
       .budget-layout{display:flex;gap:20px;align-items:flex-start}.budget-main{flex:1;min-width:0}.budget-sidebar-panel{width:210px;flex-shrink:0}
