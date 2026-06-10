@@ -1852,8 +1852,14 @@ export class App {
     const list = document.getElementById('notes-list')
     if (list) list.innerHTML = `<div class="notes-empty" style="padding:20px;text-align:center;color:var(--text-tertiary);font-size:13px">Loading…</div>`
     try {
-      const { getUserNotes } = await import('./db/client.js')
-      this._notes = await getUserNotes(this.clerkUserId)
+      const { getUserNotes, deleteUserNote } = await import('./db/client.js')
+      const all = await getUserNotes(this.clerkUserId)
+      // Purge any pre-existing empty "Untitled" notes (no title and no body).
+      const empties = all.filter(n => !(n.title || '').trim() && !(n.content || '').trim())
+      if (empties.length) {
+        await Promise.all(empties.map(n => deleteUserNote(this.clerkUserId, n.id).catch(e => console.error('Failed to purge empty note:', e))))
+      }
+      this._notes = all.filter(n => (n.title || '').trim() || (n.content || '').trim())
       this._notesLoaded = true
       this._renderNotesList()
     } catch(e) {
@@ -1881,12 +1887,14 @@ export class App {
     }
     if (!this._openNoteIds) this._openNoteIds = new Set()
     const chevron = `<svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5l3 3 3-3"/></svg>`
+    const trashIcon = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M6 4V2.5h4V4M5 4l.5 9h5l.5-9"/></svg>`
     list.innerHTML = this._notes.map(n => {
       const isOpen = this._openNoteIds.has(n.id)
       return `
       <div class="notes-card${isOpen?' open':''}" data-note-id="${n.id}">
         <div class="notes-card-header" data-toggle-id="${n.id}">
           <input class="notes-title-input" data-note-id="${n.id}" value="${(n.title||'').replace(/"/g,'&quot;')}" placeholder="Untitled" />
+          <button class="notes-delete-hover" data-delete-id="${n.id}" aria-label="Delete note" title="Delete note">${trashIcon}</button>
           <button class="notes-card-toggle" data-toggle-id="${n.id}" aria-label="Toggle note" aria-expanded="${isOpen}">${chevron}</button>
         </div>
         <div class="notes-card-body">
@@ -1900,7 +1908,7 @@ export class App {
           </div>
           <div class="notes-card-footer">
             <span class="notes-timestamp">${relTime(n.updated_at)}</span>
-            <button class="notes-delete-btn" data-delete-id="${n.id}" title="Delete note">Delete</button>
+            <button class="notes-delete-btn" data-delete-id="${n.id}" title="Delete note">${trashIcon}<span>Delete</span></button>
           </div>
         </div>
       </div>`
@@ -1922,6 +1930,7 @@ export class App {
     list.querySelectorAll('.notes-card-header').forEach(header => {
       header.addEventListener('click', e => {
         if (e.target.closest('.notes-title-input')) return
+        if (e.target.closest('.notes-delete-hover')) return
         toggleNote(header.dataset.toggleId)
       })
     })
@@ -1948,32 +1957,94 @@ export class App {
     list.querySelectorAll('.notes-reminder-input').forEach(cb => {
       cb.addEventListener('change', () => this._saveNote(cb.dataset.noteId, { reminder: cb.checked }))
     })
-    list.querySelectorAll('.notes-delete-btn').forEach(btn => {
-      btn.addEventListener('click', () => this._deleteNote(btn.dataset.deleteId))
+    list.querySelectorAll('.notes-delete-btn, .notes-delete-hover').forEach(btn => {
+      btn.addEventListener('click', e => { e.stopPropagation(); this._deleteNote(btn.dataset.deleteId) })
+    })
+
+    // Discard an empty draft once focus leaves its card without any content.
+    list.querySelectorAll('.notes-card').forEach(card => {
+      card.addEventListener('focusout', () => {
+        setTimeout(() => {
+          if (card.contains(document.activeElement)) return
+          const id = card.dataset.noteId
+          const note = (this._notes || []).find(n => n.id === id)
+          if (note && note._draft && !note._dbId && !(note.title || '').trim() && !(note.content || '').trim()) {
+            this._notes = this._notes.filter(n => n.id !== id)
+            this._openNoteIds.delete(id)
+            this._renderNotesList()
+          }
+        }, 0)
+      })
     })
   }
 
-  async _newNote() {
-    try {
-      const { createUserNote } = await import('./db/client.js')
-      const note = await createUserNote(this.clerkUserId, { sort_order: 0 })
-      if (!this._notes) this._notes = []
-      if (!this._openNoteIds) this._openNoteIds = new Set()
-      this._openNoteIds.add(note.id)
-      this._notes.unshift(note)
+  // Create a client-only draft. It isn't written to the DB until it gains a
+  // title or body (see _saveNote), and is discarded on blur if left empty.
+  _newNote() {
+    if (!this._notes) this._notes = []
+    if (!this._openNoteIds) this._openNoteIds = new Set()
+    // Don't stack multiple empty drafts — focus the existing one instead.
+    const existingDraft = this._notes.find(n => n._draft && !n._dbId)
+    if (existingDraft) {
+      this._openNoteIds.add(existingDraft.id)
       this._renderNotesList()
-      const firstTitle = document.querySelector('.notes-title-input')
-      firstTitle?.focus()
-    } catch(e) { console.error('Failed to create note:', e) }
+      document.querySelector(`.notes-card[data-note-id="${existingDraft.id}"] .notes-title-input`)?.focus()
+      return
+    }
+    const draft = {
+      id: 'draft-' + Date.now(),
+      title: '', content: '', due_date: null, reminder: false,
+      updated_at: new Date().toISOString(),
+      _draft: true, _dbId: null,
+    }
+    this._openNoteIds.add(draft.id)
+    this._notes.unshift(draft)
+    this._renderNotesList()
+    document.querySelector(`.notes-card[data-note-id="${draft.id}"] .notes-title-input`)?.focus()
   }
 
   async _saveNote(id, data) {
+    const note = (this._notes || []).find(n => n.id === id)
+    if (!note) return
+    Object.assign(note, data)
+
+    // Draft: persist only once it has a title or body. Keep the temp id as the
+    // stable DOM key and store the DB id separately so concurrent title/body
+    // blurs don't race or double-create.
+    if (note._draft && !note._dbId) {
+      const hasContent = (note.title || '').trim() || (note.content || '').trim()
+      if (!hasContent) return
+      if (!note._createPromise) {
+        note._createPromise = (async () => {
+          const { createUserNote } = await import('./db/client.js')
+          return createUserNote(this.clerkUserId, {
+            title: note.title || '', content: note.content || '',
+            due_date: note.due_date || null, reminder: note.reminder || false,
+            sort_order: 0,
+          })
+        })()
+      }
+      try {
+        const created = await note._createPromise
+        if (!note._dbId) {
+          note._dbId = created.id
+          note._draft = false
+          note.created_at = created.created_at
+          note.updated_at = created.updated_at
+          const ts = document.querySelector(`.notes-card[data-note-id="${id}"] .notes-timestamp`)
+          if (ts) ts.textContent = 'just now'
+        }
+      } catch(e) { console.error('Failed to create note:', e); note._createPromise = null; return }
+      // Fall through to push the latest field value (covers edits made while the
+      // create was still in flight).
+    }
+
+    const dbId = note._dbId ?? note.id
     try {
       const { updateUserNote } = await import('./db/client.js')
-      const updated = await updateUserNote(this.clerkUserId, id, data)
-      if (updated && this._notes) {
-        const idx = this._notes.findIndex(n => n.id === id)
-        if (idx !== -1) this._notes[idx] = { ...this._notes[idx], ...updated }
+      const updated = await updateUserNote(this.clerkUserId, dbId, data)
+      if (updated) {
+        Object.assign(note, updated, { id: note.id, _dbId: dbId })
         const ts = document.querySelector(`.notes-card[data-note-id="${id}"] .notes-timestamp`)
         if (ts) ts.textContent = 'just now'
       }
@@ -1982,12 +2053,21 @@ export class App {
 
   async _deleteNote(id) {
     const note = (this._notes || []).find(n => n.id === id)
-    const title = (note?.title || '').trim()
+    if (!note) return
+    // A never-persisted draft has no DB row — just drop it locally, no prompt.
+    if (note._draft && !note._dbId) {
+      this._notes = this._notes.filter(n => n.id !== id)
+      this._openNoteIds?.delete(id)
+      this._renderNotesList()
+      return
+    }
+    const title = (note.title || '').trim()
     if (!await this.confirm({ title: title ? `Delete note '${title}'?` : 'Delete this note?', confirmLabel: 'Delete' })) return
     try {
       const { deleteUserNote } = await import('./db/client.js')
-      await deleteUserNote(this.clerkUserId, id)
+      await deleteUserNote(this.clerkUserId, note._dbId ?? id)
       this._notes = (this._notes || []).filter(n => n.id !== id)
+      this._openNoteIds?.delete(id)
       this._renderNotesList()
       this.toast('Note deleted')
     } catch(e) { console.error('Failed to delete note:', e); this.toast('Error deleting note') }
@@ -3555,8 +3635,11 @@ export class App {
       .notes-due-input{font-size:11px;padding:2px 6px;border:1px solid rgba(255,255,255,0.1)!important;border-radius:var(--radius-md);background:transparent;color:#596773!important;font-family:var(--font);outline:none}
       .notes-card-footer{display:flex;align-items:center;justify-content:space-between;padding:5px 10px 7px;border-top:1px solid rgba(255,255,255,0.06)}
       .notes-timestamp{font-size:11px;color:#596773}
-      .notes-delete-btn{background:none;border:none;font-size:11px;color:#596773;cursor:pointer;padding:2px 6px;border-radius:var(--radius-sm);font-family:var(--font);transition:background 0.1s,color 0.1s}
+      .notes-delete-btn{display:inline-flex;align-items:center;gap:5px;background:none;border:none;font-size:11px;color:#596773;cursor:pointer;padding:2px 6px;border-radius:var(--radius-sm);font-family:var(--font);transition:background 0.1s,color 0.1s}
       .notes-delete-btn:hover{background:rgba(239,68,68,0.15);color:#ef4444}
+      .notes-delete-hover{display:flex;align-items:center;justify-content:center;width:22px;height:22px;background:transparent;border:none;color:#596773;cursor:pointer;border-radius:var(--radius-md);flex-shrink:0;padding:0;opacity:0;transition:opacity 0.12s,color 0.12s,background 0.12s}
+      .notes-card:hover .notes-delete-hover{opacity:1}
+      .notes-delete-hover:hover{color:#ef4444;background:rgba(239,68,68,0.15)}
 
       /* ── Days-since widget ── */
       #ds-widget-wrap{display:flex;justify-content:center;padding:10px 16px}

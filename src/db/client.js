@@ -836,7 +836,14 @@ export async function getUserNotes(clerkId) {
 }
 export async function createUserNote(clerkId, data = {}) {
   const [row] = await db.insert(user_notes)
-    .values({ clerk_id: clerkId, title: data.title ?? '', content: data.content ?? '', sort_order: data.sort_order ?? 0 })
+    .values({
+      clerk_id: clerkId,
+      title: data.title ?? '',
+      content: data.content ?? '',
+      sort_order: data.sort_order ?? 0,
+      due_date: data.due_date ?? null,
+      reminder: data.reminder ?? false,
+    })
     .returning()
   return row
 }
