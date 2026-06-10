@@ -2824,6 +2824,28 @@ export class ProjectsView {
     this._bindShootHotels(overlay, sh, save)
   }
 
+  // PDFs render in a window loaded from a blob: URL, where relative/absolute-path
+  // image sources (e.g. "/peny-logo.png") don't resolve against the app origin —
+  // so branding never loads. Inline logos as base64 data URIs so they render
+  // reliably (and are present before print()), falling back to an origin-qualified
+  // absolute URL if the fetch fails.
+  async _imgToDataUri(src) {
+    try {
+      const abs = new URL(src, location.origin).href
+      const resp = await fetch(abs)
+      if (!resp.ok) throw new Error('logo fetch failed')
+      const blob = await resp.blob()
+      return await new Promise((resolve, reject) => {
+        const fr = new FileReader()
+        fr.onload  = () => resolve(fr.result)
+        fr.onerror = reject
+        fr.readAsDataURL(blob)
+      })
+    } catch {
+      try { return new URL(src, location.origin).href } catch { return src }
+    }
+  }
+
   async _generateShootPDF(sh, p) {
     const w = window.open('', '_blank')
     if (!w) { this.app.toast('Pop-up blocked — allow pop-ups and try again'); return }
@@ -2835,31 +2857,10 @@ export class ProjectsView {
 
     const studio = this.app.settings || {}
 
-    // The PDF is rendered in a window loaded from a blob: URL, where relative
-    // and absolute-path image sources (e.g. "/peny-logo.png") don't resolve
-    // against the app origin — so the branding never loads. Inline the logos as
-    // base64 data URIs up front so they render reliably (and before print()).
-    const toDataUri = async src => {
-      try {
-        const abs = new URL(src, location.origin).href
-        const resp = await fetch(abs)
-        if (!resp.ok) throw new Error('logo fetch failed')
-        const blob = await resp.blob()
-        return await new Promise((resolve, reject) => {
-          const fr = new FileReader()
-          fr.onload  = () => resolve(fr.result)
-          fr.onerror = reject
-          fr.readAsDataURL(blob)
-        })
-      } catch {
-        // Fall back to an origin-qualified absolute URL so the src at least
-        // resolves outside the blob: document context.
-        try { return new URL(src, location.origin).href } catch { return src }
-      }
-    }
+    // Inline the logos as data URIs so the branding renders in the blob: document.
     const [logoUrl, footerLogoUrl] = await Promise.all([
-      toDataUri(studio.logo_url || '/peny-logo.png'),
-      toDataUri('/peny-logo.png'),
+      this._imgToDataUri(studio.logo_url || '/peny-logo.png'),
+      this._imgToDataUri('/peny-logo.png'),
     ])
 
     // Per-section visibility — a section is shown unless explicitly toggled off
@@ -3571,6 +3572,8 @@ export class ProjectsView {
                   Any unused hours from the previous period are added to this period's allocation. Overruns are deducted. Each item is tracked independently.
                 </div>
               </div>
+
+              <button class="btn-secondary" id="pe-export-retainer" style="font-size:12px;width:100%;margin-top:12px">📄 Export proposal PDF</button>
             </div>` : ''}
           </div>
           <div class="proj-panel">
@@ -3704,14 +3707,20 @@ export class ProjectsView {
   }
 
   // Check if the retainer period has rolled over and reset monthly deliverable done states
-  _exportRetainerPDF(p) {
+  async _exportRetainerPDF(p) {
+    const w = window.open('', '_blank')
+    if (!w) { this.app.toast('Pop-up blocked — allow pop-ups and try again'); return }
+
     const s   = this.app.settings || {}
     const cl  = this.app.contacts.find(c => c.id === p.client_id)
     const today = new Date()
     const months = ['January','February','March','April','May','June','July','August','September','October','November','December']
     const dateStr = today.getDate()+' '+months[today.getMonth()]+' '+today.getFullYear()
-    const LOGO_WHITE = '/slate-logo-white.png'
-    const LOGO_BLACK = '/slate-logo.png'
+    // Inline logos as data URIs so the branding renders in the blob: document.
+    const [LOGO_WHITE, LOGO_BLACK] = await Promise.all([
+      this._imgToDataUri('/slate-logo-white.png'),
+      this._imgToDataUri('/slate-logo.png'),
+    ])
     const periodLabel = { week:'week', month:'month', quarter:'quarter', half:'half year', year:'year' }
     const periodMult  = { week:4.33, month:1, quarter:1/3, half:1/6, year:1/12 }
     const gbpA = n => '£'+n.toLocaleString('en-GB',{minimumFractionDigits:0,maximumFractionDigits:2})
@@ -3737,7 +3746,17 @@ export class ProjectsView {
       </tr>`
     }).join('')
 
-    const html = `
+    const esc_ = str => String(str??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    const html = `<!DOCTYPE html><html><head>
+      <meta charset="UTF-8">
+      <title>Retainer Proposal — ${esc_(p.name)}</title>
+      <style>
+        @page { size: A4 portrait; margin: 0 }
+        * { box-sizing: border-box }
+        html, body { margin: 0; padding: 0 }
+        @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact } }
+      </style>
+    </head><body>
       <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#1a1a18;background:#fff">
 
         <!-- Cover -->
@@ -3816,12 +3835,15 @@ export class ProjectsView {
             <span>${dateStr}${s.vat_number?' · VAT: '+s.vat_number:''}</span>
           </div>
         </div>
-      </div>`
+      </div>
 
-    let ts = document.getElementById('pdf-topsheet')
-    if (!ts) { ts = document.createElement('div'); ts.id = 'pdf-topsheet'; document.body.appendChild(ts) }
-    ts.innerHTML = html
-    setTimeout(() => window.print(), 150)
+    <script>window.onload = () => window.print()<\/script>
+    </body></html>`
+
+    const blob = new Blob([html], { type: 'text/html' })
+    const url  = URL.createObjectURL(blob)
+    w.location.href = url
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
     this.app.toast('Opening print dialog…')
   }
 
@@ -4127,6 +4149,7 @@ export class ProjectsView {
     mc.querySelector('#pe-ret-start')?.addEventListener('change', e => { p.retainer_start = e.target.value||null; save(); requestAnimationFrame(() => this.renderEditor(mc)) })
     mc.querySelector('#pe-ret-alert')?.addEventListener('change', e => { p.retainer_alert = parseFloat(e.target.value)||80; save() })
     mc.querySelector('#pe-ret-rollover')?.addEventListener('change', e => { p.retainer_rollover = e.target.checked; save() })
+    mc.querySelector('#pe-export-retainer')?.addEventListener('click', () => this._exportRetainerPDF(p))
 
     // Retainer items
     if (!Array.isArray(p.retainer_items)) p.retainer_items = []
