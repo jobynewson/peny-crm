@@ -92,7 +92,7 @@ export class MarketingView {
             ${colCards.map(card => this.renderCard(card)).join('')}
             <button class="mkt-add-btn" data-add-col="${col.id}"
               style="width:100%;padding:8px;border:1px dashed var(--border-med);border-radius:var(--radius-md);background:transparent;color:var(--text-tertiary);font-size:12px;cursor:pointer;font-family:var(--font);transition:background 0.1s,color 0.1s;text-align:center">
-              + Add card
+              + New card
             </button>
           </div>`
         }).join('')}

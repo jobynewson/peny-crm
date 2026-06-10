@@ -441,7 +441,7 @@ export class App {
   topbarButton() {
     const p = this.permissions ?? {}
     if (this.currentView === 'contacts') {
-      return p.contacts_edit ? `<button class="btn-primary" id="topbar-btn">+ Add contact</button>` : ''
+      return p.contacts_edit ? `<button class="btn-primary" id="topbar-btn">+ New contact</button>` : ''
     }
     if (this.currentView === 'budgets') {
       if (!this.budgetsView.currentId) return p.budgets_edit ? `<button class="btn-primary" id="topbar-btn">+ New budget</button>` : ''

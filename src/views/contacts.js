@@ -41,7 +41,7 @@ export class ContactsView {
     const { contacts } = this.app
     return `
       <div class="stats-row">
-        <div class="stat-card"><div class="stat-label">Total contacts</div><div class="stat-value">${contacts.filter(c=>c.type!=='subcontractor').length}</div><div class="stat-sub">clients</div></div>
+        <div class="stat-card"><div class="stat-label">Clients</div><div class="stat-value">${contacts.filter(c=>c.type!=='subcontractor').length}</div><div class="stat-sub">total</div></div>
         <div class="stat-card"><div class="stat-label">Active clients</div><div class="stat-value">${contacts.filter(c=>c.type!=='subcontractor'&&c.status==='Active').length}</div><div class="stat-sub">in live projects</div></div>
         <div class="stat-card"><div class="stat-label">Subcontractors</div><div class="stat-value">${contacts.filter(c=>c.type==='subcontractor'&&c.status!=='Retired').length}</div><div class="stat-sub">active</div></div>
         <div class="stat-card"><div class="stat-label">Warm leads</div><div class="stat-value">${contacts.filter(c=>c.type!=='subcontractor'&&c.status==='Warm').length}</div><div class="stat-sub">needs follow-up</div></div>
@@ -51,7 +51,7 @@ export class ContactsView {
           <span class="panel-title">${this.view==='subbies'?'Subcontractors':'Clients'}</span>
           <div style="display:flex;gap:4px;margin-right:8px;background:var(--bg-secondary);border-radius:var(--radius-pill);padding:3px">
             <button class="filter-pill ${this.view==='clients'?'active':''}" data-view="clients" style="border-radius:16px">Clients</button>
-            <button class="filter-pill ${this.view==='subbies'?'active':''}" data-view="subbies" style="border-radius:16px">Subbies</button>
+            <button class="filter-pill ${this.view==='subbies'?'active':''}" data-view="subbies" style="border-radius:16px">Subcontractors</button>
           </div>
           <button class="filter-pill ${this.filter==='all'?'active':''}" data-filter="all">All</button>
           <button class="filter-pill ${this.filter==='Active'?'active':''}" data-filter="Active">Active</button>
@@ -101,7 +101,7 @@ export class ContactsView {
       <div class="modal-backdrop" id="contact-modal">
         <div class="modal">
           <div class="modal-header">
-            <span class="modal-title" id="contact-modal-title">${c?'Edit contact':'Add contact'}</span>
+            <span class="modal-title" id="contact-modal-title">${c?'Edit contact':'New contact'}</span>
             <button class="modal-close" data-close="contact-modal">×</button>
           </div>
           <div class="modal-body">
@@ -340,7 +340,7 @@ export class ContactsView {
 
   openAdd(mc) {
     this.editingId = null
-    mc.querySelector('#contact-modal-title').textContent = 'Add contact'
+    mc.querySelector('#contact-modal-title').textContent = 'New contact'
     ;['first','last','role','company','email','phone','location'].forEach(f => {
       const el = mc.querySelector(`#cf-${f}`)
       if (el) el.value = ''

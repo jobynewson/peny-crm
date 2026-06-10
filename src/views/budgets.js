@@ -801,7 +801,7 @@ export class BudgetsView {
             <td style="text-align:right" id="bst-${si}">${gbpA(sn)}</td><td></td>
           </tr>
         </tbody></table>
-        <button class="add-line" data-add-line="${si}">+ add line item</button>
+        <button class="add-line" data-add-line="${si}">+ Add line item</button>
       </div>
     </div>`
   }
