@@ -397,7 +397,7 @@ export class App {
         } else if (this.currentView === 'budgets' && this.budgetsView.editingId) {
           document.querySelector('#be-save-close')?.click()
         } else if (this.currentView === 'settings') {
-          document.querySelector('#settings-save-btn')?.click()
+          document.querySelector('[data-settings-primary-save]')?.click()
         }
         return
       }
@@ -2131,12 +2131,24 @@ export class App {
   renderSettings(mc) {
     const s = this.settings ?? {}
     const isAdmin = this.appUser?.role === 'superadmin'
-    const tab = this._settingsTab ?? 'account'
 
-    const tabs = [
-      { id: 'account', label: 'My account' },
-      { id: 'workspace', label: 'Workspace' },
-    ]
+    // Workspace is split into sub-tabs for admins; non-admins only have the
+    // (non-admin) leave settings, so they keep a single Workspace tab.
+    const tabs = isAdmin
+      ? [
+          { id: 'account',   label: 'My account' },
+          { id: 'company',   label: 'Company' },
+          { id: 'invoicing', label: 'Invoicing' },
+          { id: 'budget',    label: 'Budget template' },
+          { id: 'users',     label: 'Users' },
+        ]
+      : [
+          { id: 'account',   label: 'My account' },
+          { id: 'workspace', label: 'Workspace' },
+        ]
+    // Fall back to the first tab if the remembered one isn't valid for this role.
+    let tab = this._settingsTab ?? 'account'
+    if (!tabs.some(t => t.id === tab)) tab = 'account'
 
     // ── User-level panels ───────────────────────────────────────────────
     const accountPanel = `
@@ -2173,7 +2185,7 @@ export class App {
         </div>`
 
     // ── Workspace-level panels ──────────────────────────────────────────
-    const companyPanels = isAdmin ? `
+    const companyDetailsPanel = isAdmin ? `
         <div class="panel">
           <div class="panel-header"><span class="panel-title">Company details</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
@@ -2200,7 +2212,7 @@ export class App {
                 <textarea id="s-hs" style="width:100%;min-height:100px;padding:8px 11px;font-size:12px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.6" placeholder="e.g. No alcohol or non-prescription drugs during the working day. Only qualified personnel to handle hazardous equipment…">${s.hs_boilerplate??''}</textarea>
               </div>
             </div>
-            <div><button class="btn-primary" id="settings-save-btn">Save settings</button></div>
+            <div><button class="btn-primary" id="settings-save-btn" data-settings-primary-save>Save settings</button></div>
           </div>
         </div>
 
@@ -2214,10 +2226,11 @@ export class App {
             </div>
             <div class="field"><div class="field-label">Address</div><input type="text" id="s-ins-addr" value="${s.default_insurer_address??''}" placeholder="71 Fenchurch Street, London, EC3M 4BS" /></div>
             <div class="field"><div class="field-label">Email</div><input type="email" id="s-ins-email" value="${s.default_insurer_email??''}" placeholder="contact@insurer.com" /></div>
-            <div><button class="btn-primary" id="settings-save-btn-2">Save settings</button></div>
+            <div><button class="btn-primary" id="settings-save-btn-2" data-settings-primary-save>Save settings</button></div>
           </div>
-        </div>
+        </div>` : ''
 
+    const invoicingDefaultsPanel = isAdmin ? `
         <div class="panel">
           <div class="panel-header"><span class="panel-title">Invoicing defaults (for crew call sheets)</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
@@ -2227,11 +2240,11 @@ export class App {
               <div class="field-label">Invoicing boilerplate</div>
               <textarea id="s-inv-boilerplate" style="width:100%;min-height:140px;padding:8px 11px;font-size:12px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;resize:vertical;line-height:1.6" placeholder="In order to comply with HMRC regulations and for us to pay your invoice, please include the following:&#10;1. Correct Banking Information&#10;2. Dates worked and service provided&#10;3. Full name as registered with HMRC…">${s.invoicing_boilerplate??''}</textarea>
             </div>
-            <div><button class="btn-primary" id="settings-save-btn-3">Save settings</button></div>
+            <div><button class="btn-primary" id="settings-save-btn-3" data-settings-primary-save>Save settings</button></div>
           </div>
         </div>` : ''
 
-    const usersHolidaysPanels = isAdmin ? `
+    const usersPanel = isAdmin ? `
         <div class="panel">
           <div class="panel-header"><span class="panel-title">Users</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
@@ -2242,8 +2255,9 @@ export class App {
             </div>
             <div id="users-list"><div style="font-size:12px;color:var(--text-tertiary)">Loading users…</div></div>
           </div>
-        </div>
+        </div>` : ''
 
+    const holidaysPanel = isAdmin ? `
         <div class="panel">
           <div class="panel-header"><span class="panel-title">Public holidays</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
@@ -2282,11 +2296,11 @@ export class App {
                 </div>
               </div>
             </div>
-            <div><button class="btn-primary" id="settings-save-leave-btn">Save</button></div>
+            <div><button class="btn-primary" id="settings-save-leave-btn" data-settings-primary-save>Save</button></div>
           </div>
         </div>`
 
-    const timerExpensePanels = isAdmin ? `
+    const timersPanel = isAdmin ? `
         <div class="panel">
           <div class="panel-header"><span class="panel-title">Dashboard days-since timer</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
@@ -2311,8 +2325,9 @@ export class App {
               ${s.countdown_timer ? `<button class="btn-cancel" id="settings-clear-cd-btn">Remove timer</button>` : ''}
             </div>
           </div>
-        </div>
+        </div>` : ''
 
+    const expenseFxPanels = isAdmin ? `
         <div class="panel">
           <div class="panel-header"><span class="panel-title">Expense tracker</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
@@ -2373,23 +2388,20 @@ export class App {
         </button>`).join('')}
     </div>`
 
+    const wrap = inner => `<div style="display:flex;flex-direction:column;gap:16px;max-width:760px">${inner}</div>`
     if (tab === 'account') {
-      mc.innerHTML = tabBar + `<div style="display:flex;flex-direction:column;gap:16px;max-width:560px">
-        ${accountPanel}
-        ${roundupPanel}
-      </div>`
+      mc.innerHTML = tabBar + wrap(`${accountPanel}${roundupPanel}`)
+    } else if (tab === 'company') {
+      mc.innerHTML = tabBar + wrap(`${companyDetailsPanel}${timersPanel}`)
+    } else if (tab === 'invoicing') {
+      mc.innerHTML = tabBar + wrap(`${invoicingDefaultsPanel}${expenseFxPanels}`)
+    } else if (tab === 'budget') {
+      mc.innerHTML = tabBar + wrap(budgetPanel)
+    } else if (tab === 'users') {
+      mc.innerHTML = tabBar + wrap(`${usersPanel}${holidaysPanel}${leavePanel}`)
     } else {
-      mc.innerHTML = tabBar + `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;max-width:1100px">
-        <div style="display:flex;flex-direction:column;gap:16px">
-          ${companyPanels}
-          ${usersHolidaysPanels}
-          ${leavePanel}
-          ${timerExpensePanels}
-        </div>
-        <div style="display:flex;flex-direction:column;gap:16px">
-          ${budgetPanel}
-        </div>
-      </div>`
+      // Non-admin "Workspace" tab — leave settings only.
+      mc.innerHTML = tabBar + wrap(leavePanel)
     }
 
     mc.querySelectorAll('.settings-tab').forEach(btn => btn.addEventListener('click', () => {
@@ -2411,13 +2423,15 @@ export class App {
     mc.querySelector('#settings-save-fx-btn')?.addEventListener('click', () => this._saveFxSettings(mc))
     mc.querySelector('#settings-save-leave-btn')?.addEventListener('click', () => this._saveLeaveSettings(mc))
 
-    if (isAdmin && tab === 'workspace') {
+    if (isAdmin && tab === 'users') {
       this._loadUsersPanel(mc)
       mc.querySelector('#invite-btn')?.addEventListener('click', () => this._sendInvite(mc))
-      this._mountTemplateEditor(mc)
       this._renderHolidaysPanel(mc)
       mc.querySelector('#hol-add-btn')?.addEventListener('click', () => this._addHoliday(mc))
       mc.querySelector('#hol-sync-btn')?.addEventListener('click', () => this._syncUKHolidays(mc))
+    }
+    if (isAdmin && tab === 'budget') {
+      this._mountTemplateEditor(mc)
     }
   }
 
@@ -2493,7 +2507,7 @@ export class App {
         <div style="display:flex;gap:8px;margin-top:12px">
           <button class="dashed-btn" id="tpl-add-section" style="flex:1">+ add section</button>
           <button class="btn-secondary" id="tpl-reset">Reset to defaults</button>
-          <button class="btn-primary" id="tpl-save">Save template</button>
+          <button class="btn-primary" id="tpl-save" data-settings-primary-save>Save template</button>
         </div>`
 
       // ── Bindings ──────────────────────────────────────────────────────────
@@ -2838,31 +2852,33 @@ export class App {
     }
   }
 
+  // Tab-safe save: only persists the flat settings fields actually present in
+  // the DOM right now. Because the Workspace settings are split across sub-tabs
+  // (Company / Invoicing / …), reading absent fields would clobber them — so we
+  // include a key only when its input is rendered. upsertSettings does a partial
+  // update, leaving untouched columns intact.
   async saveSettings(mc) {
-    const data = {
-      company_name: mc.querySelector('#s-name')?.value.trim()||'Slate',
-      email:        mc.querySelector('#s-email')?.value.trim()||null,
-      phone:        mc.querySelector('#s-phone')?.value.trim()||null,
-      website:      mc.querySelector('#s-website')?.value.trim()||null,
-      address:      mc.querySelector('#s-address')?.value.trim()||null,
-      vat_number:          mc.querySelector('#s-vat')?.value.trim()||null,
-      prepared_by:         mc.querySelector('#s-preparedby')?.value.trim()||null,
-      hs_boilerplate:      mc.querySelector('#s-hs')?.value.trim()||null,
-      financial_year_start: parseInt(mc.querySelector('#s-fy-start')?.value||'4'),
-      budget_template:     this.settings?.budget_template ?? null,
-      default_insurer_name:    mc.querySelector('#s-ins-name')?.value.trim()||null,
-      default_insurer_address: mc.querySelector('#s-ins-addr')?.value.trim()||null,
-      default_insurer_email:   mc.querySelector('#s-ins-email')?.value.trim()||null,
-      default_insurer_contact: mc.querySelector('#s-ins-contact')?.value.trim()||null,
-      invoicing_email:         mc.querySelector('#s-inv-email')?.value.trim()||null,
-      invoicing_boilerplate:   mc.querySelector('#s-inv-boilerplate')?.value.trim()||null,
-      countdown_timer:         this.settings?.countdown_timer ?? null,
-      days_since_timer:        this.settings?.days_since_timer ?? null,
-      reminder_roundup:        this.settings?.reminder_roundup ?? false,
-      expense_recipients:      this.settings?.expense_recipients ?? [],
-      mileage_rate:            this.settings?.mileage_rate ?? 45,
-      fx_markup_pct:           this.settings?.fx_markup_pct ?? 3,
+    const data = {}
+    const setText = (key, sel, fallback = null) => {
+      const el = mc.querySelector(sel)
+      if (el) data[key] = el.value.trim() || fallback
     }
+    setText('company_name', '#s-name', 'Slate')
+    setText('email', '#s-email')
+    setText('phone', '#s-phone')
+    setText('website', '#s-website')
+    setText('address', '#s-address')
+    setText('vat_number', '#s-vat')
+    setText('prepared_by', '#s-preparedby')
+    setText('hs_boilerplate', '#s-hs')
+    if (mc.querySelector('#s-fy-start')) data.financial_year_start = parseInt(mc.querySelector('#s-fy-start').value || '4')
+    setText('default_insurer_name', '#s-ins-name')
+    setText('default_insurer_address', '#s-ins-addr')
+    setText('default_insurer_email', '#s-ins-email')
+    setText('default_insurer_contact', '#s-ins-contact')
+    setText('invoicing_email', '#s-inv-email')
+    setText('invoicing_boilerplate', '#s-inv-boilerplate')
+    if (!Object.keys(data).length) return
     try { const [updated] = await upsertSettings(this.userId, data); this.settings = updated; this.toast('Settings saved') }
     catch (e) { console.error(e); this.toast('Error saving settings') }
   }
