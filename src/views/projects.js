@@ -3013,6 +3013,23 @@ export class ProjectsView {
       sh.weather_text     ? `<tr><td class="lbl"></td><td class="val dim">Weather: ${esc_(sh.weather_text)}</td></tr>` : '',
     ].join('') : ''
 
+    // ADDITIONAL LOCATIONS — included when the section's "In callsheet" box is ticked
+    const extraLocs = (Array.isArray(sh.locations) ? sh.locations : []).filter(l => l.name || l.address)
+    const secLocations = showSec('locations') && extraLocs.length ? [
+      hr(),
+      ...extraLocs.flatMap((l, li) => {
+        const meta = [
+          l.move_time ? `Move: ${esc_(l.move_time)}` : '',
+          l.date      ? fmtDate(l.date)              : '',
+        ].filter(Boolean).join(' &emsp; ')
+        return [
+          `<tr><td class="lbl">${li===0?'Additional locations':''}</td><td class="val">${l.name?`<strong>${esc_(l.name)}</strong>`:''}${meta?`${l.name?' &emsp; ':''}<span class="dim">${meta}</span>`:''}</td></tr>`,
+          l.address ? cont(l.address) : '',
+          l.notes   ? `<tr><td class="lbl"></td><td class="val dim">${esc_(l.notes)}</td></tr>` : '',
+        ].join('')
+      }),
+    ].join('') : ''
+
     // HOTELS
     const secHotels = showSec('hotels') && hotels.length ? [
       hr(),
@@ -3202,7 +3219,7 @@ export class ProjectsView {
 
     <table class="cs">
       ${[secJobName, secClient, secTalent, secTalentNotes, secProduction, secDates,
-         secLocation, secHotels, secSchedule, secMainUnit, secEquipment, secCatering,
+         secLocation, secLocations, secHotels, secSchedule, secMainUnit, secEquipment, secCatering,
          secInsurance, secEmergency, secHS, secNotes, secInvoicing]
         .map(s => s ? `<tbody class="sec">${s}</tbody>` : '').join('')}
     </table>
