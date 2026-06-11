@@ -1,6 +1,7 @@
 import { createProject, updateProject, deleteProject, linkBudgetToProject, unlinkBudgetFromProject, logActivity, getActivityLog, getTimeEntries, setTrackToken, deleteTimeEntry, getWorkLog, addWorkLogEntry, deleteWorkLogEntry } from '../db/client.js'
 import { renderPlanningTab, bindPlanningTab } from './planning-tab.js'
 import { PostProductionView } from './post-production.js'
+import { continuationScript, PDF_CONTINUED_CSS, a4ContentWidthPx, a4ContentHeightPx } from '../utils/pdfContinuation.js'
 
 const STAGES = ['Enquiry','Pre-production','In Production','Post','Delivered']
 const RETAINER_STAGE = 'Retainer'
@@ -3213,6 +3214,7 @@ export class ProjectsView {
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact }
           tr { page-break-inside: avoid }
         }
+        ${PDF_CONTINUED_CSS}
       </style>
     </head><body>
 
@@ -3233,7 +3235,14 @@ export class ProjectsView {
       <span>Produced by Peny &middot; wearepeny.com</span>
     </div>
 
-    <script>window.onload = () => window.print()<\/script>
+    ${continuationScript({
+      rootSelector: 'body',
+      rootWidthPx: a4ContentWidthPx(16),
+      pageHeightPx: a4ContentHeightPx(14),
+      blockSelector: 'tbody.sec',
+      mode: 'table',
+      autoPrint: true,
+    })}
     </body></html>`
 
     const blob = new Blob([html], { type: 'text/html' })
