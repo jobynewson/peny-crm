@@ -89,7 +89,7 @@ export class PasswordManagerView {
                       <td style="padding:12px 16px">
                         <div style="display:flex;align-items:center;gap:6px">
                           <span style="font-size:13px;color:var(--text-secondary);font-family:monospace">${esc(c.login) || '<span style="color:var(--text-tertiary)">—</span>'}</span>
-                          ${c.login ? `<button class="pm-copy" data-val="${esc(c.login)}" title="Copy email/login" style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--text-tertiary);padding:2px;line-height:0;border-radius:var(--radius-sm);transition:color 0.15s" onmouseover="this.style.color='var(--text-secondary)'" onmouseout="this.style.color='var(--text-tertiary)'">${this._iconCopy()}</button>` : ''}
+                          ${c.login ? `<button class="pm-copy" data-val="${esc(c.login)}" data-id="${c.id}" data-field="login" title="Copy email/login" style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--text-tertiary);padding:2px;line-height:0;border-radius:var(--radius-sm);transition:color 0.15s" onmouseover="this.style.color='var(--text-secondary)'" onmouseout="this.style.color='var(--text-tertiary)'">${this._iconCopy()}</button>` : ''}
                         </div>
                       </td>
                       <td style="padding:12px 16px">
@@ -97,7 +97,7 @@ export class PasswordManagerView {
                           <span class="pm-pw-display" data-id="${c.id}" style="font-size:13px;color:var(--text-secondary);font-family:monospace;letter-spacing:${this.visibleIds.has(c.id) ? 'normal' : '2px'}">${c.password ? (this.visibleIds.has(c.id) ? esc(c.password) : '••••••••') : '<span style="color:var(--text-tertiary);letter-spacing:normal">—</span>'}</span>
                           ${c.password ? `
                             <button class="pm-toggle-pw" data-id="${c.id}" title="${this.visibleIds.has(c.id) ? 'Hide' : 'Show'} password" style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--text-tertiary);padding:2px;line-height:0;border-radius:var(--radius-sm);transition:color 0.15s" onmouseover="this.style.color='var(--text-secondary)'" onmouseout="this.style.color='var(--text-tertiary)'">${this.visibleIds.has(c.id) ? this._iconEyeOff() : this._iconEye()}</button>
-                            <button class="pm-copy" data-val="${esc(c.password)}" title="Copy password" style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--text-tertiary);padding:2px;line-height:0;border-radius:var(--radius-sm);transition:color 0.15s" onmouseover="this.style.color='var(--text-secondary)'" onmouseout="this.style.color='var(--text-tertiary)'">${this._iconCopy()}</button>
+                            <button class="pm-copy" data-val="${esc(c.password)}" data-id="${c.id}" data-field="password" title="Copy password" style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--text-tertiary);padding:2px;line-height:0;border-radius:var(--radius-sm);transition:color 0.15s" onmouseover="this.style.color='var(--text-secondary)'" onmouseout="this.style.color='var(--text-tertiary)'">${this._iconCopy()}</button>
                           ` : ''}
                         </div>
                       </td>
@@ -131,8 +131,13 @@ export class PasswordManagerView {
     mc.querySelectorAll('.pm-toggle-pw').forEach(btn => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.id
-        if (this.visibleIds.has(id)) this.visibleIds.delete(id)
-        else this.visibleIds.add(id)
+        if (this.visibleIds.has(id)) {
+          this.visibleIds.delete(id)
+        } else {
+          // Reveal is a deliberate per-item click — record it.
+          this.visibleIds.add(id)
+          this._logVaultActivity(this.credentials.find(c => c.id === id), 'Password revealed')
+        }
         this._render(mc)
       })
     })
@@ -145,6 +150,10 @@ export class PasswordManagerView {
           btn.innerHTML = this._iconCheck()
           btn.style.color = 'var(--accent-green, #38a169)'
           setTimeout(() => { btn.innerHTML = orig; btn.style.color = 'var(--text-tertiary)' }, 1500)
+          if (btn.dataset.id) {
+            this._logVaultActivity(this.credentials.find(c => c.id === btn.dataset.id),
+              btn.dataset.field === 'password' ? 'Password copied' : 'Login copied')
+          }
         } catch { /* clipboard not available */ }
       })
     })
@@ -277,6 +286,15 @@ export class PasswordManagerView {
     })
 
     overlay.querySelector('#pm-f-program').focus()
+  }
+
+  // Record vault access (reveal/copy) to the shared activity log, if available.
+  async _logVaultActivity(cred, summary) {
+    if (!cred) return
+    try {
+      const { logActivity } = await import('../db/client.js')
+      await logActivity(this.app.userId, 'credential', cred.id, cred.program || 'Credential', summary)
+    } catch (e) { console.error('Vault activity log failed:', e) }
   }
 
   _iconCopy() {

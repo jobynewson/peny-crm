@@ -183,9 +183,8 @@ export class BudgetsView {
                    ${b.signed_off_by ? `<div style="color:var(--text-tertiary);font-size:10px">${esc(b.signed_off_by)}</div>` : ''}`
                 : `<span style="color:var(--text-tertiary)">—</span>`}
             </div>
-            <div style="text-align:right;display:flex;gap:6px;justify-content:flex-end">
-              <button class="row-btn" data-dup="${b.id}" style="font-size:10px">Copy</button>
-              <button class="row-btn" style="color:#b03020" data-delete="${b.id}">Delete</button>
+            <div style="text-align:right;display:flex;justify-content:flex-end">
+              <button class="row-overflow-btn" data-menu="${b.id}" title="Actions" aria-label="Budget actions">⋯</button>
             </div>
           </div>`
         }).join('') : '<div class="empty-state">No budgets yet</div>'}
@@ -194,18 +193,23 @@ export class BudgetsView {
     `
     mc.querySelectorAll('.contact-row[data-open]').forEach(row => {
       row.addEventListener('click', e => {
-        if (e.target.closest('[data-delete]')) return
+        if (e.target.closest('[data-menu]')) return
         this.currentId = row.dataset.open
         this.app._pushAppState(`#budgets/${this.currentId}`, { view:'budgets', id:this.currentId })
         this.render(mc)
         this.app.updateTitle()
       })
     })
-    mc.querySelectorAll('[data-delete]').forEach(btn => {
-      btn.addEventListener('click', e => { e.stopPropagation(); this.deleteBudget(btn.dataset.delete, mc) })
-    })
-    mc.querySelectorAll('[data-dup]').forEach(btn => {
-      btn.addEventListener('click', e => { e.stopPropagation(); this.duplicateBudget(btn.dataset.dup, mc) })
+    mc.querySelectorAll('[data-menu]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation()
+        const id = btn.dataset.menu
+        this.app.openMenu(btn, [
+          { label: 'Duplicate / Copy', onClick: () => this.duplicateBudget(id, mc) },
+          { divider: true },
+          { label: 'Delete', danger: true, onClick: () => this.deleteBudget(id, mc) },
+        ])
+      })
     })
     this.bindNewModal(mc)
   }
@@ -394,7 +398,8 @@ export class BudgetsView {
   }
 
   async deleteBudget(id, mc) {
-    if (!await this.app.confirm({ title: 'Delete budget?', message: 'This cannot be undone.', confirmLabel: 'Delete' })) return
+    const b = this.app.budgets.find(x => x.id === id)
+    if (!await this.app.confirm({ title: b ? `Delete budget '${b.name}'?` : 'Delete budget?', message: 'This cannot be undone.', confirmLabel: 'Delete' })) return
     try {
       await deleteBudget(this.app.userId, id)
       this.app.budgets = this.app.budgets.filter(b => b.id !== id)
@@ -796,7 +801,7 @@ export class BudgetsView {
             <td style="text-align:right" id="bst-${si}">${gbpA(sn)}</td><td></td>
           </tr>
         </tbody></table>
-        <button class="add-line" data-add-line="${si}">+ add line item</button>
+        <button class="add-line" data-add-line="${si}">+ Add line item</button>
       </div>
     </div>`
   }

@@ -374,18 +374,21 @@ export const ROLE_PRESETS = {
     projects_view: true, projects_edit: true,
     budgets_view:  true, budgets_edit:  true,
     export:        true, settings:      true, manage_users: true,
+    vault:         true,
   },
   user: {
     contacts_view: true, contacts_edit: true,
     projects_view: true, projects_edit: true,
     budgets_view:  true, budgets_edit:  true,
     export:        true, settings:      true, manage_users: false,
+    vault:         false,
   },
   viewer: {
     contacts_view: true, contacts_edit: false,
     projects_view: true, projects_edit: false,
     budgets_view:  true, budgets_edit:  false,
     export:        false, settings:     false, manage_users: false,
+    vault:         false,
   },
 }
 
@@ -836,7 +839,14 @@ export async function getUserNotes(clerkId) {
 }
 export async function createUserNote(clerkId, data = {}) {
   const [row] = await db.insert(user_notes)
-    .values({ clerk_id: clerkId, title: data.title ?? '', content: data.content ?? '', sort_order: data.sort_order ?? 0 })
+    .values({
+      clerk_id: clerkId,
+      title: data.title ?? '',
+      content: data.content ?? '',
+      sort_order: data.sort_order ?? 0,
+      due_date: data.due_date ?? null,
+      reminder: data.reminder ?? false,
+    })
     .returning()
   return row
 }

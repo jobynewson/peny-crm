@@ -72,6 +72,18 @@ index.html                # App HTML shell
 - View modules export a `render()` function that returns HTML
 - `app.js` mounts the active view into the DOM
 
+### Styling / design system
+- ALL global styles live in `src/style.css` — design tokens (CSS variables),
+  shell (sidebar/topbar), shared components (panels, modals, kanban, forms,
+  toasts), and PDF print styles. There is no injected stylesheet in JS.
+- Views style themselves with inline styles that reference the CSS variables
+  (`var(--bg-primary)`, `var(--accent)`, `var(--radius-md)`, …). Always use
+  the variables — never hardcode colours — so light/dark themes both work.
+- Light + dark themes are driven by `data-theme` on `<html>` (set before
+  first paint by an inline script in `index.html`; toggled in the topbar).
+- The sidebar is always dark in both themes; it uses the `--sb-*` tokens.
+- Typeface is Inter (loaded in `index.html`), falling back to system fonts.
+
 ## Development Workflow
 
 ```bash

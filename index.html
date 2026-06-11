@@ -4,6 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Slate</title>
+  <!-- Apply saved theme before first paint to avoid a light/dark flash -->
+  <script>
+    try { document.documentElement.setAttribute('data-theme', localStorage.getItem('slate-theme') || 'dark') } catch (e) {}
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
@@ -11,7 +18,10 @@
   <!-- Auth screen — shown when not signed in -->
   <div id="auth">
     <div id="auth-inner">
-      <img src="/slate-logo.png" alt="Slate" id="auth-logo" />
+      <div id="auth-brand">
+        <img src="/slate-logo.png" alt="Slate" id="auth-logo" />
+        <div id="auth-product">Slate</div>
+      </div>
       <div id="sign-in"></div>
     </div>
   </div>
