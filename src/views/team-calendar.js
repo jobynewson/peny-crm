@@ -86,6 +86,7 @@ export class TeamCalendarView {
             <button id="tc-fp-next"  style="${navBtn}" title="Next month">›</button>
           </div>
           <div id="tc-fp-month" style="font-size:18px;font-weight:600;color:var(--text-primary)">${esc(label)}</div>
+          <button id="tc-fp-add" class="btn-primary" style="margin-left:auto">+ Add entry</button>
         </div>
         <div id="tc-grid-wrap"><div style="font-size:12px;color:var(--text-tertiary);padding:8px 0">Loading…</div></div>
       </div>`
@@ -93,6 +94,7 @@ export class TeamCalendarView {
     section.querySelector('#tc-fp-prev')?.addEventListener('click',  () => { this._monthOffset--; this._renderFullPage(section) })
     section.querySelector('#tc-fp-next')?.addEventListener('click',  () => { this._monthOffset++; this._renderFullPage(section) })
     section.querySelector('#tc-fp-today')?.addEventListener('click', () => { this._monthOffset = 0; this._renderFullPage(section) })
+    section.querySelector('#tc-fp-add')?.addEventListener('click',   () => this._openEntryModal(null, section))
 
     this._loadAndRenderGrid(section)
     this._bindClipboardEscape()
@@ -238,8 +240,9 @@ export class TeamCalendarView {
                     style="padding:3px 4px;border-right:1px solid var(--border-light);height:34px;
                     vertical-align:middle;cursor:pointer;position:relative;box-sizing:border-box">
                     <div class="tc-add-hint" style="position:absolute;inset:0;display:flex;align-items:center;
-                      justify-content:center;opacity:0;font-size:16px;color:var(--text-tertiary);
-                      transition:opacity 0.1s;pointer-events:none;user-select:none">+</div>
+                      justify-content:center;opacity:0;transition:opacity 0.1s;pointer-events:none;user-select:none">
+                      <span style="width:18px;height:18px;border-radius:50%;background:var(--accent-subtle);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:13px;line-height:1">+</span>
+                    </div>
                   </td>`).join('')}
               </tr>`
             }).join('')}
@@ -247,10 +250,8 @@ export class TeamCalendarView {
         </table>
         <div id="tc-overlay" style="position:absolute;inset:0;pointer-events:none;overflow:hidden"></div>
       </div>
-      <div style="margin-top:6px;font-size:11px;color:var(--text-tertiary);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-        <span>Click cell to add · Click entry to edit · Drag to move · Drag edges to resize</span>
-        ${this._shootsCache?.length ? `<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;border:1.5px dashed #4CAF50"></span> Auto from shoot plan</span>` : ''}
-        ${this._ppsPhasesCache?.length ? `<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;border:1.5px dashed #C47E3A"></span> Auto from post production</span>` : ''}
+      <div style="margin-top:6px;font-size:11px;color:var(--text-tertiary);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <button id="tc-help" class="legend-help-btn" title="How the calendar works" aria-label="How the calendar works">?</button>
         ${this._clipboard ? `<span style="color:var(--accent)">📋 Paste active</span>` : ''}
       </div>`
   }
@@ -407,8 +408,25 @@ export class TeamCalendarView {
     })
   }
 
+  _legendHtml() {
+    const row = (html) => `<div class="legend-row">${html}</div>`
+    return `
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-tertiary);margin-bottom:8px">How the calendar works</div>
+      ${row('<b>Click</b> an empty cell to add an entry')}
+      ${row('<b>Click</b> an entry to edit it')}
+      ${row('<b>Drag</b> an entry to move it')}
+      ${row('<b>Drag</b> the top/bottom edge to resize')}
+      ${this._shootsCache?.length ? row('<span style="display:inline-block;width:8px;height:8px;border-radius:50%;border:1.5px dashed #4CAF50"></span> Auto from shoot plan') : ''}
+      ${this._ppsPhasesCache?.length ? row('<span style="display:inline-block;width:8px;height:8px;border-radius:50%;border:1.5px dashed #C47E3A"></span> Auto from post production') : ''}`
+  }
+
   _bindGrid(gridWrap, section) {
     this._lastDays = this._activeDays()
+
+    gridWrap.querySelector('#tc-help')?.addEventListener('click', e => {
+      e.stopPropagation()
+      this.app.openPopover(e.currentTarget, this._legendHtml())
+    })
 
     // ── Cell: click to add, drag-over highlight ──
     gridWrap.querySelectorAll('.tc-cell').forEach(cell => {
@@ -705,7 +723,7 @@ export class TeamCalendarView {
         `display:flex;align-items:${oneRow ? 'center' : 'flex-start'};gap:4px;padding:4px 6px;` +
         `background:${col}22;border:1px ${isGhost ? 'dashed' : 'solid'} ${col}88;border-radius:var(--radius-md);` +
         `${isGhost ? 'opacity:0.85;' : ''}` +
-        `cursor:${isGhost && e._navTarget ? 'pointer' : isGhost ? 'default' : 'pointer'};` +
+        `cursor:${isGhost && e._navTarget ? 'pointer' : isGhost ? 'default' : 'grab'};` +
         `box-sizing:border-box;overflow:hidden;pointer-events:all;z-index:2`
 
       chip.innerHTML = `

@@ -75,7 +75,7 @@ export class PostProductionView {
               ${(this.app.allUsers || []).map(u => `<option value="${u.id}" ${u.id === (pps.lead_assignee_id || '') ? 'selected' : ''}>${esc(u.name || u.email.split('@')[0])}</option>`).join('')}
             </select>
           </div>
-          <span style="font-size:11px;color:var(--text-tertiary);margin-left:auto">Hover a cell for + to add a block · click a block to edit · drag edges to resize · drag block to move</span>
+          <button id="pps-help" class="legend-help-btn" style="margin-left:auto" title="How the schedule works" aria-label="How the schedule works">?</button>
         </div>
 
         <div id="pps-grid-wrap">
@@ -384,7 +384,7 @@ export class PostProductionView {
                   const { dayBlock, firstByBlock, lastByBlock } = phaseData[pi]
                   const block = dayBlock[ds]
                   if (!block) return `<td class="pps-empty-cell" data-phase-id="${ph.id}" data-date="${dkey}" style="border-left:1px solid var(--border-light);cursor:pointer;text-align:center;vertical-align:middle">
-                    <span class="pps-add-hint" style="opacity:0;font-size:14px;line-height:1;color:${ph.color || '#C47E3A'};transition:opacity 0.1s;pointer-events:none;user-select:none">+</span>
+                    <span class="pps-add-hint" style="opacity:0;width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:13px;line-height:1;color:${ph.color || '#C47E3A'};border:1px solid ${ph.color || '#C47E3A'};transition:opacity 0.1s;pointer-events:none;user-select:none">+</span>
                   </td>`
                   const isFirst = firstByBlock[block.id] === ds
                   const isLast  = lastByBlock[block.id]  === ds
@@ -417,6 +417,17 @@ export class PostProductionView {
   _bindContent(container, pps, project) {
     container.querySelector('#pps-add-phase')?.addEventListener('click', () => {
       this._openColumnModal(null, pps, project, container)
+    })
+
+    container.querySelector('#pps-help')?.addEventListener('click', e => {
+      e.stopPropagation()
+      const row = html => `<div class="legend-row">${html}</div>`
+      this.app.openPopover(e.currentTarget, `
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-tertiary);margin-bottom:8px">How the schedule works</div>
+        ${row('<b>Hover</b> an empty cell, then click <b>+</b> to add a block')}
+        ${row('<b>Click</b> a block to edit it')}
+        ${row('<b>Drag</b> a block to move it')}
+        ${row('<b>Drag</b> the top/bottom edge to resize')}`)
     })
 
     container.querySelector('#pps-export-pdf')?.addEventListener('click', () => {

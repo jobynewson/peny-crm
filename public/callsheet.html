@@ -103,6 +103,9 @@
 
     const dates = Array.isArray(sheet.shoot_dates) ? sheet.shoot_dates.filter(d=>d.date).sort((a,b)=>a.date<b.date?-1:1) : []
     const showCallTimes = sheet.show_call_times !== false
+    // Per-section visibility — a section is shown unless explicitly toggled off in the planner
+    const sectionVisibility = (sheet.section_visibility && typeof sheet.section_visibility === 'object') ? sheet.section_visibility : {}
+    const showSec = key => sectionVisibility[key] !== false
     const hotels = Array.isArray(sheet.hotels) ? sheet.hotels.filter(h=>h.name) : []
     const equipment = Array.isArray(sheet.equipment) ? sheet.equipment.filter(e=>e.category) : []
     const csNotes = sheet.crew_section_notes || {}
@@ -419,21 +422,21 @@
         ${heroHTML}
       </div>
       <div class="wrap">
-        ${notesCallout}
-        ${schedHTML}
+        ${showSec('notes') ? notesCallout : ''}
+        ${showSec('schedule') ? schedHTML : ''}
         ${studioHTML}
-        ${locHTML}
-        ${extraLocsHTML}
-        ${hotelsHTML}
-        ${renderCrewSection('Client', 'client')}
-        ${renderCrewSection('On Camera', 'on_camera')}
-        ${renderCrewSection('Crew', 'crew')}
-        ${equipHTML}
-        ${cateringHTML}
-        ${emergencyHTML}
-        ${insuranceHTML}
-        ${hsHTML}
-        ${invoicingHTML}
+        ${showSec('location') ? locHTML : ''}
+        ${showSec('locations') ? extraLocsHTML : ''}
+        ${showSec('hotels') ? hotelsHTML : ''}
+        ${showSec('crew-client') ? renderCrewSection('Client', 'client') : ''}
+        ${showSec('crew-on_camera') ? renderCrewSection('On Camera', 'on_camera') : ''}
+        ${showSec('crew-crew') ? renderCrewSection('Crew', 'crew') : ''}
+        ${showSec('equipment') ? equipHTML : ''}
+        ${showSec('catering') ? cateringHTML : ''}
+        ${showSec('emergency') ? emergencyHTML : ''}
+        ${showSec('insurance') ? insuranceHTML : ''}
+        ${showSec('hs') ? hsHTML : ''}
+        ${showSec('invoicing') ? invoicingHTML : ''}
         <div style="text-align:center;margin-top:32px;font-size:11px;color:var(--text-ter)">Powered by Slate</div>
       </div>`
   </script>

@@ -1,6 +1,7 @@
 import { createProject, updateProject, deleteProject, linkBudgetToProject, unlinkBudgetFromProject, logActivity, getActivityLog, getTimeEntries, setTrackToken, deleteTimeEntry, getWorkLog, addWorkLogEntry, deleteWorkLogEntry } from '../db/client.js'
 import { renderPlanningTab, bindPlanningTab } from './planning-tab.js'
 import { PostProductionView } from './post-production.js'
+import { continuationScript, PDF_CONTINUED_CSS, a4ContentWidthPx, a4ContentHeightPx } from '../utils/pdfContinuation.js'
 
 const STAGES = ['Enquiry','Pre-production','In Production','Post','Delivered']
 const RETAINER_STAGE = 'Retainer'
@@ -444,6 +445,8 @@ export class ProjectsView {
     if (!p) { this.currentId = null; this.renderKanban(mc); return }
 
     if (p.is_retainer && p.retainer_start) this._checkRetainerReset(p)
+    // Files isn't built yet — never land on it (e.g. from an old URL).
+    if (this._pvTab === 'files') this._pvTab = 'overview'
     const tab = this._pvTab || 'overview'
     const { contacts, budgets } = this.app
     const cl = contacts.find(c => c.id === p.client_id)
@@ -458,7 +461,7 @@ export class ProjectsView {
       { id: 'post-production',  label: '🎞 Post Production' },
       { id: 'budget',           label: '💰 Budget' },
       { id: 'planning',         label: '🗂 Planning' },
-      { id: 'files',            label: '📁 Files' },
+      { id: 'files',            label: '📁 Files', disabled: true },
       { id: 'notes',            label: '💬 Notes' },
       { id: 'story-plans',      label: '🎬 Story Plans' },
     ].filter(t => !t.hide)
@@ -487,7 +490,9 @@ export class ProjectsView {
         <div class="proj-main">
           <div style="display:flex;align-items:center;gap:0;border-bottom:1px solid var(--border-light);margin-bottom:20px">
             <div class="proj-tab-bar" style="flex:1;border-bottom:none">
-              ${TABS.map(t => `<button class="proj-tab ${t.id===tab?'active':''}" data-tab="${t.id}">${t.label}</button>`).join('')}
+              ${TABS.map(t => t.disabled
+                ? `<button class="proj-tab proj-tab--disabled" disabled title="Coming soon">${t.label} <span class="proj-tab-soon">Soon</span></button>`
+                : `<button class="proj-tab ${t.id===tab?'active':''}" data-tab="${t.id}">${t.label}</button>`).join('')}
             </div>
             <button class="proj-sidebar-toggle" id="sidebar-toggle" title="${sidebarCollapsed?'Show sidebar':'Hide sidebar'}">${sidebarCollapsed?'▷':'◁'}</button>
           </div>
@@ -1073,7 +1078,7 @@ export class ProjectsView {
       } catch(e) { console.error(e); this.app.toast('Error duplicating project') }
     })
     mc.querySelector('#pv-delete')?.addEventListener('click', async () => {
-      if (!await this.app.confirm({ title: `Delete "${p.name}"?`, message: 'This cannot be undone.', confirmLabel: 'Delete' })) return
+      if (!await this.app.confirm({ title: `Delete project '${p.name}'?`, message: 'This cannot be undone.', confirmLabel: 'Delete' })) return
       try {
         await deleteProject(this.app.userId, p.id)
         this.app.projects = this.app.projects.filter(x => x.id !== p.id)
@@ -1257,9 +1262,21 @@ export class ProjectsView {
       sh.equipment = Array.isArray(sh.equipment) ? sh.equipment : []
       sh.crew_section_notes = (sh.crew_section_notes && typeof sh.crew_section_notes === 'object') ? sh.crew_section_notes : {}
       sh.catering = (sh.catering && typeof sh.catering === 'object') ? sh.catering : {}
+      sh.section_visibility = (sh.section_visibility && typeof sh.section_visibility === 'object') ? sh.section_visibility : {}
       sh.shoot_camera_setups = Array.isArray(sh.shoot_camera_setups) ? sh.shoot_camera_setups : []
       this._renderShootEditor(mc, p, sh)
     } catch(e) { console.error(e); this.app.toast('Error loading shoot') }
+  }
+
+  // A small "in callsheet" toggle for a section accordion header.
+  // When unchecked, the matching section is omitted from the PDF and web callsheet.
+  _sectionToggle(sh, key) {
+    const vis = (sh.section_visibility && typeof sh.section_visibility === 'object') ? sh.section_visibility : {}
+    const on = vis[key] !== false
+    return `<label class="se-sec-toggle" title="Include this section in the PDF &amp; web callsheet" onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:5px;margin-right:8px;cursor:pointer;user-select:none;flex-shrink:0">
+      <input type="checkbox" data-section-toggle="${key}" ${on?'checked':''} style="margin:0;cursor:pointer" />
+      <span style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px">In callsheet</span>
+    </label>`
   }
 
   _renderShootEditor(mc, p, sh) {
@@ -1294,6 +1311,7 @@ export class ProjectsView {
               <div class="bsec-head enabled" data-se-panel="dates">
                 <span class="bsec-name" style="flex:1">Shoot dates &amp; general call times</span>
                 <button class="btn-secondary" id="se-add-day" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add day</button>
+                ${this._sectionToggle(sh,'dates')}
                 <span class="bsec-chev">▶</span>
               </div>
               <div class="bsec-body">
@@ -1319,6 +1337,7 @@ export class ProjectsView {
               <div class="bsec-head enabled" data-se-panel="location">
                 <span class="bsec-name" style="flex:1">Primary location</span>
                 <button class="btn-secondary" id="se-fetch-weather" style="font-size:11px;padding:3px 10px;margin-right:8px">🌤 Weather</button><button class="btn-secondary" id="se-find-nearby" style="font-size:11px;padding:3px 10px;margin-right:8px">📍 Nearby</button>
+                ${this._sectionToggle(sh,'location')}
                 <span class="bsec-chev">▶</span>
               </div>
               <div class="bsec-body">
@@ -1337,7 +1356,7 @@ export class ProjectsView {
             <div class="bsec-wrap" id="sep-emergency">
               <div class="bsec-head enabled" data-se-panel="emergency">
                 <span class="bsec-name" style="flex:1">Emergency services</span>
-                
+                ${this._sectionToggle(sh,'emergency')}
                 <span class="bsec-chev">▶</span>
               </div>
               <div class="bsec-body">
@@ -1357,6 +1376,7 @@ export class ProjectsView {
               <div class="bsec-head enabled" data-se-panel="locations">
                 <span class="bsec-name" style="flex:1">Additional locations</span>
                 <button class="btn-secondary" id="se-add-loc" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add</button>
+                ${this._sectionToggle(sh,'locations')}
                 <span class="bsec-chev">▶</span>
               </div>
               <div class="bsec-body">
@@ -1370,6 +1390,7 @@ export class ProjectsView {
               <div class="bsec-head enabled" data-se-panel="schedule">
                 <span class="bsec-name" style="flex:1">Schedule / run of show</span>
                 <button class="btn-secondary" id="se-add-sched" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add row</button>
+                ${this._sectionToggle(sh,'schedule')}
                 <span class="bsec-chev">▶</span>
               </div>
               <div class="bsec-body">
@@ -1389,6 +1410,7 @@ export class ProjectsView {
                   <span class="bsec-name" style="flex:1">${label}</span>
                   ${fillBtn}
                   <button class="btn-secondary" data-add-crew-type="${type}" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add</button>
+                  ${this._sectionToggle(sh,`crew-${type}`)}
                   <span class="bsec-chev">▶</span>
                 </div>
                 <div class="bsec-body">
@@ -1406,6 +1428,7 @@ export class ProjectsView {
               <div class="bsec-head enabled" data-se-panel="hotels">
                 <span class="bsec-name" style="flex:1">Accommodation</span>
                 <button class="btn-secondary" id="se-add-hotel" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add hotel</button>
+                ${this._sectionToggle(sh,'hotels')}
                 <span class="bsec-chev">▶</span>
               </div>
               <div class="bsec-body">
@@ -1437,6 +1460,7 @@ export class ProjectsView {
               <div class="bsec-head enabled" data-se-panel="equipment">
                 <span class="bsec-name" style="flex:1">Equipment</span>
                 <button class="btn-secondary" id="se-add-equip" style="font-size:11px;padding:3px 10px;margin-right:8px">+ Add category</button>
+                ${this._sectionToggle(sh,'equipment')}
                 <span class="bsec-chev">▶</span>
               </div>
               <div class="bsec-body">
@@ -1449,7 +1473,7 @@ export class ProjectsView {
             <div class="bsec-wrap" id="sep-catering">
               <div class="bsec-head enabled" data-se-panel="catering">
                 <span class="bsec-name" style="flex:1">Catering</span>
-                
+                ${this._sectionToggle(sh,'catering')}
                 <span class="bsec-chev">▶</span>
               </div>
               <div class="bsec-body">
@@ -1481,7 +1505,7 @@ export class ProjectsView {
             <div class="bsec-wrap" id="sep-insurance">
               <div class="bsec-head enabled" data-se-panel="insurance">
                 <span class="bsec-name" style="flex:1">Insurance</span>
-                
+                ${this._sectionToggle(sh,'insurance')}
                 <span class="bsec-chev ">▶</span>
               </div>
               <div class="bsec-body ">
@@ -1507,7 +1531,7 @@ export class ProjectsView {
             <div class="bsec-wrap" id="sep-invoicing">
               <div class="bsec-head enabled" data-se-panel="invoicing">
                 <span class="bsec-name" style="flex:1">Invoicing</span>
-                
+                ${this._sectionToggle(sh,'invoicing')}
                 <span class="bsec-chev ">▶</span>
               </div>
               <div class="bsec-body ">
@@ -1523,7 +1547,7 @@ export class ProjectsView {
             <div class="bsec-wrap" id="sep-hs">
               <div class="bsec-head enabled" data-se-panel="hs">
                 <span class="bsec-name" style="flex:1">Health &amp; safety notes</span>
-                
+                ${this._sectionToggle(sh,'hs')}
                 <span class="bsec-chev">▶</span>
               </div>
               <div class="bsec-body">
@@ -1549,7 +1573,7 @@ export class ProjectsView {
             <div class="bsec-wrap" id="sep-notes">
               <div class="bsec-head enabled" data-se-panel="notes">
                 <span class="bsec-name" style="flex:1">Notes</span>
-                
+                ${this._sectionToggle(sh,'notes')}
                 <span class="bsec-chev">▶</span>
               </div>
               <div class="bsec-body">
@@ -1943,6 +1967,8 @@ export class ProjectsView {
         equipment: sh.equipment || [],
         crew_section_notes: sh.crew_section_notes || {},
         catering: sh.catering || {},
+        section_visibility: sh.section_visibility || {},
+        show_call_times:   sh.show_call_times !== false,
         shoot_camera_setups: sh.shoot_camera_setups || [],
         risk_assessment: sh.risk_assessment || {},
         client_display:    overlay.querySelector('#se-client-display')?.value.trim() || null,
@@ -1999,6 +2025,18 @@ export class ProjectsView {
         const chev = wrap?.querySelector('.bsec-chev')
         body?.classList.toggle('open')
         chev?.classList.toggle('open')
+      })
+    })
+
+    // Per-section "In callsheet" toggles — control inclusion in the PDF & web callsheet
+    if (!sh.section_visibility || typeof sh.section_visibility !== 'object') sh.section_visibility = {}
+    overlay.querySelectorAll('[data-section-toggle]').forEach(cb => {
+      const wrap = cb.closest('.bsec-wrap')
+      if (wrap && !cb.checked) wrap.style.opacity = '0.6'
+      cb.addEventListener('change', () => {
+        sh.section_visibility[cb.dataset.sectionToggle] = cb.checked
+        if (wrap) wrap.style.opacity = cb.checked ? '' : '0.6'
+        save()
       })
     })
 
@@ -2791,7 +2829,29 @@ export class ProjectsView {
     this._bindShootHotels(overlay, sh, save)
   }
 
-  _generateShootPDF(sh, p) {
+  // PDFs render in a window loaded from a blob: URL, where relative/absolute-path
+  // image sources (e.g. "/peny-logo.png") don't resolve against the app origin —
+  // so branding never loads. Inline logos as base64 data URIs so they render
+  // reliably (and are present before print()), falling back to an origin-qualified
+  // absolute URL if the fetch fails.
+  async _imgToDataUri(src) {
+    try {
+      const abs = new URL(src, location.origin).href
+      const resp = await fetch(abs)
+      if (!resp.ok) throw new Error('logo fetch failed')
+      const blob = await resp.blob()
+      return await new Promise((resolve, reject) => {
+        const fr = new FileReader()
+        fr.onload  = () => resolve(fr.result)
+        fr.onerror = reject
+        fr.readAsDataURL(blob)
+      })
+    } catch {
+      try { return new URL(src, location.origin).href } catch { return src }
+    }
+  }
+
+  async _generateShootPDF(sh, p) {
     const w = window.open('', '_blank')
     if (!w) { this.app.toast('Pop-up blocked — allow pop-ups and try again'); return }
 
@@ -2801,7 +2861,16 @@ export class ProjectsView {
     const fmtDT   = s => { try { return new Date(s).toLocaleString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) } catch { return String(s) } }
 
     const studio = this.app.settings || {}
-    const logoUrl = studio.logo_url || '/peny-logo.png'
+
+    // Inline the logos as data URIs so the branding renders in the blob: document.
+    const [logoUrl, footerLogoUrl] = await Promise.all([
+      this._imgToDataUri(studio.logo_url || '/peny-logo.png'),
+      this._imgToDataUri('/peny-logo.png'),
+    ])
+
+    // Per-section visibility — a section is shown unless explicitly toggled off
+    const vis = (sh.section_visibility && typeof sh.section_visibility === 'object') ? sh.section_visibility : {}
+    const showSec = key => vis[key] !== false
 
     // Cascade insurance: shoot → project → settings
     const insurer = {
@@ -2907,7 +2976,7 @@ export class ProjectsView {
       : ''
 
     // CLIENT — job title shown in the content column (right), not as a label
-    const secClient = (client_display || clientCrew.length) ? [
+    const secClient = showSec('crew-client') && (client_display || clientCrew.length) ? [
       hr(),
       row('Client', client_display||'', false),
       ...clientCrew.map((c,i) => personRow(c, '', true)),
@@ -2915,7 +2984,7 @@ export class ProjectsView {
     ].join('') : ''
 
     // TALENT — role inline beside the name, phone kept on a single line
-    const secTalent = talentCrew.length ? [
+    const secTalent = showSec('crew-on_camera') && talentCrew.length ? [
       hr(),
       ...talentCrew.map((c,i) => personRow(c, i===0 ? 'Talent' : '', false)),
     ].join('') : ''
@@ -2929,7 +2998,7 @@ export class ProjectsView {
     ].join('') : ''
 
     // SHOOT DATES
-    const secDates = effDates.length ? [
+    const secDates = showSec('dates') && effDates.length ? [
       hr(),
       ...effDates.map((d,i) => {
         const label = i===0 ? 'Shoot dates' : ''
@@ -2939,7 +3008,7 @@ export class ProjectsView {
     ].join('') : ''
 
     // LOCATION
-    const secLocation = (sh.location_name||sh.location_address||sh.location_map_link) ? [
+    const secLocation = showSec('location') && (sh.location_name||sh.location_address||sh.location_map_link) ? [
       hr(),
       row('Location address', sh.location_name ? `<strong>${esc_(sh.location_name)}</strong>` : '', true),
       sh.location_address ? cont(sh.location_address) : '',
@@ -2949,8 +3018,25 @@ export class ProjectsView {
       sh.weather_text     ? `<tr><td class="lbl"></td><td class="val dim">Weather: ${esc_(sh.weather_text)}</td></tr>` : '',
     ].join('') : ''
 
+    // ADDITIONAL LOCATIONS — included when the section's "In callsheet" box is ticked
+    const extraLocs = (Array.isArray(sh.locations) ? sh.locations : []).filter(l => l.name || l.address)
+    const secLocations = showSec('locations') && extraLocs.length ? [
+      hr(),
+      ...extraLocs.flatMap((l, li) => {
+        const meta = [
+          l.move_time ? `Move: ${esc_(l.move_time)}` : '',
+          l.date      ? fmtDate(l.date)              : '',
+        ].filter(Boolean).join(' &emsp; ')
+        return [
+          `<tr><td class="lbl">${li===0?'Additional locations':''}</td><td class="val">${l.name?`<strong>${esc_(l.name)}</strong>`:''}${meta?`${l.name?' &emsp; ':''}<span class="dim">${meta}</span>`:''}</td></tr>`,
+          l.address ? cont(l.address) : '',
+          l.notes   ? `<tr><td class="lbl"></td><td class="val dim">${esc_(l.notes)}</td></tr>` : '',
+        ].join('')
+      }),
+    ].join('') : ''
+
     // HOTELS
-    const secHotels = hotels.length ? [
+    const secHotels = showSec('hotels') && hotels.length ? [
       hr(),
       ...hotels.flatMap((h, hi) => {
         const isFirst = hi === 0
@@ -2975,7 +3061,7 @@ export class ProjectsView {
 
     // SCHEDULE — grouped by date if multi-day
     const secSchedule = (() => {
-      if (!schedule.length) return ''
+      if (!showSec('schedule') || !schedule.length) return ''
       const fmtDateShort = d => d ? new Date(d).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'}) : ''
       const hasDateField = schedule.some(s => s.date)
       if (!hasDateField || effDates.length <= 1) {
@@ -3006,7 +3092,7 @@ export class ProjectsView {
     })()
 
     // MAIN UNIT
-    const secMainUnit = mainCrew.length || csNotes.crew ? [
+    const secMainUnit = showSec('crew-crew') && (mainCrew.length || csNotes.crew) ? [
       hr(),
       `<tr class="section-head"><td class="lbl">Main unit</td><td class="val"></td></tr>`,
       ...mainCrew.map(c => crewRow(c)),
@@ -3014,20 +3100,20 @@ export class ProjectsView {
     ].join('') : ''
 
     // ON CAMERA notes
-    const secTalentNotes = csNotes.on_camera ? [
+    const secTalentNotes = showSec('crew-on_camera') && csNotes.on_camera ? [
       hr(),
       `<tr><td class="lbl">On camera</td><td class="val" style="font-style:italic;color:#666;font-size:10px;padding:4px 6px">${esc_(csNotes.on_camera)}</td></tr>`,
     ].join('') : ''
 
     // CATERING
     const catering = (sh.catering && typeof sh.catering === 'object') ? sh.catering : {}
-    const secCatering = (catering.supplier || catering.notes) ? [
+    const secCatering = showSec('catering') && (catering.supplier || catering.notes) ? [
       hr(),
       `<tr><td class="lbl">Catering</td><td class="val">${catering.supplier?`<span style="font-weight:600">C/O ${esc_(catering.supplier)}</span><br>`:''}${catering.notes?`<span class="dim">${nl(catering.notes)}</span>`:''}</td></tr>`,
     ].join('') : ''
 
     // EQUIPMENT
-    const secEquipment = equipment.length ? [
+    const secEquipment = showSec('equipment') && equipment.length ? [
       hr(),
       `<tr class="section-head"><td class="lbl">Equipment</td><td class="val"></td></tr>`,
       ...equipment.flatMap((e, ei) => [
@@ -3036,7 +3122,7 @@ export class ProjectsView {
     ].join('') : ''
 
     // INSURANCE
-    const secInsurance = insurer.name ? [
+    const secInsurance = showSec('insurance') && insurer.name ? [
       hr(),
       `<tr><td class="lbl">Insurance</td><td class="val"><strong>${esc_(insurer.name)}</strong></td></tr>`,
       insurer.address ? `<tr><td class="lbl"></td><td class="val dim">${esc_(insurer.address)}</td></tr>` : '',
@@ -3045,7 +3131,7 @@ export class ProjectsView {
     ].join('') : ''
 
     // HOSPITAL / EMERGENCY SERVICES
-    const secEmergency = (sh.nearest_hospital_name||sh.nearest_police_name||sh.nearest_fire_name) ? [
+    const secEmergency = showSec('emergency') && (sh.nearest_hospital_name||sh.nearest_police_name||sh.nearest_fire_name) ? [
       hr(),
       sh.nearest_hospital_name ? `<tr><td class="lbl">Hospital A&amp;E</td><td class="val"><strong>${esc_(sh.nearest_hospital_name)}</strong>${sh.nearest_hospital_address?`<br><span class="dim">${esc_(sh.nearest_hospital_address)}</span>`:''}${sh.nearest_hospital_phone?`<br><span class="dim">📞 ${esc_(sh.nearest_hospital_phone)}</span>`:''}</td></tr>` : '',
       sh.nearest_police_name   ? `<tr><td class="lbl">Police</td><td class="val"><strong>${esc_(sh.nearest_police_name)}</strong>${sh.nearest_police_address?`<br><span class="dim">${esc_(sh.nearest_police_address)}</span>`:''}${sh.nearest_police_phone?`<br><span class="dim">📞 ${esc_(sh.nearest_police_phone)}</span>`:''}</td></tr>` : '',
@@ -3054,19 +3140,19 @@ export class ProjectsView {
     ].join('') : ''
 
     // H&S NOTES
-    const secHS = sh.hs_notes ? [
+    const secHS = showSec('hs') && sh.hs_notes ? [
       hr(),
       `<tr><td class="lbl">H&amp;S notes</td><td class="val">${nl(sh.hs_notes)}</td></tr>`,
     ].join('') : ''
 
     // SHOOT NOTES
-    const secNotes = sh.notes ? [
+    const secNotes = showSec('notes') && sh.notes ? [
       hr(),
       `<tr><td class="lbl">Notes</td><td class="val" style="background:#fffdf0">${nl(sh.notes)}</td></tr>`,
     ].join('') : ''
 
     // INVOICING
-    const secInvoicing = (invoicing.email||invoicing.job_ref||invoicing.boilerplate) ? [
+    const secInvoicing = showSec('invoicing') && (invoicing.email||invoicing.job_ref||invoicing.boilerplate) ? [
       hr(),
       `<tr class="section-head"><td class="lbl">Invoicing</td><td class="val"></td></tr>`,
       invoicing.email   ? `<tr><td class="lbl">Email address</td><td class="val"><a href="mailto:${esc_(invoicing.email)}" style="color:#1a1a1a">${esc_(invoicing.email)}</a></td></tr>` : '',
@@ -3128,6 +3214,7 @@ export class ProjectsView {
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact }
           tr { page-break-inside: avoid }
         }
+        ${PDF_CONTINUED_CSS}
       </style>
     </head><body>
 
@@ -3138,17 +3225,24 @@ export class ProjectsView {
 
     <table class="cs">
       ${[secJobName, secClient, secTalent, secTalentNotes, secProduction, secDates,
-         secLocation, secHotels, secSchedule, secMainUnit, secEquipment, secCatering,
+         secLocation, secLocations, secHotels, secSchedule, secMainUnit, secEquipment, secCatering,
          secInsurance, secEmergency, secHS, secNotes, secInvoicing]
         .map(s => s ? `<tbody class="sec">${s}</tbody>` : '').join('')}
     </table>
 
     <div class="pdf-footer">
-      <img src="/peny-logo.png" alt="Peny" onerror="this.style.display='none'" />
+      <img src="${footerLogoUrl}" alt="Peny" onerror="this.style.display='none'" />
       <span>Produced by Peny &middot; wearepeny.com</span>
     </div>
 
-    <script>window.onload = () => window.print()<\/script>
+    ${continuationScript({
+      rootSelector: 'body',
+      rootWidthPx: a4ContentWidthPx(16),
+      pageHeightPx: a4ContentHeightPx(14),
+      blockSelector: 'tbody.sec',
+      mode: 'table',
+      autoPrint: true,
+    })}
     </body></html>`
 
     const blob = new Blob([html], { type: 'text/html' })
@@ -3508,6 +3602,8 @@ export class ProjectsView {
                   Any unused hours from the previous period are added to this period's allocation. Overruns are deducted. Each item is tracked independently.
                 </div>
               </div>
+
+              <button class="btn-secondary" id="pe-export-retainer" style="font-size:12px;width:100%;margin-top:12px">📄 Export proposal PDF</button>
             </div>` : ''}
           </div>
           <div class="proj-panel">
@@ -3641,14 +3737,20 @@ export class ProjectsView {
   }
 
   // Check if the retainer period has rolled over and reset monthly deliverable done states
-  _exportRetainerPDF(p) {
+  async _exportRetainerPDF(p) {
+    const w = window.open('', '_blank')
+    if (!w) { this.app.toast('Pop-up blocked — allow pop-ups and try again'); return }
+
     const s   = this.app.settings || {}
     const cl  = this.app.contacts.find(c => c.id === p.client_id)
     const today = new Date()
     const months = ['January','February','March','April','May','June','July','August','September','October','November','December']
     const dateStr = today.getDate()+' '+months[today.getMonth()]+' '+today.getFullYear()
-    const LOGO_WHITE = '/slate-logo-white.png'
-    const LOGO_BLACK = '/slate-logo.png'
+    // Inline logos as data URIs so the branding renders in the blob: document.
+    const [LOGO_WHITE, LOGO_BLACK] = await Promise.all([
+      this._imgToDataUri('/slate-logo-white.png'),
+      this._imgToDataUri('/slate-logo.png'),
+    ])
     const periodLabel = { week:'week', month:'month', quarter:'quarter', half:'half year', year:'year' }
     const periodMult  = { week:4.33, month:1, quarter:1/3, half:1/6, year:1/12 }
     const gbpA = n => '£'+n.toLocaleString('en-GB',{minimumFractionDigits:0,maximumFractionDigits:2})
@@ -3674,7 +3776,17 @@ export class ProjectsView {
       </tr>`
     }).join('')
 
-    const html = `
+    const esc_ = str => String(str??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    const html = `<!DOCTYPE html><html><head>
+      <meta charset="UTF-8">
+      <title>Retainer Proposal — ${esc_(p.name)}</title>
+      <style>
+        @page { size: A4 portrait; margin: 0 }
+        * { box-sizing: border-box }
+        html, body { margin: 0; padding: 0 }
+        @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact } }
+      </style>
+    </head><body>
       <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#1a1a18;background:#fff">
 
         <!-- Cover -->
@@ -3753,12 +3865,15 @@ export class ProjectsView {
             <span>${dateStr}${s.vat_number?' · VAT: '+s.vat_number:''}</span>
           </div>
         </div>
-      </div>`
+      </div>
 
-    let ts = document.getElementById('pdf-topsheet')
-    if (!ts) { ts = document.createElement('div'); ts.id = 'pdf-topsheet'; document.body.appendChild(ts) }
-    ts.innerHTML = html
-    setTimeout(() => window.print(), 150)
+    <script>window.onload = () => window.print()<\/script>
+    </body></html>`
+
+    const blob = new Blob([html], { type: 'text/html' })
+    const url  = URL.createObjectURL(blob)
+    w.location.href = url
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
     this.app.toast('Opening print dialog…')
   }
 
@@ -4064,6 +4179,7 @@ export class ProjectsView {
     mc.querySelector('#pe-ret-start')?.addEventListener('change', e => { p.retainer_start = e.target.value||null; save(); requestAnimationFrame(() => this.renderEditor(mc)) })
     mc.querySelector('#pe-ret-alert')?.addEventListener('change', e => { p.retainer_alert = parseFloat(e.target.value)||80; save() })
     mc.querySelector('#pe-ret-rollover')?.addEventListener('change', e => { p.retainer_rollover = e.target.checked; save() })
+    mc.querySelector('#pe-export-retainer')?.addEventListener('click', () => this._exportRetainerPDF(p))
 
     // Retainer items
     if (!Array.isArray(p.retainer_items)) p.retainer_items = []
@@ -4559,7 +4675,8 @@ export class ProjectsView {
   }
 
   async deleteProject(id, mc) {
-    if (!await this.app.confirm({ title: 'Delete project?', message: 'This cannot be undone.', confirmLabel: 'Delete' })) return
+    const p = this.app.projects.find(x => x.id === id)
+    if (!await this.app.confirm({ title: p ? `Delete project '${p.name}'?` : 'Delete project?', message: 'This cannot be undone.', confirmLabel: 'Delete' })) return
     try {
       await deleteProject(this.app.userId, id)
       this.app.projects = this.app.projects.filter(p => p.id !== id)

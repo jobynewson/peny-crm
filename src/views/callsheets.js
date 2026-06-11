@@ -2,6 +2,7 @@ import {
   getCallSheetsForProject, getCallSheet, createCallSheet, updateCallSheet,
   deleteCallSheet, saveCallSheetCrew, saveCallSheetSchedule, saveCallSheetLocations
 } from '../db/client.js'
+import { continuationScript, PDF_CONTINUED_CSS, a4ContentWidthPx, a4ContentHeightPx } from '../utils/pdfContinuation.js'
 
 const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 const fmtDate = s => {
@@ -788,7 +789,7 @@ export class CallSheetsView {
 
     // ── Header strip ─────────────────────────────────────────────────────────
     const header = `
-      <div style="display:grid;grid-template-columns:160px 1fr 200px;gap:0;border:1px solid #ddd;border-radius:4px;margin-bottom:0;page-break-inside:avoid">
+      <div class="cs-keep" style="display:grid;grid-template-columns:160px 1fr 200px;gap:0;border:1px solid #ddd;border-radius:4px;margin-bottom:0;page-break-inside:avoid">
 
         <!-- Left: Studio -->
         <div style="padding:16px;border-right:1px solid #ddd">
@@ -829,7 +830,7 @@ export class CallSheetsView {
 
     const locsSection = allLocs.length ? `
       ${secHead('Locations', allLocs.length + ' location' + (allLocs.length!==1?'s':''))}
-      <div style="page-break-inside:avoid">
+      <div class="cs-keep" style="page-break-inside:avoid">
       <table style="${tableStyle}">
         <thead><tr style="background:#f7f7f5">${th('#','width:28px;text-align:center')}${th('Location')}${th('Address')}${th('Notes')}</tr></thead>
         <tbody>
@@ -846,7 +847,7 @@ export class CallSheetsView {
     // ── Schedule ──────────────────────────────────────────────────────────────
     const schedSection = s.schedule.length ? `
       ${secHead('Schedule', fmtDateShort(s.sheet_date))}
-      <div style="page-break-inside:avoid">
+      <div class="cs-keep" style="page-break-inside:avoid">
       <table style="${tableStyle}">
         <thead><tr style="background:#f7f7f5">${th('Time','width:70px')}${th('Description')}</tr></thead>
         <tbody>
@@ -862,7 +863,7 @@ export class CallSheetsView {
     const deptKeys = Object.keys(depts)
     const crewSection = deptKeys.length ? `
       ${secHead('Crew', s.crew.length + ' total')}
-      <div style="page-break-inside:avoid">
+      <div class="cs-keep" style="page-break-inside:avoid">
       <table style="${tableStyle}">
         <thead><tr style="background:#f7f7f5">
           ${th('Name')}${th('Call','width:64px')}
@@ -908,7 +909,7 @@ export class CallSheetsView {
       </div>`
 
     const html = `
-      <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;padding:32px;background:#fff;color:#1a1a18;max-width:900px;margin:0 auto">
+      <div id="cs-root" style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;padding:32px;background:#fff;color:#1a1a18;max-width:900px;margin:0 auto">
         <style>
           @media print {
             @page { size:A4; margin:16mm 14mm }
@@ -916,13 +917,21 @@ export class CallSheetsView {
           }
           table { page-break-inside:auto }
           tr { page-break-inside:avoid }
+          ${PDF_CONTINUED_CSS}
         </style>
         ${header}
         ${locsSection}
         ${schedSection}
         ${crewSection}
         ${footer}
-      </div>`
+      </div>
+      ${continuationScript({
+        rootSelector: '#cs-root',
+        rootWidthPx: a4ContentWidthPx(14),
+        pageHeightPx: a4ContentHeightPx(16),
+        blockSelector: '.cs-keep',
+        mode: 'block',
+      })}`
 
     const win = window.open('', '_blank', 'width=900,height=700')
     if (!win) { this.app.toast('Allow pop-ups to export PDF'); return }

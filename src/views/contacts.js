@@ -41,17 +41,17 @@ export class ContactsView {
     const { contacts } = this.app
     return `
       <div class="stats-row">
-        <div class="stat-card"><div class="stat-label">Total contacts</div><div class="stat-value">${contacts.filter(c=>c.type!=='subcontractor').length}</div><div class="stat-sub">clients</div></div>
-        <div class="stat-card"><div class="stat-label">Active clients</div><div class="stat-value">${contacts.filter(c=>c.type!=='subcontractor'&&c.status==='Active').length}</div><div class="stat-sub">in live projects</div></div>
-        <div class="stat-card"><div class="stat-label">Subcontractors</div><div class="stat-value">${contacts.filter(c=>c.type==='subcontractor'&&c.status!=='Retired').length}</div><div class="stat-sub">active</div></div>
-        <div class="stat-card"><div class="stat-label">Warm leads</div><div class="stat-value">${contacts.filter(c=>c.type!=='subcontractor'&&c.status==='Warm').length}</div><div class="stat-sub">needs follow-up</div></div>
+        <div class="stat-card stat-card--link" role="button" tabindex="0" data-stat-view="clients" data-stat-filter="all" title="Show all clients"><div class="stat-label">Clients</div><div class="stat-value">${contacts.filter(c=>c.type!=='subcontractor').length}</div><div class="stat-sub">total</div></div>
+        <div class="stat-card stat-card--link" role="button" tabindex="0" data-stat-view="clients" data-stat-filter="Active" title="Show active clients"><div class="stat-label">Active clients</div><div class="stat-value">${contacts.filter(c=>c.type!=='subcontractor'&&c.status==='Active').length}</div><div class="stat-sub">in live projects</div></div>
+        <div class="stat-card stat-card--link" role="button" tabindex="0" data-stat-view="subbies" data-stat-filter="all" title="Show subcontractors"><div class="stat-label">Subcontractors</div><div class="stat-value">${contacts.filter(c=>c.type==='subcontractor'&&c.status!=='Retired').length}</div><div class="stat-sub">active</div></div>
+        <div class="stat-card stat-card--link" role="button" tabindex="0" data-stat-view="clients" data-stat-filter="Warm" title="Show warm leads"><div class="stat-label">Warm leads</div><div class="stat-value">${contacts.filter(c=>c.type!=='subcontractor'&&c.status==='Warm').length}</div><div class="stat-sub">needs follow-up</div></div>
       </div>
       <div class="panel">
         <div class="panel-header">
           <span class="panel-title">${this.view==='subbies'?'Subcontractors':'Clients'}</span>
           <div style="display:flex;gap:4px;margin-right:8px;background:var(--bg-secondary);border-radius:var(--radius-pill);padding:3px">
             <button class="filter-pill ${this.view==='clients'?'active':''}" data-view="clients" style="border-radius:16px">Clients</button>
-            <button class="filter-pill ${this.view==='subbies'?'active':''}" data-view="subbies" style="border-radius:16px">Subbies</button>
+            <button class="filter-pill ${this.view==='subbies'?'active':''}" data-view="subbies" style="border-radius:16px">Subcontractors</button>
           </div>
           <button class="filter-pill ${this.filter==='all'?'active':''}" data-filter="all">All</button>
           <button class="filter-pill ${this.filter==='Active'?'active':''}" data-filter="Active">Active</button>
@@ -70,11 +70,14 @@ export class ContactsView {
   }
 
   listHTML() {
+    const q = this.search.toLowerCase().trim()
+    const searching = !!q
     const filtered = this.app.contacts.filter(c => {
-      const q = this.search.toLowerCase()
       const matchQ = !q || (c.first_name+' '+c.last_name).toLowerCase().includes(q) || (c.company??'').toLowerCase().includes(q)
       const matchF = this.filter === 'all' || c.status === this.filter
-      const matchV = this.view === 'subbies' ? c.type === 'subcontractor' : c.type !== 'subcontractor'
+      // While searching, query both Clients and Subcontractors regardless of the
+      // active tab so a result from the other tab isn't hidden.
+      const matchV = searching ? true : (this.view === 'subbies' ? c.type === 'subcontractor' : c.type !== 'subcontractor')
       return matchQ && matchF && matchV
     })
     if (!filtered.length) return '<div class="empty-state">No contacts found</div>'
@@ -101,16 +104,16 @@ export class ContactsView {
       <div class="modal-backdrop" id="contact-modal">
         <div class="modal">
           <div class="modal-header">
-            <span class="modal-title" id="contact-modal-title">${c?'Edit contact':'Add contact'}</span>
+            <span class="modal-title" id="contact-modal-title">${c?'Edit contact':'New contact'}</span>
             <button class="modal-close" data-close="contact-modal">×</button>
           </div>
           <div class="modal-body">
             <div class="field-row">
               <div class="field"><div class="field-label">First name<span class="req">*</span></div><input id="cf-first" type="text" value="${esc(c?.first_name)}" placeholder="Sarah" /></div>
-              <div class="field"><div class="field-label">Last name<span class="req">*</span></div><input id="cf-last" type="text" value="${esc(c?.last_name)}" placeholder="Renfrew" /></div>
+              <div class="field"><div class="field-label">Last name</div><input id="cf-last" type="text" value="${esc(c?.last_name)}" placeholder="Renfrew" /></div>
             </div>
             <div class="field"><div class="field-label">Role / title</div><input id="cf-role" type="text" value="${esc(c?.role)}" placeholder="Marketing Director" /></div>
-            <div class="field"><div class="field-label">Company</div><input id="cf-company" type="text" value="${esc(c?.company)}" placeholder="Kinetic Brand Co." /></div>
+            <div class="field"><div class="field-label">Company<span style="color:var(--text-tertiary);font-weight:400"> — or last name required</span></div><input id="cf-company" type="text" value="${esc(c?.company)}" placeholder="Kinetic Brand Co." /></div>
             <div class="field-row">
               <div class="field"><div class="field-label">Email</div><input id="cf-email" type="email" value="${esc(c?.email)}" /></div>
               <div class="field"><div class="field-label">Phone</div><input id="cf-phone" type="text" value="${esc(c?.phone)}" /></div>
@@ -220,7 +223,33 @@ export class ContactsView {
 
     // Filter pills
     mc.querySelectorAll('.filter-pill[data-view]').forEach(btn => {
-      btn.addEventListener('click', () => { this.view = btn.dataset.view; this.filter = 'all'; this.render(mc) })
+      btn.addEventListener('click', () => {
+        this.view = btn.dataset.view
+        this.filter = 'all'
+        // Clear the detail panel if the open contact isn't in the new tab.
+        const sel = this.app.contacts.find(c => c.id === this.selectedId)
+        const inTab = sel && (this.view === 'subbies' ? sel.type === 'subcontractor' : sel.type !== 'subcontractor')
+        if (!inTab) {
+          this.selectedId = null
+          const dp = this.app.container.querySelector('#detail-panel')
+          if (dp) dp.innerHTML = '<div class="detail-empty">Select a contact<br>to view details</div>'
+        }
+        this.render(mc)
+      })
+    })
+
+    // Stat cards apply the matching tab + status filter to the list below.
+    mc.querySelectorAll('.stat-card[data-stat-view]').forEach(card => {
+      const apply = () => {
+        this.search = ''
+        this.view = card.dataset.statView
+        this.filter = card.dataset.statFilter
+        const topSearch = document.getElementById('contact-search')
+        if (topSearch) topSearch.value = ''
+        this.render(mc)
+      }
+      card.addEventListener('click', apply)
+      card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); apply() } })
     })
     mc.querySelectorAll('.filter-pill[data-filter]').forEach(btn => {
       btn.addEventListener('click', () => { this.filter = btn.dataset.filter; this.render(mc) })
@@ -230,9 +259,7 @@ export class ContactsView {
     mc.querySelectorAll('.contact-row[data-cid]').forEach(row => {
       row.addEventListener('click', e => {
         if (e.target.closest('button')) return
-        this.selectedId = row.dataset.cid
-        this.showDetail(row.dataset.cid)
-        this.refreshList()
+        this.selectContact(row.dataset.cid)
       })
     })
 
@@ -261,6 +288,25 @@ export class ContactsView {
     mc.querySelector('#note-save-btn')?.addEventListener('click', () => this.saveNote(mc))
   }
 
+  // Select a contact and show its detail. If it belongs to the other tab
+  // (e.g. found via a cross-tab search), switch to that tab automatically.
+  selectContact(cid) {
+    const c = this.app.contacts.find(x => x.id === cid)
+    this.selectedId = cid
+    if (c) {
+      const wantView = c.type === 'subcontractor' ? 'subbies' : 'clients'
+      if (wantView !== this.view) {
+        this.view = wantView
+        this.filter = 'all'
+        this.render(document.getElementById('main-content'))
+        this.showDetail(cid)
+        return
+      }
+    }
+    this.showDetail(cid)
+    this.refreshList()
+  }
+
   refreshList() {
     const list = document.getElementById('contact-list')
     if (list) list.innerHTML = this.listHTML()
@@ -268,9 +314,7 @@ export class ContactsView {
     list?.querySelectorAll('.contact-row[data-cid]').forEach(row => {
       row.addEventListener('click', e => {
         if (e.target.closest('button')) return
-        this.selectedId = row.dataset.cid
-        this.showDetail(row.dataset.cid)
-        this.refreshList()
+        this.selectContact(row.dataset.cid)
       })
     })
     list?.querySelectorAll('[data-edit]').forEach(btn => {
@@ -340,7 +384,7 @@ export class ContactsView {
 
   openAdd(mc) {
     this.editingId = null
-    mc.querySelector('#contact-modal-title').textContent = 'Add contact'
+    mc.querySelector('#contact-modal-title').textContent = 'New contact'
     ;['first','last','role','company','email','phone','location'].forEach(f => {
       const el = mc.querySelector(`#cf-${f}`)
       if (el) el.value = ''
@@ -368,19 +412,37 @@ export class ContactsView {
   }
 
   async saveContact(mc) {
-    const first = mc.querySelector('#cf-first')?.value.trim()
-    const last  = mc.querySelector('#cf-last')?.value.trim()
+    const first   = mc.querySelector('#cf-first')?.value.trim()
+    const last    = mc.querySelector('#cf-last')?.value.trim()
+    const company = mc.querySelector('#cf-company')?.value.trim()
     this.app.clearFieldErrors(mc.querySelector('#contact-modal'))
-    if (!first || !last) {
-      if (!first) this.app.fieldError(mc.querySelector('#cf-first'), 'First name is required')
-      if (!last)  this.app.fieldError(mc.querySelector('#cf-last'),  'Last name is required')
+    if (!first) { this.app.fieldError(mc.querySelector('#cf-first'), 'First name is required'); return }
+    // A contact needs at least a last name or a company to identify it.
+    if (!last && !company) {
+      this.app.fieldError(mc.querySelector('#cf-last'), 'Add a last name or a company')
+      this.app.fieldError(mc.querySelector('#cf-company'), 'Add a last name or a company')
       return
+    }
+    // Warn on a case-insensitive first+last duplicate (excluding the one being edited).
+    if (last) {
+      const dupe = this.app.contacts.find(c =>
+        c.id !== this.editingId &&
+        (c.first_name || '').trim().toLowerCase() === first.toLowerCase() &&
+        (c.last_name || '').trim().toLowerCase() === last.toLowerCase())
+      if (dupe) {
+        const ok = await this.app.confirm({
+          title: `A contact named '${first} ${last}' already exists`,
+          message: dupe.company ? `Existing: ${dupe.company}. Add this as a separate contact?` : 'Add this as a separate contact?',
+          confirmLabel: 'Add anyway', cancelLabel: 'Cancel', danger: false,
+        })
+        if (!ok) return
+      }
     }
     const data = {
       first_name: first,
-      last_name:  last,
+      last_name:  last || '',
       role:     mc.querySelector('#cf-role')?.value.trim()     || null,
-      company:  mc.querySelector('#cf-company')?.value.trim()  || null,
+      company:  company  || null,
       email:    mc.querySelector('#cf-email')?.value.trim()    || null,
       phone:    mc.querySelector('#cf-phone')?.value.trim()    || null,
       location: mc.querySelector('#cf-location')?.value.trim() || null,
@@ -450,7 +512,9 @@ export class ContactsView {
   }
 
   async deleteContact(id) {
-    if (!await this.app.confirm({ title: 'Delete contact?', message: 'This cannot be undone.', confirmLabel: 'Delete' })) return
+    const c = this.app.contacts.find(x => x.id === id)
+    const cname = c ? `${c.first_name||''} ${c.last_name||''}`.trim() || c.company : ''
+    if (!await this.app.confirm({ title: cname ? `Delete contact '${cname}'?` : 'Delete contact?', message: 'This cannot be undone.', confirmLabel: 'Delete' })) return
     try {
       await deleteContact(this.app.userId, id)
       this.app.contacts = this.app.contacts.filter(c => c.id !== id)

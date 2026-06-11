@@ -199,6 +199,9 @@ export async function runMigrations() {
   // per-permission overrides (permissions are now derived purely from role).
   // The old CHECK constraint only allowed admin/member/readonly, so it must be
   // replaced before remapping the values (and before any new user is inserted).
+  await sql`ALTER TABLE shoots ADD COLUMN IF NOT EXISTS section_visibility JSONB NOT NULL DEFAULT '{}'::jsonb`
+  await sql`ALTER TABLE shoots ADD COLUMN IF NOT EXISTS show_call_times BOOLEAN NOT NULL DEFAULT true`
+
   await sql`ALTER TABLE app_users DROP CONSTRAINT IF EXISTS app_users_role_check`
   await sql`UPDATE app_users SET role = 'superadmin' WHERE role = 'admin'`
   await sql`UPDATE app_users SET role = 'user'       WHERE role = 'member'`
@@ -371,18 +374,21 @@ export const ROLE_PRESETS = {
     projects_view: true, projects_edit: true,
     budgets_view:  true, budgets_edit:  true,
     export:        true, settings:      true, manage_users: true,
+    vault:         true,
   },
   user: {
     contacts_view: true, contacts_edit: true,
     projects_view: true, projects_edit: true,
     budgets_view:  true, budgets_edit:  true,
     export:        true, settings:      true, manage_users: false,
+    vault:         false,
   },
   viewer: {
     contacts_view: true, contacts_edit: false,
     projects_view: true, projects_edit: false,
     budgets_view:  true, budgets_edit:  false,
     export:        false, settings:     false, manage_users: false,
+    vault:         false,
   },
 }
 
@@ -693,7 +699,7 @@ export async function createShoot(userId, projectId, data) {
       equipment, client_display,
       insurer_name, insurer_address, insurer_email, insurer_contact,
       invoicing_email, invoicing_job_ref,
-      crew_section_notes, catering
+      crew_section_notes, catering, section_visibility, show_call_times
     ) VALUES (
       ${projectId}, ${userId}, ${data.name||null}, ${data.shoot_date||null}, 'draft', ${token},
       ${data.general_call||null}, ${data.location_name||null}, ${data.location_address||null}, ${data.location_map_link||null},
@@ -713,7 +719,9 @@ export async function createShoot(userId, projectId, data) {
       ${data.insurer_email||null}, ${data.insurer_contact||null},
       ${data.invoicing_email||null}, ${data.invoicing_job_ref||null},
       ${JSON.stringify(data.crew_section_notes||{})}::jsonb,
-      ${JSON.stringify(data.catering||{})}::jsonb
+      ${JSON.stringify(data.catering||{})}::jsonb,
+      ${JSON.stringify(data.section_visibility||{})}::jsonb,
+      ${data.show_call_times !== false}
     ) RETURNING *
   `).then(r => r.rows ?? r)
   return shoot
@@ -761,6 +769,8 @@ export async function updateShoot(id, data) {
       crew_section_notes = ${JSON.stringify(data.crew_section_notes||{})}::jsonb,
       catering = ${JSON.stringify(data.catering||{})}::jsonb,
       shoot_camera_setups = ${JSON.stringify(data.shoot_camera_setups||[])}::jsonb,
+      section_visibility = ${JSON.stringify(data.section_visibility||{})}::jsonb,
+      show_call_times = ${data.show_call_times !== false},
       updated_at = NOW()
     WHERE id = ${id} RETURNING *
   `).then(r => r.rows ?? r)
@@ -829,7 +839,14 @@ export async function getUserNotes(clerkId) {
 }
 export async function createUserNote(clerkId, data = {}) {
   const [row] = await db.insert(user_notes)
-    .values({ clerk_id: clerkId, title: data.title ?? '', content: data.content ?? '', sort_order: data.sort_order ?? 0 })
+    .values({
+      clerk_id: clerkId,
+      title: data.title ?? '',
+      content: data.content ?? '',
+      sort_order: data.sort_order ?? 0,
+      due_date: data.due_date ?? null,
+      reminder: data.reminder ?? false,
+    })
     .returning()
   return row
 }
