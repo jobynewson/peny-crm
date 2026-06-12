@@ -4,7 +4,7 @@ import {
   getContacts, getProjects, getBudgets, getSettings,
   getOrCreateAppUser, getOrCreateWorkspace, resolvePermissions, getAllAppUsers,
   getSocialPosts, getMarketingCards, runMigrations, getTeamCalendarEntries,
-  getLeaveRequests, getPublicHolidays, seedDemoBoard,
+  getLeaveRequests, getPublicHolidays, seedDemoBoard, seedDemoCanvas,
 } from './db/client.js'
 
 async function bootstrap() {
@@ -40,8 +40,9 @@ async function bootstrap() {
   //    First user to ever sign in becomes the workspace owner automatically
   const workspaceId = await getOrCreateWorkspace(clerkUserId)
 
-  // First-ever run: drop in a demo planning board so the feature isn't empty
+  // First-ever run: drop in a demo planning board + canvas so the features aren't empty
   await seedDemoBoard(workspaceId).catch(e => console.warn('Demo board seed failed:', e))
+  await seedDemoCanvas(workspaceId).catch(e => console.warn('Demo canvas seed failed:', e))
 
   // 4. Load all shared workspace data in parallel
   const [contactsData, projectsData, budgetsData, settingsData, allUsersData, socialPostsData, marketingCardsData, teamCalendarData, leaveRequestsData, publicHolidaysData] = await Promise.all([

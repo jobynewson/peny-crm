@@ -1302,6 +1302,150 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 }
 
 /* ════════════════════════════════════════════════════════════════════════
+   PLANNING CANVAS (moodboarding) — canvas.js
+   ════════════════════════════════════════════════════════════════════════ */
+
+.cv-wrap {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  background-image: radial-gradient(var(--border-light) 1px, transparent 1px);
+  background-size: 24px 24px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.cv-wrap:active { cursor: grabbing; }
+.cv-wrap--arrow { cursor: crosshair; }
+
+.cv-world {
+  position: absolute;
+  top: 0; left: 0;
+  width: 0; height: 0;
+  transform-origin: 0 0;
+}
+
+.cv-item {
+  position: absolute;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  cursor: grab;
+}
+.cv-item:active { cursor: grabbing; }
+.cv-wrap--arrow .cv-item { cursor: crosshair; }
+.cv-item--arrow-from { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.cv-item--note { border: 1px solid rgba(0, 0, 0, 0.12); }
+.cv-note-text {
+  flex: 1;
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 12px;
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.5;
+  color: #1f2430;             /* note backgrounds are always light pastels */
+  pointer-events: none;       /* dblclick to edit — dragging owns the pointer */
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.cv-note-text--editing { pointer-events: auto; cursor: text; overflow: auto; }
+
+.cv-item--image {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-med);
+  overflow: hidden;
+}
+.cv-item--image img {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.cv-item-chips {
+  display: flex; gap: 4px; flex-wrap: wrap;
+  padding: 5px 8px 7px;
+}
+.cv-item--image .cv-item-chips { background: var(--bg-primary); }
+
+.cv-item-tools {
+  position: absolute;
+  top: -30px; right: 0;
+  display: none;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-med);
+  border-radius: var(--radius-md);
+  padding: 3px 6px;
+  box-shadow: var(--shadow-md);
+  z-index: 5;
+}
+.cv-item:hover .cv-item-tools { display: flex; }
+.cv-color-dot {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  padding: 0;
+}
+.cv-item-btn {
+  background: none; border: none;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  font-size: 13px; line-height: 1;
+  padding: 1px 3px;
+}
+.cv-item-btn:hover { color: var(--text-primary); }
+
+.cv-resize {
+  position: absolute;
+  right: -2px; bottom: -2px;
+  width: 16px; height: 16px;
+  cursor: nwse-resize;
+  border-right: 2px solid var(--text-tertiary);
+  border-bottom: 2px solid var(--text-tertiary);
+  border-bottom-right-radius: var(--radius-md);
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.cv-item:hover .cv-resize { opacity: 0.7; }
+
+.cv-zoom {
+  position: absolute;
+  bottom: 12px; right: 12px;
+  display: flex;
+  gap: 1px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-med);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+  z-index: 10;
+}
+.cv-zoom button {
+  background: var(--bg-primary);
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-family: var(--font);
+  padding: 6px 10px;
+  line-height: 1;
+}
+.cv-zoom button:hover { background: var(--bg-secondary); color: var(--text-primary); }
+#cv-zoom-pct { font-size: 11px; }
+
+/* ════════════════════════════════════════════════════════════════════════
    MISC — resize handles, leave fields
    ════════════════════════════════════════════════════════════════════════ */
 

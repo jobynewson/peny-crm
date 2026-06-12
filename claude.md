@@ -135,6 +135,12 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
   (merges pause during drag/typing/open modals). Recurring cards spawn
   client-side on load via `spawnDueBoardRecurrences()` — an atomic
   `next_due` advance stops two browsers double-spawning.
+- `canvas.js` - Planning canvas (sticky notes, images, arrows) — standalone via
+  the Planning nav item's Canvases tab AND embedded in each project's Planning
+  tab. Item positions are stored in canvas space; the viewport applies a single
+  CSS transform. Coordinate maths is pure and unit-tested in
+  `src/utils/canvas-math.js` (+ `canvas-math.test.js`, run with `npm test` /
+  vitest). Same 4s polling sync pattern as boards.
 - `planning-tab.js` - Legacy moodboard (notes/images/videos as a JSONB blob on
   the project) — now the "Moodboard" sub-tab of the project Planning tab
 - `post-production.js` - Post-production workflow

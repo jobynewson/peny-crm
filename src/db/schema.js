@@ -570,6 +570,42 @@ export const board_recurrences = pgTable('board_recurrences', {
   ...timestamps,
 })
 
+// ── Planning canvases (moodboarding / visual planning) ───────────────────────
+// Same availability pattern as boards: standalone or linked to a project.
+export const canvases = pgTable('canvases', {
+  id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id:    text('user_id').notNull(),
+  project_id: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
+  name:       text('name').notNull(),
+  ...timestamps,
+})
+
+// Items live in canvas space (untransformed coords); the viewport applies one
+// CSS transform. kind: 'note' (content/color) or 'image' (image_url).
+export const canvas_items = pgTable('canvas_items', {
+  id:        uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  canvas_id: uuid('canvas_id').notNull().references(() => canvases.id, { onDelete: 'cascade' }),
+  kind:      text('kind').notNull().default('note'),
+  x:         doublePrecision('x').notNull().default(0),
+  y:         doublePrecision('y').notNull().default(0),
+  w:         doublePrecision('w').notNull().default(220),
+  h:         doublePrecision('h').notNull().default(140),
+  z:         integer('z').notNull().default(0),
+  content:   text('content'),
+  color:     text('color'),
+  image_url: text('image_url'),
+  links:     jsonb('links').notNull().default([]),   // same entity chips as board cards
+  ...timestamps,
+})
+
+export const canvas_arrows = pgTable('canvas_arrows', {
+  id:           uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  canvas_id:    uuid('canvas_id').notNull().references(() => canvases.id, { onDelete: 'cascade' }),
+  from_item_id: uuid('from_item_id').notNull().references(() => canvas_items.id, { onDelete: 'cascade' }),
+  to_item_id:   uuid('to_item_id').notNull().references(() => canvas_items.id, { onDelete: 'cascade' }),
+  created_at:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 // ── User notes (private per user, keyed by Clerk ID) ──────────────────────────
 export const user_notes = pgTable('user_notes', {
   id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),

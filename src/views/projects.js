@@ -741,12 +741,15 @@ export class ProjectsView {
     return `
       <div class="proj-tab-bar" style="border-bottom:1px solid var(--border-light);margin-bottom:4px">
         ${subBtn('board', '🗂 Board')}
-        ${subBtn('moodboard', '🖼 Moodboard')}
+        ${subBtn('canvas', '🖼 Canvas')}
+        ${subBtn('moodboard', '📌 Moodboard')}
       </div>
       <div id="pv-plan-content">
         ${sub === 'moodboard'
           ? renderPlanningTab(p)
-          : '<div id="pv-board-container"><div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">Loading…</div></div>'}
+          : sub === 'canvas'
+            ? '<div id="pv-canvas-container"><div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">Loading…</div></div>'
+            : '<div id="pv-board-container"><div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">Loading…</div></div>'}
       </div>`
   }
 
@@ -962,9 +965,13 @@ export class ProjectsView {
           }
         })
       })
-      if ((this._planSubTab || 'board') === 'board') {
+      const sub = this._planSubTab || 'board'
+      if (sub === 'board') {
         const container = mc.querySelector('#pv-board-container')
         if (container) this.app.boardsView.renderEmbedded(container, p)
+      } else if (sub === 'canvas') {
+        const container = mc.querySelector('#pv-canvas-container')
+        if (container) this.app.canvasView.renderEmbedded(container, p)
       } else {
         bindPlanningTab(mc, p, this.app.userId)
       }

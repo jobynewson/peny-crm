@@ -12,6 +12,7 @@ import { TeamCalendarView } from './views/team-calendar.js'
 import { LeaveView, pendingApprovalsFor } from './views/leave.js'
 import { ExpensesView } from './views/expenses.js'
 import { BoardsView } from './views/boards.js'
+import { CanvasView } from './views/canvas.js'
 
 export class App {
   constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, leaveRequests, publicHolidays, onSignOut }) {
@@ -44,6 +45,7 @@ export class App {
     this.expensesView         = new ExpensesView(this)
     this.leaveView            = new LeaveView(this)
     this.boardsView           = new BoardsView(this)
+    this.canvasView           = new CanvasView(this)
     window.app = this
   }
 
@@ -370,7 +372,7 @@ export class App {
       // Escape closes any open floating modal/dialog first — even while a field
       // inside it is focused — so it never falls through to "go back".
       if (e.key === 'Escape') {
-        const floatingModal = document.querySelector('#tc-modal, #pps-block-modal, #pps-col-modal, #dev-req-overlay, #shortcut-overlay, #bd-card-modal, #bd-col-modal, #bd-rec-modal, #bd-new-modal')
+        const floatingModal = document.querySelector('#tc-modal, #pps-block-modal, #pps-col-modal, #dev-req-overlay, #shortcut-overlay, #bd-card-modal, #bd-col-modal, #bd-rec-modal, #bd-new-modal, #cv-item-modal, #cv-new-modal, #cv-image-modal')
         if (floatingModal) { floatingModal.remove(); return }
       }
 
@@ -514,8 +516,10 @@ export class App {
       return `<button class="btn-primary" id="topbar-btn">+ New card</button>`
     }
     if (this.currentView === 'planning') {
-      if (!this.boardsView.currentId) return p.projects_edit ? `<button class="btn-primary" id="topbar-btn">+ New board</button>` : ''
-      return ''
+      if (this.boardsView.currentId || this.canvasView.currentId) return ''
+      if (!p.projects_edit) return ''
+      const label = this.boardsView.activeTab === 'canvases' ? '+ New canvas' : '+ New board'
+      return `<button class="btn-primary" id="topbar-btn">${label}</button>`
     }
     if (this.currentView === 'story-planner' && !this.storyPlannerView?.currentPlanId) {
       return `<button class="btn-primary" id="topbar-btn">+ New plan</button>`
@@ -616,7 +620,9 @@ export class App {
         this.marketingView.openCardModal(null, this.marketingView.activeTab === 'kanban' ? 'ideas' : 'ideas')
       }
       else if (this.currentView === 'planning') {
-        if (!this.boardsView.currentId) this.boardsView.openNewBoardModal()
+        if (this.boardsView.currentId || this.canvasView.currentId) return
+        if (this.boardsView.activeTab === 'canvases') this.canvasView.openNewCanvasModal()
+        else this.boardsView.openNewBoardModal()
       }
       else if (this.currentView === 'story-planner') {
         this.storyPlannerView.openNewPlanModal(document.getElementById('main-content'))
@@ -635,6 +641,8 @@ export class App {
     this.storyPlannerView.plan = null
     this.boardsView.currentId = null
     this.boardsView.board = null
+    this.canvasView.currentId = null
+    this.canvasView.canvas = null
     history.pushState({ view }, '', `#${view}`)
     this.render()
   }
@@ -658,7 +666,11 @@ export class App {
       if (tab) this.projectsView._pvTab = tab
     }
     if (view === 'budgets' && id) this.budgetsView.currentId = id
-    if (view === 'planning' && id) this.boardsView.currentId = id
+    if (view === 'planning' && id) {
+      // #planning/<boardId> or #planning/canvas/<canvasId>
+      if (id === 'canvas' && tab) this.canvasView.currentId = tab
+      else this.boardsView.currentId = id
+    }
   }
 
   // Handle browser back / forward button
@@ -680,7 +692,8 @@ export class App {
     this.projectsView.editingId = null
     this.budgetsView.currentId  = (view === 'budgets' && id) ? id : null
     this.budgetsView.editingId  = null
-    this.boardsView.currentId   = (view === 'planning' && id) ? id : null
+    this.boardsView.currentId   = (view === 'planning' && id && id !== 'canvas') ? id : null
+    this.canvasView.currentId   = (view === 'planning' && id === 'canvas' && tab) ? tab : null
     this.render()
   }
 
@@ -706,7 +719,8 @@ export class App {
       this.marketingView.render(mc)
     } else if (this.currentView === 'planning') {
       if (!p.projects_view) return locked("You don't have access to Planning.")
-      this.boardsView.render(mc)
+      if (this.canvasView.currentId) this.canvasView.render(mc)
+      else this.boardsView.render(mc)
     } else if (this.currentView === 'timetrack') {
       this.timeTrackView.render(mc)
     } else if (this.currentView === 'password-manager') {
@@ -728,6 +742,7 @@ export class App {
   viewTitle() {
     if (this.currentView === 'projects' && this.projectsView?.currentId) return this.projects.find(p=>p.id===this.projectsView.currentId)?.name ?? 'Project'
     if (this.currentView === 'budgets'  && this.budgetsView?.currentId)  return this.budgets.find(b=>b.id===this.budgetsView.currentId)?.name  ?? 'Budget'
+    if (this.currentView === 'planning' && this.canvasView?.currentId)   return this.canvasView.canvas?.name ?? 'Planning'
     if (this.currentView === 'planning' && this.boardsView?.currentId)   return this.boardsView.board?.name ?? 'Planning'
     return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',calendar:'Team Calendar',settings:'Settings',marketing:'Marketing',planning:'Planning',timetrack:'Time tracker','story-planner':'Story Planner','password-manager':'Passwords',expenses:'Expenses',leave:'Leave'}[this.currentView] ?? ''
   }

@@ -11,6 +11,7 @@ import {
   expense_entries, expense_submissions,
   leave_requests, public_holidays,
   boards, board_columns, board_cards, board_recurrences,
+  canvases, canvas_items, canvas_arrows,
 } from './schema.js'
 
 const sql = neon(import.meta.env.VITE_DATABASE_URL)
@@ -265,6 +266,47 @@ export async function runMigrations() {
   `
   await sql`CREATE INDEX IF NOT EXISTS board_cards_board_idx ON board_cards (board_id)`
   await sql`CREATE INDEX IF NOT EXISTS board_columns_board_idx ON board_columns (board_id)`
+
+  // ── Planning canvases ──────────────────────────────────────────────────────
+  await sql`
+    CREATE TABLE IF NOT EXISTS canvases (
+      id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id    TEXT NOT NULL,
+      project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
+      name       TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS canvas_items (
+      id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      canvas_id  UUID NOT NULL REFERENCES canvases(id) ON DELETE CASCADE,
+      kind       TEXT NOT NULL DEFAULT 'note',
+      x          DOUBLE PRECISION NOT NULL DEFAULT 0,
+      y          DOUBLE PRECISION NOT NULL DEFAULT 0,
+      w          DOUBLE PRECISION NOT NULL DEFAULT 220,
+      h          DOUBLE PRECISION NOT NULL DEFAULT 140,
+      z          INTEGER NOT NULL DEFAULT 0,
+      content    TEXT,
+      color      TEXT,
+      image_url  TEXT,
+      links      JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS canvas_arrows (
+      id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      canvas_id    UUID NOT NULL REFERENCES canvases(id) ON DELETE CASCADE,
+      from_item_id UUID NOT NULL REFERENCES canvas_items(id) ON DELETE CASCADE,
+      to_item_id   UUID NOT NULL REFERENCES canvas_items(id) ON DELETE CASCADE,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS canvas_items_canvas_idx ON canvas_items (canvas_id)`
+  await sql`CREATE INDEX IF NOT EXISTS canvas_arrows_canvas_idx ON canvas_arrows (canvas_id)`
 }
 
 // One-time demo data so the first visit to Planning isn't an empty screen.
@@ -291,6 +333,28 @@ export async function seedDemoBoard(workspaceId) {
       (${board.id}, ${byOrder[0].id}, 'Open me to edit', 'Cards have a description, assignee, due date, coloured labels and links to clients, projects and budgets.', '[]'::jsonb, 2048, ${today}),
       (${board.id}, ${byOrder[1].id}, 'Recurring work lives in ↻ Recurring', 'Set up cards that re-spawn on a schedule — journal send-outs, social posts, mailers.', ${JSON.stringify([{ name: 'tip', color: '#34d399' }])}::jsonb, 1024, NULL),
       (${board.id}, ${byOrder[2].id}, 'A finished card', NULL, '[]'::jsonb, 1024, NULL)
+  `
+}
+
+// One-time demo canvas — runs only when the canvases table is completely empty.
+export async function seedDemoCanvas(workspaceId) {
+  const existing = await sql`SELECT id FROM canvases LIMIT 1`
+  if (existing.length) return
+
+  const [canvas] = await sql`
+    INSERT INTO canvases (user_id, name) VALUES (${workspaceId}, 'Demo canvas') RETURNING id
+  `
+  const items = await sql`
+    INSERT INTO canvas_items (canvas_id, kind, x, y, w, h, z, content, color) VALUES
+      (${canvas.id}, 'note', 80,  80,  240, 150, 1, ${'Welcome to the canvas!\n\nDrag me around, grab my corner to resize, and double-click to edit this text.'}, '#FFF8C5'),
+      (${canvas.id}, 'note', 460, 120, 220, 130, 2, ${'Add sticky notes and images from the toolbar — arrows stay attached when things move.'}, '#DCEBFE'),
+      (${canvas.id}, 'note', 280, 340, 220, 120, 3, ${'Scroll to zoom, drag the background to pan.'}, '#DCFCE7')
+    RETURNING id, z
+  `
+  const byZ = [...items].sort((a, b) => a.z - b.z)
+  await sql`
+    INSERT INTO canvas_arrows (canvas_id, from_item_id, to_item_id)
+    VALUES (${canvas.id}, ${byZ[0].id}, ${byZ[1].id})
   `
 }
 
@@ -1412,4 +1476,78 @@ export async function getBoardsDashboard(workspaceId) {
     ...b,
     columns: colRows.filter(c => c.board_id === b.id),
   }))
+}
+
+// ── Planning canvases ─────────────────────────────────────────────────────────
+export async function getCanvases(workspaceId) {
+  return db.select().from(canvases)
+    .where(eq(canvases.user_id, workspaceId))
+    .orderBy(desc(canvases.created_at))
+}
+
+export async function getCanvasForProject(workspaceId, projectId) {
+  const rows = await db.select().from(canvases)
+    .where(and(eq(canvases.user_id, workspaceId), eq(canvases.project_id, projectId)))
+    .limit(1)
+  return rows[0] ?? null
+}
+
+export async function createCanvas(workspaceId, data) {
+  const [row] = await db.insert(canvases)
+    .values({ user_id: workspaceId, name: data.name, project_id: data.project_id ?? null })
+    .returning()
+  return row
+}
+
+export async function updateCanvas(workspaceId, id, data) {
+  const [row] = await db.update(canvases)
+    .set({ ...data, updated_at: new Date() })
+    .where(and(eq(canvases.id, id), eq(canvases.user_id, workspaceId)))
+    .returning()
+  return row
+}
+
+export async function deleteCanvas(workspaceId, id) {
+  return db.delete(canvases)
+    .where(and(eq(canvases.id, id), eq(canvases.user_id, workspaceId)))
+}
+
+// Whole canvas in two queries — also the polling-sync fetch.
+export async function getCanvasData(canvasId) {
+  const [items, arrows] = await Promise.all([
+    db.select().from(canvas_items)
+      .where(eq(canvas_items.canvas_id, canvasId))
+      .orderBy(canvas_items.z, canvas_items.created_at),
+    db.select().from(canvas_arrows)
+      .where(eq(canvas_arrows.canvas_id, canvasId))
+      .orderBy(canvas_arrows.created_at),
+  ])
+  return { items, arrows }
+}
+
+export async function createCanvasItem(canvasId, data) {
+  const [row] = await db.insert(canvas_items)
+    .values({ canvas_id: canvasId, ...data })
+    .returning()
+  return row
+}
+export async function updateCanvasItem(id, data) {
+  const [row] = await db.update(canvas_items)
+    .set({ ...data, updated_at: new Date() })
+    .where(eq(canvas_items.id, id))
+    .returning()
+  return row
+}
+export async function deleteCanvasItem(id) {
+  return db.delete(canvas_items).where(eq(canvas_items.id, id))
+}
+
+export async function createCanvasArrow(canvasId, fromItemId, toItemId) {
+  const [row] = await db.insert(canvas_arrows)
+    .values({ canvas_id: canvasId, from_item_id: fromItemId, to_item_id: toItemId })
+    .returning()
+  return row
+}
+export async function deleteCanvasArrow(id) {
+  return db.delete(canvas_arrows).where(eq(canvas_arrows.id, id))
 }

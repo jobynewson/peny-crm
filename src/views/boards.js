@@ -33,6 +33,7 @@ export class BoardsView {
   constructor(app) {
     this.app = app
     this.currentId = null
+    this.activeTab = 'boards'    // Planning list tab: boards | canvases
     this.board = null
     this.columns = []
     this.cards = []
@@ -54,9 +55,39 @@ export class BoardsView {
     else this._renderList(mc)
   }
 
+  // ── Planning hub: Boards | Canvases tabs ─────────────────────────────────────
+
+  _renderList(mc) {
+    const tabs = [
+      { id: 'boards',   label: '🗂 Boards' },
+      { id: 'canvases', label: '🖼 Canvases' },
+    ]
+    mc.innerHTML = `
+      <div style="display:flex;gap:0;border-bottom:1px solid var(--border-light);margin-bottom:20px">
+        ${tabs.map(t => `
+          <button class="plan-hub-tab" data-tab="${t.id}"
+            style="padding:8px 16px;font-size:13px;font-family:var(--font);cursor:pointer;background:none;border:none;border-bottom:2px solid ${this.activeTab === t.id ? 'var(--accent)' : 'transparent'};color:${this.activeTab === t.id ? 'var(--accent)' : 'var(--text-secondary)'};font-weight:${this.activeTab === t.id ? '600' : '400'};transition:all 0.15s;margin-bottom:-1px">
+            ${t.label}
+          </button>`).join('')}
+      </div>
+      <div id="plan-hub-content"></div>`
+
+    mc.querySelectorAll('.plan-hub-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.activeTab = btn.dataset.tab
+        this.app.updateTitle()   // topbar button label depends on the tab
+        this._renderList(mc)
+      })
+    })
+
+    const content = mc.querySelector('#plan-hub-content')
+    if (this.activeTab === 'canvases') this.app.canvasView.renderList(content)
+    else this._renderBoardsList(content)
+  }
+
   // ── Boards list ──────────────────────────────────────────────────────────────
 
-  async _renderList(mc) {
+  async _renderBoardsList(mc) {
     mc.innerHTML = '<div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">Loading boards…</div>'
     try {
       // Spawn any due recurring cards first so counts/lists are fresh
@@ -106,6 +137,7 @@ export class BoardsView {
 
   openBoard(id) {
     this.currentId = id
+    this.app.canvasView.currentId = null
     this.app._pushAppState(`#planning/${id}`, { view: 'planning', id })
     this.app.render()
   }
@@ -286,6 +318,7 @@ export class BoardsView {
     container.querySelector('#bd-recurring')?.addEventListener('click', () => this.openRecurrencesModal())
     container.querySelector('#bd-open-standalone')?.addEventListener('click', () => {
       this.app.currentView = 'planning'
+      this.app.canvasView.currentId = null
       this.app._pushAppState(`#planning/${board.id}`, { view: 'planning', id: board.id })
       this.app.render()
     })
@@ -1067,6 +1100,7 @@ export class BoardsView {
       row.addEventListener('click', () => {
         this.app.currentView = 'planning'
         this.currentId = row.dataset.dbBoard
+        this.app.canvasView.currentId = null
         this.app._pushAppState(`#planning/${this.currentId}`, { view: 'planning', id: this.currentId })
         this.app.render()
       })
