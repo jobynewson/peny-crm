@@ -735,7 +735,19 @@ export class ProjectsView {
   }
 
   _renderTabPlanning(p) {
-    return renderPlanningTab(p)
+    const sub = this._planSubTab || 'board'
+    const subBtn = (id, label) => `
+      <button class="proj-tab ${sub === id ? 'active' : ''}" data-plan-sub="${id}" style="font-size:12px">${label}</button>`
+    return `
+      <div class="proj-tab-bar" style="border-bottom:1px solid var(--border-light);margin-bottom:4px">
+        ${subBtn('board', '🗂 Board')}
+        ${subBtn('moodboard', '🖼 Moodboard')}
+      </div>
+      <div id="pv-plan-content">
+        ${sub === 'moodboard'
+          ? renderPlanningTab(p)
+          : '<div id="pv-board-container"><div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">Loading…</div></div>'}
+      </div>`
   }
 
   _renderTabFiles(p) {
@@ -939,7 +951,23 @@ export class ProjectsView {
       })
     }
     if (tab === 'planning') {
-      bindPlanningTab(mc, p, this.app.userId)
+      // Sub-tab switcher: kanban board (default) or the legacy moodboard
+      mc.querySelectorAll('[data-plan-sub]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          this._planSubTab = btn.dataset.planSub
+          const content = mc.querySelector('#pv-tab-content')
+          if (content) {
+            content.innerHTML = this._renderTab('planning', p, cl, linked)
+            this._bindTabContent(mc, 'planning', p, cl, linked)
+          }
+        })
+      })
+      if ((this._planSubTab || 'board') === 'board') {
+        const container = mc.querySelector('#pv-board-container')
+        if (container) this.app.boardsView.renderEmbedded(container, p)
+      } else {
+        bindPlanningTab(mc, p, this.app.userId)
+      }
     }
     if (tab === 'notes') {
       const rerender = () => {

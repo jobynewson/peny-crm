@@ -127,7 +127,16 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 - `team-calendar.js` - Team calendar
 - `leave.js` - Leave/absence management
 - `story-planner.js` - Story planning
-- `planning-tab.js` - Planning
+- `boards.js` - Planning boards (kanban) — standalone via the Planning nav item
+  AND embedded in each project's Planning tab. Granular rows (`boards`,
+  `board_columns`, `board_cards`, `board_recurrences`); card order uses
+  fractional `position` (DOUBLE PRECISION) so a move writes one row. Near-
+  realtime sync via 4s polling of `getBoardData()` while a board is open
+  (merges pause during drag/typing/open modals). Recurring cards spawn
+  client-side on load via `spawnDueBoardRecurrences()` — an atomic
+  `next_due` advance stops two browsers double-spawning.
+- `planning-tab.js` - Legacy moodboard (notes/images/videos as a JSONB blob on
+  the project) — now the "Moodboard" sub-tab of the project Planning tab
 - `post-production.js` - Post-production workflow
 - `marketing.js` - Marketing
 - `password-manager.js` - Password management
