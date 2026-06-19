@@ -11,6 +11,7 @@ import { PasswordManagerView } from './views/password-manager.js'
 import { TeamCalendarView } from './views/team-calendar.js'
 import { LeaveView, pendingApprovalsFor } from './views/leave.js'
 import { ExpensesView } from './views/expenses.js'
+import { OffloadLogView } from './views/offload-log.js'
 
 export class App {
   constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, leaveRequests, publicHolidays, onSignOut }) {
@@ -42,6 +43,7 @@ export class App {
     this.teamCalendarView     = new TeamCalendarView(this)
     this.expensesView         = new ExpensesView(this)
     this.leaveView            = new LeaveView(this)
+    this.offloadLogView       = new OffloadLogView(this)
     window.app = this
   }
 
@@ -461,6 +463,7 @@ export class App {
           <div class="nav-item ${this.currentView==='leave'?'active':''}" data-view="leave">${this.iconLeave()} Leave${this._leaveBadgeHtml()}</div>
           <div class="nav-item ${this.currentView==='expenses'?'active':''}" data-view="expenses">${this.iconExpenses()} Expenses</div>
           ${(this.permissions?.vault || this.appUser?.role === 'superadmin') ? `<div class="nav-item ${this.currentView==='password-manager'?'active':''}" data-view="password-manager">${this.iconPasswordManager()} Passwords</div>` : ''}
+          <div class="nav-item nav-item--dim ${this.currentView==='offload-log'?'active':''}" data-view="offload-log">${this.iconOffloads()} Offload Log</div>
           ${this.permissions.settings ? `<div class="nav-item" data-view="settings">${this.iconSettings()} Settings</div>` : ''}
           <div class="nav-item nav-item--dim" id="dev-request-btn">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v4M8 11v.5"/></svg>
@@ -639,7 +642,7 @@ export class App {
     if (!hash) return
     const parts = hash.split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses','leave']
+    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses','leave','offload-log']
     if (!validViews.includes(view)) return
     this.currentView = view
     if (view === 'projects' && id) {
@@ -659,7 +662,7 @@ export class App {
     const hash = location.hash.slice(1)
     const parts = (hash || 'dashboard').split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses','leave']
+    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses','leave','offload-log']
     if (!validViews.includes(view)) { this.currentView = 'dashboard'; this.render(); return }
 
     this.currentView = view
@@ -698,6 +701,8 @@ export class App {
       this.passwordManagerView.render(mc)
     } else if (this.currentView === 'expenses') {
       this.expensesView.render(mc)
+    } else if (this.currentView === 'offload-log') {
+      this.offloadLogView.render(mc)
     } else if (this.currentView === 'leave') {
       this.leaveView.render(mc)
     } else if (this.currentView === 'calendar') {
@@ -712,7 +717,7 @@ export class App {
   viewTitle() {
     if (this.currentView === 'projects' && this.projectsView?.currentId) return this.projects.find(p=>p.id===this.projectsView.currentId)?.name ?? 'Project'
     if (this.currentView === 'budgets'  && this.budgetsView?.currentId)  return this.budgets.find(b=>b.id===this.budgetsView.currentId)?.name  ?? 'Budget'
-    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',calendar:'Team Calendar',settings:'Settings',marketing:'Marketing',timetrack:'Time tracker','story-planner':'Story Planner','password-manager':'Passwords',expenses:'Expenses',leave:'Leave'}[this.currentView] ?? ''
+    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',calendar:'Team Calendar',settings:'Settings',marketing:'Marketing',timetrack:'Time tracker','story-planner':'Story Planner','password-manager':'Passwords',expenses:'Expenses',leave:'Leave','offload-log':'Offload Log'}[this.currentView] ?? ''
   }
 
   updateTitle() {
@@ -3349,6 +3354,7 @@ export class App {
   iconSettings() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M11.4 4.6l-1.4 1.4M4.6 11.4l-1.4 1.4"/></svg>` }
   iconPasswordManager() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/><circle cx="8" cy="11" r="1" fill="currentColor" stroke="none"/></svg>` }
   iconExpenses()        { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="4" width="12" height="9" rx="1.5"/><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M8 7.5v3M6.5 9h3"/></svg>` }
+  iconOffloads()        { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="4" rx="1"/><rect x="2" y="9" width="12" height="4" rx="1"/><circle cx="4.5" cy="5" r="0.6" fill="currentColor" stroke="none"/><circle cx="4.5" cy="11" r="0.6" fill="currentColor" stroke="none"/></svg>` }
   iconLeave()           { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 2c2.5 1.5 3.5 4 2.5 7-.8 2.4-2.5 4-2.5 4s-1.7-1.6-2.5-4C4.5 6 5.5 3.5 8 2z"/><path d="M8 6v7"/></svg>` }
   _leaveBadgeHtml() {
     const n = pendingApprovalsFor(this.appUser, this.leaveRequests).length

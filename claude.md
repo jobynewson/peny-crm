@@ -64,6 +64,10 @@ index.html                # App HTML shell
   - Route within an existing function on a query param. Example: the public
     office dashboard lives in `api/_dashboard.js` and is invoked by
     `api/portal.js` when `?view=dashboard` — it is NOT a separate function.
+    Likewise the Offload Log ingest lives in `api/_offloads.js` and is invoked
+    by `api/portal.js` when `?view=offloads`. `POST /api/offloads` is a
+    `vercel.json` rewrite onto `/api/portal?view=offloads`, so Fence keeps a
+    clean URL without adding a function.
 - Current functions (12): `ai`, `blob`, `callsheet`, `generate-ra`, `google`,
   `invite`, `maps`, `packing`, `portal`, `quote`, `reminders`, `track`.
 
@@ -100,6 +104,9 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 - `DASHBOARD_TOKEN` - Fixed secret token gating the public office-display
   dashboard at `/dashboard/<token>` (served by `public/dashboard.html`, data
   from `/api/portal?view=dashboard`). Unset = the dashboard returns 503.
+- `FENCE_API_KEY` - Shared secret for the Offload Log ingest endpoint
+  (`POST /api/offloads`). Fence sends it as `Authorization: Bearer <key>`.
+  Unset = the endpoint returns 500 (so it fails closed rather than open).
 
 ## Common Tasks
 
@@ -131,3 +138,4 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 - `post-production.js` - Post-production workflow
 - `marketing.js` - Marketing
 - `password-manager.js` - Password management
+- `offload-log.js` - Offload Log (read-only table of backup reports from Fence)

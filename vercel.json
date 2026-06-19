@@ -5,6 +5,7 @@
     { "path": "/api/reminders?type=expense-digest", "schedule": "0 9 * * *" }
   ],
   "rewrites": [
+    { "source": "/api/offloads", "destination": "/api/portal?view=offloads" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/dashboard/(.*)", "destination": "/dashboard.html" },
     { "source": "/track/(.*)", "destination": "/track.html" },
