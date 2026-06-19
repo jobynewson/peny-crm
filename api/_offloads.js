@@ -37,11 +37,11 @@ function validatePayload(body) {
   }
   if (!isBool(body.overallPassed)) errors.push('Field "overallPassed" must be a boolean')
 
-  // backups — exactly two entries
+  // backups — one or two entries (a single backup drive is permitted)
   if (!Array.isArray(body.backups)) {
     errors.push('Field "backups" must be an array')
-  } else if (body.backups.length !== 2) {
-    errors.push(`Field "backups" must contain exactly two entries (received ${body.backups.length})`)
+  } else if (body.backups.length < 1 || body.backups.length > 2) {
+    errors.push(`Field "backups" must contain one or two entries (received ${body.backups.length})`)
   } else {
     body.backups.forEach((b, i) => {
       const at = `backups[${i}]`
