@@ -10,6 +10,7 @@ import {
   post_production_schedules, pps_phases,
   expense_entries, expense_submissions,
   leave_requests, public_holidays,
+  offloads, offload_backups,
 } from './schema.js'
 
 const sql = neon(import.meta.env.VITE_DATABASE_URL)
@@ -208,6 +209,46 @@ export async function runMigrations() {
   await sql`UPDATE app_users SET role = 'viewer'     WHERE role = 'readonly'`
   await sql`UPDATE app_users SET permissions = '{}'::jsonb WHERE permissions <> '{}'::jsonb`
   await sql`ALTER TABLE app_users ADD CONSTRAINT app_users_role_check CHECK (role IN ('superadmin','user','viewer'))`
+
+  // ── Offload Log (backup reports from Fence) ────────────────────────────────
+  await sql`
+    CREATE TABLE IF NOT EXISTS offloads (
+      id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      offloaded_at   TIMESTAMPTZ NOT NULL,
+      year           TEXT,
+      industry       TEXT,
+      client         TEXT,
+      project        TEXT,
+      source_path    TEXT,
+      drive_type     TEXT,
+      location       TEXT,
+      notes          TEXT,
+      overall_passed BOOLEAN NOT NULL DEFAULT false,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS offload_backups (
+      id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      offload_id        UUID NOT NULL REFERENCES offloads(id) ON DELETE CASCADE,
+      label             TEXT,
+      drive_name        TEXT,
+      destination_path  TEXT,
+      verification_mode TEXT,
+      folder_results    JSONB NOT NULL DEFAULT '[]'::jsonb,
+      total_files       INTEGER NOT NULL DEFAULT 0,
+      total_size_bytes  BIGINT NOT NULL DEFAULT 0,
+      passed            BOOLEAN NOT NULL DEFAULT false,
+      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  // Indexes on the most likely search/filter fields.
+  await sql`CREATE INDEX IF NOT EXISTS idx_offloads_year     ON offloads(year)`
+  await sql`CREATE INDEX IF NOT EXISTS idx_offloads_industry ON offloads(industry)`
+  await sql`CREATE INDEX IF NOT EXISTS idx_offloads_client   ON offloads(client)`
+  await sql`CREATE INDEX IF NOT EXISTS idx_offloads_project  ON offloads(project)`
+  await sql`CREATE INDEX IF NOT EXISTS idx_offload_backups_offload    ON offload_backups(offload_id)`
+  await sql`CREATE INDEX IF NOT EXISTS idx_offload_backups_drive_name ON offload_backups(drive_name)`
 }
 
 // ── Workspace ─────────────────────────────────────────────────────────────────
@@ -1124,4 +1165,21 @@ export async function createExpenseSubmission(data) {
     .onConflictDoUpdate({ target: [expense_submissions.clerk_user_id, expense_submissions.month_key], set: { submitted_at: new Date() } })
     .returning()
   return row
+}
+
+// ── Offload Log ───────────────────────────────────────────────────────────────
+// Read-only for the app — records are written exclusively by POST /api/offloads
+// (Fence). Returns each offload newest-first with its destination drives attached
+// as a `backups` array (ordered Backup 1, Backup 2).
+export async function getOffloads() {
+  const offs = await db.select().from(offloads).orderBy(desc(offloads.offloaded_at))
+  if (!offs.length) return []
+  const ids = offs.map(o => o.id)
+  const rows = await db.select().from(offload_backups).where(inArray(offload_backups.offload_id, ids))
+  const byOffload = {}
+  for (const b of rows) (byOffload[b.offload_id] ??= []).push(b)
+  return offs.map(o => ({
+    ...o,
+    backups: (byOffload[o.id] ?? []).sort((a, b) => (a.label ?? '').localeCompare(b.label ?? '')),
+  }))
 }

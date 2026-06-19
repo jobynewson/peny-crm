@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, boolean, numeric, jsonb, date, timestamp, integer } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, boolean, numeric, jsonb, date, timestamp, integer, bigint } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 
 const timestamps = {
@@ -529,4 +529,40 @@ export const user_notes = pgTable('user_notes', {
   reminder:   boolean('reminder').notNull().default(false),
   created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updated_at: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// ── Offload Log ───────────────────────────────────────────────────────────────
+// Backup reports received from Fence (our internal file-transfer tool) when a
+// project is offloaded from the server to external HDDs. Fully standalone — not
+// linked to the projects table. Populated only via POST /api/offloads; never
+// edited by hand. `offloaded_at` holds the timestamp Fence reports (named to
+// avoid the `timestamp` reserved word).
+export const offloads = pgTable('offloads', {
+  id:             uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  offloaded_at:   timestamp('offloaded_at', { withTimezone: true }).notNull(),
+  year:           text('year'),
+  industry:       text('industry'),
+  client:         text('client'),
+  project:        text('project'),
+  source_path:    text('source_path'),
+  drive_type:     text('drive_type'),
+  location:       text('location'),
+  notes:          text('notes'),
+  overall_passed: boolean('overall_passed').notNull().default(false),
+  created_at:     timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// One row per destination drive (two per offload — Backup 1 / Backup 2).
+export const offload_backups = pgTable('offload_backups', {
+  id:                uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  offload_id:        uuid('offload_id').notNull().references(() => offloads.id, { onDelete: 'cascade' }),
+  label:             text('label'),                 // "Backup 1" | "Backup 2"
+  drive_name:        text('drive_name'),            // e.g. "2026_BU1_A"
+  destination_path:  text('destination_path'),
+  verification_mode: text('verification_mode'),     // "filename+size" | "xxh3"
+  folder_results:    jsonb('folder_results').notNull().default([]), // [{ folder, passed, fileCount }]
+  total_files:       integer('total_files').notNull().default(0),
+  total_size_bytes:  bigint('total_size_bytes', { mode: 'number' }).notNull().default(0),
+  passed:            boolean('passed').notNull().default(false),
+  created_at:        timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })

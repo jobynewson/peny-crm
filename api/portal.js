@@ -5,8 +5,17 @@
 import { neon } from '@neondatabase/serverless'
 import { isRateLimited, getClientIp } from './_ratelimit.js'
 import { handleDashboard } from './_dashboard.js'
+import { handleOffloadIngest } from './_offloads.js'
 
 export default async function handler(req, res) {
+  // The Offload Log ingest (POST /api/offloads → rewritten here as
+  // ?view=offloads) shares this function to stay within Vercel's 12-function
+  // limit — see claude.md. It has its own auth and method handling, so dispatch
+  // before the GET-only portal guard below.
+  if (req.query.view === 'offloads') {
+    return handleOffloadIngest(req, res, neon(process.env.VITE_DATABASE_URL))
+  }
+
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
