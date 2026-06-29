@@ -937,7 +937,8 @@ export class CanvasView {
       if (!this.canEdit) return
 
       // Drag to move (pointer events — works at any zoom because deltas are
-      // divided by the current zoom)
+      // divided by the current zoom). A drag on any selected item moves the
+      // whole selection; Shift-click toggles an item's membership.
       el.addEventListener('pointerdown', e => {
         if (this.mode === 'arrow') return
         if (e.button !== 0) return
@@ -948,12 +949,17 @@ export class CanvasView {
         if (!item) return
         e.preventDefault()
         e.stopPropagation()
+
+        // Shift-click toggles selection membership without dragging.
+        if (e.shiftKey && !isResize) { this._toggleSelected(id); return }
+
         this._interacting = true
 
-        // Select the item being interacted with (multi-select extends this).
+        // If this item isn't part of the current selection, select just it.
+        // If it already is, keep the selection so the group moves together.
         if (!this.selectedIds.has(id)) this._setSelection([id])
 
-        // Bring to front (unless it's already the topmost item)
+        // Bring the grabbed item to front (unless it's already topmost)
         const maxZ = this.items.reduce((m, i) => Math.max(m, i.z || 0), 0)
         let zChanged = false
         if ((item.z || 0) < maxZ || this.items.filter(i => (i.z || 0) === maxZ).length > 1) {
@@ -963,22 +969,28 @@ export class CanvasView {
         }
 
         const start = { x: e.clientX, y: e.clientY }
-        const orig = { x: item.x, y: item.y, w: item.w, h: item.h }
+        // Resize affects only the grabbed item; a move drags the whole selection.
+        const movers = isResize ? [item] : this._getSelection()
+        const orig = new Map(movers.map(m => [m.id, { x: m.x, y: m.y, w: m.w, h: m.h }]))
         let moved = false
 
         const onMove = ev => {
           const d = dragDeltaToCanvas({ x: ev.clientX - start.x, y: ev.clientY - start.y }, this.viewport)
           if (Math.abs(ev.clientX - start.x) + Math.abs(ev.clientY - start.y) > 2) moved = true
           if (isResize) {
-            item.w = Math.max(80, orig.w + d.x)
-            item.h = Math.max(50, orig.h + d.y)
+            const o = orig.get(item.id)
+            item.w = Math.max(80, o.w + d.x)
+            item.h = Math.max(50, o.h + d.y)
             el.style.width = `${item.w}px`
             el.style.height = `${item.h}px`
           } else {
-            item.x = orig.x + d.x
-            item.y = orig.y + d.y
-            el.style.left = `${item.x}px`
-            el.style.top = `${item.y}px`
+            for (const m of movers) {
+              const o = orig.get(m.id)
+              m.x = o.x + d.x
+              m.y = o.y + d.y
+              const mel = this._wrap?.querySelector(`[data-item="${m.id}"]`)
+              if (mel) { mel.style.left = `${m.x}px`; mel.style.top = `${m.y}px` }
+            }
           }
           this._redrawArrowsThrottled()
         }
@@ -989,7 +1001,15 @@ export class CanvasView {
           if (!moved && !zChanged) return
           this._writes++
           try {
-            await updateCanvasItem(id, { x: item.x, y: item.y, w: item.w, h: item.h, z: item.z })
+            if (!moved) {
+              await updateCanvasItem(id, { z: item.z })
+            } else if (isResize) {
+              await updateCanvasItem(id, { x: item.x, y: item.y, w: item.w, h: item.h, z: item.z })
+            } else {
+              // One batch of writes for the whole moved selection.
+              await Promise.all(movers.map(m => updateCanvasItem(m.id,
+                m.id === id ? { x: m.x, y: m.y, z: item.z } : { x: m.x, y: m.y })))
+            }
             this._snapshot = this._serialize(this.items, this.arrows)
           } catch (err) { console.error(err); this.app.toast('Error saving move') }
           finally { this._writes-- }
@@ -1110,15 +1130,59 @@ export class CanvasView {
   }
 
   _bindSurface(wrap) {
-    // Pan: drag the background
+    // Background gesture on empty canvas. Gesture model (documented choice):
+    //   • plain drag  → pan (unchanged default — zero regression risk)
+    //   • Shift+drag  → rubber-band select (additive to the current selection)
+    //   • plain click → clear the selection
+    // Pan stays the default so an empty canvas is always pannable; rubber-band
+    // is the held-modifier gesture, not the threshold/no-selection variant.
     wrap.addEventListener('pointerdown', e => {
       if (e.button !== 0) return
       if (e.target.closest('.cv-item') || e.target.closest('.cv-zoom') || e.target.closest('[data-arrow]')) return
       e.preventDefault()
+      const rect = wrap.getBoundingClientRect()
+
+      // ── Rubber-band select (Shift held) ──
+      if (this.canEdit && e.shiftKey) {
+        this._interacting = true
+        const startPt = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+        const baseSel = new Set(this.selectedIds)   // additive
+        const band = document.createElement('div')
+        band.className = 'cv-rubber'
+        wrap.appendChild(band)
+        const onMove = ev => {
+          const cur = { x: ev.clientX - rect.left, y: ev.clientY - rect.top }
+          const sx = Math.min(startPt.x, cur.x), sy = Math.min(startPt.y, cur.y)
+          const sw = Math.abs(cur.x - startPt.x), sh = Math.abs(cur.y - startPt.y)
+          band.style.left = `${sx}px`; band.style.top = `${sy}px`
+          band.style.width = `${sw}px`; band.style.height = `${sh}px`
+          // Band corners → canvas space, then AABB-intersect every item.
+          const a = screenToCanvas({ x: sx, y: sy }, this.viewport)
+          const b = screenToCanvas({ x: sx + sw, y: sy + sh }, this.viewport)
+          const hit = new Set(baseSel)
+          for (const it of this.items) {
+            if (it.x < b.x && it.x + it.w > a.x && it.y < b.y && it.y + it.h > a.y) hit.add(it.id)
+          }
+          this._setSelection([...hit])
+        }
+        const onUp = () => {
+          window.removeEventListener('pointermove', onMove)
+          window.removeEventListener('pointerup', onUp)
+          band.remove()
+          this._interacting = false
+        }
+        window.addEventListener('pointermove', onMove)
+        window.addEventListener('pointerup', onUp)
+        return
+      }
+
+      // ── Pan (default) ──
       this._interacting = true
       const start = { x: e.clientX, y: e.clientY }
       const orig = { panX: this.viewport.panX, panY: this.viewport.panY }
+      let moved = false
       const onMove = ev => {
+        if (Math.abs(ev.clientX - start.x) + Math.abs(ev.clientY - start.y) > 2) moved = true
         this.viewport.panX = orig.panX + (ev.clientX - start.x)
         this.viewport.panY = orig.panY + (ev.clientY - start.y)
         this._applyViewport()
@@ -1128,6 +1192,8 @@ export class CanvasView {
         window.removeEventListener('pointerup', onUp)
         this._interacting = false
         this._saveViewport()
+        // A plain click (no drag) on empty canvas clears the selection.
+        if (!moved) this._clearSelection()
       }
       window.addEventListener('pointermove', onMove)
       window.addEventListener('pointerup', onUp)

@@ -1340,6 +1340,15 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .cv-item--arrow-from { outline: 2px solid var(--accent); outline-offset: 2px; }
 .cv-item--selected { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+/* Rubber-band selection rectangle (screen-space, above the world) */
+.cv-rubber {
+  position: absolute;
+  border: 1px solid var(--accent);
+  background: rgba(var(--accent-rgb), 0.12);
+  pointer-events: none;
+  z-index: 50;
+}
+
 .cv-item--note { border: 1px solid rgba(0, 0, 0, 0.12); }
 .cv-note-text {
   flex: 1;
