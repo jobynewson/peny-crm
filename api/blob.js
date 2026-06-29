@@ -1,11 +1,13 @@
 // api/blob.js
 // Unified Vercel Blob handler — routes by HTTP method and action:
-//   POST   /api/blob?action=upload  — upload image, returns { url }
-//   DELETE /api/blob?url=<blobUrl>  — delete image
-//   GET    /api/blob?url=<blobUrl>  — proxy private blob for <img> tags
+//   POST   /api/blob?action=upload       — upload image, returns { url }
+//   DELETE /api/blob?url=<blobUrl>        — delete image
+//   GET    /api/blob?url=<blobUrl>        — proxy private blob for <img> tags
+//   GET    /api/blob?action=preview&url=  — SSRF-guarded link/URL preview
 
 import { put, del } from '@vercel/blob'
 import { verifyToken } from '@clerk/backend'
+import { fetchLinkPreview } from './_preview.js'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -27,6 +29,21 @@ async function requireAuth(req, res) {
 export default async function handler(req, res) {
   Object.entries(CORS).forEach(([k, v]) => res.setHeader(k, v))
   if (req.method === 'OPTIONS') return res.status(200).end()
+
+  // ── GET ?action=preview: fetch link metadata (title/thumbnail/favicon) ──────
+  // Authed, SSRF-guarded. Doesn't need a blob token, so it's handled first.
+  if (req.method === 'GET' && req.query.action === 'preview') {
+    const userId = await requireAuth(req, res)
+    if (!userId) return
+    const { url } = req.query
+    if (!url) return res.status(400).json({ error: 'Missing url parameter' })
+    try {
+      const preview = await fetchLinkPreview(url)
+      return res.status(200).json(preview)
+    } catch (err) {
+      return res.status(422).json({ error: err.message || 'Preview failed' })
+    }
+  }
 
   const token = process.env.BLOB_READ_WRITE_TOKEN
   if (!token) return res.status(500).json({ error: 'BLOB_READ_WRITE_TOKEN not configured' })

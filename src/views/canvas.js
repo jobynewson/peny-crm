@@ -36,6 +36,11 @@ function imgSrc(url) {
   return esc(url)
 }
 
+// A tidy display form for a link card's URL — protocol and trailing slash off.
+function displayUrl(url) {
+  return String(url ?? '').replace(/^https?:\/\//i, '').replace(/\/$/, '')
+}
+
 export class CanvasView {
   constructor(app) {
     this.app = app
@@ -298,6 +303,7 @@ export class CanvasView {
       <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
         <button class="btn-cancel cv-tool" id="cv-add-note" style="font-size:12px">✏️ Note</button>
         <button class="btn-cancel cv-tool" id="cv-add-image" style="font-size:12px">🖼 Image</button>
+        <button class="btn-cancel cv-tool" id="cv-add-link" style="font-size:12px">🔗 Link</button>
         <button class="btn-cancel cv-tool" id="cv-arrow-mode" style="font-size:12px">→ Arrow</button>
         <span id="cv-mode-hint" style="font-size:11px;color:var(--text-tertiary)"></span>
         <input type="file" id="cv-image-input" accept="image/*" style="display:none">
@@ -368,6 +374,22 @@ export class CanvasView {
         style="left:${it.x}px;top:${it.y}px;width:${it.w}px;height:${it.h}px;z-index:${it.z}">
         ${toolbar}
         <img src="${imgSrc(it.image_url)}" alt="" draggable="false" loading="lazy">
+        ${chips ? `<div class="cv-item-chips">${chips}</div>` : ''}
+        ${this.canEdit ? '<div class="cv-resize" data-resize></div>' : ''}
+      </div>`
+    }
+    if (it.kind === 'link') {
+      return `
+      <div class="cv-item cv-item--link" data-item="${it.id}"
+        style="left:${it.x}px;top:${it.y}px;width:${it.w}px;height:${it.h}px;z-index:${it.z}">
+        ${toolbar}
+        <div class="cv-link-body">
+          ${it.image_url ? `<div class="cv-link-thumb"><img src="${imgSrc(it.image_url)}" alt="" draggable="false" loading="lazy"></div>` : ''}
+          <div class="cv-link-meta">
+            <div class="cv-link-title">${esc(it.content || displayUrl(it.url))}</div>
+            <a class="cv-link-url" href="${esc(it.url || '#')}" target="_blank" rel="noopener" data-link-open>${esc(displayUrl(it.url))}</a>
+          </div>
+        </div>
         ${chips ? `<div class="cv-item-chips">${chips}</div>` : ''}
         ${this.canEdit ? '<div class="cv-resize" data-resize></div>' : ''}
       </div>`
@@ -464,6 +486,9 @@ export class CanvasView {
     // Image: upload a file or paste a URL
     host.querySelector('#cv-add-image')?.addEventListener('click', () => this._openImageModal(host))
     host.querySelector('#cv-image-input')?.addEventListener('change', e => this._handleImageFile(e, host))
+
+    // Link: prompt for a URL, fetch a preview, drop a link card
+    host.querySelector('#cv-add-link')?.addEventListener('click', () => this._addLinkItem())
 
     // Zoom controls
     const zoomBy = factor => {
@@ -587,6 +612,37 @@ export class CanvasView {
     })
   }
 
+  // Fetch link metadata from the SSRF-guarded preview endpoint. Throws on
+  // failure so the caller can fall back to a bare-URL card.
+  async _fetchPreview(url) {
+    const { getAuthToken } = await import('../auth/clerk.js')
+    const authToken = await getAuthToken()
+    const res = await fetch(`/api/blob?action=preview&url=${encodeURIComponent(url)}`, {
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    })
+    if (!res.ok) throw new Error('Preview failed')
+    return res.json()
+  }
+
+  async _addLinkItem() {
+    const raw = prompt('Paste a link (web page, YouTube, Vimeo…):')
+    const trimmed = raw?.trim()
+    if (!trimmed) return
+    const url = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+    const wrapRect = this._wrap.getBoundingClientRect()
+    const centre = screenToCanvas({ x: wrapRect.width / 2, y: wrapRect.height / 2 }, this.viewport)
+    // Best-effort preview — never block card creation on a failed/blocked fetch.
+    let preview = null
+    try { preview = await this._fetchPreview(url) } catch (e) { console.warn('Link preview failed:', e) }
+    await this._createItem({
+      kind: 'link', url,
+      content: preview?.title || '',
+      image_url: preview?.image || null,
+      x: Math.round(centre.x - 140), y: Math.round(centre.y - 60),
+      w: 280, h: 120,
+    })
+  }
+
   async _createItem(data) {
     const maxZ = this.items.reduce((m, i) => Math.max(m, i.z || 0), 0)
     this._writes++
@@ -628,6 +684,12 @@ export class CanvasView {
           else if (type === 'budget') this.app.openBudget(cid)
           else if (type === 'client') { this.app.navigate('contacts'); setTimeout(() => this.app.contactsView.selectContact(cid), 50) }
         })
+      })
+
+      // Link card: the URL anchor opens in a new tab and never starts a drag
+      el.querySelectorAll('[data-link-open]').forEach(a => {
+        a.addEventListener('pointerdown', e => e.stopPropagation())
+        a.addEventListener('click', e => { if (this.mode === 'arrow') e.preventDefault(); else e.stopPropagation() })
       })
 
       // Hover toolbar buttons
@@ -844,7 +906,7 @@ export class CanvasView {
     const renderModal = () => {
       overlay.innerHTML = `
         <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:400px;padding:20px" onclick="event.stopPropagation()">
-          <div style="font-size:14px;font-weight:600;margin-bottom:12px">${item.kind === 'image' ? 'Image' : 'Note'} links</div>
+          <div style="font-size:14px;font-weight:600;margin-bottom:12px">${({ image: 'Image', link: 'Link', todo: 'Checklist' }[item.kind] || 'Note')} links</div>
           ${links.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
             ${links.map((l, i) => {
               const t = LINK_TYPES.find(x => x.id === l.type)
@@ -903,7 +965,7 @@ export class CanvasView {
   _serialize(items, arrows) {
     const its = [...items]
       .sort((a, b) => String(a.id).localeCompare(String(b.id)))
-      .map(i => [i.id, i.kind, i.x, i.y, i.w, i.h, i.z, i.content, i.color, i.image_url, JSON.stringify(i.links)])
+      .map(i => [i.id, i.kind, i.x, i.y, i.w, i.h, i.z, i.content, i.color, i.image_url, i.url, JSON.stringify(i.links), JSON.stringify(i.sub_tasks)])
     const ars = [...arrows]
       .sort((a, b) => String(a.id).localeCompare(String(b.id)))
       .map(a => [a.id, a.from_item_id, a.to_item_id])
