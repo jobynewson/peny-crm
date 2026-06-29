@@ -735,7 +735,22 @@ export class ProjectsView {
   }
 
   _renderTabPlanning(p) {
-    return renderPlanningTab(p)
+    const sub = this._planSubTab || 'board'
+    const subBtn = (id, label) => `
+      <button class="proj-tab ${sub === id ? 'active' : ''}" data-plan-sub="${id}" style="font-size:12px">${label}</button>`
+    return `
+      <div class="proj-tab-bar" style="border-bottom:1px solid var(--border-light);margin-bottom:4px">
+        ${subBtn('board', '🗂 Board')}
+        ${subBtn('canvas', '🖼 Canvas')}
+        ${subBtn('moodboard', '📌 Moodboard')}
+      </div>
+      <div id="pv-plan-content">
+        ${sub === 'moodboard'
+          ? renderPlanningTab(p)
+          : sub === 'canvas'
+            ? '<div id="pv-canvas-container"><div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">Loading…</div></div>'
+            : '<div id="pv-board-container"><div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">Loading…</div></div>'}
+      </div>`
   }
 
   _renderTabFiles(p) {
@@ -939,7 +954,27 @@ export class ProjectsView {
       })
     }
     if (tab === 'planning') {
-      bindPlanningTab(mc, p, this.app.userId)
+      // Sub-tab switcher: kanban board (default) or the legacy moodboard
+      mc.querySelectorAll('[data-plan-sub]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          this._planSubTab = btn.dataset.planSub
+          const content = mc.querySelector('#pv-tab-content')
+          if (content) {
+            content.innerHTML = this._renderTab('planning', p, cl, linked)
+            this._bindTabContent(mc, 'planning', p, cl, linked)
+          }
+        })
+      })
+      const sub = this._planSubTab || 'board'
+      if (sub === 'board') {
+        const container = mc.querySelector('#pv-board-container')
+        if (container) this.app.boardsView.renderEmbedded(container, p)
+      } else if (sub === 'canvas') {
+        const container = mc.querySelector('#pv-canvas-container')
+        if (container) this.app.canvasView.renderEmbedded(container, p)
+      } else {
+        bindPlanningTab(mc, p, this.app.userId)
+      }
     }
     if (tab === 'notes') {
       const rerender = () => {

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, boolean, numeric, jsonb, date, timestamp, integer, bigint } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, boolean, numeric, jsonb, date, timestamp, integer, bigint, doublePrecision } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 
 const timestamps = {
@@ -516,6 +516,94 @@ export const expense_submissions = pgTable('expense_submissions', {
   clerk_user_id: text('clerk_user_id').notNull(),
   month_key:     text('month_key').notNull(),      // 'YYYY-MM'
   submitted_at:  timestamp('submitted_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// ── Planning boards (kanban) ──────────────────────────────────────────────────
+// Standalone or linked to a project (nullable project_id, like story_plans).
+export const boards = pgTable('boards', {
+  id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id:    text('user_id').notNull(),
+  project_id: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
+  name:       text('name').notNull(),
+  ...timestamps,
+})
+
+export const board_columns = pgTable('board_columns', {
+  id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  board_id:   uuid('board_id').notNull().references(() => boards.id, { onDelete: 'cascade' }),
+  name:       text('name').notNull(),
+  color:      text('color').notNull().default('#8590A2'),
+  sort_order: integer('sort_order').notNull().default(0),
+  ...timestamps,
+})
+
+// Cards carry board_id (denormalised) so one query fetches a whole board for
+// the polling sync loop. position is a fractional index within the column —
+// moves write a single row instead of renumbering the column.
+export const board_cards = pgTable('board_cards', {
+  id:           uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  board_id:     uuid('board_id').notNull().references(() => boards.id, { onDelete: 'cascade' }),
+  column_id:    uuid('column_id').notNull().references(() => board_columns.id, { onDelete: 'cascade' }),
+  title:        text('title').notNull(),
+  description:  text('description'),
+  assignee_id:  uuid('assignee_id').references(() => app_users.id, { onDelete: 'set null' }),
+  due_date:     date('due_date'),
+  labels:       jsonb('labels').notNull().default([]),   // [{ name, color }]
+  links:        jsonb('links').notNull().default([]),    // [{ type:'client'|'project'|'budget', id }]
+  position:     doublePrecision('position').notNull().default(0),
+  spawned_from: uuid('spawned_from'),   // board_recurrences.id that spawned this card
+  ...timestamps,
+})
+
+// Recurring card templates — re-spawn a copy in the board's first column when
+// next_due arrives. Spawning happens client-side on load; the atomic next_due
+// advance in spawnDueBoardRecurrences() prevents double-spawns.
+export const board_recurrences = pgTable('board_recurrences', {
+  id:        uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id:   text('user_id').notNull(),
+  board_id:  uuid('board_id').notNull().references(() => boards.id, { onDelete: 'cascade' }),
+  template:  jsonb('template').notNull().default({}),    // { title, description, assignee_id, labels, links }
+  freq:      text('freq').notNull().default('weekly'),   // weekly | monthly
+  interval:  integer('interval').notNull().default(1),
+  next_due:  date('next_due').notNull(),
+  active:    boolean('active').notNull().default(true),
+  ...timestamps,
+})
+
+// ── Planning canvases (moodboarding / visual planning) ───────────────────────
+// Same availability pattern as boards: standalone or linked to a project.
+export const canvases = pgTable('canvases', {
+  id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id:    text('user_id').notNull(),
+  project_id: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
+  name:       text('name').notNull(),
+  ...timestamps,
+})
+
+// Items live in canvas space (untransformed coords); the viewport applies one
+// CSS transform. kind: 'note' (content/color) or 'image' (image_url).
+export const canvas_items = pgTable('canvas_items', {
+  id:        uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  canvas_id: uuid('canvas_id').notNull().references(() => canvases.id, { onDelete: 'cascade' }),
+  kind:      text('kind').notNull().default('note'),
+  x:         doublePrecision('x').notNull().default(0),
+  y:         doublePrecision('y').notNull().default(0),
+  w:         doublePrecision('w').notNull().default(220),
+  h:         doublePrecision('h').notNull().default(140),
+  z:         integer('z').notNull().default(0),
+  content:   text('content'),
+  color:     text('color'),
+  image_url: text('image_url'),
+  links:     jsonb('links').notNull().default([]),   // same entity chips as board cards
+  ...timestamps,
+})
+
+export const canvas_arrows = pgTable('canvas_arrows', {
+  id:           uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  canvas_id:    uuid('canvas_id').notNull().references(() => canvases.id, { onDelete: 'cascade' }),
+  from_item_id: uuid('from_item_id').notNull().references(() => canvas_items.id, { onDelete: 'cascade' }),
+  to_item_id:   uuid('to_item_id').notNull().references(() => canvas_items.id, { onDelete: 'cascade' }),
+  created_at:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
 // ── User notes (private per user, keyed by Clerk ID) ──────────────────────────
