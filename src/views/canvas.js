@@ -305,6 +305,7 @@ export class CanvasView {
         <button class="btn-cancel cv-tool" id="cv-add-note" style="font-size:12px">✏️ Note</button>
         <button class="btn-cancel cv-tool" id="cv-add-image" style="font-size:12px">🖼 Image</button>
         <button class="btn-cancel cv-tool" id="cv-add-link" style="font-size:12px">🔗 Link</button>
+        <button class="btn-cancel cv-tool" id="cv-add-todo" style="font-size:12px">✅ Checklist</button>
         <button class="btn-cancel cv-tool" id="cv-arrow-mode" style="font-size:12px">→ Arrow</button>
         <span id="cv-mode-hint" style="font-size:11px;color:var(--text-tertiary)"></span>
         <input type="file" id="cv-image-input" accept="image/*" style="display:none">
@@ -396,6 +397,20 @@ export class CanvasView {
         ${this.canEdit ? '<div class="cv-resize" data-resize></div>' : ''}
       </div>`
     }
+    if (it.kind === 'todo') {
+      const rows = Array.isArray(it.sub_tasks) ? it.sub_tasks : []
+      return `
+      <div class="cv-item cv-item--todo" data-item="${it.id}"
+        style="left:${it.x}px;top:${it.y}px;width:${it.w}px;height:${it.h}px;z-index:${it.z}">
+        ${toolbar}
+        <div class="cv-todo">
+          <div class="cv-todo-rows">${rows.map(st => this._renderTodoRow(st)).join('')}</div>
+          ${this.canEdit ? '<button class="cv-todo-add" data-todo-add>+ Add item</button>' : ''}
+        </div>
+        ${chips ? `<div class="cv-item-chips">${chips}</div>` : ''}
+        ${this.canEdit ? '<div class="cv-resize" data-resize></div>' : ''}
+      </div>`
+    }
     return `
     <div class="cv-item cv-item--note" data-item="${it.id}"
       style="left:${it.x}px;top:${it.y}px;width:${it.w}px;height:${it.h}px;z-index:${it.z};background:${esc(it.color || NOTE_COLORS[0])}">
@@ -453,6 +468,74 @@ export class CanvasView {
     return null
   }
 
+  // ── Checklist (todo) rows ────────────────────────────────────────────────────
+  // sub_tasks: [{ id, text, owner_id, due_date, done }] — owner_id is a Clerk ID,
+  // exactly like marketing_cards.sub_tasks (NOT board_cards.assignee_id).
+
+  _renderTodoRow(st) {
+    const users = this.app.allUsers ?? []
+    const dis = this.canEdit ? '' : 'disabled'
+    return `
+    <div class="cv-todo-row" data-st-id="${esc(st.id || '')}">
+      <input type="checkbox" class="cv-todo-done" ${st.done ? 'checked' : ''} ${dis}>
+      <input class="cv-todo-text" value="${esc(st.text || '')}" placeholder="Item…" ${dis}
+        style="${st.done ? 'text-decoration:line-through;opacity:0.55' : ''}">
+      <select class="cv-todo-owner" ${dis}>
+        <option value="">Owner</option>
+        ${users.map(u => `<option value="${esc(u.clerk_id)}"${st.owner_id === u.clerk_id ? ' selected' : ''}>${esc(u.name || u.email)}</option>`).join('')}
+      </select>
+      <input type="date" class="cv-todo-due" value="${esc(st.due_date || '')}" ${dis}>
+      ${this.canEdit ? '<button class="cv-todo-del" data-todo-del title="Remove">×</button>' : ''}
+    </div>`
+  }
+
+  _collectTodoRows(cardEl) {
+    return [...cardEl.querySelectorAll('.cv-todo-row')].map(row => ({
+      id: row.dataset.stId || crypto.randomUUID(),
+      text: row.querySelector('.cv-todo-text')?.value.trim() || '',
+      owner_id: row.querySelector('.cv-todo-owner')?.value || '',
+      due_date: row.querySelector('.cv-todo-due')?.value || '',
+      done: row.querySelector('.cv-todo-done')?.checked || false,
+    }))
+  }
+
+  // Persist the card's rows. Text edits debounce (like note text); structural
+  // changes (checkbox, owner, due, add/remove) save immediately.
+  _saveTodo(id, cardEl, debounce) {
+    const item = this.items.find(i => i.id === id)
+    if (!item) return
+    const sub_tasks = this._collectTodoRows(cardEl)
+    item.sub_tasks = sub_tasks
+    this._todoTimers ||= {}
+    const write = async () => {
+      this._writes++
+      try {
+        await updateCanvasItem(id, { sub_tasks })
+        this._snapshot = this._serialize(this.items, this.arrows)
+      } catch (e) { console.error(e) } finally { this._writes-- }
+    }
+    clearTimeout(this._todoTimers[id])
+    if (debounce) this._todoTimers[id] = setTimeout(write, 600)
+    else write()
+  }
+
+  _bindTodoRow(id, cardEl, row) {
+    row.querySelectorAll('input, select, button').forEach(c => c.addEventListener('pointerdown', e => e.stopPropagation()))
+    const txt = row.querySelector('.cv-todo-text')
+    txt?.addEventListener('input', () => this._saveTodo(id, cardEl, true))
+    txt?.addEventListener('blur', () => this._saveTodo(id, cardEl, false))
+    row.querySelector('.cv-todo-owner')?.addEventListener('change', () => this._saveTodo(id, cardEl, false))
+    row.querySelector('.cv-todo-due')?.addEventListener('change', () => this._saveTodo(id, cardEl, false))
+    const cb = row.querySelector('.cv-todo-done')
+    cb?.addEventListener('change', () => {
+      if (txt) { txt.style.textDecoration = cb.checked ? 'line-through' : ''; txt.style.opacity = cb.checked ? '0.55' : '' }
+      this._saveTodo(id, cardEl, false)
+    })
+    row.querySelector('.cv-todo-del')?.addEventListener('click', e => {
+      e.stopPropagation(); row.remove(); this._saveTodo(id, cardEl, false)
+    })
+  }
+
   // ── Toolbar ──────────────────────────────────────────────────────────────────
 
   _bindToolbar(host) {
@@ -491,6 +574,9 @@ export class CanvasView {
 
     // Link: prompt for a URL, fetch a preview, drop a link card
     host.querySelector('#cv-add-link')?.addEventListener('click', () => this._addLinkItem())
+
+    // Checklist: a todo card seeded with one empty row
+    host.querySelector('#cv-add-todo')?.addEventListener('click', () => this._addTodoItem())
 
     // Zoom controls
     const zoomBy = factor => {
@@ -681,6 +767,17 @@ export class CanvasView {
     })
   }
 
+  async _addTodoItem() {
+    const wrapRect = this._wrap.getBoundingClientRect()
+    const centre = screenToCanvas({ x: wrapRect.width / 2, y: wrapRect.height / 2 }, this.viewport)
+    await this._createItem({
+      kind: 'todo',
+      sub_tasks: [{ id: crypto.randomUUID(), text: '', owner_id: '', due_date: '', done: false }],
+      x: Math.round(centre.x - 140), y: Math.round(centre.y - 100),
+      w: 300, h: 200,
+    })
+  }
+
   async _createItem(data) {
     const maxZ = this.items.reduce((m, i) => Math.max(m, i.z || 0), 0)
     this._writes++
@@ -689,8 +786,11 @@ export class CanvasView {
       this.items.push(created)
       this._snapshot = this._serialize(this.items, this.arrows)
       this._renderItems()
+      this._setSelection([created.id])
       if (created.kind === 'note') {
         this._startEditing(created.id)
+      } else if (created.kind === 'todo') {
+        this._wrap?.querySelector(`[data-item="${created.id}"] .cv-todo-text`)?.focus()
       }
     } catch (e) { console.error(e); this.app.toast('Error adding item') }
     finally { this._writes-- }
@@ -794,6 +894,23 @@ export class CanvasView {
           // While editing, let the textarea handle selection; otherwise the
           // pointerdown falls through to the item drag below.
           if (ta.classList.contains('cv-note-text--editing')) e.stopPropagation()
+        })
+      }
+
+      // Checklist (todo) card rows
+      const todoEl = el.querySelector('.cv-todo')
+      if (todoEl && this.canEdit) {
+        todoEl.querySelectorAll('.cv-todo-row').forEach(row => this._bindTodoRow(id, el, row))
+        const addBtn = todoEl.querySelector('[data-todo-add]')
+        addBtn?.addEventListener('pointerdown', e => e.stopPropagation())
+        addBtn?.addEventListener('click', e => {
+          e.stopPropagation()
+          const rowsEl = todoEl.querySelector('.cv-todo-rows')
+          if (!rowsEl) return
+          rowsEl.insertAdjacentHTML('beforeend', this._renderTodoRow({ id: crypto.randomUUID(), text: '', owner_id: '', due_date: '', done: false }))
+          const newRow = rowsEl.lastElementChild
+          this._bindTodoRow(id, el, newRow)
+          newRow.querySelector('.cv-todo-text')?.focus()
         })
       }
 

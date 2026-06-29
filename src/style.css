@@ -1422,12 +1422,73 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 }
 .cv-link-url:hover { color: var(--accent); text-decoration: underline; }
 
+/* Checklist (todo) card */
+.cv-item--todo {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-med);
+  overflow: hidden;
+}
+.cv-todo {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  overflow: auto;
+}
+.cv-todo-rows { display: flex; flex-direction: column; gap: 5px; }
+.cv-todo-row { display: flex; align-items: center; gap: 5px; }
+.cv-todo-done { flex-shrink: 0; cursor: pointer; accent-color: var(--accent); }
+.cv-todo-text {
+  flex: 1; min-width: 0;
+  font-size: 12px; padding: 4px 7px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: var(--font);
+  outline: none;
+}
+.cv-todo-owner, .cv-todo-due {
+  font-size: 10px; padding: 3px 5px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-family: var(--font);
+  outline: none;
+}
+.cv-todo-owner { max-width: 84px; flex-shrink: 0; }
+.cv-todo-due { flex-shrink: 0; }
+.cv-todo-del {
+  flex-shrink: 0;
+  background: none; border: none;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  font-size: 14px; line-height: 1;
+  padding: 1px 3px;
+}
+.cv-todo-del:hover { color: var(--text-primary); }
+.cv-todo-add {
+  align-self: flex-start;
+  background: none;
+  border: 1px dashed var(--border-med);
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  font-size: 11px; padding: 4px 9px;
+  cursor: pointer;
+  font-family: var(--font);
+}
+.cv-todo-add:hover { color: var(--text-primary); border-color: var(--accent); }
+
 .cv-item-chips {
   display: flex; gap: 4px; flex-wrap: wrap;
   padding: 5px 8px 7px;
 }
 .cv-item--image .cv-item-chips,
-.cv-item--link .cv-item-chips { background: var(--bg-primary); }
+.cv-item--link .cv-item-chips,
+.cv-item--todo .cv-item-chips { background: var(--bg-primary); }
 
 .cv-item-tools {
   position: absolute;
