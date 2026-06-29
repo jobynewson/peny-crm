@@ -485,7 +485,7 @@ export class CanvasView {
 
     // Image: upload a file or paste a URL
     host.querySelector('#cv-add-image')?.addEventListener('click', () => this._openImageModal(host))
-    host.querySelector('#cv-image-input')?.addEventListener('change', e => this._handleImageFile(e, host))
+    host.querySelector('#cv-image-input')?.addEventListener('change', e => this._handleImageFile(e))
 
     // Link: prompt for a URL, fetch a preview, drop a link card
     host.querySelector('#cv-add-link')?.addEventListener('click', () => this._addLinkItem())
@@ -544,12 +544,21 @@ export class CanvasView {
     })
   }
 
-  async _handleImageFile(e, host) {
+  // <input type="file"> change handler — delegates to the shared pipeline.
+  async _handleImageFile(e) {
     const file = e.target.files[0]
-    if (!file) return
+    try { await this._processImageFile(file) }
+    finally { e.target.value = '' }
+  }
+
+  // Shared image pipeline: compress → upload → place. Used by the file input,
+  // drag-and-drop and clipboard paste. `point` is an optional canvas-space
+  // centre (drop/paste location); without it the image lands at the viewport
+  // centre (toolbar-button behaviour).
+  async _processImageFile(file, point = null) {
+    if (!file || !file.type?.startsWith('image/')) return
     if (file.size > 20 * 1024 * 1024) {
       this.app.toast('Image is too large — use a file under 20 MB')
-      e.target.value = ''
       return
     }
     this.app.toast('Uploading image…')
@@ -583,7 +592,7 @@ export class CanvasView {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
         body: JSON.stringify({
           base64,
-          filename: file.name.replace(/\.[^.]+$/, '.jpg'),
+          filename: (file.name || 'pasted.png').replace(/\.[^.]+$/, '.jpg'),
           contentType: 'image/jpeg',
           projectId: this.canvas?.project_id || undefined,
         }),
@@ -593,18 +602,18 @@ export class CanvasView {
         throw new Error(err.error || 'Upload failed')
       }
       const { url } = await res.json()
-      await this._addImageItem(url)
+      await this._addImageItem(url, point)
     } catch (err) {
       console.error(err)
       this.app.toast('Image upload failed')
-    } finally {
-      e.target.value = ''
     }
   }
 
-  async _addImageItem(url) {
+  // Place an image item centred on `point` (canvas space) or, if omitted, the
+  // viewport centre.
+  async _addImageItem(url, point = null) {
     const wrapRect = this._wrap.getBoundingClientRect()
-    const centre = screenToCanvas({ x: wrapRect.width / 2, y: wrapRect.height / 2 }, this.viewport)
+    const centre = point || screenToCanvas({ x: wrapRect.width / 2, y: wrapRect.height / 2 }, this.viewport)
     await this._createItem({
       kind: 'image', image_url: url,
       x: Math.round(centre.x - 140), y: Math.round(centre.y - 100),
@@ -885,6 +894,32 @@ export class CanvasView {
       clearTimeout(this._vpSaveTimer)
       this._vpSaveTimer = setTimeout(() => this._saveViewport(), 400)
     }, { passive: false })
+
+    if (!this.canEdit) return
+
+    // Drag-and-drop an image file onto the canvas — lands where it's dropped.
+    wrap.addEventListener('dragover', e => { e.preventDefault() })
+    wrap.addEventListener('drop', e => {
+      e.preventDefault()
+      const file = [...(e.dataTransfer?.files || [])].find(f => f.type?.startsWith('image/'))
+      if (!file) return
+      const rect = wrap.getBoundingClientRect()
+      const point = screenToCanvas({ x: e.clientX - rect.left, y: e.clientY - rect.top }, this.viewport)
+      this._processImageFile(file, point)
+    })
+
+    // Paste a screenshot/image from the clipboard while the canvas is mounted.
+    this._pasteHandler = e => {
+      if (!this._wrap || !document.contains(this._wrap)) return
+      if (this._editingId) return
+      const ae = document.activeElement
+      if (ae && ['INPUT', 'TEXTAREA', 'SELECT'].includes(ae.tagName)) return
+      const file = [...(e.clipboardData?.files || [])].find(f => f.type?.startsWith('image/'))
+      if (!file) return
+      e.preventDefault()
+      this._processImageFile(file)   // no cursor for paste → viewport centre
+    }
+    document.addEventListener('paste', this._pasteHandler)
   }
 
   // ── Item links/options modal ─────────────────────────────────────────────────
@@ -976,6 +1011,7 @@ export class CanvasView {
     clearInterval(this._pollTimer)
     this._pollTimer = null
     if (this._escHandler) { document.removeEventListener('keydown', this._escHandler); this._escHandler = null }
+    if (this._pasteHandler) { document.removeEventListener('paste', this._pasteHandler); this._pasteHandler = null }
   }
 
   _startPolling(wrap) {
