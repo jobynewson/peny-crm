@@ -1,0 +1,17 @@
+-- ⚠️ PENDING — DO NOT APPLY YET ⚠️
+--
+-- This drops the legacy projects.planning_cards column that backed the retired
+-- Moodboard tab. It is intentionally NOT wired into runMigrations() (which runs
+-- automatically on app load) and is named .PENDING so it is not mistaken for an
+-- applied migration.
+--
+-- Apply this ONLY AFTER scripts/convert-planning-cards.js has been run with
+-- --apply against production and the converted canvas_items have been verified.
+-- Until then the column is the only copy of that data, so dropping it is
+-- irreversible. When you're ready:
+--   1. confirm the conversion counts looked right and the canvases render
+--   2. apply this file
+--   3. remove `planning_cards` from src/db/schema.js
+--   4. rename this file to 0021_drop_planning_cards.sql
+--
+ALTER TABLE projects DROP COLUMN IF EXISTS planning_cards;
