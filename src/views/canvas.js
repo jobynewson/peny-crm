@@ -52,6 +52,7 @@ export class CanvasView {
     this.mode = 'select'        // select | arrow
     this._arrowFromId = null
     this._editingId = null      // note currently in text-edit mode
+    this.selectedIds = new Set() // currently-selected item ids (multi-select)
     this._canvases = null       // list cache
     this._pollTimer = null
     this._snapshot = null
@@ -350,6 +351,7 @@ export class CanvasView {
     itemsEl.innerHTML = sorted.map(it => this._renderItem(it)).join('')
     this._redrawArrows()
     this._bindItems(itemsEl)
+    this._applySelectionStyles()
   }
 
   _renderItem(it) {
@@ -513,6 +515,33 @@ export class CanvasView {
       if (e.key === 'Escape' && this.mode === 'arrow') setMode('select')
     }
     document.addEventListener('keydown', this._escHandler)
+
+    // Item shortcuts — delete / nudge / duplicate the selection. Guarded so
+    // typing in a note, an input or a modal field never triggers them.
+    this._keyHandler = e => {
+      if (!this.canEdit) return
+      if (!this._wrap || !document.contains(this._wrap)) return
+      if (this._editingId) return
+      if (this.mode === 'arrow') return
+      const ae = document.activeElement
+      if (ae && ['INPUT', 'TEXTAREA', 'SELECT'].includes(ae.tagName)) return
+      if (!this.selectedIds.size) return
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault()
+        this._deleteSelection()
+      } else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        e.preventDefault()
+        const step = e.shiftKey ? 10 : 1
+        const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0
+        const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0
+        this._nudgeSelection(dx, dy)
+      } else if ((e.metaKey || e.ctrlKey) && (e.key === 'd' || e.key === 'D')) {
+        e.preventDefault()
+        this._duplicateSelection()
+      }
+    }
+    document.addEventListener('keydown', this._keyHandler)
   }
 
   _openImageModal(host) {
@@ -804,6 +833,9 @@ export class CanvasView {
         e.stopPropagation()
         this._interacting = true
 
+        // Select the item being interacted with (multi-select extends this).
+        if (!this.selectedIds.has(id)) this._setSelection([id])
+
         // Bring to front (unless it's already the topmost item)
         const maxZ = this.items.reduce((m, i) => Math.max(m, i.z || 0), 0)
         let zChanged = false
@@ -857,6 +889,107 @@ export class CanvasView {
       this._arrowRaf = null
       this._redrawArrows()
     })
+  }
+
+  // ── Selection ────────────────────────────────────────────────────────────────
+
+  _getSelection() {
+    return this.items.filter(i => this.selectedIds.has(i.id))
+  }
+
+  _setSelection(ids) {
+    this.selectedIds = new Set(ids)
+    this._applySelectionStyles()
+  }
+
+  _toggleSelected(id) {
+    if (this.selectedIds.has(id)) this.selectedIds.delete(id)
+    else this.selectedIds.add(id)
+    this._applySelectionStyles()
+  }
+
+  _clearSelection() {
+    if (!this.selectedIds.size) return
+    this.selectedIds.clear()
+    this._applySelectionStyles()
+  }
+
+  _applySelectionStyles() {
+    this._wrap?.querySelectorAll('.cv-item').forEach(el => {
+      el.classList.toggle('cv-item--selected', this.selectedIds.has(el.dataset.item))
+    })
+  }
+
+  // ── Keyboard shortcuts (operate on the current selection) ────────────────────
+
+  async _deleteSelection() {
+    const ids = [...this.selectedIds]
+    if (!ids.length) return
+    const ok = await this.app.confirm({
+      title: ids.length > 1 ? `Delete ${ids.length} items?` : 'Delete this item?',
+      message: 'Arrows attached to them are removed too.',
+      confirmLabel: 'Delete',
+    })
+    if (!ok) return
+    const idSet = new Set(ids)
+    this._writes++
+    try {
+      await Promise.all(ids.map(id => deleteCanvasItem(id)))
+      this.items = this.items.filter(i => !idSet.has(i.id))
+      this.arrows = this.arrows.filter(a => !idSet.has(a.from_item_id) && !idSet.has(a.to_item_id))
+      this.selectedIds = new Set()
+      this._snapshot = this._serialize(this.items, this.arrows)
+      this._renderItems()
+    } catch (e) { console.error(e); this.app.toast('Error deleting item') }
+    finally { this._writes-- }
+  }
+
+  _nudgeSelection(dx, dy) {
+    const sel = this._getSelection()
+    if (!sel.length) return
+    for (const item of sel) {
+      item.x += dx; item.y += dy
+      const el = this._wrap?.querySelector(`[data-item="${item.id}"]`)
+      if (el) { el.style.left = `${item.x}px`; el.style.top = `${item.y}px` }
+    }
+    this._redrawArrowsThrottled()
+    // Debounce the network write the same way drag-end does — one PATCH per
+    // item after the keypresses settle, not one per keystroke.
+    this._interacting = true
+    clearTimeout(this._nudgeTimer)
+    this._nudgeTimer = setTimeout(async () => {
+      this._interacting = false
+      const toSave = this._getSelection()
+      this._writes++
+      try {
+        await Promise.all(toSave.map(it => updateCanvasItem(it.id, { x: it.x, y: it.y })))
+        this._snapshot = this._serialize(this.items, this.arrows)
+      } catch (e) { console.error(e) } finally { this._writes-- }
+    }, 500)
+  }
+
+  async _duplicateSelection() {
+    const sel = this._getSelection()
+    if (!sel.length) return
+    let maxZ = this.items.reduce((m, i) => Math.max(m, i.z || 0), 0)
+    this._writes++
+    const newIds = []
+    try {
+      for (const item of sel) {
+        maxZ += 1
+        const created = await createCanvasItem(this.currentId, {
+          kind: item.kind, x: item.x + 20, y: item.y + 20, w: item.w, h: item.h, z: maxZ,
+          content: item.content, color: item.color, image_url: item.image_url, url: item.url,
+          links: item.links || [], sub_tasks: item.sub_tasks || [],
+        })
+        this.items.push(created)
+        newIds.push(created.id)
+      }
+      this._setSelection(newIds)
+      this._snapshot = this._serialize(this.items, this.arrows)
+      this._renderItems()
+    } catch (e) { console.error(e); this.app.toast('Error duplicating item') }
+    finally { this._writes-- }
   }
 
   _bindSurface(wrap) {
@@ -1011,6 +1144,7 @@ export class CanvasView {
     clearInterval(this._pollTimer)
     this._pollTimer = null
     if (this._escHandler) { document.removeEventListener('keydown', this._escHandler); this._escHandler = null }
+    if (this._keyHandler) { document.removeEventListener('keydown', this._keyHandler); this._keyHandler = null }
     if (this._pasteHandler) { document.removeEventListener('paste', this._pasteHandler); this._pasteHandler = null }
   }
 

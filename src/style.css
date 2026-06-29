@@ -1338,6 +1338,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .cv-item:active { cursor: grabbing; }
 .cv-wrap--arrow .cv-item { cursor: crosshair; }
 .cv-item--arrow-from { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cv-item--selected { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .cv-item--note { border: 1px solid rgba(0, 0, 0, 0.12); }
 .cv-note-text {
