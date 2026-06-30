@@ -581,7 +581,13 @@ export const canvases = pgTable('canvases', {
 })
 
 // Items live in canvas space (untransformed coords); the viewport applies one
-// CSS transform. kind: 'note' (content/color) or 'image' (image_url).
+// CSS transform. kind:
+//   'note'  — content/color
+//   'image' — image_url
+//   'link'  — url (destination); image_url reused as preview thumbnail,
+//             content reused as the fetched title
+//   'todo'  — sub_tasks checklist ([{ id, text, owner_id, due_date, done }],
+//             owner_id is a Clerk ID, same shape as marketing_cards.sub_tasks)
 export const canvas_items = pgTable('canvas_items', {
   id:        uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
   canvas_id: uuid('canvas_id').notNull().references(() => canvases.id, { onDelete: 'cascade' }),
@@ -594,7 +600,9 @@ export const canvas_items = pgTable('canvas_items', {
   content:   text('content'),
   color:     text('color'),
   image_url: text('image_url'),
-  links:     jsonb('links').notNull().default([]),   // same entity chips as board cards
+  url:       text('url'),                              // 'link' kind: destination URL
+  links:     jsonb('links').notNull().default([]),     // same entity chips as board cards
+  sub_tasks: jsonb('sub_tasks').notNull().default([]), // 'todo' kind: checklist rows
   ...timestamps,
 })
 

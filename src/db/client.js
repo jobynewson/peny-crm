@@ -332,11 +332,16 @@ export async function runMigrations() {
       content    TEXT,
       color      TEXT,
       image_url  TEXT,
+      url        TEXT,
       links      JSONB NOT NULL DEFAULT '[]'::jsonb,
+      sub_tasks  JSONB NOT NULL DEFAULT '[]'::jsonb,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `
+  // Columns added after canvas_items shipped — idempotent for existing DBs.
+  await sql`ALTER TABLE canvas_items ADD COLUMN IF NOT EXISTS url TEXT`
+  await sql`ALTER TABLE canvas_items ADD COLUMN IF NOT EXISTS sub_tasks JSONB NOT NULL DEFAULT '[]'::jsonb`
   await sql`
     CREATE TABLE IF NOT EXISTS canvas_arrows (
       id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

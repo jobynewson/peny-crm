@@ -1,5 +1,4 @@
 import { createProject, updateProject, deleteProject, linkBudgetToProject, unlinkBudgetFromProject, logActivity, getActivityLog, getTimeEntries, setTrackToken, deleteTimeEntry, getWorkLog, addWorkLogEntry, deleteWorkLogEntry } from '../db/client.js'
-import { renderPlanningTab, bindPlanningTab } from './planning-tab.js'
 import { PostProductionView } from './post-production.js'
 import { continuationScript, PDF_CONTINUED_CSS, a4ContentWidthPx, a4ContentHeightPx } from '../utils/pdfContinuation.js'
 
@@ -742,14 +741,11 @@ export class ProjectsView {
       <div class="proj-tab-bar" style="border-bottom:1px solid var(--border-light);margin-bottom:4px">
         ${subBtn('board', '🗂 Board')}
         ${subBtn('canvas', '🖼 Canvas')}
-        ${subBtn('moodboard', '📌 Moodboard')}
       </div>
       <div id="pv-plan-content">
-        ${sub === 'moodboard'
-          ? renderPlanningTab(p)
-          : sub === 'canvas'
-            ? '<div id="pv-canvas-container"><div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">Loading…</div></div>'
-            : '<div id="pv-board-container"><div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">Loading…</div></div>'}
+        ${sub === 'canvas'
+          ? '<div id="pv-canvas-container"><div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">Loading…</div></div>'
+          : '<div id="pv-board-container"><div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">Loading…</div></div>'}
       </div>`
   }
 
@@ -954,7 +950,7 @@ export class ProjectsView {
       })
     }
     if (tab === 'planning') {
-      // Sub-tab switcher: kanban board (default) or the legacy moodboard
+      // Sub-tab switcher: kanban board (default) or the free-form canvas
       mc.querySelectorAll('[data-plan-sub]').forEach(btn => {
         btn.addEventListener('click', () => {
           this._planSubTab = btn.dataset.planSub
@@ -966,14 +962,12 @@ export class ProjectsView {
         })
       })
       const sub = this._planSubTab || 'board'
-      if (sub === 'board') {
-        const container = mc.querySelector('#pv-board-container')
-        if (container) this.app.boardsView.renderEmbedded(container, p)
-      } else if (sub === 'canvas') {
+      if (sub === 'canvas') {
         const container = mc.querySelector('#pv-canvas-container')
         if (container) this.app.canvasView.renderEmbedded(container, p)
       } else {
-        bindPlanningTab(mc, p, this.app.userId)
+        const container = mc.querySelector('#pv-board-container')
+        if (container) this.app.boardsView.renderEmbedded(container, p)
       }
     }
     if (tab === 'notes') {

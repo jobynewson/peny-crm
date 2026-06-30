@@ -10,6 +10,7 @@ import { neon } from '@neondatabase/serverless'
 import nodemailer from 'nodemailer'
 import { verifyToken } from '@clerk/backend'
 import { syncLeaveRequestGoogle } from './google.js'
+import { groupDueSubTasks } from './_sub-tasks.js'
 
 export default async function handler(req, res) {
   // ── Leave approval (GET, token-based) ──────────────────────────────────────
@@ -147,7 +148,9 @@ export default async function handler(req, res) {
     }
   }
 
-  // ── Marketing sub-task digest (09:00 run, same as deliverables) ─────────────
+  // ── Task sub-task digest (09:00 run, same as deliverables) ──────────────────
+  // Marketing card sub-tasks AND canvas checklist (kind='todo') sub-tasks, both
+  // keyed by Clerk owner_id, folded into one per-owner email.
   if (type === 'deliverables') {
     const today2 = new Date()
     today2.setHours(0, 0, 0, 0)
@@ -160,20 +163,24 @@ export default async function handler(req, res) {
       `
     } catch (_) { /* table may not exist yet */ }
 
+    let canvasTodos = []
+    try {
+      canvasTodos = await sql`
+        SELECT ci.sub_tasks, c.name AS canvas_name
+        FROM canvas_items ci
+        JOIN canvases c ON c.id = ci.canvas_id
+        WHERE ci.kind = 'todo' AND ci.sub_tasks IS NOT NULL AND jsonb_array_length(ci.sub_tasks) > 0
+      `
+    } catch (_) { /* table may not exist yet */ }
+
     const users2 = await sql`SELECT clerk_id, name, email FROM app_users`
     const userByClerkId = Object.fromEntries(users2.map(u => [u.clerk_id, u]))
 
-    const mktByOwner = {}
-    for (const card of mktCards) {
-      for (const st of (card.sub_tasks || [])) {
-        if (!st.text || st.done || !st.due_date || !st.owner_id) continue
-        const dueDate = new Date(st.due_date); dueDate.setHours(0, 0, 0, 0)
-        const daysUntil = Math.round((dueDate - today2) / 86400000)
-        if (daysUntil > 3) continue
-        if (!mktByOwner[st.owner_id]) mktByOwner[st.owner_id] = []
-        mktByOwner[st.owner_id].push({ cardTitle: card.title, text: st.text, daysUntil })
-      }
-    }
+    const sources = [
+      ...mktCards.map(c => ({ title: c.title, sub_tasks: c.sub_tasks })),
+      ...canvasTodos.map(t => ({ title: t.canvas_name || 'Canvas checklist', sub_tasks: t.sub_tasks })),
+    ]
+    const mktByOwner = groupDueSubTasks(sources, today2, 3)
 
     const label2 = (n) => n < 0 ? `${Math.abs(n)}d overdue` : n === 0 ? 'due today' : `${n}d left`
     const colour2 = (n) => n < 0 ? '#ef4444' : n === 0 ? '#f59e0b' : '#3b82f6'
@@ -183,24 +190,24 @@ export default async function handler(req, res) {
       if (!user?.email) continue
       const overdueCount = items.filter(i => i.daysUntil < 0).length
       const subject = overdueCount > 0
-        ? `⚠ ${overdueCount} overdue marketing task${overdueCount > 1 ? 's' : ''} — ${items.length} total`
-        : `⏰ ${items.length} marketing task${items.length > 1 ? 's' : ''} due soon`
+        ? `⚠ ${overdueCount} overdue task${overdueCount > 1 ? 's' : ''} — ${items.length} total`
+        : `⏰ ${items.length} task${items.length > 1 ? 's' : ''} due soon`
       const body = `
         <table style="width:100%;border-collapse:collapse">
           <thead><tr>
             <th style="padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#999;border-bottom:2px solid #f0f0f0">Task</th>
-            <th style="padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#999;border-bottom:2px solid #f0f0f0">Card</th>
+            <th style="padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#999;border-bottom:2px solid #f0f0f0">Source</th>
             <th style="padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#999;border-bottom:2px solid #f0f0f0">Status</th>
           </tr></thead>
           <tbody>${items.map(i => `
             <tr>
               <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:14px;color:#1a1a1a">${i.text}</td>
-              <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#555">${i.cardTitle}</td>
+              <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#555">${i.title}</td>
               <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:${colour2(i.daysUntil)};white-space:nowrap;font-weight:500">${label2(i.daysUntil)}</td>
             </tr>`).join('')}</tbody>
         </table>`
       const name = user.name || user.email.split('@')[0]
-      const html = emailWrap('Marketing Task Reminders', `Hi ${name}, here are your marketing tasks that need attention:`, body)
+      const html = emailWrap('Task Reminders', `Hi ${name}, here are your tasks that need attention:`, body)
       try {
         await sendMail(user.email, subject, html)
         results.push({ type: 'marketing-task', to: user.email, sent: items.length })

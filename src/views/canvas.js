@@ -36,6 +36,11 @@ function imgSrc(url) {
   return esc(url)
 }
 
+// A tidy display form for a link card's URL — protocol and trailing slash off.
+function displayUrl(url) {
+  return String(url ?? '').replace(/^https?:\/\//i, '').replace(/\/$/, '')
+}
+
 export class CanvasView {
   constructor(app) {
     this.app = app
@@ -47,6 +52,7 @@ export class CanvasView {
     this.mode = 'select'        // select | arrow
     this._arrowFromId = null
     this._editingId = null      // note currently in text-edit mode
+    this.selectedIds = new Set() // currently-selected item ids (multi-select)
     this._canvases = null       // list cache
     this._pollTimer = null
     this._snapshot = null
@@ -298,6 +304,8 @@ export class CanvasView {
       <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
         <button class="btn-cancel cv-tool" id="cv-add-note" style="font-size:12px">✏️ Note</button>
         <button class="btn-cancel cv-tool" id="cv-add-image" style="font-size:12px">🖼 Image</button>
+        <button class="btn-cancel cv-tool" id="cv-add-link" style="font-size:12px">🔗 Link</button>
+        <button class="btn-cancel cv-tool" id="cv-add-todo" style="font-size:12px">✅ Checklist</button>
         <button class="btn-cancel cv-tool" id="cv-arrow-mode" style="font-size:12px">→ Arrow</button>
         <span id="cv-mode-hint" style="font-size:11px;color:var(--text-tertiary)"></span>
         <input type="file" id="cv-image-input" accept="image/*" style="display:none">
@@ -344,6 +352,7 @@ export class CanvasView {
     itemsEl.innerHTML = sorted.map(it => this._renderItem(it)).join('')
     this._redrawArrows()
     this._bindItems(itemsEl)
+    this._applySelectionStyles()
   }
 
   _renderItem(it) {
@@ -368,6 +377,36 @@ export class CanvasView {
         style="left:${it.x}px;top:${it.y}px;width:${it.w}px;height:${it.h}px;z-index:${it.z}">
         ${toolbar}
         <img src="${imgSrc(it.image_url)}" alt="" draggable="false" loading="lazy">
+        ${chips ? `<div class="cv-item-chips">${chips}</div>` : ''}
+        ${this.canEdit ? '<div class="cv-resize" data-resize></div>' : ''}
+      </div>`
+    }
+    if (it.kind === 'link') {
+      return `
+      <div class="cv-item cv-item--link" data-item="${it.id}"
+        style="left:${it.x}px;top:${it.y}px;width:${it.w}px;height:${it.h}px;z-index:${it.z}">
+        ${toolbar}
+        <div class="cv-link-body">
+          ${it.image_url ? `<div class="cv-link-thumb"><img src="${imgSrc(it.image_url)}" alt="" draggable="false" loading="lazy"></div>` : ''}
+          <div class="cv-link-meta">
+            <div class="cv-link-title">${esc(it.content || displayUrl(it.url))}</div>
+            <a class="cv-link-url" href="${esc(it.url || '#')}" target="_blank" rel="noopener" data-link-open>${esc(displayUrl(it.url))}</a>
+          </div>
+        </div>
+        ${chips ? `<div class="cv-item-chips">${chips}</div>` : ''}
+        ${this.canEdit ? '<div class="cv-resize" data-resize></div>' : ''}
+      </div>`
+    }
+    if (it.kind === 'todo') {
+      const rows = Array.isArray(it.sub_tasks) ? it.sub_tasks : []
+      return `
+      <div class="cv-item cv-item--todo" data-item="${it.id}"
+        style="left:${it.x}px;top:${it.y}px;width:${it.w}px;height:${it.h}px;z-index:${it.z}">
+        ${toolbar}
+        <div class="cv-todo">
+          <div class="cv-todo-rows">${rows.map(st => this._renderTodoRow(st)).join('')}</div>
+          ${this.canEdit ? '<button class="cv-todo-add" data-todo-add>+ Add item</button>' : ''}
+        </div>
         ${chips ? `<div class="cv-item-chips">${chips}</div>` : ''}
         ${this.canEdit ? '<div class="cv-resize" data-resize></div>' : ''}
       </div>`
@@ -429,6 +468,74 @@ export class CanvasView {
     return null
   }
 
+  // ── Checklist (todo) rows ────────────────────────────────────────────────────
+  // sub_tasks: [{ id, text, owner_id, due_date, done }] — owner_id is a Clerk ID,
+  // exactly like marketing_cards.sub_tasks (NOT board_cards.assignee_id).
+
+  _renderTodoRow(st) {
+    const users = this.app.allUsers ?? []
+    const dis = this.canEdit ? '' : 'disabled'
+    return `
+    <div class="cv-todo-row" data-st-id="${esc(st.id || '')}">
+      <input type="checkbox" class="cv-todo-done" ${st.done ? 'checked' : ''} ${dis}>
+      <input class="cv-todo-text" value="${esc(st.text || '')}" placeholder="Item…" ${dis}
+        style="${st.done ? 'text-decoration:line-through;opacity:0.55' : ''}">
+      <select class="cv-todo-owner" ${dis}>
+        <option value="">Owner</option>
+        ${users.map(u => `<option value="${esc(u.clerk_id)}"${st.owner_id === u.clerk_id ? ' selected' : ''}>${esc(u.name || u.email)}</option>`).join('')}
+      </select>
+      <input type="date" class="cv-todo-due" value="${esc(st.due_date || '')}" ${dis}>
+      ${this.canEdit ? '<button class="cv-todo-del" data-todo-del title="Remove">×</button>' : ''}
+    </div>`
+  }
+
+  _collectTodoRows(cardEl) {
+    return [...cardEl.querySelectorAll('.cv-todo-row')].map(row => ({
+      id: row.dataset.stId || crypto.randomUUID(),
+      text: row.querySelector('.cv-todo-text')?.value.trim() || '',
+      owner_id: row.querySelector('.cv-todo-owner')?.value || '',
+      due_date: row.querySelector('.cv-todo-due')?.value || '',
+      done: row.querySelector('.cv-todo-done')?.checked || false,
+    }))
+  }
+
+  // Persist the card's rows. Text edits debounce (like note text); structural
+  // changes (checkbox, owner, due, add/remove) save immediately.
+  _saveTodo(id, cardEl, debounce) {
+    const item = this.items.find(i => i.id === id)
+    if (!item) return
+    const sub_tasks = this._collectTodoRows(cardEl)
+    item.sub_tasks = sub_tasks
+    this._todoTimers ||= {}
+    const write = async () => {
+      this._writes++
+      try {
+        await updateCanvasItem(id, { sub_tasks })
+        this._snapshot = this._serialize(this.items, this.arrows)
+      } catch (e) { console.error(e) } finally { this._writes-- }
+    }
+    clearTimeout(this._todoTimers[id])
+    if (debounce) this._todoTimers[id] = setTimeout(write, 600)
+    else write()
+  }
+
+  _bindTodoRow(id, cardEl, row) {
+    row.querySelectorAll('input, select, button').forEach(c => c.addEventListener('pointerdown', e => e.stopPropagation()))
+    const txt = row.querySelector('.cv-todo-text')
+    txt?.addEventListener('input', () => this._saveTodo(id, cardEl, true))
+    txt?.addEventListener('blur', () => this._saveTodo(id, cardEl, false))
+    row.querySelector('.cv-todo-owner')?.addEventListener('change', () => this._saveTodo(id, cardEl, false))
+    row.querySelector('.cv-todo-due')?.addEventListener('change', () => this._saveTodo(id, cardEl, false))
+    const cb = row.querySelector('.cv-todo-done')
+    cb?.addEventListener('change', () => {
+      if (txt) { txt.style.textDecoration = cb.checked ? 'line-through' : ''; txt.style.opacity = cb.checked ? '0.55' : '' }
+      this._saveTodo(id, cardEl, false)
+    })
+    row.querySelector('.cv-todo-del')?.addEventListener('click', e => {
+      e.stopPropagation(); row.remove(); this._saveTodo(id, cardEl, false)
+    })
+  }
+
   // ── Toolbar ──────────────────────────────────────────────────────────────────
 
   _bindToolbar(host) {
@@ -463,7 +570,13 @@ export class CanvasView {
 
     // Image: upload a file or paste a URL
     host.querySelector('#cv-add-image')?.addEventListener('click', () => this._openImageModal(host))
-    host.querySelector('#cv-image-input')?.addEventListener('change', e => this._handleImageFile(e, host))
+    host.querySelector('#cv-image-input')?.addEventListener('change', e => this._handleImageFile(e))
+
+    // Link: prompt for a URL, fetch a preview, drop a link card
+    host.querySelector('#cv-add-link')?.addEventListener('click', () => this._addLinkItem())
+
+    // Checklist: a todo card seeded with one empty row
+    host.querySelector('#cv-add-todo')?.addEventListener('click', () => this._addTodoItem())
 
     // Zoom controls
     const zoomBy = factor => {
@@ -488,6 +601,33 @@ export class CanvasView {
       if (e.key === 'Escape' && this.mode === 'arrow') setMode('select')
     }
     document.addEventListener('keydown', this._escHandler)
+
+    // Item shortcuts — delete / nudge / duplicate the selection. Guarded so
+    // typing in a note, an input or a modal field never triggers them.
+    this._keyHandler = e => {
+      if (!this.canEdit) return
+      if (!this._wrap || !document.contains(this._wrap)) return
+      if (this._editingId) return
+      if (this.mode === 'arrow') return
+      const ae = document.activeElement
+      if (ae && ['INPUT', 'TEXTAREA', 'SELECT'].includes(ae.tagName)) return
+      if (!this.selectedIds.size) return
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault()
+        this._deleteSelection()
+      } else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        e.preventDefault()
+        const step = e.shiftKey ? 10 : 1
+        const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0
+        const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0
+        this._nudgeSelection(dx, dy)
+      } else if ((e.metaKey || e.ctrlKey) && (e.key === 'd' || e.key === 'D')) {
+        e.preventDefault()
+        this._duplicateSelection()
+      }
+    }
+    document.addEventListener('keydown', this._keyHandler)
   }
 
   _openImageModal(host) {
@@ -519,12 +659,21 @@ export class CanvasView {
     })
   }
 
-  async _handleImageFile(e, host) {
+  // <input type="file"> change handler — delegates to the shared pipeline.
+  async _handleImageFile(e) {
     const file = e.target.files[0]
-    if (!file) return
+    try { await this._processImageFile(file) }
+    finally { e.target.value = '' }
+  }
+
+  // Shared image pipeline: compress → upload → place. Used by the file input,
+  // drag-and-drop and clipboard paste. `point` is an optional canvas-space
+  // centre (drop/paste location); without it the image lands at the viewport
+  // centre (toolbar-button behaviour).
+  async _processImageFile(file, point = null) {
+    if (!file || !file.type?.startsWith('image/')) return
     if (file.size > 20 * 1024 * 1024) {
       this.app.toast('Image is too large — use a file under 20 MB')
-      e.target.value = ''
       return
     }
     this.app.toast('Uploading image…')
@@ -558,7 +707,7 @@ export class CanvasView {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
         body: JSON.stringify({
           base64,
-          filename: file.name.replace(/\.[^.]+$/, '.jpg'),
+          filename: (file.name || 'pasted.png').replace(/\.[^.]+$/, '.jpg'),
           contentType: 'image/jpeg',
           projectId: this.canvas?.project_id || undefined,
         }),
@@ -568,22 +717,64 @@ export class CanvasView {
         throw new Error(err.error || 'Upload failed')
       }
       const { url } = await res.json()
-      await this._addImageItem(url)
+      await this._addImageItem(url, point)
     } catch (err) {
       console.error(err)
       this.app.toast('Image upload failed')
-    } finally {
-      e.target.value = ''
     }
   }
 
-  async _addImageItem(url) {
+  // Place an image item centred on `point` (canvas space) or, if omitted, the
+  // viewport centre.
+  async _addImageItem(url, point = null) {
     const wrapRect = this._wrap.getBoundingClientRect()
-    const centre = screenToCanvas({ x: wrapRect.width / 2, y: wrapRect.height / 2 }, this.viewport)
+    const centre = point || screenToCanvas({ x: wrapRect.width / 2, y: wrapRect.height / 2 }, this.viewport)
     await this._createItem({
       kind: 'image', image_url: url,
       x: Math.round(centre.x - 140), y: Math.round(centre.y - 100),
       w: 280, h: 200,
+    })
+  }
+
+  // Fetch link metadata from the SSRF-guarded preview endpoint. Throws on
+  // failure so the caller can fall back to a bare-URL card.
+  async _fetchPreview(url) {
+    const { getAuthToken } = await import('../auth/clerk.js')
+    const authToken = await getAuthToken()
+    const res = await fetch(`/api/blob?action=preview&url=${encodeURIComponent(url)}`, {
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    })
+    if (!res.ok) throw new Error('Preview failed')
+    return res.json()
+  }
+
+  async _addLinkItem() {
+    const raw = prompt('Paste a link (web page, YouTube, Vimeo…):')
+    const trimmed = raw?.trim()
+    if (!trimmed) return
+    const url = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+    const wrapRect = this._wrap.getBoundingClientRect()
+    const centre = screenToCanvas({ x: wrapRect.width / 2, y: wrapRect.height / 2 }, this.viewport)
+    // Best-effort preview — never block card creation on a failed/blocked fetch.
+    let preview = null
+    try { preview = await this._fetchPreview(url) } catch (e) { console.warn('Link preview failed:', e) }
+    await this._createItem({
+      kind: 'link', url,
+      content: preview?.title || '',
+      image_url: preview?.image || null,
+      x: Math.round(centre.x - 140), y: Math.round(centre.y - 60),
+      w: 280, h: 120,
+    })
+  }
+
+  async _addTodoItem() {
+    const wrapRect = this._wrap.getBoundingClientRect()
+    const centre = screenToCanvas({ x: wrapRect.width / 2, y: wrapRect.height / 2 }, this.viewport)
+    await this._createItem({
+      kind: 'todo',
+      sub_tasks: [{ id: crypto.randomUUID(), text: '', owner_id: '', due_date: '', done: false }],
+      x: Math.round(centre.x - 140), y: Math.round(centre.y - 100),
+      w: 300, h: 200,
     })
   }
 
@@ -595,8 +786,11 @@ export class CanvasView {
       this.items.push(created)
       this._snapshot = this._serialize(this.items, this.arrows)
       this._renderItems()
+      this._setSelection([created.id])
       if (created.kind === 'note') {
         this._startEditing(created.id)
+      } else if (created.kind === 'todo') {
+        this._wrap?.querySelector(`[data-item="${created.id}"] .cv-todo-text`)?.focus()
       }
     } catch (e) { console.error(e); this.app.toast('Error adding item') }
     finally { this._writes-- }
@@ -628,6 +822,12 @@ export class CanvasView {
           else if (type === 'budget') this.app.openBudget(cid)
           else if (type === 'client') { this.app.navigate('contacts'); setTimeout(() => this.app.contactsView.selectContact(cid), 50) }
         })
+      })
+
+      // Link card: the URL anchor opens in a new tab and never starts a drag
+      el.querySelectorAll('[data-link-open]').forEach(a => {
+        a.addEventListener('pointerdown', e => e.stopPropagation())
+        a.addEventListener('click', e => { if (this.mode === 'arrow') e.preventDefault(); else e.stopPropagation() })
       })
 
       // Hover toolbar buttons
@@ -697,6 +897,23 @@ export class CanvasView {
         })
       }
 
+      // Checklist (todo) card rows
+      const todoEl = el.querySelector('.cv-todo')
+      if (todoEl && this.canEdit) {
+        todoEl.querySelectorAll('.cv-todo-row').forEach(row => this._bindTodoRow(id, el, row))
+        const addBtn = todoEl.querySelector('[data-todo-add]')
+        addBtn?.addEventListener('pointerdown', e => e.stopPropagation())
+        addBtn?.addEventListener('click', e => {
+          e.stopPropagation()
+          const rowsEl = todoEl.querySelector('.cv-todo-rows')
+          if (!rowsEl) return
+          rowsEl.insertAdjacentHTML('beforeend', this._renderTodoRow({ id: crypto.randomUUID(), text: '', owner_id: '', due_date: '', done: false }))
+          const newRow = rowsEl.lastElementChild
+          this._bindTodoRow(id, el, newRow)
+          newRow.querySelector('.cv-todo-text')?.focus()
+        })
+      }
+
       // Arrow-mode clicks
       el.addEventListener('click', async () => {
         if (this.mode !== 'arrow' || !this.canEdit) return
@@ -720,7 +937,8 @@ export class CanvasView {
       if (!this.canEdit) return
 
       // Drag to move (pointer events — works at any zoom because deltas are
-      // divided by the current zoom)
+      // divided by the current zoom). A drag on any selected item moves the
+      // whole selection; Shift-click toggles an item's membership.
       el.addEventListener('pointerdown', e => {
         if (this.mode === 'arrow') return
         if (e.button !== 0) return
@@ -731,9 +949,17 @@ export class CanvasView {
         if (!item) return
         e.preventDefault()
         e.stopPropagation()
+
+        // Shift-click toggles selection membership without dragging.
+        if (e.shiftKey && !isResize) { this._toggleSelected(id); return }
+
         this._interacting = true
 
-        // Bring to front (unless it's already the topmost item)
+        // If this item isn't part of the current selection, select just it.
+        // If it already is, keep the selection so the group moves together.
+        if (!this.selectedIds.has(id)) this._setSelection([id])
+
+        // Bring the grabbed item to front (unless it's already topmost)
         const maxZ = this.items.reduce((m, i) => Math.max(m, i.z || 0), 0)
         let zChanged = false
         if ((item.z || 0) < maxZ || this.items.filter(i => (i.z || 0) === maxZ).length > 1) {
@@ -743,22 +969,28 @@ export class CanvasView {
         }
 
         const start = { x: e.clientX, y: e.clientY }
-        const orig = { x: item.x, y: item.y, w: item.w, h: item.h }
+        // Resize affects only the grabbed item; a move drags the whole selection.
+        const movers = isResize ? [item] : this._getSelection()
+        const orig = new Map(movers.map(m => [m.id, { x: m.x, y: m.y, w: m.w, h: m.h }]))
         let moved = false
 
         const onMove = ev => {
           const d = dragDeltaToCanvas({ x: ev.clientX - start.x, y: ev.clientY - start.y }, this.viewport)
           if (Math.abs(ev.clientX - start.x) + Math.abs(ev.clientY - start.y) > 2) moved = true
           if (isResize) {
-            item.w = Math.max(80, orig.w + d.x)
-            item.h = Math.max(50, orig.h + d.y)
+            const o = orig.get(item.id)
+            item.w = Math.max(80, o.w + d.x)
+            item.h = Math.max(50, o.h + d.y)
             el.style.width = `${item.w}px`
             el.style.height = `${item.h}px`
           } else {
-            item.x = orig.x + d.x
-            item.y = orig.y + d.y
-            el.style.left = `${item.x}px`
-            el.style.top = `${item.y}px`
+            for (const m of movers) {
+              const o = orig.get(m.id)
+              m.x = o.x + d.x
+              m.y = o.y + d.y
+              const mel = this._wrap?.querySelector(`[data-item="${m.id}"]`)
+              if (mel) { mel.style.left = `${m.x}px`; mel.style.top = `${m.y}px` }
+            }
           }
           this._redrawArrowsThrottled()
         }
@@ -769,7 +1001,15 @@ export class CanvasView {
           if (!moved && !zChanged) return
           this._writes++
           try {
-            await updateCanvasItem(id, { x: item.x, y: item.y, w: item.w, h: item.h, z: item.z })
+            if (!moved) {
+              await updateCanvasItem(id, { z: item.z })
+            } else if (isResize) {
+              await updateCanvasItem(id, { x: item.x, y: item.y, w: item.w, h: item.h, z: item.z })
+            } else {
+              // One batch of writes for the whole moved selection.
+              await Promise.all(movers.map(m => updateCanvasItem(m.id,
+                m.id === id ? { x: m.x, y: m.y, z: item.z } : { x: m.x, y: m.y })))
+            }
             this._snapshot = this._serialize(this.items, this.arrows)
           } catch (err) { console.error(err); this.app.toast('Error saving move') }
           finally { this._writes-- }
@@ -788,16 +1028,161 @@ export class CanvasView {
     })
   }
 
+  // ── Selection ────────────────────────────────────────────────────────────────
+
+  _getSelection() {
+    return this.items.filter(i => this.selectedIds.has(i.id))
+  }
+
+  _setSelection(ids) {
+    this.selectedIds = new Set(ids)
+    this._applySelectionStyles()
+  }
+
+  _toggleSelected(id) {
+    if (this.selectedIds.has(id)) this.selectedIds.delete(id)
+    else this.selectedIds.add(id)
+    this._applySelectionStyles()
+  }
+
+  _clearSelection() {
+    if (!this.selectedIds.size) return
+    this.selectedIds.clear()
+    this._applySelectionStyles()
+  }
+
+  _applySelectionStyles() {
+    this._wrap?.querySelectorAll('.cv-item').forEach(el => {
+      el.classList.toggle('cv-item--selected', this.selectedIds.has(el.dataset.item))
+    })
+  }
+
+  // ── Keyboard shortcuts (operate on the current selection) ────────────────────
+
+  async _deleteSelection() {
+    const ids = [...this.selectedIds]
+    if (!ids.length) return
+    const ok = await this.app.confirm({
+      title: ids.length > 1 ? `Delete ${ids.length} items?` : 'Delete this item?',
+      message: 'Arrows attached to them are removed too.',
+      confirmLabel: 'Delete',
+    })
+    if (!ok) return
+    const idSet = new Set(ids)
+    this._writes++
+    try {
+      await Promise.all(ids.map(id => deleteCanvasItem(id)))
+      this.items = this.items.filter(i => !idSet.has(i.id))
+      this.arrows = this.arrows.filter(a => !idSet.has(a.from_item_id) && !idSet.has(a.to_item_id))
+      this.selectedIds = new Set()
+      this._snapshot = this._serialize(this.items, this.arrows)
+      this._renderItems()
+    } catch (e) { console.error(e); this.app.toast('Error deleting item') }
+    finally { this._writes-- }
+  }
+
+  _nudgeSelection(dx, dy) {
+    const sel = this._getSelection()
+    if (!sel.length) return
+    for (const item of sel) {
+      item.x += dx; item.y += dy
+      const el = this._wrap?.querySelector(`[data-item="${item.id}"]`)
+      if (el) { el.style.left = `${item.x}px`; el.style.top = `${item.y}px` }
+    }
+    this._redrawArrowsThrottled()
+    // Debounce the network write the same way drag-end does — one PATCH per
+    // item after the keypresses settle, not one per keystroke.
+    this._interacting = true
+    clearTimeout(this._nudgeTimer)
+    this._nudgeTimer = setTimeout(async () => {
+      this._interacting = false
+      const toSave = this._getSelection()
+      this._writes++
+      try {
+        await Promise.all(toSave.map(it => updateCanvasItem(it.id, { x: it.x, y: it.y })))
+        this._snapshot = this._serialize(this.items, this.arrows)
+      } catch (e) { console.error(e) } finally { this._writes-- }
+    }, 500)
+  }
+
+  async _duplicateSelection() {
+    const sel = this._getSelection()
+    if (!sel.length) return
+    let maxZ = this.items.reduce((m, i) => Math.max(m, i.z || 0), 0)
+    this._writes++
+    const newIds = []
+    try {
+      for (const item of sel) {
+        maxZ += 1
+        const created = await createCanvasItem(this.currentId, {
+          kind: item.kind, x: item.x + 20, y: item.y + 20, w: item.w, h: item.h, z: maxZ,
+          content: item.content, color: item.color, image_url: item.image_url, url: item.url,
+          links: item.links || [], sub_tasks: item.sub_tasks || [],
+        })
+        this.items.push(created)
+        newIds.push(created.id)
+      }
+      this._setSelection(newIds)
+      this._snapshot = this._serialize(this.items, this.arrows)
+      this._renderItems()
+    } catch (e) { console.error(e); this.app.toast('Error duplicating item') }
+    finally { this._writes-- }
+  }
+
   _bindSurface(wrap) {
-    // Pan: drag the background
+    // Background gesture on empty canvas. Gesture model (documented choice):
+    //   • plain drag  → pan (unchanged default — zero regression risk)
+    //   • Shift+drag  → rubber-band select (additive to the current selection)
+    //   • plain click → clear the selection
+    // Pan stays the default so an empty canvas is always pannable; rubber-band
+    // is the held-modifier gesture, not the threshold/no-selection variant.
     wrap.addEventListener('pointerdown', e => {
       if (e.button !== 0) return
       if (e.target.closest('.cv-item') || e.target.closest('.cv-zoom') || e.target.closest('[data-arrow]')) return
       e.preventDefault()
+      const rect = wrap.getBoundingClientRect()
+
+      // ── Rubber-band select (Shift held) ──
+      if (this.canEdit && e.shiftKey) {
+        this._interacting = true
+        const startPt = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+        const baseSel = new Set(this.selectedIds)   // additive
+        const band = document.createElement('div')
+        band.className = 'cv-rubber'
+        wrap.appendChild(band)
+        const onMove = ev => {
+          const cur = { x: ev.clientX - rect.left, y: ev.clientY - rect.top }
+          const sx = Math.min(startPt.x, cur.x), sy = Math.min(startPt.y, cur.y)
+          const sw = Math.abs(cur.x - startPt.x), sh = Math.abs(cur.y - startPt.y)
+          band.style.left = `${sx}px`; band.style.top = `${sy}px`
+          band.style.width = `${sw}px`; band.style.height = `${sh}px`
+          // Band corners → canvas space, then AABB-intersect every item.
+          const a = screenToCanvas({ x: sx, y: sy }, this.viewport)
+          const b = screenToCanvas({ x: sx + sw, y: sy + sh }, this.viewport)
+          const hit = new Set(baseSel)
+          for (const it of this.items) {
+            if (it.x < b.x && it.x + it.w > a.x && it.y < b.y && it.y + it.h > a.y) hit.add(it.id)
+          }
+          this._setSelection([...hit])
+        }
+        const onUp = () => {
+          window.removeEventListener('pointermove', onMove)
+          window.removeEventListener('pointerup', onUp)
+          band.remove()
+          this._interacting = false
+        }
+        window.addEventListener('pointermove', onMove)
+        window.addEventListener('pointerup', onUp)
+        return
+      }
+
+      // ── Pan (default) ──
       this._interacting = true
       const start = { x: e.clientX, y: e.clientY }
       const orig = { panX: this.viewport.panX, panY: this.viewport.panY }
+      let moved = false
       const onMove = ev => {
+        if (Math.abs(ev.clientX - start.x) + Math.abs(ev.clientY - start.y) > 2) moved = true
         this.viewport.panX = orig.panX + (ev.clientX - start.x)
         this.viewport.panY = orig.panY + (ev.clientY - start.y)
         this._applyViewport()
@@ -807,6 +1192,8 @@ export class CanvasView {
         window.removeEventListener('pointerup', onUp)
         this._interacting = false
         this._saveViewport()
+        // A plain click (no drag) on empty canvas clears the selection.
+        if (!moved) this._clearSelection()
       }
       window.addEventListener('pointermove', onMove)
       window.addEventListener('pointerup', onUp)
@@ -823,6 +1210,32 @@ export class CanvasView {
       clearTimeout(this._vpSaveTimer)
       this._vpSaveTimer = setTimeout(() => this._saveViewport(), 400)
     }, { passive: false })
+
+    if (!this.canEdit) return
+
+    // Drag-and-drop an image file onto the canvas — lands where it's dropped.
+    wrap.addEventListener('dragover', e => { e.preventDefault() })
+    wrap.addEventListener('drop', e => {
+      e.preventDefault()
+      const file = [...(e.dataTransfer?.files || [])].find(f => f.type?.startsWith('image/'))
+      if (!file) return
+      const rect = wrap.getBoundingClientRect()
+      const point = screenToCanvas({ x: e.clientX - rect.left, y: e.clientY - rect.top }, this.viewport)
+      this._processImageFile(file, point)
+    })
+
+    // Paste a screenshot/image from the clipboard while the canvas is mounted.
+    this._pasteHandler = e => {
+      if (!this._wrap || !document.contains(this._wrap)) return
+      if (this._editingId) return
+      const ae = document.activeElement
+      if (ae && ['INPUT', 'TEXTAREA', 'SELECT'].includes(ae.tagName)) return
+      const file = [...(e.clipboardData?.files || [])].find(f => f.type?.startsWith('image/'))
+      if (!file) return
+      e.preventDefault()
+      this._processImageFile(file)   // no cursor for paste → viewport centre
+    }
+    document.addEventListener('paste', this._pasteHandler)
   }
 
   // ── Item links/options modal ─────────────────────────────────────────────────
@@ -844,7 +1257,7 @@ export class CanvasView {
     const renderModal = () => {
       overlay.innerHTML = `
         <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:400px;padding:20px" onclick="event.stopPropagation()">
-          <div style="font-size:14px;font-weight:600;margin-bottom:12px">${item.kind === 'image' ? 'Image' : 'Note'} links</div>
+          <div style="font-size:14px;font-weight:600;margin-bottom:12px">${({ image: 'Image', link: 'Link', todo: 'Checklist' }[item.kind] || 'Note')} links</div>
           ${links.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
             ${links.map((l, i) => {
               const t = LINK_TYPES.find(x => x.id === l.type)
@@ -903,7 +1316,7 @@ export class CanvasView {
   _serialize(items, arrows) {
     const its = [...items]
       .sort((a, b) => String(a.id).localeCompare(String(b.id)))
-      .map(i => [i.id, i.kind, i.x, i.y, i.w, i.h, i.z, i.content, i.color, i.image_url, JSON.stringify(i.links)])
+      .map(i => [i.id, i.kind, i.x, i.y, i.w, i.h, i.z, i.content, i.color, i.image_url, i.url, JSON.stringify(i.links), JSON.stringify(i.sub_tasks)])
     const ars = [...arrows]
       .sort((a, b) => String(a.id).localeCompare(String(b.id)))
       .map(a => [a.id, a.from_item_id, a.to_item_id])
@@ -914,6 +1327,8 @@ export class CanvasView {
     clearInterval(this._pollTimer)
     this._pollTimer = null
     if (this._escHandler) { document.removeEventListener('keydown', this._escHandler); this._escHandler = null }
+    if (this._keyHandler) { document.removeEventListener('keydown', this._keyHandler); this._keyHandler = null }
+    if (this._pasteHandler) { document.removeEventListener('paste', this._pasteHandler); this._pasteHandler = null }
   }
 
   _startPolling(wrap) {

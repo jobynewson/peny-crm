@@ -148,8 +148,6 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
   CSS transform. Coordinate maths is pure and unit-tested in
   `src/utils/canvas-math.js` (+ `canvas-math.test.js`, run with `npm test` /
   vitest). Same 4s polling sync pattern as boards.
-- `planning-tab.js` - Legacy moodboard (notes/images/videos as a JSONB blob on
-  the project) — now the "Moodboard" sub-tab of the project Planning tab
 - `post-production.js` - Post-production workflow
 - `marketing.js` - Marketing
 - `password-manager.js` - Password management
