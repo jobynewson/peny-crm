@@ -448,13 +448,17 @@ export class App {
 
   render() {
     const showDetail = this.currentView === 'contacts'
+    const collapsed = this._sidebarCollapsed()
     this.container.innerHTML = `
       <div class="sidebar-overlay" id="sidebar-overlay"></div>
-      <div class="sidebar" id="app-sidebar">
-        <div class="logo"><img src="/slate-logo.png" alt="Slate" /></div>
+      <div class="sidebar${collapsed ? ' collapsed' : ''}" id="app-sidebar">
+        <div class="logo">
+          <img src="/slate-logo.png" alt="Slate" />
+          <button class="sidebar-collapse-btn" id="sidebar-collapse-btn" aria-label="Toggle sidebar" title="${collapsed ? 'Expand sidebar' : 'Collapse sidebar'}">${this.iconCollapse()}</button>
+        </div>
         <div class="nav-label">Main</div>
         ${[['dashboard','Dashboard',this.iconPipeline()],['calendar','Calendar',this.iconCalendar()],['contacts','Contacts',this.iconContacts()],['projects','Projects',this.iconProjects()],['budgets','Budgets',this.iconBudgets()],['planning','Planning',this.iconPlanning()],['marketing','Marketing',this.iconMarketing()],['story-planner','Story Planner',this.iconStoryPlanner()]].map(([id,label,icon])=>`
-          <div class="nav-item ${this.currentView===id?'active':''}" data-view="${id}">${icon} ${label}</div>`).join('')}
+          <div class="nav-item ${this.currentView===id?'active':''}" data-view="${id}" title="${label}">${icon}<span class="nav-text">${label}</span></div>`).join('')}
         <div class="sidebar-notes">
           <div class="sidebar-notes-header">
             <span class="sidebar-notes-title">Notes</span>
@@ -464,16 +468,16 @@ export class App {
         </div>
         <div class="nav-bottom">
           <div class="sidebar-tt" id="sidebar-tt">${this._renderSidebarTT()}</div>
-          <div class="nav-item ${this.currentView==='leave'?'active':''}" data-view="leave">${this.iconLeave()} Leave${this._leaveBadgeHtml()}</div>
-          <div class="nav-item ${this.currentView==='expenses'?'active':''}" data-view="expenses">${this.iconExpenses()} Expenses</div>
-          ${(this.permissions?.vault || this.appUser?.role === 'superadmin') ? `<div class="nav-item ${this.currentView==='password-manager'?'active':''}" data-view="password-manager">${this.iconPasswordManager()} Passwords</div>` : ''}
-          <div class="nav-item nav-item--dim ${this.currentView==='offload-log'?'active':''}" data-view="offload-log">${this.iconOffloads()} Offload Log</div>
-          ${this.permissions.settings ? `<div class="nav-item" data-view="settings">${this.iconSettings()} Settings</div>` : ''}
-          <div class="nav-item nav-item--dim" id="dev-request-btn">
+          <div class="nav-item ${this.currentView==='leave'?'active':''}" data-view="leave" title="Leave">${this.iconLeave()}<span class="nav-text">Leave</span>${this._leaveBadgeHtml()}</div>
+          <div class="nav-item ${this.currentView==='expenses'?'active':''}" data-view="expenses" title="Expenses">${this.iconExpenses()}<span class="nav-text">Expenses</span></div>
+          ${(this.permissions?.vault || this.appUser?.role === 'superadmin') ? `<div class="nav-item ${this.currentView==='password-manager'?'active':''}" data-view="password-manager" title="Passwords">${this.iconPasswordManager()}<span class="nav-text">Passwords</span></div>` : ''}
+          <div class="nav-item nav-item--dim ${this.currentView==='offload-log'?'active':''}" data-view="offload-log" title="Offload Log">${this.iconOffloads()}<span class="nav-text">Offload Log</span></div>
+          ${this.permissions.settings ? `<div class="nav-item" data-view="settings" title="Settings">${this.iconSettings()}<span class="nav-text">Settings</span></div>` : ''}
+          <div class="nav-item nav-item--dim" id="dev-request-btn" title="Dev request">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v4M8 11v.5"/></svg>
-            Dev request
+            <span class="nav-text">Dev request</span>
           </div>
-          <div class="nav-item nav-item--dim" id="sign-out-btn">${this.iconSignOut()} Sign out</div>
+          <div class="nav-item nav-item--dim" id="sign-out-btn" title="Sign out">${this.iconSignOut()}<span class="nav-text">Sign out</span></div>
         </div>
       </div>
       <div class="main">
@@ -536,6 +540,20 @@ export class App {
     document.getElementById('sidebar-overlay')?.classList.remove('open')
   }
 
+  // Whether the desktop sidebar is collapsed to an icon-only rail (persisted).
+  _sidebarCollapsed() {
+    return localStorage.getItem('slate-sidebar-collapsed') === '1'
+  }
+
+  _toggleSidebarCollapsed() {
+    const sidebar = document.getElementById('app-sidebar')
+    if (!sidebar) return
+    const collapsed = sidebar.classList.toggle('collapsed')
+    localStorage.setItem('slate-sidebar-collapsed', collapsed ? '1' : '0')
+    const btn = document.getElementById('sidebar-collapse-btn')
+    if (btn) btn.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar'
+  }
+
   bindNav() {
     // Mobile sidebar toggle
     const menuBtn  = this.container.querySelector('#mobile-menu-btn')
@@ -548,6 +566,9 @@ export class App {
       })
       overlay.addEventListener('click', () => this._closeMobileSidebar())
     }
+
+    // Desktop sidebar collapse/expand toggle
+    this.container.querySelector('#sidebar-collapse-btn')?.addEventListener('click', () => this._toggleSidebarCollapsed())
 
     this.container.querySelectorAll('.nav-item[data-view]').forEach(el => {
       el.addEventListener('click', () => { this._closeMobileSidebar(); this.navigate(el.dataset.view) })
@@ -3403,6 +3424,7 @@ export class App {
     if (html) item.insertAdjacentHTML('beforeend', html)
   }
   iconSignOut()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M10 11l4-4-4-4M14 8H6"/></svg>` }
+  iconCollapse() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 4.5L6 8l3.5 3.5M13 4.5L9.5 8l3.5 3.5"/></svg>` }
   iconTheme() {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
     return isDark
