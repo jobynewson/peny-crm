@@ -919,7 +919,7 @@ export class TeamCalendarView {
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(9,30,66,0.54);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px 16px'
 
     const users    = this.app.allUsers || []
-    const projects = (this.app.projects || []).filter(p => !p.is_retainer)
+    const projects = this.app.projects || []
 
     const renderModal = (state = {}) => {
       const selUserId    = state.assignee_id  ?? (entry?.assignee_id || defaultUserId || users[0]?.id || '')
