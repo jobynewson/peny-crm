@@ -356,6 +356,17 @@ export async function runMigrations() {
 
   // ── Projects kanban drag-reorder ───────────────────────────────────────────
   await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS kanban_position DOUBLE PRECISION NOT NULL DEFAULT 0`
+
+  // ── Budget sign-off / invoicing ─────────────────────────────────────────────
+  // Columns declared in schema.js but never added to existing DBs — every
+  // sign-off/invoice write was failing with "column does not exist".
+  await sql`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS include_in_pipeline BOOLEAN NOT NULL DEFAULT false`
+  await sql`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS signed_off BOOLEAN NOT NULL DEFAULT false`
+  await sql`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS signed_off_at TIMESTAMPTZ`
+  await sql`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS signed_off_by TEXT`
+  await sql`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS invoiced BOOLEAN NOT NULL DEFAULT false`
+  await sql`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS invoiced_at TIMESTAMPTZ`
+  await sql`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS invoiced_by TEXT`
 }
 
 // One-time demo data so the first visit to Planning isn't an empty screen.

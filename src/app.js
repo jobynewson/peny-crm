@@ -836,7 +836,7 @@ export class App {
     const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
     const savedPid  = localStorage.getItem('tt-project-id') || ''
     const savedTask = localStorage.getItem('tt-task-label') || ''
-    const projects  = this.projects || []
+    const projects  = (this.projects || []).filter(p => p.status !== 'Delivered')
     const project   = projects.find(p => p.id === savedPid) || null
     const lines     = this._sttTrackableLines(project)
 
