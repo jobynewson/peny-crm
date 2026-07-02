@@ -27,6 +27,7 @@ const DEFAULT_CHECKLISTS = {
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
 const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''
 const uuid = () => crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36)
+const MKT_POS_GAP = 1024
 
 export class MarketingView {
   constructor(app) {
@@ -34,6 +35,7 @@ export class MarketingView {
     this.activeTab = 'kanban'
     this.expandedSocialPosts = new Set()
     this.pendingOpenCardId = null
+    this._dragCardId = null
   }
 
   render(mc) {
@@ -75,13 +77,17 @@ export class MarketingView {
 
   // ── Kanban board ─────────────────────────────────────────────────────────────
 
+  _marketingCardsFor(colId) {
+    return this.app.marketingCards
+      .filter(c => c.status === colId)
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || (new Date(b.created_at) - new Date(a.created_at)))
+  }
+
   renderKanban(mc) {
-    const cards = this.app.marketingCards
     mc.innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;align-items:start;overflow-x:auto;padding-bottom:24px">
         ${COLUMNS.map(col => {
-          const colCards = cards.filter(c => c.status === col.id)
-            .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+          const colCards = this._marketingCardsFor(col.id)
           return `
           <div class="mkt-col" data-col="${col.id}" style="display:flex;flex-direction:column;gap:8px;min-width:0">
             <div style="display:flex;align-items:center;gap:6px;padding:0 2px;margin-bottom:4px">
@@ -89,7 +95,9 @@ export class MarketingView {
               <span style="font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.6px;flex:1">${col.label}</span>
               <span style="font-size:11px;color:var(--text-tertiary)">${colCards.length || ''}</span>
             </div>
-            ${colCards.map(card => this.renderCard(card)).join('')}
+            <div class="mkt-col-body" data-col-body="${col.id}" style="display:flex;flex-direction:column;gap:8px;min-height:16px">
+              ${colCards.map(card => this.renderCard(card)).join('')}
+            </div>
             <button class="mkt-add-btn" data-add-col="${col.id}"
               style="width:100%;padding:8px;border:1px dashed var(--border-med);border-radius:var(--radius-md);background:transparent;color:var(--text-tertiary);font-size:12px;cursor:pointer;font-family:var(--font);transition:background 0.1s,color 0.1s;text-align:center">
               + New card
@@ -108,6 +116,105 @@ export class MarketingView {
     mc.querySelectorAll('.mkt-add-btn').forEach(btn => {
       btn.addEventListener('click', () => this.openCardModal(null, btn.dataset.addCol))
     })
+
+    this._bindKanbanDnD(mc)
+  }
+
+  _bindKanbanDnD(mc) {
+    const clearIndicators = () => {
+      mc.querySelectorAll('.mkt-card').forEach(c => c.classList.remove('mkt-card--over'))
+      mc.querySelectorAll('.mkt-col-body').forEach(z => z.classList.remove('mkt-col-body--over'))
+    }
+
+    mc.querySelectorAll('.mkt-card[data-card-id]').forEach(cardEl => {
+      cardEl.setAttribute('draggable', 'true')
+      cardEl.addEventListener('dragstart', e => {
+        e.stopPropagation()
+        this._dragCardId = cardEl.dataset.cardId
+        e.dataTransfer.effectAllowed = 'move'
+        e.dataTransfer.setData('text/plain', cardEl.dataset.cardId)
+        setTimeout(() => cardEl.classList.add('mkt-card--dragging'), 0)
+      })
+      cardEl.addEventListener('dragend', () => {
+        cardEl.classList.remove('mkt-card--dragging')
+        clearIndicators()
+        this._dragCardId = null
+      })
+      cardEl.addEventListener('dragover', e => {
+        if (!this._dragCardId || cardEl.dataset.cardId === this._dragCardId) return
+        e.preventDefault()
+        e.stopPropagation()
+        e.dataTransfer.dropEffect = 'move'
+        clearIndicators()
+        cardEl.classList.add('mkt-card--over')
+      })
+      cardEl.addEventListener('dragleave', () => cardEl.classList.remove('mkt-card--over'))
+      cardEl.addEventListener('drop', e => {
+        e.preventDefault()
+        e.stopPropagation()
+        clearIndicators()
+        if (!this._dragCardId || cardEl.dataset.cardId === this._dragCardId) return
+        const zone = cardEl.closest('.mkt-col-body')
+        if (zone) this._moveCard(mc, this._dragCardId, zone.dataset.colBody, cardEl.dataset.cardId)
+      })
+    })
+
+    mc.querySelectorAll('.mkt-col-body').forEach(zone => {
+      zone.addEventListener('dragover', e => {
+        if (!this._dragCardId) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        clearIndicators()
+        zone.classList.add('mkt-col-body--over')
+      })
+      zone.addEventListener('dragleave', () => zone.classList.remove('mkt-col-body--over'))
+      zone.addEventListener('drop', e => {
+        e.preventDefault()
+        clearIndicators()
+        if (!this._dragCardId) return
+        this._moveCard(mc, this._dragCardId, zone.dataset.colBody, null)
+      })
+    })
+  }
+
+  // Move a card into destColId, before card `beforeId` (or to the end if null).
+  async _moveCard(mc, cardId, destColId, beforeId) {
+    const card = this.app.marketingCards.find(c => c.id === cardId)
+    if (!card) return
+    const dest = this._marketingCardsFor(destColId).filter(c => c.id !== cardId)
+    let index = beforeId ? dest.findIndex(c => c.id === beforeId) : dest.length
+    if (index < 0) index = dest.length
+
+    const { updateMarketingCard, renumberMarketingCards } = await import('../db/client.js')
+
+    const prev = dest[index - 1], next = dest[index]
+    let sort_order
+    if (!prev && !next) sort_order = MKT_POS_GAP
+    else if (!prev) sort_order = next.sort_order - MKT_POS_GAP
+    else if (!next) sort_order = prev.sort_order + MKT_POS_GAP
+    else if (next.sort_order - prev.sort_order > 1) sort_order = Math.round((prev.sort_order + next.sort_order) / 2)
+    else {
+      // Gaps exhausted — renumber the whole destination column
+      const ordered = [...dest]
+      ordered.splice(index, 0, card)
+      const ids = ordered.map(c => c.id)
+      ordered.forEach((c, i) => { c.sort_order = (i + 1) * MKT_POS_GAP })
+      card.status = destColId
+      this.renderKanban(mc)
+      try {
+        await updateMarketingCard(this.app.userId, card.id, { status: destColId, sort_order: card.sort_order })
+        await renumberMarketingCards(this.app.userId, ids)
+      } catch (e) { console.error(e); this.app.toast('Error moving card') }
+      return
+    }
+
+    // Optimistic local move, then persist the single row
+    card.status = destColId
+    card.sort_order = sort_order
+    this.renderKanban(mc)
+    try {
+      await updateMarketingCard(this.app.userId, card.id, { status: destColId, sort_order })
+    } catch (e) { console.error(e); this.app.toast('Error moving card') }
   }
 
   renderCard(card) {

@@ -117,6 +117,9 @@ export const projects = pgTable('projects', {
   insurer_email:   text('insurer_email'),
   insurer_contact: text('insurer_contact'),
   dashboard_comments:  jsonb('dashboard_comments').notNull().default([]),
+  // Fractional index within its kanban column (stage, or the retainer lane) —
+  // see board_cards.position below for the same drag-reorder pattern.
+  kanban_position: doublePrecision('kanban_position').notNull().default(0),
   ...timestamps,
 })
 
