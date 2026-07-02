@@ -557,7 +557,9 @@ export class BudgetsView {
       // (dashboard, project sidebar) keep showing the optimistic, unsaved state.
       const prev = { signed_off: b.signed_off, signed_off_at: b.signed_off_at, signed_off_by: b.signed_off_by, invoiced: b.invoiced, invoiced_at: b.invoiced_at, invoiced_by: b.invoiced_by }
       b.signed_off = !b.signed_off
-      b.signed_off_at = b.signed_off ? new Date().toISOString() : null
+      // Drizzle's timestamp columns need a Date object, not an ISO string —
+      // it calls .toISOString() on the value itself when building the query.
+      b.signed_off_at = b.signed_off ? new Date() : null
       b.signed_off_by = b.signed_off ? (this.app.appUser?.name || this.app.user?.primaryEmailAddress?.emailAddress || '') : null
       if (!b.signed_off) { b.invoiced = false; b.invoiced_at = null; b.invoiced_by = null }
       try {
@@ -586,7 +588,7 @@ export class BudgetsView {
     mc.querySelector('#bv-invoiced-toggle')?.addEventListener('click', async () => {
       const prev = { invoiced: b.invoiced, invoiced_at: b.invoiced_at, invoiced_by: b.invoiced_by }
       b.invoiced = !b.invoiced
-      b.invoiced_at = b.invoiced ? new Date().toISOString() : null
+      b.invoiced_at = b.invoiced ? new Date() : null
       b.invoiced_by = b.invoiced ? (this.app.appUser?.name || this.app.user?.primaryEmailAddress?.emailAddress || '') : null
       try {
         await updateBudget(this.app.userId, b.id, {
@@ -897,7 +899,7 @@ export class BudgetsView {
     mc.querySelector('#be-signedoff')?.addEventListener('change', e => {
       b.signed_off = e.target.checked
       if (e.target.checked) {
-        b.signed_off_at = new Date().toISOString()
+        b.signed_off_at = new Date()
         b.signed_off_by = this.app.appUser?.name || this.app.user?.primaryEmailAddress?.emailAddress || ''
       } else {
         b.signed_off_at = null

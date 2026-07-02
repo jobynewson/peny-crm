@@ -1088,7 +1088,7 @@ export class ProjectsView {
           if (!b) return
           btn.disabled = true
           try {
-            const invoiced_at = new Date().toISOString()
+            const invoiced_at = new Date()
             const invoiced_by = this.app.appUser?.name || this.app.user?.primaryEmailAddress?.emailAddress || ''
             await updateBudget(this.app.userId, bid, { invoiced: true, invoiced_at, invoiced_by })
             Object.assign(b, { invoiced: true, invoiced_at, invoiced_by })
