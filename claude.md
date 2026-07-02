@@ -76,6 +76,21 @@ index.html                # App HTML shell
 - View modules export a `render()` function that returns HTML
 - `app.js` mounts the active view into the DOM
 
+### Cross-feature consistency
+- The app has several places where the *same kind* of UI or behaviour is
+  reimplemented per-feature rather than shared via one component (this is a
+  vanilla-JS app with no component framework, so duplication like this is
+  normal — see "Kanban boards" below for a concrete example).
+- When you change the **style or functionality of one instance of a repeated
+  pattern, apply the equivalent change to every other instance**, unless
+  there's a specific functional reason one of them should differ (call that
+  reason out explicitly if so). Example: a style tweak to the Marketing
+  kanban's card should be mirrored on the Projects kanban and Planning
+  boards' kanban — don't leave one looking/behaving different from the
+  others by accident.
+- Before changing one, grep for the others first (e.g. `kanban`, `modal-`,
+  `draggable`) so you know the full set you're keeping in sync.
+
 ### Styling / design system
 - ALL global styles live in `src/style.css` — design tokens (CSS variables),
   shell (sidebar/topbar), shared components (panels, modals, kanban, forms,
@@ -126,7 +141,9 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 
 ## Available Views/Modules
 - `contacts.js` - Contact management
-- `projects.js` - Project management
+- `projects.js` - Project management. Its kanban (pipeline by stage, plus a
+  Retainer lane) is one of three separate kanban implementations — see
+  "Kanban boards" below.
 - `budgets.js` - Budget tracking
 - `expenses.js` - Expense tracking
 - `timetrack.js` - Time tracking
@@ -141,7 +158,8 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
   realtime sync via 4s polling of `getBoardData()` while a board is open
   (merges pause during drag/typing/open modals). Recurring cards spawn
   client-side on load via `spawnDueBoardRecurrences()` — an atomic
-  `next_due` advance stops two browsers double-spawning.
+  `next_due` advance stops two browsers double-spawning. One of three
+  separate kanban implementations — see "Kanban boards" below.
 - `canvas.js` - Planning canvas (sticky notes, images, arrows) — standalone via
   the Planning nav item's Canvases tab AND embedded in each project's Planning
   tab. Item positions are stored in canvas space; the viewport applies a single
@@ -149,6 +167,27 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
   `src/utils/canvas-math.js` (+ `canvas-math.test.js`, run with `npm test` /
   vitest). Same 4s polling sync pattern as boards.
 - `post-production.js` - Post-production workflow
-- `marketing.js` - Marketing
+- `marketing.js` - Marketing. Its kanban (by status: Ideas → Planning → In
+  Progress → Scheduled/Sent → Done) is one of three separate kanban
+  implementations — see "Kanban boards" below.
 - `password-manager.js` - Password management
 - `offload-log.js` - Offload Log (read-only table of backup reports from Fence)
+
+### Kanban boards
+There is no shared kanban component — three independent implementations, each
+with its own card drag-and-drop wiring. Per the cross-feature consistency rule
+above, a style or UX change to one should normally be ported to the other two:
+- `boards.js` (Planning boards) — user-defined columns (`board_columns`),
+  cards ordered by fractional `board_cards.position`. Supports dragging cards
+  between/within columns AND dragging to reorder columns themselves.
+- `projects.js` (Projects pipeline) — fixed stage columns (`STAGES` +
+  Retainer lane), cards ordered by fractional `projects.kanban_position`.
+  Dragging a card between columns updates `status` (or `is_retainer` for the
+  Retainer lane); columns themselves are not reorderable (they're fixed).
+- `marketing.js` (Marketing kanban) — fixed status columns (`COLUMNS`), cards
+  ordered by integer `marketing_cards.sort_order`. Same drag behaviour as
+  Projects; columns are fixed.
+
+All three use the same "insert between neighbours, renumber the column when
+gaps run out" pattern for persisting drag order — see `_moveCard` /
+`_moveProjectCard` in the respective view files.
