@@ -552,6 +552,10 @@ export class BudgetsView {
       </div>`
 
     mc.querySelector('#bv-signedoff-toggle')?.addEventListener('click', async () => {
+      // b is the live object in this.app.budgets, so on failure we must restore
+      // these fields explicitly — otherwise other views reading this.app.budgets
+      // (dashboard, project sidebar) keep showing the optimistic, unsaved state.
+      const prev = { signed_off: b.signed_off, signed_off_at: b.signed_off_at, signed_off_by: b.signed_off_by, invoiced: b.invoiced, invoiced_at: b.invoiced_at, invoiced_by: b.invoiced_by }
       b.signed_off = !b.signed_off
       b.signed_off_at = b.signed_off ? new Date().toISOString() : null
       b.signed_off_by = b.signed_off ? (this.app.appUser?.name || this.app.user?.primaryEmailAddress?.emailAddress || '') : null
@@ -566,7 +570,13 @@ export class BudgetsView {
           invoiced_by:   b.invoiced_by ?? null,
           include_in_pipeline: b.signed_off,
         })
-      } catch(e) { console.error(e); this.app.toast('Error updating sign-off'); return }
+      } catch(e) {
+        console.error(e)
+        Object.assign(b, prev)
+        this.app.toast('Error updating sign-off')
+        this.renderViewer(mc)
+        return
+      }
       const idx = this.app.budgets.findIndex(x => x.id === b.id)
       if (idx >= 0) Object.assign(this.app.budgets[idx], { signed_off: b.signed_off, signed_off_at: b.signed_off_at, signed_off_by: b.signed_off_by, invoiced: b.invoiced, invoiced_at: b.invoiced_at, invoiced_by: b.invoiced_by })
       this.app.toast(b.signed_off ? '✓ Budget signed off' : 'Sign-off removed')
@@ -574,6 +584,7 @@ export class BudgetsView {
     })
 
     mc.querySelector('#bv-invoiced-toggle')?.addEventListener('click', async () => {
+      const prev = { invoiced: b.invoiced, invoiced_at: b.invoiced_at, invoiced_by: b.invoiced_by }
       b.invoiced = !b.invoiced
       b.invoiced_at = b.invoiced ? new Date().toISOString() : null
       b.invoiced_by = b.invoiced ? (this.app.appUser?.name || this.app.user?.primaryEmailAddress?.emailAddress || '') : null
@@ -583,7 +594,13 @@ export class BudgetsView {
           invoiced_at: b.invoiced_at ?? null,
           invoiced_by: b.invoiced_by ?? null,
         })
-      } catch(e) { console.error(e); this.app.toast('Error updating invoice status'); return }
+      } catch(e) {
+        console.error(e)
+        Object.assign(b, prev)
+        this.app.toast('Error updating invoice status')
+        this.renderViewer(mc)
+        return
+      }
       const idx = this.app.budgets.findIndex(x => x.id === b.id)
       if (idx >= 0) Object.assign(this.app.budgets[idx], { invoiced: b.invoiced, invoiced_at: b.invoiced_at, invoiced_by: b.invoiced_by })
       this.app.toast(b.invoiced ? '✓ Marked as invoiced' : 'Invoice status removed')

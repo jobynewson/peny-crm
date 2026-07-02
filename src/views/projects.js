@@ -1,4 +1,4 @@
-import { createProject, updateProject, deleteProject, renumberProjectKanban, linkBudgetToProject, unlinkBudgetFromProject, logActivity, getActivityLog, getTimeEntries, setTrackToken, deleteTimeEntry, getWorkLog, addWorkLogEntry, deleteWorkLogEntry } from '../db/client.js'
+import { createProject, updateProject, deleteProject, renumberProjectKanban, linkBudgetToProject, unlinkBudgetFromProject, logActivity, getActivityLog, getTimeEntries, setTrackToken, deleteTimeEntry, getWorkLog, addWorkLogEntry, deleteWorkLogEntry, updateBudget } from '../db/client.js'
 import { PostProductionView } from './post-production.js'
 import { continuationScript, PDF_CONTINUED_CSS, a4ContentWidthPx, a4ContentHeightPx } from '../utils/pdfContinuation.js'
 
@@ -849,8 +849,14 @@ export class ProjectsView {
         <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:var(--bg-secondary);border-radius:var(--radius-md);border:1px solid var(--border-light);margin-bottom:8px;cursor:pointer" data-open-budget="${b.id}">
           <div>
             <div style="font-size:14px;font-weight:500;margin-bottom:3px">${esc(b.name)}</div>
-            ${b.signed_off ? '<div style="font-size:12px;color:#6ec96e">✓ Signed off</div>' : ''}
+            <div style="display:flex;gap:10px">
+              ${b.signed_off ? '<div style="font-size:12px;color:#6ec96e">✓ Signed off</div>' : ''}
+              ${b.invoiced ? '<div style="font-size:12px;color:var(--accent)">✓ Invoiced</div>' : ''}
+            </div>
           </div>
+          ${b.signed_off && !b.invoiced && this.app.permissions?.budgets_edit
+            ? `<button class="btn-secondary pv-mark-invoiced" data-budget-id="${b.id}" style="font-size:11px;padding:4px 10px;flex-shrink:0">Mark as invoiced</button>`
+            : ''}
         </div>`).join('')
       : '<div style="font-size:13px;color:var(--text-tertiary);padding:20px 0;text-align:center">No budgets linked yet.</div>'}
     `
@@ -1007,7 +1013,10 @@ export class ProjectsView {
           ${linked.map(b => `
             <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;background:var(--bg-secondary);border-radius:var(--radius-md);font-size:12px;cursor:pointer" data-open-budget="${b.id}">
               <span style="font-weight:500">${esc(b.name)}</span>
-              ${b.signed_off ? `<span style="font-size:10px;color:#6ec96e">✓</span>` : ''}
+              <span style="display:flex;gap:6px">
+                ${b.signed_off ? `<span style="font-size:10px;color:#6ec96e" title="Signed off">✓ signed off</span>` : ''}
+                ${b.invoiced ? `<span style="font-size:10px;color:var(--accent)" title="Invoiced">✓ invoiced</span>` : ''}
+              </span>
             </div>`).join('')}
         </div>
       </div>` : ''}
@@ -1070,6 +1079,28 @@ export class ProjectsView {
       })
       mc.querySelectorAll('[data-open-budget]').forEach(el => {
         el.addEventListener('click', () => this.app.openBudget(el.dataset.openBudget))
+      })
+      mc.querySelectorAll('.pv-mark-invoiced').forEach(btn => {
+        btn.addEventListener('click', async e => {
+          e.stopPropagation()
+          const bid = btn.dataset.budgetId
+          const b = this.app.budgets.find(x => x.id === bid)
+          if (!b) return
+          btn.disabled = true
+          try {
+            const invoiced_at = new Date().toISOString()
+            const invoiced_by = this.app.appUser?.name || this.app.user?.primaryEmailAddress?.emailAddress || ''
+            await updateBudget(this.app.userId, bid, { invoiced: true, invoiced_at, invoiced_by })
+            Object.assign(b, { invoiced: true, invoiced_at, invoiced_by })
+            this.app.toast('✓ Marked as invoiced')
+            const content = mc.querySelector('#pv-tab-content')
+            if (content) { content.innerHTML = this._renderTab('budget', p, cl, linked); this._bindTabContent(mc, 'budget', p, cl, linked) }
+          } catch (err) {
+            console.error(err)
+            this.app.toast('Error updating invoice status')
+            btn.disabled = false
+          }
+        })
       })
     }
     if (tab === 'planning') {
