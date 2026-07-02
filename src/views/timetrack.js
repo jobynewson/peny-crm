@@ -38,7 +38,7 @@ export class TimeTrackView {
   }
 
   render(mc) {
-    const projects = this.app.projects || []
+    const projects = (this.app.projects || []).filter(p => p.status !== 'Delivered')
 
     const savedProjectId = localStorage.getItem(LS_PROJECT) || ''
     const savedTask      = localStorage.getItem(LS_TASK) || ''
