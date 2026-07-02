@@ -353,6 +353,9 @@ export async function runMigrations() {
   `
   await sql`CREATE INDEX IF NOT EXISTS canvas_items_canvas_idx ON canvas_items (canvas_id)`
   await sql`CREATE INDEX IF NOT EXISTS canvas_arrows_canvas_idx ON canvas_arrows (canvas_id)`
+
+  // ── Projects kanban drag-reorder ───────────────────────────────────────────
+  await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS kanban_position DOUBLE PRECISION NOT NULL DEFAULT 0`
 }
 
 // One-time demo data so the first visit to Planning isn't an empty screen.
@@ -480,6 +483,15 @@ export async function updateProject(workspaceId, id, data) {
 export async function deleteProject(workspaceId, id) {
   return db.delete(projects)
     .where(and(eq(projects.id, id), eq(projects.user_id, workspaceId)))
+}
+// Gaps between fractional kanban_position values are exhausted — spread the
+// dropped column back out to clean multiples of 1024.
+export async function renumberProjectKanban(workspaceId, orderedIds) {
+  for (let i = 0; i < orderedIds.length; i++) {
+    await db.update(projects)
+      .set({ kanban_position: (i + 1) * 1024, updated_at: new Date() })
+      .where(and(eq(projects.id, orderedIds[i]), eq(projects.user_id, workspaceId)))
+  }
 }
 
 // ── Project ↔ Budget links ────────────────────────────────────────────────────
@@ -1074,6 +1086,13 @@ export async function updateMarketingCard(workspaceId, id, data) {
     .where(and(eq(marketing_cards.id, id), eq(marketing_cards.user_id, workspaceId)))
     .returning()
   return card
+}
+export async function renumberMarketingCards(workspaceId, orderedIds) {
+  for (let i = 0; i < orderedIds.length; i++) {
+    await db.update(marketing_cards)
+      .set({ sort_order: (i + 1) * 1024, updated_at: new Date() })
+      .where(and(eq(marketing_cards.id, orderedIds[i]), eq(marketing_cards.user_id, workspaceId)))
+  }
 }
 export async function deleteMarketingCard(workspaceId, id) {
   return db.delete(marketing_cards)

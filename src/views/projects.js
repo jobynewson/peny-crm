@@ -1,4 +1,4 @@
-import { createProject, updateProject, deleteProject, linkBudgetToProject, unlinkBudgetFromProject, logActivity, getActivityLog, getTimeEntries, setTrackToken, deleteTimeEntry, getWorkLog, addWorkLogEntry, deleteWorkLogEntry } from '../db/client.js'
+import { createProject, updateProject, deleteProject, renumberProjectKanban, linkBudgetToProject, unlinkBudgetFromProject, logActivity, getActivityLog, getTimeEntries, setTrackToken, deleteTimeEntry, getWorkLog, addWorkLogEntry, deleteWorkLogEntry } from '../db/client.js'
 import { PostProductionView } from './post-production.js'
 import { continuationScript, PDF_CONTINUED_CSS, a4ContentWidthPx, a4ContentHeightPx } from '../utils/pdfContinuation.js'
 
@@ -6,6 +6,7 @@ const STAGES = ['Enquiry','Pre-production','In Production','Post','Delivered']
 const RETAINER_STAGE = 'Retainer'
 const ALL_STAGES = [...STAGES, RETAINER_STAGE]
 const STAGE_DOT = { Enquiry:'#b5d4f4', 'Pre-production':'#dddaf7', 'In Production':'#d0e8b0', Post:'#fce2b0', Delivered:'#ebebeb' }
+const KANBAN_POS_GAP = 1024
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')
 const moy = () => { const d = new Date(); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] + ' ' + d.getFullYear() }
 
@@ -17,7 +18,10 @@ export class ProjectsView {
     this._pvTab = 'overview'
     this._pvCrewTab = 'crew'
     this._postProductionView = new PostProductionView(app)
+    this._dragProjectId = null
   }
+
+  get canEdit() { return this.app.permissions?.projects_edit !== false }
 
   render(mc) {
     if (this.currentId) {
@@ -33,10 +37,51 @@ export class ProjectsView {
 
   // ── Kanban ──────────────────────────────────────────────────────────────────
 
+  // Cards for one column, in drag order (fractional kanban_position, newest first as a tiebreak).
+  _projectsFor(stage, isRetainer) {
+    const list = isRetainer
+      ? this.app.projects.filter(p => p.is_retainer)
+      : this.app.projects.filter(p => !p.is_retainer && p.status === stage)
+    return list.slice().sort((a, b) => (a.kanban_position - b.kanban_position) || (new Date(b.created_at) - new Date(a.created_at)))
+  }
+
   renderKanban(mc) {
     const { projects, contacts } = this.app
     const regularProjects  = projects.filter(p => !p.is_retainer)
     const retainerProjects = projects.filter(p => p.is_retainer)
+    const renderCard = p => {
+      const cl = contacts.find(c => c.id === p.client_id)
+      const delivs = Array.isArray(p.deliverables) ? p.deliverables : []
+      const done = delivs.filter(d => d.done && d.text).length
+      const total = delivs.filter(d => d.text).length
+      const linked = Array.isArray(p.budget_ids) ? p.budget_ids.length : 0
+      return `<div class="kanban-card" data-open="${p.id}" ${this.canEdit ? 'draggable="true"' : ''}>
+        <div class="kanban-card-title">${esc(p.name)}</div>
+        <div class="kanban-card-client">${cl ? esc(cl.first_name)+' '+esc(cl.last_name)+' · '+esc(cl.company) : 'No client'}</div>
+        <div class="kanban-card-meta">
+          ${p.shoot_start ? `<span class="kanban-card-date">${p.shoot_start}</span>` : ''}
+          ${total ? `<span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary)">${done}/${total} done</span>` : ''}
+          ${linked ? `<span class="tag" style="background:#daeeff;color:#0d4a8a">${linked} budget${linked>1?'s':''}</span>` : ''}
+        </div>
+      </div>`
+    }
+    const renderRetainerCard = p => {
+      const cl = contacts.find(c => c.id === p.client_id)
+      const isEnquiry = p.status === 'Enquiry'
+      const calcFee = (p.retainer_items||[]).reduce((s,i) => {
+        const mult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}[i.period||'month']||1
+        return s + (parseFloat(i.rate)||0)*(parseFloat(i.qty)||0)*mult
+      }, 0)
+      const fee = p.retainer_fee_mode === 'calculated' ? calcFee : (parseFloat(p.retainer_fee)||0)
+      return `<div class="kanban-card" data-open="${p.id}" ${this.canEdit ? 'draggable="true"' : ''} style="border-left:3px solid ${isEnquiry?'#c4a8fb':'#a78bfa'}">
+        <div class="kanban-card-title">${esc(p.name)}</div>
+        <div class="kanban-card-client">${cl ? esc(cl.first_name)+' '+esc(cl.last_name)+' · '+esc(cl.company) : 'No client'}</div>
+        <div class="kanban-card-meta">
+          ${fee ? `<span class="tag" style="background:rgba(167,139,250,0.15);color:#a78bfa">£${Math.round(fee).toLocaleString('en-GB')}/mo</span>` : ''}
+          ${isEnquiry ? `<span class="tag" style="background:rgba(167,139,250,0.1);color:#c4a8fb;border:0.5px solid rgba(167,139,250,0.3)">Enquiry</span>` : ''}
+        </div>
+      </div>`
+    }
     mc.innerHTML = `
       <div class="stats-row" style="grid-template-columns:repeat(5,1fr)">
         <div class="stat-card stat-card--sm"><div class="stat-label">Total</div><div class="stat-value stat-value--sm">${regularProjects.length}</div><div class="stat-sub">projects</div></div>
@@ -45,28 +90,15 @@ export class ProjectsView {
       </div>
       <div class="kanban-wrap" style="grid-template-columns:repeat(6,1fr)">
         ${STAGES.map(stage => {
-          const col = regularProjects.filter(p => p.status === stage)
+          const col = this._projectsFor(stage, false)
           return `<div class="kanban-col">
             <div class="kanban-col-head">
               <span style="width:8px;height:8px;border-radius:50%;background:${STAGE_DOT[stage]};border:1px solid rgba(0,0,0,0.15);display:inline-block;flex-shrink:0"></span>
               ${stage} <span class="kanban-count">${col.length}</span>
             </div>
-            ${col.map(p => {
-              const cl = contacts.find(c => c.id === p.client_id)
-              const delivs = Array.isArray(p.deliverables) ? p.deliverables : []
-              const done = delivs.filter(d => d.done && d.text).length
-              const total = delivs.filter(d => d.text).length
-              const linked = Array.isArray(p.budget_ids) ? p.budget_ids.length : 0
-              return `<div class="kanban-card" data-open="${p.id}">
-                <div class="kanban-card-title">${esc(p.name)}</div>
-                <div class="kanban-card-client">${cl ? esc(cl.first_name)+' '+esc(cl.last_name)+' · '+esc(cl.company) : 'No client'}</div>
-                <div class="kanban-card-meta">
-                  ${p.shoot_start ? `<span class="kanban-card-date">${p.shoot_start}</span>` : ''}
-                  ${total ? `<span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary)">${done}/${total} done</span>` : ''}
-                  ${linked ? `<span class="tag" style="background:#daeeff;color:#0d4a8a">${linked} budget${linked>1?'s':''}</span>` : ''}
-                </div>
-              </div>`
-            }).join('')}
+            <div class="kanban-col-body" data-col-stage="${esc(stage)}">
+              ${col.map(renderCard).join('')}
+            </div>
             <button class="kanban-add" data-stage="${stage}">+ add</button>
           </div>`
         }).join('')}
@@ -75,23 +107,9 @@ export class ProjectsView {
             <span style="width:8px;height:8px;border-radius:50%;background:#a78bfa;border:1px solid rgba(0,0,0,0.15);display:inline-block;flex-shrink:0"></span>
             Retainer <span class="kanban-count">${retainerProjects.length}</span>
           </div>
-          ${retainerProjects.map(p => {
-            const cl = contacts.find(c => c.id === p.client_id)
-            const isEnquiry = p.status === 'Enquiry'
-            const calcFee = (p.retainer_items||[]).reduce((s,i) => {
-              const mult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}[i.period||'month']||1
-              return s + (parseFloat(i.rate)||0)*(parseFloat(i.qty)||0)*mult
-            }, 0)
-            const fee = p.retainer_fee_mode === 'calculated' ? calcFee : (parseFloat(p.retainer_fee)||0)
-            return `<div class="kanban-card" data-open="${p.id}" style="border-left:3px solid ${isEnquiry?'#c4a8fb':'#a78bfa'}">
-              <div class="kanban-card-title">${esc(p.name)}</div>
-              <div class="kanban-card-client">${cl ? esc(cl.first_name)+' '+esc(cl.last_name)+' · '+esc(cl.company) : 'No client'}</div>
-              <div class="kanban-card-meta">
-                ${fee ? `<span class="tag" style="background:rgba(167,139,250,0.15);color:#a78bfa">£${Math.round(fee).toLocaleString('en-GB')}/mo</span>` : ''}
-                ${isEnquiry ? `<span class="tag" style="background:rgba(167,139,250,0.1);color:#c4a8fb;border:0.5px solid rgba(167,139,250,0.3)">Enquiry</span>` : ''}
-              </div>
-            </div>`
-          }).join('')}
+          <div class="kanban-col-body" data-col-retainer="1">
+            ${this._projectsFor(null, true).map(renderRetainerCard).join('')}
+          </div>
           <button class="kanban-add" data-stage="${RETAINER_STAGE}" data-is-retainer="1">+ add retainer</button>
         </div>
       </div>
@@ -109,6 +127,7 @@ export class ProjectsView {
     mc.querySelectorAll('.kanban-add[data-stage]').forEach(btn => {
       btn.addEventListener('click', () => this.openNewModal(null, btn.dataset.stage, mc, !!btn.dataset.isRetainer))
     })
+    this._bindKanbanDnD(mc)
     mc.querySelectorAll('[data-close]').forEach(btn => {
       btn.addEventListener('click', () => mc.querySelector(`#${btn.dataset.close}`)?.classList.remove('open'))
     })
@@ -231,6 +250,110 @@ export class ProjectsView {
         extractBtn.disabled = false
       }
     })
+  }
+
+  // ── Kanban drag-and-drop (move between stages/retainer lane, reorder within) ──
+
+  _bindKanbanDnD(mc) {
+    if (!this.canEdit) return
+    const clearIndicators = () => {
+      mc.querySelectorAll('.kanban-card').forEach(c => c.classList.remove('kanban-card--over'))
+      mc.querySelectorAll('.kanban-col-body').forEach(z => z.classList.remove('kanban-col-body--over'))
+    }
+
+    mc.querySelectorAll('.kanban-card[data-open]').forEach(cardEl => {
+      cardEl.addEventListener('dragstart', e => {
+        e.stopPropagation()
+        this._dragProjectId = cardEl.dataset.open
+        e.dataTransfer.effectAllowed = 'move'
+        e.dataTransfer.setData('text/plain', cardEl.dataset.open)
+        setTimeout(() => cardEl.classList.add('kanban-card--dragging'), 0)
+      })
+      cardEl.addEventListener('dragend', () => {
+        cardEl.classList.remove('kanban-card--dragging')
+        clearIndicators()
+        this._dragProjectId = null
+      })
+      cardEl.addEventListener('dragover', e => {
+        if (!this._dragProjectId || cardEl.dataset.open === this._dragProjectId) return
+        e.preventDefault()
+        e.stopPropagation()
+        e.dataTransfer.dropEffect = 'move'
+        clearIndicators()
+        cardEl.classList.add('kanban-card--over')
+      })
+      cardEl.addEventListener('dragleave', () => cardEl.classList.remove('kanban-card--over'))
+      cardEl.addEventListener('drop', e => {
+        e.preventDefault()
+        e.stopPropagation()
+        clearIndicators()
+        if (!this._dragProjectId || cardEl.dataset.open === this._dragProjectId) return
+        const zone = cardEl.closest('.kanban-col-body')
+        if (zone) this._moveProjectCard(mc, this._dragProjectId, zone, cardEl.dataset.open)
+      })
+    })
+
+    mc.querySelectorAll('.kanban-col-body').forEach(zone => {
+      zone.addEventListener('dragover', e => {
+        if (!this._dragProjectId) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        clearIndicators()
+        zone.classList.add('kanban-col-body--over')
+      })
+      zone.addEventListener('dragleave', () => zone.classList.remove('kanban-col-body--over'))
+      zone.addEventListener('drop', e => {
+        e.preventDefault()
+        clearIndicators()
+        if (!this._dragProjectId) return
+        this._moveProjectCard(mc, this._dragProjectId, zone, null)
+      })
+    })
+  }
+
+  // Move a project into the column represented by `zone`, before card `beforeId` (or to the end if null).
+  async _moveProjectCard(mc, projectId, zone, beforeId) {
+    const project = this.app.projects.find(p => p.id === projectId)
+    if (!project) return
+    const isRetainer = zone.dataset.colRetainer === '1'
+    const stage = zone.dataset.colStage || null
+    const dest = this._projectsFor(stage, isRetainer).filter(p => p.id !== projectId)
+    let index = beforeId ? dest.findIndex(p => p.id === beforeId) : dest.length
+    if (index < 0) index = dest.length
+
+    const patch = isRetainer ? { is_retainer: true } : { is_retainer: false, status: stage }
+
+    const prev = dest[index - 1], next = dest[index]
+    let position
+    if (!prev && !next) position = KANBAN_POS_GAP
+    else if (!prev) position = next.kanban_position - KANBAN_POS_GAP
+    else if (!next) position = prev.kanban_position + KANBAN_POS_GAP
+    else if (next.kanban_position - prev.kanban_position > 1e-6) position = (prev.kanban_position + next.kanban_position) / 2
+    else {
+      // Gaps exhausted — renumber the whole destination column
+      const ordered = [...dest]
+      ordered.splice(index, 0, project)
+      const ids = ordered.map(p => p.id)
+      ordered.forEach((p, i) => { p.kanban_position = (i + 1) * KANBAN_POS_GAP })
+      Object.assign(project, patch)
+      this.renderKanban(mc)
+      try {
+        const [updated] = await updateProject(this.app.userId, project.id, { ...patch, kanban_position: project.kanban_position })
+        const idx = this.app.projects.findIndex(p => p.id === project.id)
+        if (idx >= 0) this.app.projects[idx] = { ...updated, budget_ids: project.budget_ids ?? [] }
+        await renumberProjectKanban(this.app.userId, ids)
+      } catch (e) { console.error(e); this.app.toast('Error moving project') }
+      return
+    }
+
+    // Optimistic local move, then persist the single row
+    Object.assign(project, patch, { kanban_position: position })
+    this.renderKanban(mc)
+    try {
+      const [updated] = await updateProject(this.app.userId, project.id, { ...patch, kanban_position: position })
+      const idx = this.app.projects.findIndex(p => p.id === project.id)
+      if (idx >= 0) this.app.projects[idx] = { ...updated, budget_ids: project.budget_ids ?? [] }
+    } catch (e) { console.error(e); this.app.toast('Error moving project') }
   }
 
   newModalHTML() {
