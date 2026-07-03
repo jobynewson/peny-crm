@@ -1,8 +1,11 @@
 // api/_sub-tasks.js
 // Pure helpers for the sub-task reminder digest, shared by api/reminders.js and
-// unit-tested in _sub-tasks.test.js. A "source" is { title, sub_tasks } where
+// unit-tested in _sub-tasks.test.js. A "source" is { title, sub_tasks, link } where
 // each sub-task is { text, owner_id, due_date, done } — the shape used by both
 // marketing_cards.sub_tasks and canvas_items.sub_tasks (owner_id is a Clerk ID).
+// `link` is the Slate URL for the area the task is scheduled in (e.g. the
+// Marketing kanban or a specific Planning canvas) and is carried through
+// unchanged onto each grouped item so reminder emails can link to it.
 
 // Whole-day difference (dueDate − today), both floored to local midnight.
 // Negative = overdue, 0 = due today, positive = days remaining.
@@ -15,7 +18,7 @@ export function daysUntilDue(dueDate, today) {
 // Group due-soon sub-tasks by owner_id, across all sources. A row qualifies
 // when it has text, an owner and a due date, isn't done, and is due within
 // `windowDays` (overdue rows always included). Returns
-//   { [ownerId]: [{ title, text, daysUntil }] }
+//   { [ownerId]: [{ title, text, daysUntil, link }] }
 export function groupDueSubTasks(sources, today, windowDays = 3) {
   const byOwner = {}
   for (const src of (sources || [])) {
@@ -23,7 +26,7 @@ export function groupDueSubTasks(sources, today, windowDays = 3) {
       if (!st.text || st.done || !st.due_date || !st.owner_id) continue
       const daysUntil = daysUntilDue(st.due_date, today)
       if (daysUntil > windowDays) continue
-      ;(byOwner[st.owner_id] ||= []).push({ title: src.title, text: st.text, daysUntil })
+      ;(byOwner[st.owner_id] ||= []).push({ title: src.title, text: st.text, daysUntil, link: src.link })
     }
   }
   return byOwner
