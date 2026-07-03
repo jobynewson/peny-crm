@@ -58,6 +58,7 @@ export default async function handler(req, res) {
     return dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
   }
   const todayLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  const baseUrl = process.env.VITE_APP_URL || 'https://slate.wearepeny.com'
 
   const emailWrap = (title, greeting, bodyHtml) => `
 <!DOCTYPE html>
@@ -74,7 +75,7 @@ export default async function handler(req, res) {
       ${bodyHtml}
     </div>
     <div style="padding:16px 28px;border-top:1px solid #f0f0f0;font-size:12px;color:#aaa">
-      Log in to the CRM to update or dismiss these items.
+      <a href="${baseUrl}" style="color:#3b82f6;text-decoration:none">Log in to Slate</a> to update or dismiss these items.
     </div>
   </div>
 </body>
@@ -97,19 +98,19 @@ export default async function handler(req, res) {
     const userById = Object.fromEntries(users.map(u => [u.id, u]))
 
     const byAssignee = {}
-    const checkDelivs = (delivs, projectName) => {
+    const checkDelivs = (delivs, projectName, projectId) => {
       for (const d of delivs) {
         if (!d.text || d.done || !d.due || !d.assignee_id) continue
         const dueDate = new Date(d.due); dueDate.setHours(0, 0, 0, 0)
         const daysUntil = Math.round((dueDate - today) / 86400000)
         if (daysUntil > 3) continue
         if (!byAssignee[d.assignee_id]) byAssignee[d.assignee_id] = []
-        byAssignee[d.assignee_id].push({ projectName, text: d.text, daysUntil })
+        byAssignee[d.assignee_id].push({ projectName, projectId, text: d.text, daysUntil })
       }
     }
     for (const p of projects) {
-      if (Array.isArray(p.deliverables)) checkDelivs(p.deliverables, p.name)
-      if (Array.isArray(p.monthly_deliverables)) checkDelivs(p.monthly_deliverables, p.name)
+      if (Array.isArray(p.deliverables)) checkDelivs(p.deliverables, p.name, p.id)
+      if (Array.isArray(p.monthly_deliverables)) checkDelivs(p.monthly_deliverables, p.name, p.id)
     }
 
     const label = (n) => n < 0 ? `${Math.abs(n)}d overdue` : n === 0 ? 'due today' : `${n}d left`
@@ -117,7 +118,7 @@ export default async function handler(req, res) {
     const tableRows = (items) => items.map(i => `
       <tr>
         <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:14px;color:#1a1a1a">${i.text}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#555">${i.projectName}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px"><a href="${baseUrl}/#projects/${i.projectId}/overview" style="color:#3b82f6;text-decoration:none">${i.projectName}</a></td>
         <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:${colour(i.daysUntil)};white-space:nowrap;font-weight:500">${label(i.daysUntil)}</td>
       </tr>`).join('')
 
@@ -166,7 +167,7 @@ export default async function handler(req, res) {
     let canvasTodos = []
     try {
       canvasTodos = await sql`
-        SELECT ci.sub_tasks, c.name AS canvas_name
+        SELECT ci.sub_tasks, c.id AS canvas_id, c.name AS canvas_name
         FROM canvas_items ci
         JOIN canvases c ON c.id = ci.canvas_id
         WHERE ci.kind = 'todo' AND ci.sub_tasks IS NOT NULL AND jsonb_array_length(ci.sub_tasks) > 0
@@ -177,8 +178,8 @@ export default async function handler(req, res) {
     const userByClerkId = Object.fromEntries(users2.map(u => [u.clerk_id, u]))
 
     const sources = [
-      ...mktCards.map(c => ({ title: c.title, sub_tasks: c.sub_tasks })),
-      ...canvasTodos.map(t => ({ title: t.canvas_name || 'Canvas checklist', sub_tasks: t.sub_tasks })),
+      ...mktCards.map(c => ({ title: c.title, sub_tasks: c.sub_tasks, link: `${baseUrl}/#marketing` })),
+      ...canvasTodos.map(t => ({ title: t.canvas_name || 'Canvas checklist', sub_tasks: t.sub_tasks, link: `${baseUrl}/#planning/canvas/${t.canvas_id}` })),
     ]
     const mktByOwner = groupDueSubTasks(sources, today2, 3)
 
@@ -202,7 +203,7 @@ export default async function handler(req, res) {
           <tbody>${items.map(i => `
             <tr>
               <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:14px;color:#1a1a1a">${i.text}</td>
-              <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#555">${i.title}</td>
+              <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px">${i.link ? `<a href="${i.link}" style="color:#3b82f6;text-decoration:none">${i.title}</a>` : `<span style="color:#555">${i.title}</span>`}</td>
               <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:${colour2(i.daysUntil)};white-space:nowrap;font-weight:500">${label2(i.daysUntil)}</td>
             </tr>`).join('')}</tbody>
         </table>`
@@ -244,7 +245,8 @@ export default async function handler(req, res) {
           <div style="font-size:15px;font-weight:600;color:#1a1a1a;margin-bottom:8px">${noteTitle}</div>
           ${note.content ? `<div style="font-size:13px;color:#555;line-height:1.6;white-space:pre-wrap">${note.content}</div>` : ''}
           <div style="margin-top:12px;font-size:12px;color:#999">Due: ${dateStr(note.due_date)}</div>
-        </div>`
+        </div>
+        <a href="${baseUrl}/#dashboard" style="display:inline-block;background:#111;color:#fff;padding:9px 18px;border-radius:6px;text-decoration:none;font-weight:500;font-size:13px">Open note in Slate</a>`
       const html = emailWrap('Note Reminder', `Hi ${name}, this note is due in approximately 36 hours:`, body)
       try {
         await sendMail(note.email, subject, html)
