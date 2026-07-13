@@ -749,7 +749,7 @@ export class BoardsView {
       })
 
       // Save
-      overlay.querySelector('#bdm-save')?.addEventListener('click', async () => {
+      const save = async () => {
         const title = overlay.querySelector('#bdm-title')?.value.trim()
         if (!title) { overlay.querySelector('#bdm-title')?.focus(); return }
         this._collectModalLabels(overlay, labels)
@@ -778,6 +778,10 @@ export class BoardsView {
           this._renderBoardBody(wrap)
           this.app.toast(isNew ? 'Card created' : 'Card saved')
         } catch (e) { console.error(e); this.app.toast('Error saving card') }
+      }
+      overlay.querySelector('#bdm-save')?.addEventListener('click', save)
+      overlay.querySelector('#bdm-title')?.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !readonly) save()
       })
     }
 
