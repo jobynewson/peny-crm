@@ -845,11 +845,15 @@ export class BudgetsView {
       <td style="${useDays?'':'opacity:0.3;pointer-events:none'}"><input class="bl-in w" type="number" value="${l.travelDays||''}" placeholder="0" min="0" step="0.5" data-num="${si},${li},travelDays" style="text-align:right" title="Travel days" /></td>
       <td><input class="bl-in w" type="number" value="${l.rate||''}" placeholder="0" min="0" data-num="${si},${li},rate" style="text-align:right" /></td>
       <td><input class="bl-in w" type="number" value="${disc}" placeholder="0" min="0" max="100" step="0.5" data-num="${si},${li},discount" style="text-align:right" title="Discount %" /></td>
-      <td style="text-align:center;padding:4px 6px" title="Daily rate">
-        <input type="checkbox" ${useDays?'checked':''} data-toggle-days="${si},${li}" style="cursor:pointer;width:13px;height:13px" />
+      <td style="padding:0" title="Daily rate">
+        <label style="display:flex;align-items:center;justify-content:center;padding:4px 6px;cursor:pointer">
+          <input type="checkbox" ${useDays?'checked':''} data-toggle-days="${si},${li}" style="cursor:pointer;width:13px;height:13px" />
+        </label>
       </td>
-      <td style="text-align:center;padding:4px 6px">
-        <input type="checkbox" title="Track time" ${l.track_time?'checked':''} data-toggle-track="${si},${li}" style="cursor:pointer;width:13px;height:13px" />
+      <td style="padding:0">
+        <label style="display:flex;align-items:center;justify-content:center;padding:4px 6px;cursor:pointer" title="Track time">
+          <input type="checkbox" ${l.track_time?'checked':''} data-toggle-track="${si},${li}" style="cursor:pointer;width:13px;height:13px" />
+        </label>
       </td>
       <td class="bl-tot ${showTot?'nz':''}" id="blt-${si}-${li}">${showTot?gbpA(t):'—'}</td>
       <td style="text-align:right"><button class="row-btn" style="color:#c03020" data-rem-line="${si},${li}">×</button></td>
