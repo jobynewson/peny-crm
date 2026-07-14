@@ -47,6 +47,8 @@ export default async function handler(req, res) {
 
   const sendMail = async (to, subject, html) => transporter.sendMail({ from, to, subject, html })
 
+  const todayLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+
   if (type === 'expense-digest') {
     return handleExpenseDigest(req, res, sql, transporter, todayLabel)
   }
@@ -57,7 +59,6 @@ export default async function handler(req, res) {
     if (isNaN(dateObj.getTime())) return 'Invalid date'
     return dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
   }
-  const todayLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
   const baseUrl = process.env.VITE_APP_URL || 'https://slate.wearepeny.com'
 
   const emailWrap = (title, greeting, bodyHtml) => `
