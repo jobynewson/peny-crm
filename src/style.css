@@ -1714,6 +1714,10 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 .pdf-detail-total-row .dk { color: #6b6b66; }
 .pdf-detail-footer { margin-top: 40px; display: flex; justify-content: space-between; font-size: 9px; color: #c0c0b8; border-top: 0.5px solid #e0dfda; padding-top: 10px; page-break-inside: avoid; break-inside: avoid; }
 .pdf-page-marker { page-break-inside: avoid; break-inside: avoid; }
+/* Repeated detail header at the top of each continuation page. padding-top is set
+   inline to match .pdf-detail-page's top padding (lost on continuation pages when
+   @page margin is 0), so page 2+ opens with the same header and spacing as page 1. */
+.pdf-cont-header { page-break-before: always; break-before: page; page-break-inside: avoid; break-inside: avoid; }
 .pdf-continued { font-size: 9px; font-style: italic; letter-spacing: 0.3px; color: #a0a09a; text-align: center; padding: 6px 0 2px; border-top: 0.5px dashed #d8d8d2; }
 .pdf-pagenum { font-size: 9px; color: #b5b5ae; text-align: center; padding-top: 2px; }
 
