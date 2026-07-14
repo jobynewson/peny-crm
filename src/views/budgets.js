@@ -1,4 +1,5 @@
 import { createBudget, updateBudget, deleteBudget, saveBudgetVersion, getBudgetVersions, deleteBudgetVersion, setQuoteToken } from '../db/client.js'
+import { a4ContentHeightPx } from '../utils/pdfContinuation.js'
 
 export const SECTIONS = [
   {code:'A1',label:'Pre-production — Scouting',lines:[{item:'Location Scout (Director)',prepDays:0,days:0,qty:0,rate:501},{item:'Assistant Location Scout',prepDays:0,days:0,qty:0,rate:369},{item:'Location Scout car / mileage',prepDays:0,days:0,qty:0,rate:null},{item:'Congestion Charge',prepDays:0,days:0,qty:0,rate:13},{item:'Unit Driver / Bus Hire',prepDays:0,days:0,qty:0,rate:450},{item:'Subsistence',prepDays:0,days:0,qty:0,rate:null},{item:'Flights',prepDays:0,days:0,qty:0,rate:null},{item:'Accommodation',prepDays:0,days:0,qty:0,rate:null}]},
@@ -1285,6 +1286,7 @@ export class BudgetsView {
           <div class="pdf-valid">
             ${(b.prepared_by||s.prepared_by)?`Quote prepared by ${b.prepared_by||s.prepared_by}<br>`:''}
             Quote valid for 30 days<br>Valid until ${validStr}
+            <div class="pdf-pagenum" id="pdf-cover-pagenum"></div>
           </div>
         </div>
       </div>`
@@ -1343,6 +1345,7 @@ export class BudgetsView {
         ${fxNote ? `<div style="font-size:10px;color:#999;margin-top:10px;text-align:right;line-height:1.5">${fxNote}</div>` : ''}
         <div class="pdf-detail-footer">
           <span>${[(b.quote_email||s.email),s.website].filter(Boolean).join(' · ')}${(b.prepared_by||s.prepared_by)?' · Prepared by '+(b.prepared_by||s.prepared_by):''}</span>
+          <span id="pdf-detail-pagenum-last"></span>
           <span>Quote valid until ${validStr}</span>
         </div>
       </div>`
@@ -1351,7 +1354,61 @@ export class BudgetsView {
     if (!ts) { ts = document.createElement('div'); ts.id = 'pdf-topsheet'; document.body.appendChild(ts) }
     ts.innerHTML = coverHTML + detailHTML   // gbpA already evaluated into the markup above
     setMoney('GBP')   // restore GBP so editor live-updates stay in source currency
+    this._paginatePDF(ts)
     setTimeout(() => window.print(), 150)
     this.app.toast(ccy === 'GBP' ? 'Opening print dialog…' : `Opening print dialog… (${ccy})`)
+  }
+
+  // Insert "Page X of Y" footers and "continued on the next page" notices at the
+  // spots where the browser will actually break pages. #pdf-topsheet is display:none
+  // outside of print, so it has to be measured off-screen (rather than hidden) to
+  // get real layout numbers before we decide where to drop those markers in.
+  _paginatePDF(ts) {
+    try {
+      const prevStyle = ts.getAttribute('style')
+      ts.style.cssText = 'display:block;position:fixed;left:-99999px;top:0;visibility:hidden'
+
+      const KEEP_SELECTOR = '.pdf-section, .pdf-detail-totals'
+      const TOL = 1, MIN_GAP = 24
+      const COVER_PAGES = ts.querySelector('.pdf-cover') ? 1 : 0
+
+      ts.querySelectorAll('.pdf-detail-page').forEach(page => {
+        const pageTopPad = parseFloat(getComputedStyle(page).paddingTop) || 0
+        const pageHeightPx = a4ContentHeightPx(pageTopPad * 25.4 / 96)
+        const pageTop = page.getBoundingClientRect().top
+        const blocks = Array.from(page.querySelectorAll(KEEP_SELECTOR))
+        const measured = blocks.map(el => {
+          const r = el.getBoundingClientRect()
+          return { el, top: r.top - pageTop, h: r.height }
+        })
+        let shift = 0
+        const breaks = []
+        measured.forEach(m => {
+          if (m.h <= 0 || m.h > pageHeightPx) return
+          const top = m.top + shift
+          const pageEnd = (Math.floor((top + TOL) / pageHeightPx) + 1) * pageHeightPx
+          if (top + m.h > pageEnd + TOL) {
+            const gap = pageEnd - top
+            shift += gap
+            breaks.push({ before: m.el, continued: gap >= MIN_GAP })
+          }
+        })
+        const totalPages = COVER_PAGES + breaks.length + 1
+        breaks.forEach((brk, i) => {
+          const marker = document.createElement('div')
+          marker.className = 'pdf-page-marker'
+          marker.innerHTML =
+            (brk.continued ? `<div class="pdf-continued">Continued on the next page ↓</div>` : '') +
+            `<div class="pdf-pagenum">Page ${COVER_PAGES + i + 1} of ${totalPages}</div>`
+          brk.before.parentNode.insertBefore(marker, brk.before)
+        })
+        const last = page.querySelector('#pdf-detail-pagenum-last')
+        if (last) last.textContent = `Page ${totalPages} of ${totalPages}`
+        const coverNum = ts.querySelector('#pdf-cover-pagenum')
+        if (coverNum && COVER_PAGES) coverNum.textContent = `Page 1 of ${totalPages}`
+      })
+
+      if (prevStyle == null) ts.removeAttribute('style'); else ts.setAttribute('style', prevStyle)
+    } catch (e) { console.error('PDF pagination failed:', e) /* never block printing */ }
   }
 }
