@@ -1359,48 +1359,89 @@ export class BudgetsView {
     this.app.toast(ccy === 'GBP' ? 'Opening print dialog…' : `Opening print dialog… (${ccy})`)
   }
 
-  // Insert "Page X of Y" footers and "continued on the next page" notices at the
-  // spots where the browser will actually break pages. #pdf-topsheet is display:none
-  // outside of print, so it has to be measured off-screen (rather than hidden) to
-  // get real layout numbers before we decide where to drop those markers in.
+  // Lay the detailed breakdown out across pages ourselves. We greedily pack the
+  // kept-together blocks (sections + totals) into pages of the real usable height
+  // and *impose* the breaks — each break is a hard page-break-before on a repeated
+  // header, so the browser never breaks anywhere we didn't choose. That guarantees
+  // every continuation page opens with the same header and top spacing as page 1,
+  // and lets us drop accurate "Page X of Y" footers and "continued" notices.
+  //
+  // #pdf-topsheet is display:none outside of print, so it is measured off-screen
+  // (rather than hidden) to get real layout numbers before markers go in.
   _paginatePDF(ts) {
     try {
       const prevStyle = ts.getAttribute('style')
       ts.style.cssText = 'display:block;position:fixed;left:-99999px;top:0;visibility:hidden'
 
       const KEEP_SELECTOR = '.pdf-section, .pdf-detail-totals'
-      const TOL = 1, MIN_GAP = 24
       const COVER_PAGES = ts.querySelector('.pdf-cover') ? 1 : 0
 
       ts.querySelectorAll('.pdf-detail-page').forEach(page => {
-        const pageTopPad = parseFloat(getComputedStyle(page).paddingTop) || 0
-        const pageHeightPx = a4ContentHeightPx(pageTopPad * 25.4 / 96)
         const pageTop = page.getBoundingClientRect().top
-        const blocks = Array.from(page.querySelectorAll(KEEP_SELECTOR))
-        const measured = blocks.map(el => {
+        const pageTopPad = parseFloat(getComputedStyle(page).paddingTop) || 0
+        // Usable content height per physical page, leaving matching top and bottom
+        // margins (the page's top padding, mirrored at the bottom).
+        const usable = a4ContentHeightPx(pageTopPad * 25.4 / 96)
+
+        // Every page — first and continuation — opens with this header, so it costs
+        // the same on each. `avail` is what's left for the blocks below it.
+        const headerEl = page.querySelector('.pdf-detail-header')
+        const headerH = headerEl ? headerEl.getBoundingClientRect().height : 0
+        const headerMb = headerEl ? (parseFloat(getComputedStyle(headerEl).marginBottom) || 0) : 0
+        const avail = usable - (headerEl ? headerH + headerMb : 0)
+
+        // The footer only appears once, at the very end. Charge its height to the
+        // last block so the final page keeps room for it and it never spills alone.
+        const totalsEl = page.querySelector('.pdf-detail-totals')
+        const footerEl = page.querySelector('.pdf-detail-footer')
+        let footerReserve = 0
+        if (totalsEl && footerEl) {
+          footerReserve = Math.max(0, footerEl.getBoundingClientRect().bottom - totalsEl.getBoundingClientRect().bottom)
+        }
+
+        // Measure each kept-together block; `top` lets us recover the margin gap
+        // that precedes it, which counts against the page only when it isn't first.
+        const measured = Array.from(page.querySelectorAll(KEEP_SELECTOR)).map(el => {
           const r = el.getBoundingClientRect()
-          return { el, top: r.top - pageTop, h: r.height }
+          return { el, top: r.top - pageTop, h: r.height, isTotals: el === totalsEl }
         })
-        let shift = 0
+
+        // Greedily fill pages of height `avail`, recording a forced break before any
+        // block that would overflow the page it's currently being placed on.
         const breaks = []
+        let used = 0, prevBottom = null
         measured.forEach(m => {
-          if (m.h <= 0 || m.h > pageHeightPx) return
-          const top = m.top + shift
-          const pageEnd = (Math.floor((top + TOL) / pageHeightPx) + 1) * pageHeightPx
-          if (top + m.h > pageEnd + TOL) {
-            const gap = pageEnd - top
-            shift += gap
-            breaks.push({ before: m.el, continued: gap >= MIN_GAP })
+          const lead = prevBottom == null ? 0 : Math.max(0, m.top - prevBottom)
+          const cost = m.h + (m.isTotals ? footerReserve : 0)
+          if (used > 0 && used + lead + cost > avail && m.h <= avail) {
+            breaks.push(m.el)   // start a fresh page with this block
+            used = cost
+          } else {
+            used += lead + cost
           }
+          prevBottom = m.top + m.h
         })
+
         const totalPages = COVER_PAGES + breaks.length + 1
-        breaks.forEach((brk, i) => {
+        breaks.forEach((beforeEl, i) => {
+          // Footer at the bottom of the ending page.
           const marker = document.createElement('div')
           marker.className = 'pdf-page-marker'
           marker.innerHTML =
-            (brk.continued ? `<div class="pdf-continued">Continued on the next page ↓</div>` : '') +
+            `<div class="pdf-continued">Continued on the next page ↓</div>` +
             `<div class="pdf-pagenum">Page ${COVER_PAGES + i + 1} of ${totalPages}</div>`
-          brk.before.parentNode.insertBefore(marker, brk.before)
+          beforeEl.parentNode.insertBefore(marker, beforeEl)
+
+          // Repeated header at the top of the continuation page. Its page-break-before
+          // opens the fresh page; its top padding reproduces the gap page 1 gets from
+          // the .pdf-detail-page top padding (which CSS drops on continuation pages).
+          if (headerEl) {
+            const contHeader = document.createElement('div')
+            contHeader.className = 'pdf-cont-header'
+            contHeader.style.paddingTop = pageTopPad + 'px'
+            contHeader.appendChild(headerEl.cloneNode(true))
+            beforeEl.parentNode.insertBefore(contHeader, beforeEl)
+          }
         })
         const last = page.querySelector('#pdf-detail-pagenum-last')
         if (last) last.textContent = `Page ${totalPages} of ${totalPages}`
