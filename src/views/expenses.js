@@ -345,7 +345,8 @@ export class ExpensesView {
     try {
       const { createExpenseSubmission } = await import('../db/client.js')
       const row = await createExpenseSubmission({ workspace_id: this.app.userId, clerk_user_id: this.app.clerkUserId, month_key: monthKey })
-      this.submissions = [...(this.submissions ?? []), row]
+      this.submissions = [...(this.submissions ?? []).filter(s => s.month_key !== monthKey), row]
+      this._sendSubmissionNotify(monthKey)
       this.app.toast('Expenses submitted')
       this._render(mc)
     } catch(e) {
@@ -353,5 +354,25 @@ export class ExpensesView {
       this.app.toastError('Error submitting expenses', () => this._submitMonth(mc, monthKey))
     }
     }, 'Submitting…')
+  }
+
+  // Fire-and-forget: email the configured recipients that this month's expenses
+  // were submitted early. Non-blocking — a mail failure never breaks the submit.
+  async _sendSubmissionNotify(monthKey) {
+    try {
+      const { getAuthToken } = await import('../auth/clerk.js')
+      const token = await getAuthToken()
+      const res = await fetch('/api/reminders?type=expense-submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ monthKey }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok || data?.results?.some(r => r.error)) {
+        console.warn('Expense submission email reported a problem:', res.status, data)
+      }
+    } catch (e) {
+      console.warn('Expense submission email failed (non-fatal):', e)
+    }
   }
 }

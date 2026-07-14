@@ -4,6 +4,8 @@
 //   notes         — 21:00 UTC daily  — note reminders due in ~36h
 //   expense-digest — 09:00 UTC daily  — monthly expense summary (2nd-to-last working day only)
 // POST ?type=leave-notify — triggered by frontend on leave request/decision
+// POST ?type=expense-submit — triggered by frontend when a user submits their
+//   expenses early ("Submit expenses now"); emails the configured recipients
 // GET ?type=leave-approve&token=xxx&action=approve|decline — email-based leave approval
 
 import { neon } from '@neondatabase/serverless'
@@ -21,6 +23,11 @@ export default async function handler(req, res) {
   // ── Leave notification (POST, Clerk auth) ─────────────────────────────────
   if (req.method === 'POST' && req.query.type === 'leave-notify') {
     return handleLeaveNotify(req, res)
+  }
+
+  // ── Expense submission notice (POST, Clerk auth) ──────────────────────────
+  if (req.method === 'POST' && req.query.type === 'expense-submit') {
+    return handleExpenseSubmit(req, res)
   }
 
   const authHeader = req.headers['authorization']
@@ -328,22 +335,6 @@ async function handleExpenseDigest(req, res, sql, transporter, todayLabel) {
   const from = process.env.GMAIL_USER
   const sendMail = (to, subject, html) => transporter.sendMail({ from, to, subject, html })
 
-  const emailWrap = (title, bodyHtml) => `
-<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8" /></head>
-<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f5;margin:0;padding:32px 0">
-  <div style="max-width:620px;margin:0 auto;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
-    <div style="background:#111;padding:20px 28px">
-      <h1 style="margin:0;font-size:18px;color:#fff;font-weight:600">${title}</h1>
-      <p style="margin:4px 0 0;font-size:13px;color:#999">${todayLabel}</p>
-    </div>
-    <div style="padding:24px 28px">${bodyHtml}</div>
-    <div style="padding:16px 28px;border-top:1px solid #f0f0f0;font-size:12px;color:#aaa">Log in to the CRM to review or submit expenses.</div>
-  </div>
-</body>
-</html>`
-
   let settingsRows = []
   try { settingsRows = await sql`SELECT expense_recipients, mileage_rate FROM settings LIMIT 1` } catch (_) {}
   const settings = settingsRows[0] ?? {}
@@ -378,7 +369,6 @@ async function handleExpenseDigest(req, res, sql, transporter, todayLabel) {
   }
 
   const fmt2 = n => Number(n || 0).toFixed(2)
-  const fmtDate = d => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
   const monthLabel = new Date(monthKey + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
 
   const summaryRows = Object.entries(byUser).map(([clerkId, { name, entries: ents }]) => {
@@ -400,50 +390,9 @@ async function handleExpenseDigest(req, res, sql, transporter, todayLabel) {
     </tr>`
   }).join('')
 
-  const breakdownSections = Object.entries(byUser).map(([clerkId, { name, entries: ents }]) => {
-    let miles = 0, amt = 0, nights = 0
-    for (const e of ents) {
-      if (e.type === 'mileage') miles += parseFloat(e.miles ?? 0)
-      if (e.type === 'expense') amt += parseFloat(e.amount ?? 0)
-      if (e.type === 'overnight') nights += parseInt(e.overnights ?? 0)
-    }
-    const totalCash = (miles * mileageRate) + amt
-    const submitted = submittedUsers.has(clerkId)
-    const badge = submitted ? `<span style="padding:1px 7px;background:#d1fae5;color:#065f46;border-radius:10px;font-size:11px;font-weight:500;margin-left:8px">Submitted</span>` : ''
-    const rows = ents.map(e => {
-      const typeLabel = e.type === 'mileage' ? 'Mileage' : e.type === 'expense' ? 'Expense' : 'Overnight'
-      const detail = e.type === 'mileage' ? `${e.miles} miles (£${fmt2(parseFloat(e.miles ?? 0) * mileageRate)})`
-        : e.type === 'expense' ? `£${fmt2(parseFloat(e.amount ?? 0))}`
-        : `${e.overnights} night${parseInt(e.overnights) !== 1 ? 's' : ''}`
-      return `<tr>
-        <td style="padding:7px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#555">${fmtDate(e.entry_date)}</td>
-        <td style="padding:7px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#555">${typeLabel}</td>
-        <td style="padding:7px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#1a1a1a">${e.description || '—'}</td>
-        <td style="padding:7px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;text-align:right;white-space:nowrap">${detail}</td>
-      </tr>`
-    }).join('')
-    const totalParts = [
-      miles  ? `${miles}mi = £${fmt2(miles * mileageRate)}` : null,
-      amt    ? `£${fmt2(amt)} expenses` : null,
-      nights ? `${nights} night${nights !== 1 ? 's' : ''}` : null,
-    ].filter(Boolean)
-    return `
-      <div style="margin-bottom:24px">
-        <div style="font-size:14px;font-weight:600;color:#1a1a1a;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #f0f0f0">${name}${badge}</div>
-        <table style="width:100%;border-collapse:collapse;margin-bottom:8px">
-          <thead><tr style="background:#f9f9f9">
-            <th style="padding:7px 12px;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#999;text-align:left;border-bottom:1px solid #f0f0f0">Date</th>
-            <th style="padding:7px 12px;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#999;text-align:left;border-bottom:1px solid #f0f0f0">Type</th>
-            <th style="padding:7px 12px;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#999;text-align:left;border-bottom:1px solid #f0f0f0">Description</th>
-            <th style="padding:7px 12px;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#999;text-align:right;border-bottom:1px solid #f0f0f0">Amount</th>
-          </tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-        <div style="text-align:right;font-size:13px;font-weight:600;color:#1a1a1a;padding:4px 12px">
-          Total: ${totalParts.join(' + ')}${totalCash > 0 ? ` = £${fmt2(totalCash)}` : ''}
-        </div>
-      </div>`
-  }).join('')
+  const breakdownSections = Object.entries(byUser).map(([clerkId, { name, entries: ents }]) =>
+    buildExpenseBreakdownSection(name, ents, mileageRate, submittedUsers.has(clerkId))
+  ).join('')
 
   const bodyHtml = `
     <p style="margin:0 0 20px;font-size:14px;color:#444">Monthly expense summary for <strong>${monthLabel}</strong>. Rate: ${settings.mileage_rate ?? 45}p/mile.</p>
@@ -466,7 +415,7 @@ async function handleExpenseDigest(req, res, sql, transporter, todayLabel) {
   const results = []
   for (const recipient of recipientUsers) {
     if (!recipient.email) continue
-    const html = emailWrap(`Expense Summary — ${monthLabel}`, bodyHtml)
+    const html = wrapExpenseEmail(`Expense Summary — ${monthLabel}`, todayLabel, bodyHtml)
     try {
       await sendMail(recipient.email, `💷 Expense summary — ${monthLabel}`, html)
       results.push({ to: recipient.email, ok: true })
@@ -796,6 +745,167 @@ async function handleLeaveApprove(req, res) {
       </html>
     `)
   }
+}
+
+// ── Shared expense email helpers ──────────────────────────────────────────────
+// Used by both the monthly digest (?type=expense-digest) and the per-user
+// "submitted early" notice (?type=expense-submit) so the two emails stay in
+// sync — the same black-header shell and the same per-person breakdown table.
+const expFmt2 = n => Number(n || 0).toFixed(2)
+const expFmtDate = d => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+
+function wrapExpenseEmail(title, todayLabel, bodyHtml) {
+  return `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8" /></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f5;margin:0;padding:32px 0">
+  <div style="max-width:620px;margin:0 auto;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
+    <div style="background:#111;padding:20px 28px">
+      <h1 style="margin:0;font-size:18px;color:#fff;font-weight:600">${title}</h1>
+      <p style="margin:4px 0 0;font-size:13px;color:#999">${todayLabel}</p>
+    </div>
+    <div style="padding:24px 28px">${bodyHtml}</div>
+    <div style="padding:16px 28px;border-top:1px solid #f0f0f0;font-size:12px;color:#aaa">Log in to the CRM to review or submit expenses.</div>
+  </div>
+</body>
+</html>`
+}
+
+function buildExpenseBreakdownSection(name, ents, mileageRate, submitted) {
+  let miles = 0, amt = 0, nights = 0
+  for (const e of ents) {
+    if (e.type === 'mileage') miles += parseFloat(e.miles ?? 0)
+    if (e.type === 'expense') amt += parseFloat(e.amount ?? 0)
+    if (e.type === 'overnight') nights += parseInt(e.overnights ?? 0)
+  }
+  const totalCash = (miles * mileageRate) + amt
+  const badge = submitted ? `<span style="padding:1px 7px;background:#d1fae5;color:#065f46;border-radius:10px;font-size:11px;font-weight:500;margin-left:8px">Submitted</span>` : ''
+  const rows = ents.map(e => {
+    const typeLabel = e.type === 'mileage' ? 'Mileage' : e.type === 'expense' ? 'Expense' : 'Overnight'
+    const detail = e.type === 'mileage' ? `${e.miles} miles (£${expFmt2(parseFloat(e.miles ?? 0) * mileageRate)})`
+      : e.type === 'expense' ? `£${expFmt2(parseFloat(e.amount ?? 0))}`
+      : `${e.overnights} night${parseInt(e.overnights) !== 1 ? 's' : ''}`
+    return `<tr>
+      <td style="padding:7px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#555">${expFmtDate(e.entry_date)}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#555">${typeLabel}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#1a1a1a">${e.description || '—'}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;text-align:right;white-space:nowrap">${detail}</td>
+    </tr>`
+  }).join('')
+  const totalParts = [
+    miles  ? `${miles}mi = £${expFmt2(miles * mileageRate)}` : null,
+    amt    ? `£${expFmt2(amt)} expenses` : null,
+    nights ? `${nights} night${nights !== 1 ? 's' : ''}` : null,
+  ].filter(Boolean)
+  return `
+    <div style="margin-bottom:24px">
+      <div style="font-size:14px;font-weight:600;color:#1a1a1a;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #f0f0f0">${name}${badge}</div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:8px">
+        <thead><tr style="background:#f9f9f9">
+          <th style="padding:7px 12px;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#999;text-align:left;border-bottom:1px solid #f0f0f0">Date</th>
+          <th style="padding:7px 12px;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#999;text-align:left;border-bottom:1px solid #f0f0f0">Type</th>
+          <th style="padding:7px 12px;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#999;text-align:left;border-bottom:1px solid #f0f0f0">Description</th>
+          <th style="padding:7px 12px;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#999;text-align:right;border-bottom:1px solid #f0f0f0">Amount</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div style="text-align:right;font-size:13px;font-weight:600;color:#1a1a1a;padding:4px 12px">
+        Total: ${totalParts.join(' + ')}${totalCash > 0 ? ` = £${expFmt2(totalCash)}` : ''}
+      </div>
+    </div>`
+}
+
+// ── Expense submission notice (POST ?type=expense-submit) ─────────────────────
+// Fired by the Expenses view when a user clicks "Submit expenses now" to send
+// their month ahead of the automated run. Emails the configured recipients
+// that user's breakdown for the month. Mirrors handleLeaveNotify: Clerk-authed,
+// per-recipient outcomes collected, all-failures surfaced as 502.
+async function handleExpenseSubmit(req, res) {
+  const raw = req.headers.authorization?.replace('Bearer ', '').trim()
+  if (!raw) return res.status(401).json({ error: 'Unauthorised' })
+
+  let payload
+  try {
+    payload = await verifyToken(raw, { secretKey: process.env.CLERK_SECRET_KEY })
+  } catch {
+    return res.status(401).json({ error: 'Invalid session token' })
+  }
+  const clerkUserId = payload?.sub
+  if (!clerkUserId) return res.status(401).json({ error: 'Invalid session token' })
+
+  const { monthKey } = req.body ?? {}
+  if (!monthKey || !/^\d{4}-\d{2}$/.test(monthKey)) {
+    return res.status(400).json({ error: 'monthKey (YYYY-MM) required' })
+  }
+
+  const sql = neon(process.env.VITE_DATABASE_URL)
+
+  let settingsRows = []
+  try { settingsRows = await sql`SELECT expense_recipients, mileage_rate FROM settings LIMIT 1` } catch (_) {}
+  const settings = settingsRows[0] ?? {}
+  const recipientClerkIds = settings.expense_recipients ?? []
+  if (!recipientClerkIds.length) return res.status(200).json({ ok: true, skipped: 'no recipients configured' })
+
+  const mileageRate = parseFloat(settings.mileage_rate ?? 45) / 100
+
+  let submitter = {}
+  try {
+    const rows = await sql`SELECT name, email FROM app_users WHERE clerk_id = ${clerkUserId} LIMIT 1`
+    submitter = rows[0] ?? {}
+  } catch (_) {}
+  const submitterName = submitter.name || submitter.email || 'A team member'
+
+  let entries = []
+  try {
+    entries = await sql`
+      SELECT * FROM expense_entries
+      WHERE clerk_user_id = ${clerkUserId}
+        AND to_char(entry_date, 'YYYY-MM') = ${monthKey}
+      ORDER BY entry_date`
+  } catch (err) {
+    return res.status(500).json({ error: err.message })
+  }
+  if (!entries.length) return res.status(200).json({ ok: true, skipped: 'no entries this month' })
+
+  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+    return res.status(200).json({ ok: true, skipped: 'email not configured' })
+  }
+
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
+  })
+  const from = process.env.GMAIL_USER
+  const sendMail = (to, subject, html) => transporter.sendMail({ from, to, subject, html })
+
+  const todayLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  const monthLabel = new Date(monthKey + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+
+  const bodyHtml = `
+    <p style="margin:0 0 20px;font-size:14px;color:#444"><strong>${submitterName}</strong> has submitted their expenses for <strong>${monthLabel}</strong> ahead of the monthly run. Rate: ${settings.mileage_rate ?? 45}p/mile.</p>
+    ${buildExpenseBreakdownSection(submitterName, entries, mileageRate, true)}`
+  const html = wrapExpenseEmail(`Expenses submitted — ${monthLabel}`, todayLabel, bodyHtml)
+  const subject = `💷 ${submitterName} submitted expenses — ${monthLabel}`
+
+  const recipientUsers = await sql`SELECT email FROM app_users WHERE clerk_id = ANY(${recipientClerkIds})`
+  const results = []
+  for (const recipient of recipientUsers) {
+    if (!recipient.email) continue
+    try {
+      const info = await sendMail(recipient.email, subject, html)
+      results.push({ to: recipient.email, ok: true, messageId: info?.messageId ?? null })
+    } catch (err) {
+      console.error(`Expense submission email to ${recipient.email} failed:`, err)
+      results.push({ to: recipient.email, error: err.message })
+    }
+  }
+
+  const failures = results.filter(r => r.error)
+  if (failures.length && failures.length === results.length) {
+    return res.status(502).json({ ok: false, error: 'All expense emails failed to send', results })
+  }
+  return res.status(200).json({ ok: true, month: monthKey, results })
 }
 
 function isSecondToLastWorkingDay(date) {
