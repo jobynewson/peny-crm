@@ -1707,7 +1707,7 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 .pdf-line-sub { font-size: 10px; color: #a8a8a0; margin-top: 2px; }
 .pdf-line-num { font-size: 12px; color: #6b6b66; text-align: right; font-variant-numeric: tabular-nums; }
 .pdf-line-total { font-size: 12px; font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
-.pdf-detail-totals { margin-top: 36px; border-top: 1px solid #1a1a18; padding-top: 16px; }
+.pdf-detail-totals { margin-top: 36px; border-top: 1px solid #1a1a18; padding-top: 16px; page-break-inside: avoid; break-inside: avoid; }
 .pdf-detail-total-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 12px; border-bottom: 0.5px solid #f0efe9; }
 .pdf-detail-total-row:last-child { border-bottom: none; }
 .pdf-detail-total-row.grand { font-size: 16px; font-weight: 500; padding-top: 12px; }
