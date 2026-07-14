@@ -336,12 +336,13 @@ async function handleExpenseDigest(req, res, sql, transporter, todayLabel) {
   const sendMail = (to, subject, html) => transporter.sendMail({ from, to, subject, html })
 
   let settingsRows = []
-  try { settingsRows = await sql`SELECT expense_recipients, mileage_rate FROM settings LIMIT 1` } catch (_) {}
+  try { settingsRows = await sql`SELECT expense_recipients, mileage_rate, per_diem_rate FROM settings LIMIT 1` } catch (_) {}
   const settings = settingsRows[0] ?? {}
   const recipientClerkIds = settings.expense_recipients ?? []
   if (!recipientClerkIds.length) return res.status(200).json({ ok: true, skipped: 'no recipients configured' })
 
   const mileageRate = parseFloat(settings.mileage_rate ?? 45) / 100
+  const perDiemRate = parseFloat(settings.per_diem_rate ?? 0)
 
   let entries = []
   try {
@@ -372,37 +373,40 @@ async function handleExpenseDigest(req, res, sql, transporter, todayLabel) {
   const monthLabel = new Date(monthKey + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
 
   const summaryRows = Object.entries(byUser).map(([clerkId, { name, entries: ents }]) => {
-    let miles = 0, amt = 0, nights = 0
+    let miles = 0, amt = 0, days = 0, comm = 0
     for (const e of ents) {
       if (e.type === 'mileage') miles += parseFloat(e.miles ?? 0)
       if (e.type === 'expense') amt += parseFloat(e.amount ?? 0)
-      if (e.type === 'overnight') nights += parseInt(e.overnights ?? 0)
+      if (e.type === 'overnight') days += parseInt(e.overnights ?? 0)
+      if (e.type === 'commission') comm += parseFloat(e.amount ?? 0)
     }
-    const total = (miles * mileageRate) + amt
+    const total = (miles * mileageRate) + amt + (days * perDiemRate) + comm
     const submitted = submittedUsers.has(clerkId)
     return `<tr>
       <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:14px;color:#1a1a1a;font-weight:500">${name}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#555;text-align:right">${miles > 0 ? `${miles}mi` : '—'}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#555;text-align:right">${nights > 0 ? nights : '—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#555;text-align:right">${days > 0 ? days : '—'}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#555;text-align:right">${amt > 0 ? `£${fmt2(amt)}` : '—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#555;text-align:right">${comm > 0 ? `£${fmt2(comm)}` : '—'}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;font-weight:600;color:#1a1a1a;text-align:right">£${fmt2(total)}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:center">${submitted ? `<span style="padding:2px 7px;background:#d1fae5;color:#065f46;border-radius:10px">✓</span>` : ''}</td>
     </tr>`
   }).join('')
 
   const breakdownSections = Object.entries(byUser).map(([clerkId, { name, entries: ents }]) =>
-    buildExpenseBreakdownSection(name, ents, mileageRate, submittedUsers.has(clerkId))
+    buildExpenseBreakdownSection(name, ents, mileageRate, submittedUsers.has(clerkId), perDiemRate)
   ).join('')
 
   const bodyHtml = `
-    <p style="margin:0 0 20px;font-size:14px;color:#444">Monthly expense summary for <strong>${monthLabel}</strong>. Rate: ${settings.mileage_rate ?? 45}p/mile.</p>
+    <p style="margin:0 0 20px;font-size:14px;color:#444">Monthly expense summary for <strong>${monthLabel}</strong>. Rate: ${settings.mileage_rate ?? 45}p/mile, £${fmt2(perDiemRate)}/per diem day.</p>
     <h3 style="font-size:13px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 10px">Summary</h3>
     <table style="width:100%;border-collapse:collapse;margin-bottom:28px">
       <thead><tr style="background:#f9f9f9">
         <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#999;text-align:left;border-bottom:2px solid #f0f0f0">Name</th>
         <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#999;text-align:right;border-bottom:2px solid #f0f0f0">Miles</th>
-        <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#999;text-align:right;border-bottom:2px solid #f0f0f0">Nights</th>
+        <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#999;text-align:right;border-bottom:2px solid #f0f0f0">Per Diem Days</th>
         <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#999;text-align:right;border-bottom:2px solid #f0f0f0">Expenses</th>
+        <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#999;text-align:right;border-bottom:2px solid #f0f0f0">Commission</th>
         <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#999;text-align:right;border-bottom:2px solid #f0f0f0">Total £</th>
         <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#999;text-align:center;border-bottom:2px solid #f0f0f0">Submitted</th>
       </tr></thead>
@@ -772,20 +776,21 @@ function wrapExpenseEmail(title, todayLabel, bodyHtml) {
 </html>`
 }
 
-function buildExpenseBreakdownSection(name, ents, mileageRate, submitted) {
-  let miles = 0, amt = 0, nights = 0
+function buildExpenseBreakdownSection(name, ents, mileageRate, submitted, perDiemRate = 0) {
+  let miles = 0, amt = 0, days = 0, comm = 0
   for (const e of ents) {
     if (e.type === 'mileage') miles += parseFloat(e.miles ?? 0)
     if (e.type === 'expense') amt += parseFloat(e.amount ?? 0)
-    if (e.type === 'overnight') nights += parseInt(e.overnights ?? 0)
+    if (e.type === 'overnight') days += parseInt(e.overnights ?? 0)
+    if (e.type === 'commission') comm += parseFloat(e.amount ?? 0)
   }
-  const totalCash = (miles * mileageRate) + amt
+  const totalCash = (miles * mileageRate) + amt + (days * perDiemRate) + comm
   const badge = submitted ? `<span style="padding:1px 7px;background:#d1fae5;color:#065f46;border-radius:10px;font-size:11px;font-weight:500;margin-left:8px">Submitted</span>` : ''
   const rows = ents.map(e => {
-    const typeLabel = e.type === 'mileage' ? 'Mileage' : e.type === 'expense' ? 'Expense' : 'Overnight'
+    const typeLabel = e.type === 'mileage' ? 'Mileage' : e.type === 'expense' ? 'Expense' : e.type === 'commission' ? 'Commission' : 'Per Diem Days'
     const detail = e.type === 'mileage' ? `${e.miles} miles (£${expFmt2(parseFloat(e.miles ?? 0) * mileageRate)})`
-      : e.type === 'expense' ? `£${expFmt2(parseFloat(e.amount ?? 0))}`
-      : `${e.overnights} night${parseInt(e.overnights) !== 1 ? 's' : ''}`
+      : e.type === 'expense' || e.type === 'commission' ? `£${expFmt2(parseFloat(e.amount ?? 0))}`
+      : `${e.overnights} day${parseInt(e.overnights) !== 1 ? 's' : ''}`
     return `<tr>
       <td style="padding:7px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#555">${expFmtDate(e.entry_date)}</td>
       <td style="padding:7px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#555">${typeLabel}</td>
@@ -794,9 +799,10 @@ function buildExpenseBreakdownSection(name, ents, mileageRate, submitted) {
     </tr>`
   }).join('')
   const totalParts = [
-    miles  ? `${miles}mi = £${expFmt2(miles * mileageRate)}` : null,
-    amt    ? `£${expFmt2(amt)} expenses` : null,
-    nights ? `${nights} night${nights !== 1 ? 's' : ''}` : null,
+    miles ? `${miles}mi = £${expFmt2(miles * mileageRate)}` : null,
+    amt   ? `£${expFmt2(amt)} expenses` : null,
+    days  ? `${days} per diem day${days !== 1 ? 's' : ''}${perDiemRate ? ` = £${expFmt2(days * perDiemRate)}` : ''}` : null,
+    comm  ? `£${expFmt2(comm)} commission` : null,
   ].filter(Boolean)
   return `
     <div style="margin-bottom:24px">
@@ -842,12 +848,13 @@ async function handleExpenseSubmit(req, res) {
   const sql = neon(process.env.VITE_DATABASE_URL)
 
   let settingsRows = []
-  try { settingsRows = await sql`SELECT expense_recipients, mileage_rate FROM settings LIMIT 1` } catch (_) {}
+  try { settingsRows = await sql`SELECT expense_recipients, mileage_rate, per_diem_rate FROM settings LIMIT 1` } catch (_) {}
   const settings = settingsRows[0] ?? {}
   const recipientClerkIds = settings.expense_recipients ?? []
   if (!recipientClerkIds.length) return res.status(200).json({ ok: true, skipped: 'no recipients configured' })
 
   const mileageRate = parseFloat(settings.mileage_rate ?? 45) / 100
+  const perDiemRate = parseFloat(settings.per_diem_rate ?? 0)
 
   let submitter = {}
   try {
@@ -884,7 +891,7 @@ async function handleExpenseSubmit(req, res) {
 
   const bodyHtml = `
     <p style="margin:0 0 20px;font-size:14px;color:#444"><strong>${submitterName}</strong> has submitted their expenses for <strong>${monthLabel}</strong> ahead of the monthly run. Rate: ${settings.mileage_rate ?? 45}p/mile.</p>
-    ${buildExpenseBreakdownSection(submitterName, entries, mileageRate, true)}`
+    ${buildExpenseBreakdownSection(submitterName, entries, mileageRate, true, perDiemRate)}`
   const html = wrapExpenseEmail(`Expenses submitted — ${monthLabel}`, todayLabel, bodyHtml)
   const subject = `💷 ${submitterName} submitted expenses — ${monthLabel}`
 

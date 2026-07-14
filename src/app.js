@@ -2413,6 +2413,10 @@ export class App {
               <input type="number" id="s-mileage-rate" value="${s.mileage_rate ?? 45}" min="0" step="0.1" style="width:100px" />
             </div>
             <div class="field">
+              <div class="field-label">Per diem rate (£ per day)</div>
+              <input type="number" id="s-per-diem-rate" value="${s.per_diem_rate ?? 0}" min="0" step="0.01" style="width:100px" />
+            </div>
+            <div class="field">
               <div class="field-label">Expense email recipients</div>
               <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:6px">Select team members who should receive the monthly expense report.</div>
               <div id="exp-recipients-list" style="display:flex;flex-direction:column;gap:6px">
@@ -2971,8 +2975,9 @@ export class App {
 
   async _saveExpenseSettings(mc) {
     const rate = parseFloat(mc.querySelector('#s-mileage-rate')?.value || '45')
+    const perDiemRate = parseFloat(mc.querySelector('#s-per-diem-rate')?.value || '0')
     const recipients = [...mc.querySelectorAll('.exp-recipient-check:checked')].map(el => el.dataset.clerkId)
-    const data = { ...this.settings, mileage_rate: rate, expense_recipients: recipients }
+    const data = { ...this.settings, mileage_rate: rate, per_diem_rate: perDiemRate, expense_recipients: recipients }
     try {
       const [updated] = await upsertSettings(this.userId, data)
       this.settings = updated

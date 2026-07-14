@@ -197,6 +197,7 @@ export async function runMigrations() {
   `
   await sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS expense_recipients JSONB NOT NULL DEFAULT '[]'::jsonb`
   await sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS mileage_rate NUMERIC(6,2) NOT NULL DEFAULT 45`
+  await sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS per_diem_rate NUMERIC(8,2) NOT NULL DEFAULT 0`
 
   // Migrate the legacy role tiers to the three-tier model and drop the old
   // per-permission overrides (permissions are now derived purely from role).
