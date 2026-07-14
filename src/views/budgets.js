@@ -32,6 +32,11 @@ function setMoney(code, rates, markupPct) {
   MONEY = { code, symbol: CURRENCIES[code].symbol, rate: baseRate * (1 + mk/100), baseRate, markupPct: mk }
 }
 const gbpA = n => MONEY.symbol + Math.round((Number(n)||0) * MONEY.rate).toLocaleString('en-GB')
+// Per-unit rates (e.g. £0.45/mile) round to zero under gbpA; keep decimals when the value isn't a whole number.
+const gbpRate = n => {
+  const v = Math.round((Number(n)||0) * MONEY.rate * 100) / 100
+  return MONEY.symbol + v.toLocaleString('en-GB', { minimumFractionDigits: v % 1 !== 0 ? 2 : 0, maximumFractionDigits: 2 })
+}
 const moy = () => { const d = new Date(); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] + ' ' + d.getFullYear() }
 
 function lineTotal(l, travelRate, prepRate) {
@@ -64,11 +69,12 @@ function budTotal(b) {
   return afterCustom + (b.vat ? afterCustom*0.2 : 0)
 }
 const hasValue = l => {
+  if ((parseFloat(l.qty)||0) <= 0) return false
   const useDays = l.useDays || (parseFloat(l.prepDays)||0) > 0 || (parseFloat(l.days)||0) > 0 || (parseFloat(l.travelDays)||0) > 0
-  const hasQty = (parseFloat(l.qty)||0) > 0 && (parseFloat(l.rate)||0) > 0
+  const hasQty = (parseFloat(l.rate)||0) > 0
   return useDays ? true : hasQty
 }
-const hasVisibleValue = l => hasValue(l) || ((parseFloat(l.discount)||0) >= 100 && (parseFloat(l.rate)||0) > 0)
+const hasVisibleValue = l => hasValue(l) || ((parseFloat(l.qty)||0) > 0 && (parseFloat(l.discount)||0) >= 100 && (parseFloat(l.rate)||0) > 0)
 
 export { budTotal, budNet }
 
@@ -1305,7 +1311,7 @@ export class BudgetsView {
               <div class="pdf-line-item">${esc(l.item)}${l.notes?`<div class="pdf-line-sub">${esc(l.notes)}</div>`:''}${useDaysPDF&&prep>0?`<div class="pdf-line-sub">Prep: ${prep}d @ ${pdfPr}%</div>`:''}${useDaysPDF&&td>0?`<div class="pdf-line-sub">Travel: ${td}d @ ${pdfTr}%</div>`:''}${disc>0?`<div class="pdf-line-sub">Discount: ${disc}%</div>`:''}</div>
               <div class="pdf-line-num">${useDaysPDF&&(prep>0||d>0)?(prep+d)+'d':''}</div>
               <div class="pdf-line-num">${useDaysPDF?(q!==1?q:''):q}</div>
-              <div class="pdf-line-num">${useDaysPDF&&prep>0?gbpA(r*prep*q*(pdfPr/100)):''} ${useDaysPDF&&td>0?gbpA(r*td*(pdfTr/100)):(r>0?gbpA(r):'')}</div>
+              <div class="pdf-line-num">${useDaysPDF&&prep>0?gbpA(r*prep*q*(pdfPr/100)):''} ${useDaysPDF&&td>0?gbpA(r*td*(pdfTr/100)):(r>0?gbpRate(r):'')}</div>
               <div class="pdf-line-total">${disc>=100?gbpA(0):t>0?gbpA(t):''}</div>
             </div>`
           }).join('')}

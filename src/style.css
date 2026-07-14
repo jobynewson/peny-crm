@@ -1693,7 +1693,7 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 .pdf-detail-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #a8a8a0; }
 .pdf-detail-title { font-size: 18px; font-weight: 500; letter-spacing: -0.3px; }
 .pdf-detail-header img { height: 32px; width: auto; }
-.pdf-section { margin-bottom: 28px; }
+.pdf-section { margin-bottom: 28px; page-break-inside: avoid; break-inside: avoid; }
 .pdf-section-header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; padding-bottom: 7px; border-bottom: 1px solid #1a1a18; }
 .pdf-section-code { font-size: 10px; font-weight: 700; color: #a8a8a0; letter-spacing: 0.5px; }
 .pdf-section-name { font-size: 13px; font-weight: 500; flex: 1; }
@@ -1701,7 +1701,7 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 .pdf-col-heads { display: grid; grid-template-columns: 1fr 44px 36px 44px 72px; gap: 6px; padding: 4px 0 5px; }
 .pdf-col-head { font-size: 9px; text-transform: uppercase; letter-spacing: 0.6px; color: #a8a8a0; text-align: right; }
 .pdf-col-head:first-child { text-align: left; }
-.pdf-line { display: grid; grid-template-columns: 1fr 44px 36px 44px 72px; gap: 6px; padding: 6px 0; border-bottom: 0.5px solid #f0efe9; align-items: baseline; }
+.pdf-line { display: grid; grid-template-columns: 1fr 44px 36px 44px 72px; gap: 6px; padding: 6px 0; border-bottom: 0.5px solid #f0efe9; align-items: baseline; page-break-inside: avoid; break-inside: avoid; }
 .pdf-line:last-child { border-bottom: none; }
 .pdf-line-item { font-size: 12px; }
 .pdf-line-sub { font-size: 10px; color: #a8a8a0; margin-top: 2px; }
