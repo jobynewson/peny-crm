@@ -1293,16 +1293,10 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .bd-card:hover { box-shadow: var(--shadow-md); border-color: var(--border-med); }
 .bd-card--dragging { opacity: 0.4; }
 .bd-card--over { box-shadow: 0 -3px 0 0 var(--accent); }
-.bd-card-labels { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; }
-.bd-label-pill {
-  display: inline-block; min-width: 26px; height: 8px;
-  border-radius: var(--radius-pill);
-  font-size: 9px; font-weight: 600; color: #fff; line-height: 1;
-  padding: 0;
-}
-.bd-label-pill:not(:empty) { height: auto; padding: 2px 7px; }
+.bd-card-labels { display: flex; margin-bottom: 6px; }
+.bd-label-pill { display: inline-block; width: 32px; height: 6px; border-radius: var(--radius-pill); }
 .bd-card-title { font-size: 13px; font-weight: 500; color: var(--text-primary); line-height: 1.4; }
-.bd-card-chips { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+/* .bd-chip is still used by canvas item entity links */
 .bd-chip {
   display: inline-flex; align-items: center; gap: 3px;
   font-size: 10px; font-weight: 500;
@@ -1327,6 +1321,22 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   transition: background 0.1s, color 0.1s;
 }
 .bd-add-card:hover { background: var(--bg-primary); color: var(--text-secondary); }
+.bd-composer { display: flex; flex-direction: column; gap: 6px; }
+.bd-composer-input {
+  width: 100%; box-sizing: border-box; resize: none;
+  font-size: 13px; font-family: var(--font); line-height: 1.4;
+  padding: 9px 11px; color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-med); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm); outline: none;
+}
+.bd-composer-input:focus { border-color: var(--accent); }
+.bd-composer-close {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-tertiary); font-size: 16px; line-height: 1;
+  padding: 3px 7px; border-radius: var(--radius-sm);
+}
+.bd-composer-close:hover { background: var(--bg-tertiary); color: var(--text-primary); }
 .bd-add-col {
   min-width: 150px; align-self: stretch;
   border: 1px dashed var(--border-med); border-radius: var(--radius-md);

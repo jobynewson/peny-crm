@@ -389,11 +389,11 @@ export async function seedDemoBoard(workspaceId) {
   const byOrder = [...cols].sort((a, b) => a.sort_order - b.sort_order)
   const today = new Date().toISOString().slice(0, 10)
   await sql`
-    INSERT INTO board_cards (board_id, column_id, title, description, labels, position, due_date) VALUES
-      (${board.id}, ${byOrder[0].id}, 'Drag me to another column', 'Cards can be dragged between and within columns — everyone with the board open sees moves within a few seconds.', ${JSON.stringify([{ name: 'demo', color: '#a78bfa' }])}::jsonb, 1024, NULL),
-      (${board.id}, ${byOrder[0].id}, 'Open me to edit', 'Cards have a description, assignee, due date, coloured labels and links to clients, projects and budgets.', '[]'::jsonb, 2048, ${today}),
-      (${board.id}, ${byOrder[1].id}, 'Recurring work lives in ↻ Recurring', 'Set up cards that re-spawn on a schedule — journal send-outs, social posts, mailers.', ${JSON.stringify([{ name: 'tip', color: '#34d399' }])}::jsonb, 1024, NULL),
-      (${board.id}, ${byOrder[2].id}, 'A finished card', NULL, '[]'::jsonb, 1024, NULL)
+    INSERT INTO board_cards (board_id, column_id, title, description, position, due_date) VALUES
+      (${board.id}, ${byOrder[0].id}, 'Drag me to another column', 'Cards can be dragged between and within columns — everyone with the board open sees moves within a few seconds. Card colours follow the column they sit in.', 1024, NULL),
+      (${board.id}, ${byOrder[0].id}, 'Open me to edit', 'Cards have a description, assignee and due date. Add new ones with the title box at the bottom of any column.', 2048, ${today}),
+      (${board.id}, ${byOrder[1].id}, 'Recurring work lives in ↻ Recurring', 'Set up cards that re-spawn on a schedule — journal send-outs, social posts, mailers.', 1024, NULL),
+      (${board.id}, ${byOrder[2].id}, 'A finished card', NULL, 1024, NULL)
   `
 }
 

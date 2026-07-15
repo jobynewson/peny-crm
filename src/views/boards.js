@@ -1,7 +1,8 @@
 // src/views/boards.js
 // Planning boards — kanban with draggable cards/columns, recurring cards,
-// entity link chips, and near-realtime sync (short-interval polling of
-// granular rows; remote merges pause while you drag or type).
+// and near-realtime sync (short-interval polling of granular rows; remote
+// merges pause while you drag or type). Cards are added Trello-style with an
+// inline composer and take their colour from the column they sit in.
 
 import {
   getBoards, createBoard, updateBoard, deleteBoard, getBoardData, getBoardForProject,
@@ -15,16 +16,9 @@ const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').re
 const fmtDate = d => d ? new Date(String(d).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''
 const dateKey = d => (d instanceof Date) ? d.toISOString().slice(0, 10) : String(d ?? '').slice(0, 10)
 
-const LABEL_COLORS = ['#4a90d9', '#6ec96e', '#f59e0b', '#ef4444', '#a78bfa', '#06b6d4', '#ec4899']
 const COLUMN_COLORS = ['#8590A2', '#4a90d9', '#6ec96e', '#f59e0b', '#ef4444', '#a78bfa', '#06b6d4', '#ec4899']
 const POS_GAP = 1024
 const POLL_MS = 4000
-
-const LINK_TYPES = [
-  { id: 'client',  label: 'Client',  icon: '👤', color: '#a78bfa' },
-  { id: 'project', label: 'Project', icon: '🎬', color: '#4a90d9' },
-  { id: 'budget',  label: 'Budget',  icon: '£',  color: '#6ec96e' },
-]
 
 const inputStyle = 'font-size:13px;padding:6px 9px;border:1px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);outline:none'
 const labelStyle = 'font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px'
@@ -363,8 +357,7 @@ export class BoardsView {
   }
 
   _renderCard(card) {
-    const labels = Array.isArray(card.labels) ? card.labels : []
-    const links = Array.isArray(card.links) ? card.links : []
+    const colColor = this.columns.find(c => c.id === card.column_id)?.color || COLUMN_COLORS[0]
     const assignee = card.assignee_id ? this.app.allUsers.find(u => u.id === card.assignee_id) : null
     const initials = name => (name || '?').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
 
@@ -378,9 +371,8 @@ export class BoardsView {
 
     return `
     <div class="bd-card" data-card="${card.id}" ${this.canEdit ? 'draggable="true"' : ''}>
-      ${labels.length ? `<div class="bd-card-labels">${labels.map(l => `<span class="bd-label-pill" style="background:${esc(l.color)}" title="${esc(l.name || '')}">${l.name ? esc(l.name) : ''}</span>`).join('')}</div>` : ''}
+      <div class="bd-card-labels"><span class="bd-label-pill" style="background:${esc(colColor)}"></span></div>
       <div class="bd-card-title">${esc(card.title)}</div>
-      ${links.length ? `<div class="bd-card-chips">${links.map(l => this._renderChip(l)).join('')}</div>` : ''}
       ${(assignee || duePill || card.spawned_from || card.description) ? `
       <div class="bd-card-meta">
         ${assignee ? `<span class="bd-avatar" title="${esc(assignee.name || assignee.email)}">${initials(assignee.name || assignee.email)}</span>` : ''}
@@ -389,33 +381,6 @@ export class BoardsView {
         ${card.description ? '<span title="Has description" style="font-size:10px;color:var(--text-tertiary);margin-left:auto">≡</span>' : ''}
       </div>` : ''}
     </div>`
-  }
-
-  _renderChip(link) {
-    const t = LINK_TYPES.find(x => x.id === link.type)
-    if (!t) return ''
-    const name = this._entityName(link.type, link.id)
-    if (!name) return ''
-    return `<span class="bd-chip" data-chip-type="${link.type}" data-chip-id="${link.id}" style="color:${t.color};background:${t.color}1a">${t.icon} ${esc(name)}</span>`
-  }
-
-  _entityName(type, id) {
-    if (type === 'client') {
-      const c = this.app.contacts.find(x => x.id === id)
-      return c ? `${c.first_name} ${c.last_name}`.trim() : null
-    }
-    if (type === 'project') return this.app.projects.find(x => x.id === id)?.name ?? null
-    if (type === 'budget') return this.app.budgets.find(x => x.id === id)?.name ?? null
-    return null
-  }
-
-  _navigateChip(type, id) {
-    if (type === 'project') this.app.openProject(id)
-    else if (type === 'budget') this.app.openBudget(id)
-    else if (type === 'client') {
-      this.app.navigate('contacts')
-      setTimeout(() => this.app.contactsView.selectContact(id), 50)
-    }
   }
 
   // ── Bindings (clicks + drag-and-drop) ────────────────────────────────────────
@@ -428,16 +393,9 @@ export class BoardsView {
         if (card) this.openCardModal(wrap, card)
       })
     })
-    // Entity chips navigate
-    wrap.querySelectorAll('.bd-chip').forEach(chip => {
-      chip.addEventListener('click', e => {
-        e.stopPropagation()
-        this._navigateChip(chip.dataset.chipType, chip.dataset.chipId)
-      })
-    })
     // Add card / column / edit column
     wrap.querySelectorAll('[data-add-card]').forEach(btn => {
-      btn.addEventListener('click', () => this.openCardModal(wrap, null, btn.dataset.addCard))
+      btn.addEventListener('click', () => this._openCardComposer(wrap, btn.dataset.addCard))
     })
     wrap.querySelector('#bd-add-col')?.addEventListener('click', () => this.openColumnModal(wrap, null))
     wrap.querySelectorAll('[data-col-edit]').forEach(btn => {
@@ -595,14 +553,61 @@ export class BoardsView {
     finally { this._writes-- }
   }
 
-  // ── Card modal ───────────────────────────────────────────────────────────────
+  // ── Inline card composer (Trello-style add) ──────────────────────────────────
 
-  openCardModal(wrap, card, defaultColId = null) {
+  // Swap a column's "+ Add card" button for an inline title box: Enter/Add
+  // creates the card at the end of the column and keeps the composer open for
+  // the next one; Escape or × closes it. Everything else (assignee, due date,
+  // description) is edited by opening the card afterwards.
+  _openCardComposer(wrap, colId) {
+    wrap.querySelectorAll('.bd-composer').forEach(el => el._close?.())
+    const addBtn = wrap.querySelector(`[data-add-card="${colId}"]`)
+    if (!addBtn) return
+    addBtn.style.display = 'none'
+
+    const box = document.createElement('div')
+    box.className = 'bd-composer'
+    box.innerHTML = `
+      <textarea class="bd-composer-input" rows="2" maxlength="200" placeholder="Enter a title for this card…"></textarea>
+      <div style="display:flex;align-items:center;gap:6px">
+        <button class="btn-primary bd-composer-add" style="font-size:12px">Add card</button>
+        <button class="bd-composer-close" title="Close">×</button>
+      </div>`
+    addBtn.insertAdjacentElement('beforebegin', box)
+
+    const ta = box.querySelector('.bd-composer-input')
+    box._close = () => { box.remove(); addBtn.style.display = '' }
+
+    const add = async () => {
+      const title = ta.value.trim()
+      if (!title) { ta.focus(); return }
+      const last = this._cardsFor(colId).at(-1)
+      const position = (last ? last.position : 0) + POS_GAP
+      this._writes++
+      try {
+        const created = await createBoardCard(this.board.id, { title, column_id: colId, position })
+        this.cards.push(created)
+        this._snapshot = this._serialize(this.columns, this.cards)
+        this._renderBoardBody(wrap)
+        this._openCardComposer(wrap, colId)   // keep composing
+      } catch (e) { console.error(e); this.app.toast('Error adding card') }
+      finally { this._writes-- }
+    }
+
+    box.querySelector('.bd-composer-add').addEventListener('click', add)
+    box.querySelector('.bd-composer-close').addEventListener('click', () => box._close())
+    ta.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); add() }
+      else if (e.key === 'Escape') box._close()
+    })
+    ta.focus()
+  }
+
+  // ── Card modal (edit existing cards) ─────────────────────────────────────────
+
+  openCardModal(wrap, card) {
     document.getElementById('bd-card-modal')?.remove()
-    const isNew = !card
     const readonly = !this.canEdit
-    let labels = card ? (Array.isArray(card.labels) ? card.labels.map(l => ({ ...l })) : []) : []
-    let links = card ? (Array.isArray(card.links) ? card.links.map(l => ({ ...l })) : []) : []
 
     const overlay = document.createElement('div')
     overlay.id = 'bd-card-modal'
@@ -612,190 +617,94 @@ export class BoardsView {
     const allUsers = this.app.allUsers || []
     const dis = readonly ? 'disabled' : ''
 
-    const linkOptions = type => {
-      if (type === 'client') return this.app.contacts.map(c => `<option value="${c.id}">${esc(`${c.first_name} ${c.last_name}`.trim())}</option>`).join('')
-      if (type === 'project') return this.app.projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')
-      return this.app.budgets.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('')
-    }
+    overlay.innerHTML = `
+      <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:560px;box-shadow:var(--shadow-lg);display:flex;flex-direction:column" onclick="event.stopPropagation()">
+        <div style="display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--border-light)">
+          <input id="bdm-title" value="${esc(card.title)}" placeholder="Card title…" maxlength="200" ${dis}
+            style="flex:1;border:none;outline:none;font-size:15px;font-weight:600;color:var(--text-primary);background:transparent;font-family:var(--font);min-width:0">
+          <button id="bdm-close" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-tertiary);line-height:1;padding:4px 6px">×</button>
+        </div>
 
-    const renderModal = () => {
-      overlay.innerHTML = `
-        <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:560px;box-shadow:var(--shadow-lg);display:flex;flex-direction:column" onclick="event.stopPropagation()">
-          <div style="display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--border-light)">
-            <input id="bdm-title" value="${esc(card?.title || '')}" placeholder="Card title…" maxlength="200" ${dis}
-              style="flex:1;border:none;outline:none;font-size:15px;font-weight:600;color:var(--text-primary);background:transparent;font-family:var(--font);min-width:0">
-            <button id="bdm-close" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-tertiary);line-height:1;padding:4px 6px">×</button>
+        <div style="display:flex;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border-light);flex-wrap:wrap">
+          <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:130px">
+            <label style="${labelStyle}">Column</label>
+            <select id="bdm-column" ${dis} style="${inputStyle}">
+              ${cols.map(c => `<option value="${c.id}"${card.column_id === c.id ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}
+            </select>
           </div>
-
-          <div style="display:flex;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border-light);flex-wrap:wrap">
-            <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:130px">
-              <label style="${labelStyle}">Column</label>
-              <select id="bdm-column" ${dis} style="${inputStyle}">
-                ${cols.map(c => `<option value="${c.id}"${(card?.column_id || defaultColId) === c.id ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}
-              </select>
-            </div>
-            <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:130px">
-              <label style="${labelStyle}">Assignee</label>
-              <select id="bdm-assignee" ${dis} style="${inputStyle}">
-                <option value="">— Unassigned —</option>
-                ${allUsers.map(u => `<option value="${u.id}"${card?.assignee_id === u.id ? ' selected' : ''}>${esc(u.name || u.email)}</option>`).join('')}
-              </select>
-            </div>
-            <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:120px">
-              <label style="${labelStyle}">Due date</label>
-              <input id="bdm-due" type="date" value="${card?.due_date ? dateKey(card.due_date) : ''}" ${dis} style="${inputStyle}">
-            </div>
+          <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:130px">
+            <label style="${labelStyle}">Assignee</label>
+            <select id="bdm-assignee" ${dis} style="${inputStyle}">
+              <option value="">— Unassigned —</option>
+              ${allUsers.map(u => `<option value="${u.id}"${card.assignee_id === u.id ? ' selected' : ''}>${esc(u.name || u.email)}</option>`).join('')}
+            </select>
           </div>
-
-          <div style="padding:14px 20px;border-bottom:1px solid var(--border-light)">
-            <label style="${labelStyle};display:block;margin-bottom:6px">Labels</label>
-            <div style="display:flex;gap:6px;margin-bottom:8px">
-              ${LABEL_COLORS.map(c => `
-                <button class="bdm-swatch" data-swatch="${c}" ${dis} title="Toggle label"
-                  style="width:22px;height:22px;border-radius:6px;cursor:pointer;background:${c};border:2px solid ${labels.some(l => l.color === c) ? 'var(--text-primary)' : 'transparent'};opacity:${labels.some(l => l.color === c) ? 1 : 0.45}"></button>`).join('')}
-            </div>
-            ${labels.map((l, i) => `
-              <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
-                <span style="width:14px;height:14px;border-radius:4px;background:${esc(l.color)};flex-shrink:0"></span>
-                <input class="bdm-label-name" data-idx="${i}" value="${esc(l.name || '')}" placeholder="Label text (optional)…" maxlength="40" ${dis}
-                  style="flex:1;${inputStyle};padding:4px 8px;font-size:12px">
-              </div>`).join('')}
+          <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:120px">
+            <label style="${labelStyle}">Due date</label>
+            <input id="bdm-due" type="date" value="${card.due_date ? dateKey(card.due_date) : ''}" ${dis} style="${inputStyle}">
           </div>
+        </div>
 
-          <div style="padding:14px 20px;border-bottom:1px solid var(--border-light)">
-            <label style="${labelStyle};display:block;margin-bottom:6px">Links</label>
-            ${links.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
-              ${links.map((l, i) => {
-                const t = LINK_TYPES.find(x => x.id === l.type)
-                const name = this._entityName(l.type, l.id)
-                return `<span class="bd-chip" style="color:${t?.color};background:${t?.color}1a">${t?.icon} ${esc(name || 'Missing record')}
-                  ${readonly ? '' : `<button class="bdm-link-del" data-idx="${i}" style="background:none;border:none;cursor:pointer;color:inherit;font-size:12px;padding:0 0 0 4px;line-height:1">×</button>`}</span>`
-              }).join('')}
-            </div>` : ''}
-            ${readonly ? '' : `
-            <div style="display:flex;gap:8px">
-              <select id="bdm-link-type" style="${inputStyle};font-size:12px">
-                ${LINK_TYPES.map(t => `<option value="${t.id}">${t.label}</option>`).join('')}
-              </select>
-              <select id="bdm-link-entity" style="${inputStyle};font-size:12px;flex:1;min-width:0">${linkOptions('client')}</select>
-              <button class="btn-cancel" id="bdm-link-add" style="font-size:12px">+ Add</button>
-            </div>`}
+        <div style="padding:14px 20px">
+          <label style="${labelStyle};display:block;margin-bottom:6px">Description</label>
+          <textarea id="bdm-desc" rows="4" placeholder="Add a description…" ${dis}
+            style="width:100%;box-sizing:border-box;${inputStyle};resize:vertical;line-height:1.5">${esc(card.description || '')}</textarea>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:8px;padding:14px 20px;border-top:1px solid var(--border-light)">
+          ${readonly ? '' : '<button id="bdm-delete" style="background:none;border:none;cursor:pointer;color:#e07070;font-size:12px;font-family:var(--font);padding:0">Delete card</button>'}
+          <div style="margin-left:auto;display:flex;gap:8px">
+            <button class="btn-cancel" id="bdm-cancel">Close</button>
+            ${readonly ? '' : '<button class="btn-primary" id="bdm-save">Save</button>'}
           </div>
+        </div>
+      </div>`
 
-          <div style="padding:14px 20px">
-            <label style="${labelStyle};display:block;margin-bottom:6px">Description</label>
-            <textarea id="bdm-desc" rows="4" placeholder="Add a description…" ${dis}
-              style="width:100%;box-sizing:border-box;${inputStyle};resize:vertical;line-height:1.5">${esc(card?.description || '')}</textarea>
-          </div>
+    overlay.querySelector('#bdm-close')?.addEventListener('click', () => overlay.remove())
+    overlay.querySelector('#bdm-cancel')?.addEventListener('click', () => overlay.remove())
 
-          <div style="display:flex;align-items:center;gap:8px;padding:14px 20px;border-top:1px solid var(--border-light)">
-            ${!isNew && !readonly ? '<button id="bdm-delete" style="background:none;border:none;cursor:pointer;color:#e07070;font-size:12px;font-family:var(--font);padding:0">Delete card</button>' : ''}
-            <div style="margin-left:auto;display:flex;gap:8px">
-              <button class="btn-cancel" id="bdm-cancel">Close</button>
-              ${readonly ? '' : `<button class="btn-primary" id="bdm-save">${isNew ? 'Create card' : 'Save'}</button>`}
-            </div>
-          </div>
-        </div>`
+    // Delete
+    overlay.querySelector('#bdm-delete')?.addEventListener('click', async () => {
+      const ok = await this.app.confirm({ title: 'Delete this card?', confirmLabel: 'Delete card' })
+      if (!ok) return
+      try {
+        await deleteBoardCard(card.id)
+        this.cards = this.cards.filter(c => c.id !== card.id)
+        this._snapshot = this._serialize(this.columns, this.cards)
+        overlay.remove()
+        this._renderBoardBody(wrap)
+        this.app.toast('Card deleted')
+      } catch (e) { console.error(e); this.app.toast('Error deleting card') }
+    })
 
-      overlay.querySelector('#bdm-close')?.addEventListener('click', () => overlay.remove())
-      overlay.querySelector('#bdm-cancel')?.addEventListener('click', () => overlay.remove())
-
-      // Label swatch toggles (preserve typed names through the re-render)
-      overlay.querySelectorAll('.bdm-swatch').forEach(btn => {
-        btn.addEventListener('click', () => {
-          if (readonly) return
-          this._collectModalLabels(overlay, labels)
-          const color = btn.dataset.swatch
-          const idx = labels.findIndex(l => l.color === color)
-          if (idx >= 0) labels.splice(idx, 1)
-          else labels.push({ color, name: '' })
-          renderModal()
-        })
-      })
-
-      // Link add/remove
-      overlay.querySelector('#bdm-link-type')?.addEventListener('change', e => {
-        const entitySel = overlay.querySelector('#bdm-link-entity')
-        if (entitySel) entitySel.innerHTML = linkOptions(e.target.value)
-      })
-      overlay.querySelector('#bdm-link-add')?.addEventListener('click', () => {
-        const type = overlay.querySelector('#bdm-link-type')?.value
-        const id = overlay.querySelector('#bdm-link-entity')?.value
-        if (!type || !id || links.some(l => l.type === type && l.id === id)) return
-        this._collectModalLabels(overlay, labels)
-        links.push({ type, id })
-        renderModal()
-      })
-      overlay.querySelectorAll('.bdm-link-del').forEach(btn => {
-        btn.addEventListener('click', () => {
-          this._collectModalLabels(overlay, labels)
-          links.splice(parseInt(btn.dataset.idx), 1)
-          renderModal()
-        })
-      })
-
-      // Delete
-      overlay.querySelector('#bdm-delete')?.addEventListener('click', async () => {
-        const ok = await this.app.confirm({ title: 'Delete this card?', confirmLabel: 'Delete card' })
-        if (!ok) return
-        try {
-          await deleteBoardCard(card.id)
-          this.cards = this.cards.filter(c => c.id !== card.id)
-          this._snapshot = this._serialize(this.columns, this.cards)
-          overlay.remove()
-          this._renderBoardBody(wrap)
-          this.app.toast('Card deleted')
-        } catch (e) { console.error(e); this.app.toast('Error deleting card') }
-      })
-
-      // Save
-      const save = async () => {
-        const title = overlay.querySelector('#bdm-title')?.value.trim()
-        if (!title) { overlay.querySelector('#bdm-title')?.focus(); return }
-        this._collectModalLabels(overlay, labels)
-        const column_id = overlay.querySelector('#bdm-column')?.value
-        const data = {
-          title,
-          column_id,
-          description: overlay.querySelector('#bdm-desc')?.value.trim() || null,
-          assignee_id: overlay.querySelector('#bdm-assignee')?.value || null,
-          due_date:    overlay.querySelector('#bdm-due')?.value || null,
-          labels, links,
-        }
-        try {
-          if (isNew) {
-            const last = this._cardsFor(column_id).at(-1)
-            data.position = (last ? last.position : 0) + POS_GAP
-            const created = await createBoardCard(this.board.id, data)
-            this.cards.push(created)
-          } else {
-            const updated = await updateBoardCard(card.id, data)
-            const idx = this.cards.findIndex(c => c.id === card.id)
-            if (idx !== -1) this.cards[idx] = updated
-          }
-          this._snapshot = this._serialize(this.columns, this.cards)
-          overlay.remove()
-          this._renderBoardBody(wrap)
-          this.app.toast(isNew ? 'Card created' : 'Card saved')
-        } catch (e) { console.error(e); this.app.toast('Error saving card') }
+    // Save
+    const save = async () => {
+      const title = overlay.querySelector('#bdm-title')?.value.trim()
+      if (!title) { overlay.querySelector('#bdm-title')?.focus(); return }
+      const data = {
+        title,
+        column_id:   overlay.querySelector('#bdm-column')?.value,
+        description: overlay.querySelector('#bdm-desc')?.value.trim() || null,
+        assignee_id: overlay.querySelector('#bdm-assignee')?.value || null,
+        due_date:    overlay.querySelector('#bdm-due')?.value || null,
       }
-      overlay.querySelector('#bdm-save')?.addEventListener('click', save)
-      overlay.querySelector('#bdm-title')?.addEventListener('keydown', e => {
-        if (e.key === 'Enter' && !readonly) save()
-      })
+      try {
+        const updated = await updateBoardCard(card.id, data)
+        const idx = this.cards.findIndex(c => c.id === card.id)
+        if (idx !== -1) this.cards[idx] = updated
+        this._snapshot = this._serialize(this.columns, this.cards)
+        overlay.remove()
+        this._renderBoardBody(wrap)
+        this.app.toast('Card saved')
+      } catch (e) { console.error(e); this.app.toast('Error saving card') }
     }
+    overlay.querySelector('#bdm-save')?.addEventListener('click', save)
+    overlay.querySelector('#bdm-title')?.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !readonly) save()
+    })
 
     overlay.addEventListener('click', () => overlay.remove())
     document.body.appendChild(overlay)
-    renderModal()
-    if (isNew) setTimeout(() => overlay.querySelector('#bdm-title')?.focus(), 10)
-  }
-
-  _collectModalLabels(overlay, labels) {
-    overlay.querySelectorAll('.bdm-label-name').forEach(input => {
-      const l = labels[parseInt(input.dataset.idx)]
-      if (l) l.name = input.value.trim()
-    })
   }
 
   // ── Column modal ─────────────────────────────────────────────────────────────
@@ -1019,6 +928,7 @@ export class BoardsView {
       // Don't merge under the user's feet (or race an in-flight write)
       if (document.hidden || this._dragCardId || this._dragColId || this._writes > 0) return
       if (document.getElementById('bd-card-modal') || document.getElementById('bd-col-modal') || document.getElementById('bd-rec-modal') || document.getElementById('bd-new-modal')) return
+      if (wrap.querySelector('.bd-composer')) return   // don't wipe an open add-card composer
       const ae = document.activeElement
       if (ae && wrap.contains(ae) && ['INPUT', 'TEXTAREA', 'SELECT'].includes(ae.tagName)) return
 
