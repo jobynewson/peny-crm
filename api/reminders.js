@@ -823,9 +823,7 @@ function buildExpenseBreakdownSection(name, ents, mileageRate, submitted, perDie
   }).join('')
   const totalParts = [
     miles ? `${miles}mi = £${expFmt2(miles * mileageRate)}` : null,
-    amt   ? `£${expFmt2(amt)} expenses` : null,
     days  ? `${days} per diem day${days !== 1 ? 's' : ''}${perDiemRate ? ` = £${expFmt2(days * perDiemRate)}` : ''}` : null,
-    comm  ? `£${expFmt2(comm)} commission` : null,
   ].filter(Boolean)
   return `
     <div style="margin-bottom:24px">
@@ -839,8 +837,19 @@ function buildExpenseBreakdownSection(name, ents, mileageRate, submitted, perDie
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
-      <div style="text-align:right;font-size:13px;font-weight:600;color:#1a1a1a;padding:4px 12px">
-        Total: ${totalParts.join(' + ')}${totalCash > 0 ? ` = £${expFmt2(totalCash)}` : ''}
+      <div style="display:flex;gap:10px;margin-bottom:8px">
+        <div style="flex:1;padding:8px 12px;background:#f9f9f9;border-radius:6px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:#999;margin-bottom:2px">Expenses total</div>
+          <div style="font-size:15px;font-weight:700;color:#1a1a1a">£${expFmt2(amt)}</div>
+        </div>
+        <div style="flex:1;padding:8px 12px;background:#f9f9f9;border-radius:6px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:#999;margin-bottom:2px">Commission total</div>
+          <div style="font-size:15px;font-weight:700;color:#1a1a1a">£${expFmt2(comm)}</div>
+        </div>
+      </div>
+      ${totalParts.length ? `<div style="text-align:right;font-size:12px;color:#777;padding:0 12px 4px">Other (mileage / per diem): ${totalParts.join(' + ')}</div>` : ''}
+      <div style="text-align:right;font-size:13px;font-weight:600;color:#1a1a1a;padding:0 12px">
+        Total to pay: £${expFmt2(totalCash)}
       </div>
     </div>`
 }
