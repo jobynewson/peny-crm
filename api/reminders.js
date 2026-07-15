@@ -372,6 +372,7 @@ async function handleExpenseDigest(req, res, sql, transporter, todayLabel) {
   const fmt2 = n => Number(n || 0).toFixed(2)
   const monthLabel = new Date(monthKey + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
 
+  let grandMiles = 0, grandAmt = 0, grandDays = 0, grandComm = 0, grandTotal = 0
   const summaryRows = Object.entries(byUser).map(([clerkId, { name, entries: ents }]) => {
     let miles = 0, amt = 0, days = 0, comm = 0
     for (const e of ents) {
@@ -381,6 +382,7 @@ async function handleExpenseDigest(req, res, sql, transporter, todayLabel) {
       if (e.type === 'commission') comm += parseFloat(e.amount ?? 0)
     }
     const total = (miles * mileageRate) + amt + (days * perDiemRate) + comm
+    grandMiles += miles; grandAmt += amt; grandDays += days; grandComm += comm; grandTotal += total
     const submitted = submittedUsers.has(clerkId)
     return `<tr>
       <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:14px;color:#1a1a1a;font-weight:500">${name}</td>
@@ -393,12 +395,32 @@ async function handleExpenseDigest(req, res, sql, transporter, todayLabel) {
     </tr>`
   }).join('')
 
+  const totalsRow = `<tr style="background:#f9f9f9">
+    <td style="padding:8px 12px;font-size:13px;font-weight:700;color:#1a1a1a">Total</td>
+    <td style="padding:8px 12px;font-size:13px;font-weight:700;color:#1a1a1a;text-align:right">${grandMiles > 0 ? `${grandMiles}mi` : '—'}</td>
+    <td style="padding:8px 12px;font-size:13px;font-weight:700;color:#1a1a1a;text-align:right">${grandDays > 0 ? grandDays : '—'}</td>
+    <td style="padding:8px 12px;font-size:13px;font-weight:700;color:#1a1a1a;text-align:right">£${fmt2(grandAmt)}</td>
+    <td style="padding:8px 12px;font-size:13px;font-weight:700;color:#1a1a1a;text-align:right">£${fmt2(grandComm)}</td>
+    <td style="padding:8px 12px;font-size:13px;font-weight:700;color:#1a1a1a;text-align:right">£${fmt2(grandTotal)}</td>
+    <td></td>
+  </tr>`
+
   const breakdownSections = Object.entries(byUser).map(([clerkId, { name, entries: ents }]) =>
     buildExpenseBreakdownSection(name, ents, mileageRate, submittedUsers.has(clerkId), perDiemRate)
   ).join('')
 
   const bodyHtml = `
-    <p style="margin:0 0 20px;font-size:14px;color:#444">Monthly expense summary for <strong>${monthLabel}</strong>. Rate: ${settings.mileage_rate ?? 45}p/mile, £${fmt2(perDiemRate)}/per diem day.</p>
+    <p style="margin:0 0 12px;font-size:14px;color:#444">Monthly expense summary for <strong>${monthLabel}</strong>. Rate: ${settings.mileage_rate ?? 45}p/mile, £${fmt2(perDiemRate)}/per diem day.</p>
+    <div style="display:flex;gap:12px;margin-bottom:20px">
+      <div style="flex:1;padding:12px 16px;background:#f9f9f9;border-radius:8px">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#999;margin-bottom:4px">Expenses total</div>
+        <div style="font-size:18px;font-weight:700;color:#1a1a1a">£${fmt2(grandAmt)}</div>
+      </div>
+      <div style="flex:1;padding:12px 16px;background:#f9f9f9;border-radius:8px">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#999;margin-bottom:4px">Commission total</div>
+        <div style="font-size:18px;font-weight:700;color:#1a1a1a">£${fmt2(grandComm)}</div>
+      </div>
+    </div>
     <h3 style="font-size:13px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 10px">Summary</h3>
     <table style="width:100%;border-collapse:collapse;margin-bottom:28px">
       <thead><tr style="background:#f9f9f9">
@@ -411,6 +433,7 @@ async function handleExpenseDigest(req, res, sql, transporter, todayLabel) {
         <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#999;text-align:center;border-bottom:2px solid #f0f0f0">Submitted</th>
       </tr></thead>
       <tbody>${summaryRows}</tbody>
+      <tfoot>${totalsRow}</tfoot>
     </table>
     <h3 style="font-size:13px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 16px">Breakdown</h3>
     ${breakdownSections}`
