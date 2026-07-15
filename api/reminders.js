@@ -372,7 +372,7 @@ async function handleExpenseDigest(req, res, sql, transporter, todayLabel) {
   const fmt2 = n => Number(n || 0).toFixed(2)
   const monthLabel = new Date(monthKey + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
 
-  let grandMiles = 0, grandAmt = 0, grandDays = 0, grandComm = 0, grandTotal = 0
+  let grandMiles = 0, grandDays = 0, grandComm = 0, grandExpenses = 0, grandTotal = 0
   const summaryRows = Object.entries(byUser).map(([clerkId, { name, entries: ents }]) => {
     let miles = 0, amt = 0, days = 0, comm = 0
     for (const e of ents) {
@@ -381,14 +381,17 @@ async function handleExpenseDigest(req, res, sql, transporter, todayLabel) {
       if (e.type === 'overnight') days += parseInt(e.overnights ?? 0)
       if (e.type === 'commission') comm += parseFloat(e.amount ?? 0)
     }
-    const total = (miles * mileageRate) + amt + (days * perDiemRate) + comm
-    grandMiles += miles; grandAmt += amt; grandDays += days; grandComm += comm; grandTotal += total
+    // "Expenses" is everything paid via the expenses route: mileage + per diem + misc expenses.
+    // Commission is paid separately, so it's kept out of this figure.
+    const expensesTotal = (miles * mileageRate) + amt + (days * perDiemRate)
+    const total = expensesTotal + comm
+    grandMiles += miles; grandDays += days; grandComm += comm; grandExpenses += expensesTotal; grandTotal += total
     const submitted = submittedUsers.has(clerkId)
     return `<tr>
       <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:14px;color:#1a1a1a;font-weight:500">${name}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#555;text-align:right">${miles > 0 ? `${miles}mi` : '—'}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#555;text-align:right">${days > 0 ? days : '—'}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#555;text-align:right">${amt > 0 ? `£${fmt2(amt)}` : '—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#555;text-align:right">£${fmt2(expensesTotal)}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#555;text-align:right">${comm > 0 ? `£${fmt2(comm)}` : '—'}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;font-weight:600;color:#1a1a1a;text-align:right">£${fmt2(total)}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:center">${submitted ? `<span style="padding:2px 7px;background:#d1fae5;color:#065f46;border-radius:10px">✓</span>` : ''}</td>
@@ -399,7 +402,7 @@ async function handleExpenseDigest(req, res, sql, transporter, todayLabel) {
     <td style="padding:8px 12px;font-size:13px;font-weight:700;color:#1a1a1a">Total</td>
     <td style="padding:8px 12px;font-size:13px;font-weight:700;color:#1a1a1a;text-align:right">${grandMiles > 0 ? `${grandMiles}mi` : '—'}</td>
     <td style="padding:8px 12px;font-size:13px;font-weight:700;color:#1a1a1a;text-align:right">${grandDays > 0 ? grandDays : '—'}</td>
-    <td style="padding:8px 12px;font-size:13px;font-weight:700;color:#1a1a1a;text-align:right">£${fmt2(grandAmt)}</td>
+    <td style="padding:8px 12px;font-size:13px;font-weight:700;color:#1a1a1a;text-align:right">£${fmt2(grandExpenses)}</td>
     <td style="padding:8px 12px;font-size:13px;font-weight:700;color:#1a1a1a;text-align:right">£${fmt2(grandComm)}</td>
     <td style="padding:8px 12px;font-size:13px;font-weight:700;color:#1a1a1a;text-align:right">£${fmt2(grandTotal)}</td>
     <td></td>
@@ -414,7 +417,7 @@ async function handleExpenseDigest(req, res, sql, transporter, todayLabel) {
     <div style="display:flex;gap:12px;margin-bottom:20px">
       <div style="flex:1;padding:12px 16px;background:#f9f9f9;border-radius:8px">
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#999;margin-bottom:4px">Expenses total</div>
-        <div style="font-size:18px;font-weight:700;color:#1a1a1a">£${fmt2(grandAmt)}</div>
+        <div style="font-size:18px;font-weight:700;color:#1a1a1a">£${fmt2(grandExpenses)}</div>
       </div>
       <div style="flex:1;padding:12px 16px;background:#f9f9f9;border-radius:8px">
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#999;margin-bottom:4px">Commission total</div>
@@ -807,7 +810,10 @@ function buildExpenseBreakdownSection(name, ents, mileageRate, submitted, perDie
     if (e.type === 'overnight') days += parseInt(e.overnights ?? 0)
     if (e.type === 'commission') comm += parseFloat(e.amount ?? 0)
   }
-  const totalCash = (miles * mileageRate) + amt + (days * perDiemRate) + comm
+  // "Expenses" is everything paid via the expenses route: mileage + per diem + misc expenses.
+  // Commission is paid separately, so it's kept out of this figure.
+  const expensesTotal = (miles * mileageRate) + amt + (days * perDiemRate)
+  const totalCash = expensesTotal + comm
   const badge = submitted ? `<span style="padding:1px 7px;background:#d1fae5;color:#065f46;border-radius:10px;font-size:11px;font-weight:500;margin-left:8px">Submitted</span>` : ''
   const rows = ents.map(e => {
     const typeLabel = e.type === 'mileage' ? 'Mileage' : e.type === 'expense' ? 'Expense' : e.type === 'commission' ? 'Commission' : 'Per Diem Days'
@@ -821,9 +827,10 @@ function buildExpenseBreakdownSection(name, ents, mileageRate, submitted, perDie
       <td style="padding:7px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;text-align:right;white-space:nowrap">${detail}</td>
     </tr>`
   }).join('')
-  const totalParts = [
+  const expensesParts = [
     miles ? `${miles}mi = £${expFmt2(miles * mileageRate)}` : null,
     days  ? `${days} per diem day${days !== 1 ? 's' : ''}${perDiemRate ? ` = £${expFmt2(days * perDiemRate)}` : ''}` : null,
+    amt   ? `£${expFmt2(amt)} expenses` : null,
   ].filter(Boolean)
   return `
     <div style="margin-bottom:24px">
@@ -840,14 +847,14 @@ function buildExpenseBreakdownSection(name, ents, mileageRate, submitted, perDie
       <div style="display:flex;gap:10px;margin-bottom:8px">
         <div style="flex:1;padding:8px 12px;background:#f9f9f9;border-radius:6px">
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:#999;margin-bottom:2px">Expenses total</div>
-          <div style="font-size:15px;font-weight:700;color:#1a1a1a">£${expFmt2(amt)}</div>
+          <div style="font-size:15px;font-weight:700;color:#1a1a1a">£${expFmt2(expensesTotal)}</div>
         </div>
         <div style="flex:1;padding:8px 12px;background:#f9f9f9;border-radius:6px">
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:#999;margin-bottom:2px">Commission total</div>
           <div style="font-size:15px;font-weight:700;color:#1a1a1a">£${expFmt2(comm)}</div>
         </div>
       </div>
-      ${totalParts.length ? `<div style="text-align:right;font-size:12px;color:#777;padding:0 12px 4px">Other (mileage / per diem): ${totalParts.join(' + ')}</div>` : ''}
+      ${expensesParts.length ? `<div style="text-align:right;font-size:12px;color:#777;padding:0 12px 4px">Includes: ${expensesParts.join(' + ')}</div>` : ''}
       <div style="text-align:right;font-size:13px;font-weight:600;color:#1a1a1a;padding:0 12px">
         Total to pay: £${expFmt2(totalCash)}
       </div>
