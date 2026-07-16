@@ -75,9 +75,11 @@ async function seed() {
     { user_id: USER_ID, first_name: 'Carla', last_name: 'Reyes', role: 'Head of Content', company: 'Globex Inc', email: 'carla@globex.example', phone: '+44 7700 900003', type: 'brand', status: 'Active', since: '2022' },
   ]).returning()
 
+  // Freelance crew are modelled as subcontractor-type contacts (see the
+  // "Type" dropdown in src/views/contacts.js) — there is no 'crew' type.
   await db.insert(contacts).values([
-    { user_id: USER_ID, first_name: 'Dana', last_name: 'Price', role: 'Director of Photography', company: 'Freelance', email: 'dana@example.com', type: 'crew', status: 'Active' },
-    { user_id: USER_ID, first_name: 'Eli', last_name: 'Novak', role: 'Editor', company: 'Freelance', email: 'eli@example.com', type: 'crew', status: 'Active' },
+    { user_id: USER_ID, first_name: 'Dana', last_name: 'Price', role: 'Director of Photography', company: 'Freelance', email: 'dana@example.com', type: 'subcontractor', status: 'Active' },
+    { user_id: USER_ID, first_name: 'Eli', last_name: 'Novak', role: 'Editor', company: 'Freelance', email: 'eli@example.com', type: 'subcontractor', status: 'Active' },
   ])
 
   // ── Projects (spread across pipeline stages) ───────────────────────────
@@ -88,7 +90,7 @@ async function seed() {
       project_type: 'full_service', kanban_position: 1,
     },
     {
-      user_id: USER_ID, client_id: northwind.id, name: 'Northwind — Brand Film', status: 'Confirmed',
+      user_id: USER_ID, client_id: northwind.id, name: 'Northwind — Brand Film', status: 'Pre-production',
       brief: '90s brand story film for website hero + socials.', location: 'Manchester',
       project_type: 'full_service', shoot_start: daysFromNow(14), shoot_end: daysFromNow(15), kanban_position: 1,
     },
@@ -98,7 +100,10 @@ async function seed() {
       project_type: 'full_service', shoot_start: daysFromNow(-2), shoot_end: daysFromNow(1), kanban_position: 1,
     },
     {
-      user_id: USER_ID, client_id: acme.id, name: 'Acme — Monthly Retainer', status: 'Confirmed',
+      // status still needs to be one of the pipeline STAGES even for a
+      // retainer — the Retainer lane is driven entirely by is_retainer,
+      // it doesn't replace status (see src/views/projects.js STAGES/is_retainer).
+      user_id: USER_ID, client_id: acme.id, name: 'Acme — Monthly Retainer', status: 'In Production',
       brief: 'Ongoing monthly social content retainer.', location: 'London',
       project_type: 'full_service', is_retainer: true, retainer_fee: '3500.00', retainer_hours: '20',
       retainer_start: daysFromNow(-60), kanban_position: 1,
@@ -130,11 +135,12 @@ async function seed() {
   ])
 
   // ── Marketing kanban ──────────────────────────────────────────────────
+  // card_type/status ids must match CARD_TYPES/COLUMNS in src/views/marketing.js
   await db.insert(marketing_cards).values([
-    { user_id: USER_ID, title: 'Instagram reel — Acme BTS', card_type: 'social', status: 'ideas', sort_order: 0 },
-    { user_id: USER_ID, title: 'Case study — Northwind brand film', card_type: 'blog', status: 'planning', sort_order: 0 },
-    { user_id: USER_ID, title: 'Showreel 2026 update', card_type: 'ad-hoc', status: 'in_progress', sort_order: 0 },
-    { user_id: USER_ID, title: 'Newsletter — Q3 roundup', card_type: 'email', status: 'scheduled', due_date: daysFromNow(5), sort_order: 0 },
+    { user_id: USER_ID, title: 'Instagram reel — Acme BTS', card_type: 'instagram', status: 'ideas', sort_order: 0 },
+    { user_id: USER_ID, title: 'Case study — Northwind brand film', card_type: 'peny-journal', status: 'planning', sort_order: 0 },
+    { user_id: USER_ID, title: 'Showreel 2026 update', card_type: 'ad-hoc', status: 'in-progress', sort_order: 0 },
+    { user_id: USER_ID, title: 'Newsletter — Q3 roundup', card_type: 'mailer', status: 'scheduled', due_date: daysFromNow(5), sort_order: 0 },
   ])
 
   // ── A planning board with a couple of columns/cards ────────────────────
