@@ -6,7 +6,7 @@
 // with, since all three key data by this id.
 import { verifyToken } from '@clerk/backend'
 
-const DEMO_MODE = process.env.DEMO_MODE === 'true'
+export const DEMO_MODE = String(process.env.DEMO_MODE).trim().toLowerCase() === 'true'
 const DEMO_USER_ID = process.env.DEMO_USER_ID || 'demo-user'
 
 // Verifies `Authorization: Bearer <token>` and returns the Clerk payload

@@ -1,14 +1,14 @@
 // api/invite.js
 import { createClerkClient } from '@clerk/backend'
 import { neon } from '@neondatabase/serverless'
-import { verifyAuthHeader } from './_auth.js'
+import { verifyAuthHeader, DEMO_MODE } from './_auth.js'
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  if (process.env.DEMO_MODE === 'true') {
+  if (DEMO_MODE) {
     return res.status(400).json({ error: 'Inviting users is disabled in the demo' })
   }
 

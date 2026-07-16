@@ -4,7 +4,7 @@ import { Clerk } from '@clerk/clerk-js'
 // fixed user, so no login screen shows and no real credentials are needed.
 // Must match DEMO_USER_ID on the API side (see api/_auth.js) and the id
 // scripts/seed-demo.js was run with, since all three key data by this id.
-const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true'
+const DEMO_MODE = String(import.meta.env.VITE_DEMO_MODE).trim().toLowerCase() === 'true'
 const DEMO_USER_ID = import.meta.env.VITE_DEMO_USER_ID || 'demo-user'
 const DEMO_USER = {
   id: DEMO_USER_ID,
