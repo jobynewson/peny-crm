@@ -1,15 +1,18 @@
 // Seeds a demo dataset into whatever database DATABASE_URL points at.
 //
 // USAGE:
-//   DATABASE_URL="<demo-neon-connection-string>" DEMO_USER_ID="<demo-clerk-user-id>" node scripts/seed-demo.js
+//   DATABASE_URL="<demo-neon-connection-string>" node scripts/seed-demo.js
 //
 // Safe to re-run: it wipes any existing rows owned by DEMO_USER_ID (and their
 // children) before inserting fresh demo data, so you can reset the demo
 // before every call.
 //
-// DEMO_USER_ID must be the Clerk user ID of the account you'll log in with
-// on the demo deployment (find it in the Clerk dashboard, or in the app's
-// browser console via `window.Clerk.user.id` once logged in once).
+// If the demo deployment runs with DEMO_MODE=true (see api/_auth.js and
+// src/auth/clerk.js — no-login demo build), DEMO_USER_ID defaults to
+// "demo-user" here to match the fixed user those bypass Clerk auth as, so
+// you don't need to set anything. Only override DEMO_USER_ID if you changed
+// it from the default on the deployment, or are seeding a normal
+// Clerk-login deployment for a real Clerk user id.
 
 import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
@@ -17,10 +20,9 @@ import { eq } from 'drizzle-orm'
 import * as schema from '../src/db/schema.js'
 
 const DATABASE_URL = process.env.DATABASE_URL
-const USER_ID = process.env.DEMO_USER_ID
+const USER_ID = process.env.DEMO_USER_ID || 'demo-user'
 
 if (!DATABASE_URL) throw new Error('Set DATABASE_URL to the demo database connection string')
-if (!USER_ID) throw new Error('Set DEMO_USER_ID to the Clerk user id that will log into the demo')
 
 const sql = neon(DATABASE_URL)
 const db = drizzle(sql, { schema })

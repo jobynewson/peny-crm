@@ -1,7 +1,7 @@
 // api/generate-ra.js
 // POST /api/generate-ra — generates a risk assessment from shoot + project data
 import { neon } from '@neondatabase/serverless'
-import { verifyToken } from '@clerk/backend'
+import { verifyAuthHeader } from './_auth.js'
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -10,14 +10,11 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const raw = req.headers.authorization?.replace('Bearer ', '').trim()
-  if (!raw) return res.status(401).json({ error: 'Unauthorised' })
   let userId
   try {
-    const payload = await verifyToken(raw, { secretKey: process.env.CLERK_SECRET_KEY })
-    userId = payload.sub
-  } catch {
-    return res.status(401).json({ error: 'Invalid session token' })
+    userId = (await verifyAuthHeader(req)).sub
+  } catch (err) {
+    return res.status(err.status || 401).json({ error: err.message })
   }
 
   const { shoot_id } = req.body

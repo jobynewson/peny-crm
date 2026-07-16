@@ -6,7 +6,7 @@
 //   GET    /api/blob?action=preview&url=  — SSRF-guarded link/URL preview
 
 import { put, del } from '@vercel/blob'
-import { verifyToken } from '@clerk/backend'
+import { verifyAuthHeader } from './_auth.js'
 import { fetchLinkPreview } from './_preview.js'
 
 const CORS = {
@@ -16,13 +16,11 @@ const CORS = {
 }
 
 async function requireAuth(req, res) {
-  const raw = req.headers.authorization?.replace('Bearer ', '').trim()
-  if (!raw) { res.status(401).json({ error: 'Unauthorised' }); return null }
   try {
-    const payload = await verifyToken(raw, { secretKey: process.env.CLERK_SECRET_KEY })
+    const payload = await verifyAuthHeader(req)
     return payload.sub
-  } catch {
-    res.status(401).json({ error: 'Invalid session token' }); return null
+  } catch (err) {
+    res.status(err.status || 401).json({ error: err.message }); return null
   }
 }
 

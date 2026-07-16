@@ -10,7 +10,7 @@
 
 import { neon } from '@neondatabase/serverless'
 import nodemailer from 'nodemailer'
-import { verifyToken } from '@clerk/backend'
+import { verifyAuthHeader } from './_auth.js'
 import { syncLeaveRequestGoogle } from './google.js'
 import { groupDueSubTasks } from './_sub-tasks.js'
 
@@ -458,13 +458,10 @@ async function handleExpenseDigest(req, res, sql, transporter, todayLabel) {
 
 // ── Leave notifications (POST ?type=leave-notify) ─────────────────────────────
 async function handleLeaveNotify(req, res) {
-  const raw = req.headers.authorization?.replace('Bearer ', '').trim()
-  if (!raw) return res.status(401).json({ error: 'Unauthorised' })
-
   try {
-    await verifyToken(raw, { secretKey: process.env.CLERK_SECRET_KEY })
-  } catch {
-    return res.status(401).json({ error: 'Invalid session token' })
+    await verifyAuthHeader(req)
+  } catch (err) {
+    return res.status(err.status || 401).json({ error: err.message })
   }
 
   const { action, requestId } = req.body ?? {}
@@ -867,14 +864,11 @@ function buildExpenseBreakdownSection(name, ents, mileageRate, submitted, perDie
 // that user's breakdown for the month. Mirrors handleLeaveNotify: Clerk-authed,
 // per-recipient outcomes collected, all-failures surfaced as 502.
 async function handleExpenseSubmit(req, res) {
-  const raw = req.headers.authorization?.replace('Bearer ', '').trim()
-  if (!raw) return res.status(401).json({ error: 'Unauthorised' })
-
   let payload
   try {
-    payload = await verifyToken(raw, { secretKey: process.env.CLERK_SECRET_KEY })
-  } catch {
-    return res.status(401).json({ error: 'Invalid session token' })
+    payload = await verifyAuthHeader(req)
+  } catch (err) {
+    return res.status(err.status || 401).json({ error: err.message })
   }
   const clerkUserId = payload?.sub
   if (!clerkUserId) return res.status(401).json({ error: 'Invalid session token' })

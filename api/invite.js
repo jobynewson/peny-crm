@@ -1,10 +1,15 @@
 // api/invite.js
-import { createClerkClient, verifyToken } from '@clerk/backend'
+import { createClerkClient } from '@clerk/backend'
 import { neon } from '@neondatabase/serverless'
+import { verifyAuthHeader } from './_auth.js'
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
+  }
+
+  if (process.env.DEMO_MODE === 'true') {
+    return res.status(400).json({ error: 'Inviting users is disabled in the demo' })
   }
 
   try {
@@ -13,15 +18,11 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Valid email required' })
     }
 
-    const raw = req.headers.authorization?.replace('Bearer ', '').trim()
-    if (!raw) return res.status(401).json({ error: 'Unauthorised' })
-
     let callerUserId
     try {
-      const payload = await verifyToken(raw, { secretKey: process.env.CLERK_SECRET_KEY })
-      callerUserId = payload.sub
-    } catch {
-      return res.status(401).json({ error: 'Invalid session token' })
+      callerUserId = (await verifyAuthHeader(req)).sub
+    } catch (err) {
+      return res.status(err.status || 401).json({ error: err.message })
     }
 
     // Verify the caller is a superadmin in our DB

@@ -116,6 +116,15 @@ npm run preview      # Preview production build
 Required (set in `.env.local` for local development, Vercel dashboard for production):
 - `VITE_CLERK_PUBLISHABLE_KEY` - Public Clerk API key
 - `VITE_DATABASE_URL` - Neon PostgreSQL connection string (use pooled connection)
+- `DEMO_MODE` / `VITE_DEMO_MODE` - Set both to `"true"` on a demo deployment to
+  bypass Clerk entirely: no login screen, everyone is auto-signed-in as one
+  fixed user (`DEMO_USER_ID` / `VITE_DEMO_USER_ID`, default `demo-user`).
+  Frontend auth lives in `src/auth/clerk.js`; every API route verifies the
+  Clerk bearer token via the shared `api/_auth.js` helper, which returns the
+  fixed demo user instead of calling Clerk when `DEMO_MODE=true`. Leave unset
+  in production — behaviour is unchanged. Inviting users (`/api/invite`) is
+  disabled outright in demo mode since it requires a real Clerk project.
+  `DEMO_USER_ID` must match what `scripts/seed-demo.js` was run with.
 - `DASHBOARD_TOKEN` - Fixed secret token gating the public office-display
   dashboard at `/dashboard/<token>` (served by `public/dashboard.html`, data
   from `/api/portal?view=dashboard`). Unset = the dashboard returns 503.
