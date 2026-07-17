@@ -13,6 +13,9 @@ export class TeamCalendarView {
     this._ppsPhasesCache = null // lazily loaded — post production phases with an assignee
     this._clipboard = null     // { entry data for paste }
     this._dragOver  = null     // cell currently being dragged over
+    // Axis orientation: false = dates down the rows, people across the columns
+    // (default); true = people down the rows, dates across the columns.
+    this._axisSwapped = localStorage.getItem('tc-axis-swapped') === 'true'
   }
 
   // ── Date helpers ──────────────────────────────────────────────────────────────
@@ -207,51 +210,84 @@ export class TeamCalendarView {
   _renderGrid(days, users, entries) {
     if (!users.length) return `<div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">No team members found.</div>`
 
+    const swapped = this._axisSwapped
     const today   = new Date(); today.setHours(0, 0, 0, 0)
 
     const paste = this._clipboard
       ? `<div id="tc-paste-hint" style="font-size:11px;color:var(--accent);margin-top:6px;margin-bottom:2px">📋 Entry copied — click a cell to paste (or press Escape to clear)</div>` : ''
 
+    // A single empty grid cell — same data attributes in both orientations so
+    // every downstream lookup (overlay, drag, resize) is axis-agnostic.
+    const cellHtml = (dateKey, userId, bg) => `<td class="tc-cell" data-tc-date="${dateKey}" data-tc-user="${userId}"
+        style="padding:3px 4px;border-right:1px solid var(--border-light);${bg ? `background:${bg};` : ''}height:34px;${swapped ? 'min-width:120px;' : ''}
+        vertical-align:middle;cursor:pointer;position:relative;box-sizing:border-box">
+        <div class="tc-add-hint" style="position:absolute;inset:0;display:flex;align-items:center;
+          justify-content:center;opacity:0;transition:opacity 0.1s;pointer-events:none;user-select:none">
+          <span style="width:18px;height:18px;border-radius:50%;background:var(--accent-subtle);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:13px;line-height:1">+</span>
+        </div>
+      </td>`
+
+    const dayMeta = days.map(day => {
+      const isToday   = day.getTime() === today.getTime()
+      const isWeekend = day.getDay() === 0 || day.getDay() === 6
+      return {
+        dateKey:   this._dateKey(day),
+        isToday, isWeekend,
+        shortStr:  day.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }),
+      }
+    })
+
+    let minWidth, thead, tbody
+    if (swapped) {
+      // Rows = people, columns = dates
+      minWidth = 140 + days.length * 110
+      thead = `
+        <th style="padding:8px 10px;text-align:left;font-weight:500;font-size:11px;color:var(--text-tertiary);width:130px;border-right:1px solid var(--border-light);white-space:nowrap">Team</th>
+        ${dayMeta.map(m => `
+          <th style="padding:8px 10px;text-align:left;font-weight:500;font-size:11px;min-width:100px;border-right:1px solid var(--border-light);white-space:nowrap;${m.isToday ? 'color:var(--accent)' : m.isWeekend ? 'color:var(--text-tertiary)' : 'color:var(--text-secondary)'}">
+            ${esc(m.shortStr)}${m.isToday ? ' <span style="font-size:9px;background:var(--accent);color:var(--accent-text);border-radius:var(--radius-sm);padding:1px 4px;vertical-align:middle">TODAY</span>' : ''}
+          </th>`).join('')}`
+      tbody = users.map(u => `<tr style="border-top:1px solid var(--border-light)">
+          <td style="padding:7px 10px;border-right:1px solid var(--border-light);vertical-align:middle;white-space:nowrap;font-weight:500;color:var(--text-secondary)">
+            ${esc(u.name || u.email.split('@')[0])}
+          </td>
+          ${dayMeta.map(m => cellHtml(m.dateKey, u.id,
+            m.isToday ? 'rgba(var(--accent-rgb),0.06)' : m.isWeekend ? 'var(--bg-secondary)' : '')).join('')}
+        </tr>`).join('')
+    } else {
+      // Rows = dates, columns = people (default)
+      minWidth = 100 + users.length * 150
+      thead = `
+        <th style="padding:8px 10px;text-align:left;font-weight:500;font-size:11px;color:var(--text-tertiary);width:110px;border-right:1px solid var(--border-light);white-space:nowrap">Date</th>
+        ${users.map(u => `
+          <th style="padding:8px 10px;text-align:left;font-weight:500;font-size:11px;color:var(--text-secondary);min-width:150px;border-right:1px solid var(--border-light)">
+            ${esc(u.name || u.email.split('@')[0])}
+          </th>`).join('')}`
+      tbody = dayMeta.map(m => {
+        const rowBg = m.isToday ? 'rgba(var(--accent-rgb),0.06)' : m.isWeekend ? 'var(--bg-secondary)' : 'var(--bg-primary)'
+        return `<tr style="background:${rowBg};border-top:1px solid var(--border-light)">
+          <td style="padding:7px 10px;border-right:1px solid var(--border-light);vertical-align:middle;white-space:nowrap;${m.isToday ? 'font-weight:600;color:var(--accent)' : m.isWeekend ? 'color:var(--text-tertiary)' : 'color:var(--text-secondary)'}">
+            ${esc(m.shortStr)}${m.isToday ? ' <span style="font-size:9px;background:var(--accent);color:var(--accent-text);border-radius:var(--radius-sm);padding:1px 4px;vertical-align:middle">TODAY</span>' : ''}
+          </td>
+          ${users.map(u => cellHtml(m.dateKey, u.id)).join('')}
+        </tr>`
+      }).join('')
+    }
+
     return `
       ${paste}
       <div id="tc-table-wrap" style="overflow-x:auto;border-radius:var(--radius-md);border:1px solid var(--border-light);position:relative">
-        <table id="tc-table" style="width:100%;min-width:${100 + users.length * 150}px;border-collapse:collapse;font-size:12px">
+        <table id="tc-table" style="width:100%;min-width:${minWidth}px;border-collapse:collapse;font-size:12px">
           <thead>
-            <tr style="background:var(--bg-secondary)">
-              <th style="padding:8px 10px;text-align:left;font-weight:500;font-size:11px;color:var(--text-tertiary);width:110px;border-right:1px solid var(--border-light);white-space:nowrap">Date</th>
-              ${users.map(u => `
-                <th style="padding:8px 10px;text-align:left;font-weight:500;font-size:11px;color:var(--text-secondary);min-width:150px;border-right:1px solid var(--border-light)">
-                  ${esc(u.name || u.email.split('@')[0])}
-                </th>`).join('')}
-            </tr>
+            <tr style="background:var(--bg-secondary)">${thead}</tr>
           </thead>
-          <tbody>
-            ${days.map(day => {
-              const dateKey   = this._dateKey(day)
-              const isToday   = day.getTime() === today.getTime()
-              const isWeekend = day.getDay() === 0 || day.getDay() === 6
-              const dayStr    = day.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
-              const rowBg     = isToday ? 'rgba(var(--accent-rgb),0.06)' : isWeekend ? 'var(--bg-secondary)' : 'var(--bg-primary)'
-              return `<tr style="background:${rowBg};border-top:1px solid var(--border-light)">
-                <td style="padding:7px 10px;border-right:1px solid var(--border-light);vertical-align:middle;white-space:nowrap;${isToday ? 'font-weight:600;color:var(--accent)' : isWeekend ? 'color:var(--text-tertiary)' : 'color:var(--text-secondary)'}">
-                  ${esc(dayStr)}${isToday ? ' <span style="font-size:9px;background:var(--accent);color:var(--accent-text);border-radius:var(--radius-sm);padding:1px 4px;vertical-align:middle">TODAY</span>' : ''}
-                </td>
-                ${users.map(u => `<td class="tc-cell" data-tc-date="${dateKey}" data-tc-user="${u.id}"
-                    style="padding:3px 4px;border-right:1px solid var(--border-light);height:34px;
-                    vertical-align:middle;cursor:pointer;position:relative;box-sizing:border-box">
-                    <div class="tc-add-hint" style="position:absolute;inset:0;display:flex;align-items:center;
-                      justify-content:center;opacity:0;transition:opacity 0.1s;pointer-events:none;user-select:none">
-                      <span style="width:18px;height:18px;border-radius:50%;background:var(--accent-subtle);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:13px;line-height:1">+</span>
-                    </div>
-                  </td>`).join('')}
-              </tr>`
-            }).join('')}
-          </tbody>
+          <tbody>${tbody}</tbody>
         </table>
         <div id="tc-overlay" style="position:absolute;inset:0;pointer-events:none;overflow:hidden"></div>
       </div>
       <div style="margin-top:6px;font-size:11px;color:var(--text-tertiary);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <button id="tc-help" class="legend-help-btn" title="How the calendar works" aria-label="How the calendar works">?</button>
+        <button id="tc-axis-toggle" class="legend-help-btn" title="Swap rows and columns (${swapped ? 'people down, dates across' : 'dates down, people across'})" aria-label="Swap calendar axes">⇄</button>
         ${this._clipboard ? `<span style="color:var(--accent)">📋 Paste active</span>` : ''}
       </div>`
   }
@@ -415,7 +451,8 @@ export class TeamCalendarView {
       ${row('<b>Click</b> an empty cell to add an entry')}
       ${row('<b>Click</b> an entry to edit it')}
       ${row('<b>Drag</b> an entry to move it')}
-      ${row('<b>Drag</b> the top/bottom edge to resize')}
+      ${row(`<b>Drag</b> the ${this._axisSwapped ? 'left/right' : 'top/bottom'} edge to resize`)}
+      ${row('<b>⇄</b> swaps people and dates between rows and columns')}
       ${this._shootsCache?.length ? row('<span style="display:inline-block;width:8px;height:8px;border-radius:50%;border:1.5px dashed #4CAF50"></span> Auto from shoot plan') : ''}
       ${this._ppsPhasesCache?.length ? row('<span style="display:inline-block;width:8px;height:8px;border-radius:50%;border:1.5px dashed #C47E3A"></span> Auto from post production') : ''}`
   }
@@ -426,6 +463,13 @@ export class TeamCalendarView {
     gridWrap.querySelector('#tc-help')?.addEventListener('click', e => {
       e.stopPropagation()
       this.app.openPopover(e.currentTarget, this._legendHtml())
+    })
+
+    gridWrap.querySelector('#tc-axis-toggle')?.addEventListener('click', e => {
+      e.stopPropagation()
+      this._axisSwapped = !this._axisSwapped
+      localStorage.setItem('tc-axis-swapped', String(this._axisSwapped))
+      this._refreshGrid(section)
     })
 
     // ── Cell: click to add, drag-over highlight ──
@@ -540,21 +584,26 @@ export class TeamCalendarView {
     // Phase 1: measure all overlay blocks before any DOM writes
     const wrapRect   = wrap.getBoundingClientRect()
     const scrollLeft = wrap.scrollLeft
+    const swapped    = this._axisSwapped
     const toPlace    = []
+
+    // A multi-day span runs down the rows in default orientation and across the
+    // columns when the axes are swapped — so the block grows the matching way.
+    const spanBox = (fr, lr) => ({
+      top:    fr.top  - wrapRect.top,
+      left:   fr.left - wrapRect.left + scrollLeft,
+      width:  swapped ? (lr.right  - fr.left) : fr.width,
+      height: swapped ? fr.height             : (lr.bottom - fr.top),
+    })
 
     // 1a: real multi-day entries
     for (const e of entries) {
       if (!e.end_date || e.end_date <= e.entry_date) continue
       const { firstCell, lastCell } = measureCells(e.assignee_id, e.entry_date, e.end_date)
       if (!firstCell || !lastCell) continue
-      const fr = firstCell.getBoundingClientRect()
-      const lr = lastCell.getBoundingClientRect()
       toPlace.push({
         e, isGhost: false,
-        top:    fr.top  - wrapRect.top,
-        left:   fr.left - wrapRect.left + scrollLeft,
-        width:  fr.width,
-        height: lr.bottom - fr.top,
+        ...spanBox(firstCell.getBoundingClientRect(), lastCell.getBoundingClientRect()),
         isFirstVisible: e.entry_date >= day0Key,
         isLastVisible:  e.end_date   <= dayNKey,
       })
@@ -569,8 +618,6 @@ export class TeamCalendarView {
         if (b.end_date < day0Key || b.start_date > dayNKey) continue
         const { firstCell, lastCell } = measureCells(b.assignee_id, b.start_date, b.end_date)
         if (!firstCell || !lastCell) continue
-        const fr = firstCell.getBoundingClientRect()
-        const lr = lastCell.getBoundingClientRect()
         const label = `${ph.project_name ? ph.project_name + ' — ' : ''}${b.title || ph.name}`
         const color = b.color || ph.color || '#C47E3A'
         toPlace.push({
@@ -578,10 +625,7 @@ export class TeamCalendarView {
                project_id: ph.project_id, _navTarget: `pps::${ph.project_id}`,
                _ghostNote: ' (from post production schedule)' },
           isGhost: true,
-          top:    fr.top  - wrapRect.top,
-          left:   fr.left - wrapRect.left + scrollLeft,
-          width:  fr.width,
-          height: lr.bottom - fr.top,
+          ...spanBox(firstCell.getBoundingClientRect(), lastCell.getBoundingClientRect()),
           isFirstVisible: b.start_date >= day0Key,
           isLastVisible:  b.end_date   <= dayNKey,
         })
@@ -611,18 +655,13 @@ export class TeamCalendarView {
           if (span.dates.length < 2) continue
           const { firstCell, lastCell } = measureCells(user.id, span.start, span.end)
           if (!firstCell || !lastCell) continue
-          const fr = firstCell.getBoundingClientRect()
-          const lr = lastCell.getBoundingClientRect()
           const label = `Shoot — ${sh.project_name || 'Project'}${sh.name ? ': ' + sh.name : ''}`
           toPlace.push({
             e: { id: `shoot-overlay-${sh.id}-${user.id}-${span.start}`, assignee_id: user.id,
                  label, color: '#4CAF50', project_id: sh.project_id,
                  _navTarget: `shoot::${sh.project_id}` },
             isGhost: true,
-            top:    fr.top  - wrapRect.top,
-            left:   fr.left - wrapRect.left + scrollLeft,
-            width:  fr.width,
-            height: lr.bottom - fr.top,
+            ...spanBox(firstCell.getBoundingClientRect(), lastCell.getBoundingClientRect()),
             isFirstVisible: true,
             isLastVisible:  true,
           })
@@ -661,13 +700,20 @@ export class TeamCalendarView {
       }
     }
 
-    // Phase 1e: split horizontal space among vertically-overlapping blocks per column
+    // Phase 1e: blocks that overlap along the running axis (down a person's
+    // column by default, across a person's row when swapped) share a cell, so
+    // split the cross-axis space between them into lanes. The maths is the same
+    // either way — just with the two axes exchanged.
     const EPS = 4
-    const overlapsV = (a, b) => Math.min(a.top + a.height, b.top + b.height) - Math.max(a.top, b.top) > EPS
-    const columns = {}
-    for (const item of toPlace) (columns[Math.round(item.left)] ||= []).push(item)
-    for (const group of Object.values(columns)) {
-      group.sort((a, b) => a.top - b.top)
+    // "run" = the axis a multi-day span grows along; "cross" = the split axis.
+    const runStart  = swapped ? (i => i.left)          : (i => i.top)
+    const runEnd    = swapped ? (i => i.left + i.width): (i => i.top + i.height)
+    const crossKey  = swapped ? (i => Math.round(i.top)) : (i => Math.round(i.left))
+    const overlapsRun = (a, b) => Math.min(runEnd(a), runEnd(b)) - Math.max(runStart(a), runStart(b)) > EPS
+    const groups = {}
+    for (const item of toPlace) (groups[crossKey(item)] ||= []).push(item)
+    for (const group of Object.values(groups)) {
+      group.sort((a, b) => runStart(a) - runStart(b))
       const visited = new Set()
       for (let i = 0; i < group.length; i++) {
         if (visited.has(i)) continue
@@ -678,24 +724,33 @@ export class TeamCalendarView {
           const idx = stack.pop()
           cluster.push(group[idx])
           for (let j = 0; j < group.length; j++) {
-            if (!visited.has(j) && overlapsV(group[idx], group[j])) { visited.add(j); stack.push(j) }
+            if (!visited.has(j) && overlapsRun(group[idx], group[j])) { visited.add(j); stack.push(j) }
           }
         }
         if (cluster.length < 2) continue
-        cluster.sort((a, b) => a.top - b.top)
+        cluster.sort((a, b) => runStart(a) - runStart(b))
         const laneEnds = []
         for (const item of cluster) {
-          let lane = laneEnds.findIndex(end => end <= item.top + EPS)
+          let lane = laneEnds.findIndex(end => end <= runStart(item) + EPS)
           if (lane === -1) { lane = laneEnds.length; laneEnds.push(0) }
-          laneEnds[lane] = item.top + item.height
+          laneEnds[lane] = runEnd(item)
           item._lane = lane
         }
         const lanes = laneEnds.length
-        const baseLeft = cluster[0].left
-        const laneWidth = cluster[0].width / lanes
-        for (const item of cluster) {
-          item.left  = baseLeft + item._lane * laneWidth
-          item.width = laneWidth
+        if (swapped) {
+          const baseTop = cluster[0].top
+          const laneHeight = cluster[0].height / lanes
+          for (const item of cluster) {
+            item.top    = baseTop + item._lane * laneHeight
+            item.height = laneHeight
+          }
+        } else {
+          const baseLeft = cluster[0].left
+          const laneWidth = cluster[0].width / lanes
+          for (const item of cluster) {
+            item.left  = baseLeft + item._lane * laneWidth
+            item.width = laneWidth
+          }
         }
       }
     }
@@ -718,21 +773,30 @@ export class TeamCalendarView {
         chip.draggable = true
       }
       chip.title = `${label}${isGhost ? (e._ghostNote || ' (from shoot plan)') + ' · Click to open ↗' : ''}`
+      // A multi-day bar reads left→right when swapped, top→bottom otherwise, so
+      // its resize grips sit on the leading/trailing edge of the matching axis.
+      const horizontal = oneRow || swapped
+      const startHandle = swapped
+        ? `position:absolute;left:-1px;top:0;bottom:0;width:6px;cursor:ew-resize`
+        : `position:absolute;top:-1px;left:0;right:0;height:6px;cursor:ns-resize`
+      const endHandle = swapped
+        ? `position:absolute;right:-1px;top:0;bottom:0;width:6px;cursor:ew-resize`
+        : `position:absolute;bottom:-1px;left:0;right:0;height:6px;cursor:ns-resize`
       chip.style.cssText = `position:absolute;left:${left+PAD}px;top:${top+PAD}px;` +
         `width:${width-PAD*2}px;height:${height-PAD*2}px;` +
-        `display:flex;align-items:${oneRow ? 'center' : 'flex-start'};gap:4px;padding:4px 6px;` +
+        `display:flex;align-items:${horizontal ? 'center' : 'flex-start'};gap:4px;padding:4px 6px;` +
         `background:${col}22;border:1px ${isGhost ? 'dashed' : 'solid'} ${col}88;border-radius:var(--radius-md);` +
         `${isGhost ? 'opacity:0.85;' : ''}` +
         `cursor:${isGhost && e._navTarget ? 'pointer' : isGhost ? 'default' : 'grab'};` +
         `box-sizing:border-box;overflow:hidden;pointer-events:all;z-index:2`
 
       chip.innerHTML = `
-        ${!isGhost && isFirstVisible ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="start" style="position:absolute;top:-1px;left:0;right:0;height:6px;cursor:ns-resize;color:${col}"></div>` : ''}
+        ${!isGhost && isFirstVisible ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="start" style="${startHandle};color:${col}"></div>` : ''}
         <div style="display:flex;align-items:center;gap:4px;flex:1;min-width:0;overflow:hidden">
           <div style="width:6px;height:6px;border-radius:50%;flex-shrink:0;background:${col}"></div>
           <span style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0">${esc(label)}</span>
         </div>
-        ${!isGhost && isLastVisible ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="end" style="position:absolute;bottom:-1px;left:0;right:0;height:6px;cursor:ns-resize;color:${col}"></div>` : ''}`
+        ${!isGhost && isLastVisible ? `<div class="tc-resize-handle" data-tc-entry-id="${e.id}" data-edge="end" style="${endHandle};color:${col}"></div>` : ''}`
 
       if (isGhost && e._navTarget) {
         chip.addEventListener('click', ev => {
