@@ -783,7 +783,15 @@ export class App {
     this.bindTopbarBtn()
   }
 
-  openProject(id) { this.currentView = 'projects'; this.projectsView.currentId = id; this.render() }
+  openProject(id, tab) {
+    this.currentView = 'projects'
+    this.projectsView.currentId = id
+    if (tab) {
+      this.projectsView._pvTab = tab
+      this._pushAppState(`#projects/${id}/${tab}`, { view: 'projects', id, tab })
+    }
+    this.render()
+  }
   openBudget(id)  { this.currentView = 'budgets';  this.budgetsView.currentId  = id; this.render() }
 
   // Returns [periodStart, periodEnd] Date objects for the current retainer period
@@ -967,6 +975,25 @@ export class App {
     })
   }
 
+  // Fetch shoots / planning / story-plan counts for the Live Projects tab-nav
+  // rows and patch them in once loaded. Cached so re-renders show instantly.
+  async _loadDbNavCounts(mc) {
+    try {
+      const { getProjectTabCounts, spawnDueBoardRecurrences } = await import('./db/client.js')
+      // Dashboard loads have always spawned due recurring board cards (the old
+      // Boards section did this); keep that so recurrences don't stall.
+      spawnDueBoardRecurrences(this.userId).catch(() => {})
+      const rows = await getProjectTabCounts(this.userId)
+      this._dbNavCounts = Object.fromEntries(rows.map(r => [r.project_id, r]))
+    } catch (e) { console.error(e); return }
+    if (!document.contains(mc)) return
+    mc.querySelectorAll('[data-nav-count]').forEach(el => {
+      const [pid, key] = el.dataset.navCount.split(':')
+      const n = this._dbNavCounts[pid]?.[key] || 0
+      el.textContent = n > 0 ? `(${n})` : ''
+    })
+  }
+
   async _loadDbTimeSection(mc, project) {
     const el = mc.querySelector(`#db-time-${project.id}`)
     if (!el) return
@@ -1058,7 +1085,6 @@ export class App {
         setTimeout(() => document.querySelector('#topbar-btn')?.click(), 50)
       })
       this.teamCalendarView.renderDashboardSection(mc)
-      this.boardsView.renderDashboardSection(mc)
       this._mountCountdownWidget(mc)
       this._mountDaysSinceWidget(mc)
       return
@@ -1196,6 +1222,11 @@ export class App {
         if (this.teamCalendarView) this.teamCalendarView._ppsPhasesCache = ppsPhasesForDash
       } catch (e) { console.error(e); ppsPhasesForDash = [] }
     }
+    // Per-project post-production phase counts for the tab-nav row
+    const ppsCountByProject = {}
+    for (const ph of (ppsPhasesForDash || [])) {
+      if (ph.project_id) ppsCountByProject[ph.project_id] = (ppsCountByProject[ph.project_id] || 0) + 1
+    }
     const ppsDeadlines = []
     for (const ph of (ppsPhasesForDash || [])) {
       for (const b of (Array.isArray(ph.blocks) ? ph.blocks : [])) {
@@ -1254,6 +1285,25 @@ export class App {
       const delivs = (p.deliverables||[]).filter(d => d.text)
       const doneCount = delivs.filter(d => d.done).length
       const unresolvedCount = comments.filter(c => !c.resolved).length
+
+      // Mirror the Project page tab bar — each item deep-links to that tab.
+      // shoots/planning/story_plans counts load async (see _loadDbNavCounts).
+      const cached = this._dbNavCounts?.[p.id]
+      const navTabs = [
+        { id: 'overview',        label: 'Overview' },
+        { id: 'shoots',          label: 'Shoots', key: 'shoots', hide: (p.project_type||'full_service') === 'post_production' },
+        { id: 'post-production', label: 'Post Production', count: ppsCountByProject[p.id] || 0 },
+        { id: 'budget',          label: 'Budgets', count: (p.budget_ids||[]).length },
+        { id: 'planning',        label: 'Planning', key: 'planning' },
+        { id: 'notes',           label: 'Notes', count: comments.length },
+        { id: 'story-plans',     label: 'Story Plans', key: 'story_plans' },
+      ].filter(t => !t.hide)
+      const navRow = `<div class="db-proj-nav">${navTabs.map((t, i) => {
+        const n = t.key ? (cached?.[t.key] ?? 0) : t.count
+        const countSpan = `<span class="db-nav-count"${t.key ? ` data-nav-count="${p.id}:${t.key}"` : ''}>${n > 0 ? `(${n})` : ''}</span>`
+        return `${i ? '<span class="db-nav-sep">|</span>' : ''}<button class="db-nav-link" data-nav-pid="${p.id}" data-nav-tab="${t.id}">${t.label} ${countSpan}</button>`
+      }).join('')}</div>`
+
       return `<div class="db-proj-row" data-pid="${p.id}">
         <div class="db-proj-header" data-toggle-pid="${p.id}">
           <span class="db-chevron${isOpen ? ' db-chevron--open' : ''}" data-chevron="${p.id}">▶</span>
@@ -1266,6 +1316,7 @@ export class App {
           <button class="db-pin-btn${this._dbPinned.has(p.id) ? ' db-pin-btn--on' : ''}" data-pin-pid="${p.id}" title="${this._dbPinned.has(p.id) ? 'Unpin (panel stays open)' : 'Pin open'}">⊙</button>
           <button class="db-action-link" style="font-size:11px;padding:3px 8px" data-open-pid="${p.id}">Open ↗</button>
         </div>
+        ${navRow}
         <div class="db-proj-body" id="db-body-${p.id}" style="display:${isOpen ? 'block' : 'none'}">
 
           ${(() => {
@@ -1530,7 +1581,6 @@ export class App {
       </div>`
 
     this.teamCalendarView.renderDashboardSection(mc)
-    this.boardsView.renderDashboardSection(mc)
     this._mountCountdownWidget(mc)
     this._mountDaysSinceWidget(mc)
 
@@ -1555,6 +1605,12 @@ export class App {
     mc.querySelectorAll('[data-open-pid]').forEach(el => {
       el.addEventListener('click', e => { e.stopPropagation(); this.openProject(el.dataset.openPid) })
     })
+
+    // --- Tab-nav links (deep-link into a project tab) ---
+    mc.querySelectorAll('[data-nav-tab]').forEach(el => {
+      el.addEventListener('click', e => { e.stopPropagation(); this.openProject(el.dataset.navPid, el.dataset.navTab) })
+    })
+    this._loadDbNavCounts(mc)
 
     // --- Accordion toggle ---
     mc.querySelectorAll('[data-toggle-pid]').forEach(el => {

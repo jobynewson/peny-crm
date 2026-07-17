@@ -1051,6 +1051,12 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .db-pin-btn { background: none; border: 1px solid transparent; border-radius: var(--radius-sm); padding: 3px 6px; font-size: 13px; color: var(--text-tertiary); cursor: pointer; flex-shrink: 0; line-height: 1; transition: color 0.12s, border-color 0.12s, background 0.12s; }
 .db-pin-btn:hover { color: var(--text-secondary); border-color: var(--border-med); background: var(--bg-secondary); }
 .db-pin-btn--on { color: var(--accent) !important; border-color: rgba(var(--accent-rgb), 0.4) !important; background: var(--accent-subtle) !important; }
+.db-proj-nav { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; padding: 0 14px 8px 31px; }
+.db-nav-link { background: none; border: none; font-family: var(--font); font-size: 11px; color: var(--text-secondary); cursor: pointer; padding: 3px 7px; border-radius: var(--radius-sm); line-height: 1.2; display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; transition: background 0.12s, color 0.12s; }
+.db-nav-link:hover { background: var(--bg-secondary); color: var(--text-primary); }
+.db-nav-count { color: var(--text-tertiary); font-size: 10px; }
+.db-nav-count:empty { display: none; }
+.db-nav-sep { color: var(--border-med); font-size: 10px; user-select: none; }
 .db-proj-body { border-top: 1px solid var(--border-light); background: var(--bg-secondary); }
 .db-thread { display: flex; flex-direction: column; gap: 0; padding: 4px 0; }
 .db-no-comments { padding: 16px 20px; font-size: 12px; color: var(--text-tertiary); font-style: italic; }
@@ -1345,17 +1351,6 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   padding: 12px;
 }
 .bd-add-col:hover { background: var(--bg-secondary); color: var(--text-secondary); }
-
-.bd-db-row {
-  display: flex; align-items: center; gap: 10px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  padding: 8px 12px;
-  cursor: pointer;
-  transition: border-color 0.15s;
-}
-.bd-db-row:hover { border-color: var(--border-med); }
 
 @media (max-width: 700px) {
   .bd-col { width: 230px; min-width: 230px; }

@@ -9,7 +9,7 @@ import {
   createBoardColumn, updateBoardColumn, deleteBoardColumn,
   createBoardCard, updateBoardCard, deleteBoardCard, renumberBoardColumn,
   getBoardRecurrences, createBoardRecurrence, updateBoardRecurrence, deleteBoardRecurrence,
-  spawnDueBoardRecurrences, getBoardsDashboard,
+  spawnDueBoardRecurrences,
 } from '../db/client.js'
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
@@ -945,79 +945,4 @@ export class BoardsView {
     }, POLL_MS)
   }
 
-  // ── Dashboard section ────────────────────────────────────────────────────────
-
-  renderDashboardSection(container) {
-    let section = container.querySelector('#bd-section')
-    if (!section) {
-      section = document.createElement('div')
-      section.id = 'bd-section'
-      section.style.cssText = 'margin-bottom:20px'
-      const tc = container.querySelector('#tc-section')
-      if (tc) tc.insertAdjacentElement('afterend', section)
-      else container.prepend(section)
-    }
-    if (this._dbExpanded === undefined) this._dbExpanded = localStorage.getItem('bd-db-open') !== '0'
-    this._renderDashboardSection(section)
-  }
-
-  async _renderDashboardSection(section) {
-    const head = (count, overdue) => `
-      <div class="db-section-head" style="cursor:pointer;user-select:none" id="bd-db-toggle">
-        <span class="db-section-dot" style="background:#a78bfa"></span>
-        Boards
-        ${count ? `<span class="db-section-count">${count}</span>` : ''}
-        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
-          ${overdue ? `<span style="font-size:11px;color:#ef4444;font-weight:500">${overdue} overdue</span>` : ''}
-          <span class="db-chevron${this._dbExpanded ? ' db-chevron--open' : ''}">▶</span>
-        </div>
-      </div>`
-
-    section.innerHTML = head(0, 0) + (this._dbExpanded ? '<div style="font-size:12px;color:var(--text-tertiary);padding:8px 0 0">Loading…</div>' : '')
-
-    let boards = []
-    try {
-      await spawnDueBoardRecurrences(this.app.userId).catch(() => {})
-      boards = await getBoardsDashboard(this.app.userId)
-    } catch (e) { console.error(e) }
-    if (!document.contains(section)) return
-
-    const totalOverdue = boards.reduce((s, b) => s + b.columns.reduce((x, c) => x + (c.overdue_count || 0), 0), 0)
-    const body = !this._dbExpanded ? '' : `
-      <div style="display:flex;flex-direction:column;gap:6px;padding-top:8px">
-        ${boards.length === 0 ? `<div style="font-size:12px;color:var(--text-tertiary)">No boards yet${this.app.permissions?.projects_edit !== false ? ' — create one in Planning' : ''}.</div>` : ''}
-        ${boards.map(b => {
-          const overdue = b.columns.reduce((s, c) => s + (c.overdue_count || 0), 0)
-          return `
-          <div class="bd-db-row" data-db-board="${b.id}">
-            <span style="font-size:13px;flex-shrink:0">🗂</span>
-            <span style="font-size:12.5px;font-weight:500;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px">${esc(b.name)}</span>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;flex:1;min-width:0">
-              ${b.columns.map(c => `
-                <span style="display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:var(--text-secondary);background:var(--bg-secondary);border:0.5px solid var(--border-light);border-radius:var(--radius-pill);padding:2px 8px;white-space:nowrap">
-                  <span style="width:6px;height:6px;border-radius:50%;background:${esc(c.color)}"></span>${esc(c.name)} ${c.card_count}
-                </span>`).join('')}
-            </div>
-            ${overdue ? `<span style="font-size:10.5px;color:#ef4444;font-weight:600;flex-shrink:0">${overdue} overdue</span>` : ''}
-          </div>`
-        }).join('')}
-      </div>`
-
-    section.innerHTML = head(boards.length, totalOverdue) + body
-
-    section.querySelector('#bd-db-toggle')?.addEventListener('click', () => {
-      this._dbExpanded = !this._dbExpanded
-      localStorage.setItem('bd-db-open', this._dbExpanded ? '1' : '0')
-      this._renderDashboardSection(section)
-    })
-    section.querySelectorAll('[data-db-board]').forEach(row => {
-      row.addEventListener('click', () => {
-        this.app.currentView = 'planning'
-        this.currentId = row.dataset.dbBoard
-        this.app.canvasView.currentId = null
-        this.app._pushAppState(`#planning/${this.currentId}`, { view: 'planning', id: this.currentId })
-        this.app.render()
-      })
-    })
-  }
 }

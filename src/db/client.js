@@ -1547,29 +1547,18 @@ export async function spawnDueBoardRecurrences(workspaceId) {
   return spawned
 }
 
-// Dashboard widget — per-board column counts + overdue tallies in two queries.
-export async function getBoardsDashboard(workspaceId) {
-  const today = new Date().toISOString().slice(0, 10)
-  const boardRows = await sql`
-    SELECT b.id, b.name, b.project_id FROM boards b
-    WHERE b.user_id = ${workspaceId}
-    ORDER BY b.created_at DESC
+// Dashboard — per-project counts for the Live Projects tab-nav row
+// (shoots / linked boards+canvases / story plans) in one query.
+export async function getProjectTabCounts(workspaceId) {
+  return sql`
+    SELECT p.id AS project_id,
+           (SELECT COUNT(*) FROM shoots s WHERE s.project_id = p.id)::int AS shoots,
+           ((SELECT COUNT(*) FROM boards b   WHERE b.project_id = p.id)
+          + (SELECT COUNT(*) FROM canvases c WHERE c.project_id = p.id))::int AS planning,
+           (SELECT COUNT(*) FROM story_plans sp WHERE sp.project_id = p.id)::int AS story_plans
+    FROM projects p
+    WHERE p.user_id = ${workspaceId}
   `
-  if (!boardRows.length) return []
-  const colRows = await sql`
-    SELECT c.id, c.board_id, c.name, c.color, c.sort_order,
-           COUNT(k.id)::int AS card_count,
-           COUNT(k.id) FILTER (WHERE k.due_date < ${today})::int AS overdue_count
-    FROM board_columns c
-    LEFT JOIN board_cards k ON k.column_id = c.id
-    WHERE c.board_id IN (SELECT id FROM boards WHERE user_id = ${workspaceId})
-    GROUP BY c.id
-    ORDER BY c.board_id, c.sort_order, c.created_at
-  `
-  return boardRows.map(b => ({
-    ...b,
-    columns: colRows.filter(c => c.board_id === b.id),
-  }))
 }
 
 // ── Planning canvases ─────────────────────────────────────────────────────────
