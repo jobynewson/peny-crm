@@ -1316,8 +1316,8 @@ export class App {
           <button class="db-pin-btn${this._dbPinned.has(p.id) ? ' db-pin-btn--on' : ''}" data-pin-pid="${p.id}" title="${this._dbPinned.has(p.id) ? 'Unpin (panel stays open)' : 'Pin open'}">⊙</button>
           <button class="db-action-link" style="font-size:11px;padding:3px 8px" data-open-pid="${p.id}">Open ↗</button>
         </div>
-        ${navRow}
         <div class="db-proj-body" id="db-body-${p.id}" style="display:${isOpen ? 'block' : 'none'}">
+          ${navRow}
 
           ${(() => {
             if (!delivs.length) return ''
