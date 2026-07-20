@@ -13,6 +13,7 @@ import {
   offloads, offload_backups,
   boards, board_columns, board_cards, board_recurrences,
   canvases, canvas_items, canvas_arrows,
+  outreach_activity, sector_angles,
 } from './schema.js'
 
 const sql = neon(import.meta.env.VITE_DATABASE_URL)
@@ -398,6 +399,68 @@ export async function runMigrations() {
   await sql`CREATE INDEX IF NOT EXISTS idx_projects_brand        ON projects(brand)`
   await sql`CREATE INDEX IF NOT EXISTS idx_budgets_brand         ON budgets(brand)`
   await sql`CREATE INDEX IF NOT EXISTS idx_marketing_cards_brand ON marketing_cards(brand)`
+
+  // ── Prospecting / outbound ─────────────────────────────────────────────────
+  // Widen contacts into an organisation record with an outbound lifecycle.
+  // lifecycle_stage NOT NULL DEFAULT 'won' backfills existing clients to 'won'.
+  // first_name is relaxed to nullable so a Places-sourced org with no known
+  // person is valid (its name lives in `company`).
+  await sql`ALTER TABLE contacts ALTER COLUMN first_name DROP NOT NULL`
+  await sql`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS lifecycle_stage     TEXT NOT NULL DEFAULT 'won'`
+  await sql`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS sector              TEXT`
+  await sql`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS tier                TEXT`
+  await sql`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS priority            INTEGER NOT NULL DEFAULT 0`
+  await sql`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS fit_note            TEXT`
+  await sql`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS pitch_angle         TEXT`
+  await sql`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS area                TEXT`
+  await sql`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS website             TEXT`
+  await sql`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS source_rating       NUMERIC(2,1)`
+  await sql`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS source_review_count INTEGER`
+  await sql`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS owner               TEXT`
+  await sql`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS last_contacted_at   TIMESTAMPTZ`
+  await sql`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS next_action_at      DATE`
+  await sql`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS next_action         TEXT`
+  await sql`ALTER TABLE contacts DROP CONSTRAINT IF EXISTS contacts_lifecycle_stage_check`
+  await sql`ALTER TABLE contacts ADD CONSTRAINT contacts_lifecycle_stage_check CHECK (lifecycle_stage IN ('prospect','contacted','engaged','proposal','won','lost','nurture'))`
+  await sql`ALTER TABLE contacts DROP CONSTRAINT IF EXISTS contacts_tier_check`
+  await sql`ALTER TABLE contacts ADD CONSTRAINT contacts_tier_check CHECK (tier IS NULL OR tier IN ('A','B','C'))`
+  await sql`CREATE INDEX IF NOT EXISTS idx_contacts_lifecycle ON contacts(brand, lifecycle_stage)`
+  await sql`CREATE INDEX IF NOT EXISTS idx_contacts_owner     ON contacts(owner)`
+  await sql`CREATE INDEX IF NOT EXISTS idx_contacts_next_action_at ON contacts(next_action_at)`
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS outreach_activity (
+      id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      contact_id UUID NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+      user_id    TEXT,
+      type       TEXT NOT NULL DEFAULT 'note',
+      body       TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`ALTER TABLE outreach_activity DROP CONSTRAINT IF EXISTS outreach_activity_type_check`
+  await sql`ALTER TABLE outreach_activity ADD CONSTRAINT outreach_activity_type_check CHECK (type IN ('call','email','meeting','note'))`
+  await sql`CREATE INDEX IF NOT EXISTS idx_outreach_activity_contact ON outreach_activity(contact_id)`
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS sector_angles (
+      id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id      TEXT NOT NULL,
+      brand        TEXT NOT NULL DEFAULT 'peny',
+      sector       TEXT NOT NULL,
+      tier         TEXT,
+      why_video    TEXT,
+      opening_hook TEXT,
+      offer        TEXT,
+      best_time    TEXT,
+      proof        TEXT,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`ALTER TABLE sector_angles DROP CONSTRAINT IF EXISTS sector_angles_brand_check`
+  await sql`ALTER TABLE sector_angles ADD CONSTRAINT sector_angles_brand_check CHECK (brand IN ('peny','loop'))`
+  await sql`CREATE INDEX IF NOT EXISTS idx_sector_angles_brand_sector ON sector_angles(brand, sector)`
 }
 
 // One-time demo data so the first visit to Planning isn't an empty screen.
@@ -495,6 +558,52 @@ export async function updateContact(workspaceId, id, data) {
 export async function deleteContact(workspaceId, id) {
   return db.delete(contacts)
     .where(and(eq(contacts.id, id), eq(contacts.user_id, workspaceId)))
+}
+
+// ── Outreach activity (prospecting timeline) ──────────────────────────────────
+export async function getOutreachActivity(contactId, limit = 100) {
+  return db.select().from(outreach_activity)
+    .where(eq(outreach_activity.contact_id, contactId))
+    .orderBy(desc(outreach_activity.created_at))
+    .limit(limit)
+}
+// Append an activity and bump the parent contact's last_contacted_at.
+export async function addOutreachActivity(workspaceId, contactId, userId, data) {
+  const [row] = await db.insert(outreach_activity)
+    .values({ contact_id: contactId, user_id: userId, type: data.type ?? 'note', body: data.body ?? null })
+    .returning()
+  const [contact] = await db.update(contacts)
+    .set({ last_contacted_at: new Date(), updated_at: new Date() })
+    .where(and(eq(contacts.id, contactId), eq(contacts.user_id, workspaceId)))
+    .returning()
+  return { activity: row, contact }
+}
+export async function deleteOutreachActivity(id) {
+  return db.delete(outreach_activity).where(eq(outreach_activity.id, id))
+}
+
+// ── Sector angles (per-sector outbound playbook, brand-scoped) ────────────────
+export async function getSectorAngles(workspaceId, brand) {
+  return db.select().from(sector_angles)
+    .where(and(eq(sector_angles.user_id, workspaceId), brandCond(sector_angles.brand, brand)))
+    .orderBy(sector_angles.sector)
+}
+export async function createSectorAngle(workspaceId, data) {
+  const [row] = await db.insert(sector_angles)
+    .values({ user_id: workspaceId, ...data })
+    .returning()
+  return row
+}
+export async function updateSectorAngle(workspaceId, id, data) {
+  const [row] = await db.update(sector_angles)
+    .set({ ...data, updated_at: new Date() })
+    .where(and(eq(sector_angles.id, id), eq(sector_angles.user_id, workspaceId)))
+    .returning()
+  return row
+}
+export async function deleteSectorAngle(workspaceId, id) {
+  return db.delete(sector_angles)
+    .where(and(eq(sector_angles.id, id), eq(sector_angles.user_id, workspaceId)))
 }
 
 // ── Projects ──────────────────────────────────────────────────────────────────

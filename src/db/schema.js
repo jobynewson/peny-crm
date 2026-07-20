@@ -56,13 +56,18 @@ export const settings = pgTable('settings', {
 })
 
 // ── Contacts ──────────────────────────────────────────────────────────────────
+// The organisation record. Businesses we work with (clients) AND businesses
+// we're trying to win (prospects) live here — a prospect is just a contact whose
+// lifecycle_stage isn't 'won' yet, so converting one is a status change, not a
+// record migration. first_name is nullable so a Places-sourced org with no known
+// contact person is valid (its name lives in `company`).
 export const contacts = pgTable('contacts', {
   id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
   user_id:    text('user_id').notNull(),
   // Which brand this record belongs to — Peny or its sister brand Loop Creative.
   brand:      text('brand').notNull().default('peny'),   // 'peny' | 'loop'
-  first_name: text('first_name').notNull(),
-  last_name:  text('last_name').notNull(),
+  first_name: text('first_name'),
+  last_name:  text('last_name'),
   role:       text('role'),
   company:    text('company'),
   email:      text('email'),
@@ -72,6 +77,50 @@ export const contacts = pgTable('contacts', {
   status:     text('status').notNull().default('Active'),
   since:      text('since'),
   notes:      jsonb('notes').notNull().default([]),
+  // ── Prospecting / outbound lifecycle ──
+  // prospect | contacted | engaged | proposal | won | lost | nurture
+  lifecycle_stage:     text('lifecycle_stage').notNull().default('won'),
+  sector:              text('sector'),                 // free text, filterable
+  tier:                text('tier'),                   // 'A' | 'B' | 'C'
+  priority:            integer('priority').notNull().default(0),  // work-queue ordering
+  fit_note:            text('fit_note'),               // why they're a fit for us
+  pitch_angle:         text('pitch_angle'),            // opening hook we'd lead with
+  area:                text('area'),                   // town / locality
+  website:             text('website'),
+  source_rating:       numeric('source_rating', { precision: 2, scale: 1 }),   // point-in-time Google Places
+  source_review_count: integer('source_review_count'),
+  owner:               text('owner'),                  // Clerk ID of who's working this one
+  last_contacted_at:   timestamp('last_contacted_at', { withTimezone: true }),
+  next_action_at:      date('next_action_at'),
+  next_action:         text('next_action'),
+  ...timestamps,
+})
+
+// Lightweight outreach log for a prospect/organisation. Appending a row bumps
+// the parent contact's last_contacted_at.
+export const outreach_activity = pgTable('outreach_activity', {
+  id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  contact_id: uuid('contact_id').notNull().references(() => contacts.id, { onDelete: 'cascade' }),
+  user_id:    text('user_id'),                         // Clerk ID of who logged it
+  type:       text('type').notNull().default('note'),  // call | email | meeting | note
+  body:       text('body'),
+  created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// Reusable per-sector outbound playbook (brand-scoped reference content). Surfaced
+// alongside a prospect when its sector matches, so the team reads the angle while
+// working the list.
+export const sector_angles = pgTable('sector_angles', {
+  id:          uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id:     text('user_id').notNull(),
+  brand:       text('brand').notNull().default('peny'),   // 'peny' | 'loop'
+  sector:      text('sector').notNull(),
+  tier:        text('tier'),              // 'A' | 'B' | 'C'
+  why_video:   text('why_video'),         // why they need video
+  opening_hook: text('opening_hook'),     // opening hook
+  offer:       text('offer'),             // offer to lead with
+  best_time:   text('best_time'),         // best time to pitch
+  proof:       text('proof'),             // proof to show
   ...timestamps,
 })
 

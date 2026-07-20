@@ -14,6 +14,7 @@ import { ExpensesView } from './views/expenses.js'
 import { OffloadLogView } from './views/offload-log.js'
 import { BoardsView } from './views/boards.js'
 import { CanvasView } from './views/canvas.js'
+import { ProspectsView } from './views/prospects.js'
 
 // The two real brands. 'all' is a view-scope only, never a stored record value.
 const BRANDS = ['peny', 'loop']
@@ -24,7 +25,7 @@ const BRAND_META = {
 }
 
 export class App {
-  constructor({ userId, clerkUserId, user, appUser, permissions, brand, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, leaveRequests, publicHolidays, onSignOut }) {
+  constructor({ userId, clerkUserId, user, appUser, permissions, brand, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, leaveRequests, publicHolidays, sectorAngles, onSignOut }) {
     this.userId         = userId
     this.clerkUserId    = clerkUserId
     this.user           = user
@@ -42,6 +43,7 @@ export class App {
     this.teamCalendarEntries = teamCalendarEntries ?? []
     this.leaveRequests  = leaveRequests ?? []
     this.publicHolidays = publicHolidays ?? []
+    this.sectorAngles   = sectorAngles ?? []
     this.onSignOut      = onSignOut
     this.currentView    = 'dashboard'
     this.contactsView    = new ContactsView(this)
@@ -58,6 +60,7 @@ export class App {
     this.offloadLogView       = new OffloadLogView(this)
     this.boardsView           = new BoardsView(this)
     this.canvasView           = new CanvasView(this)
+    this.prospectsView        = new ProspectsView(this)
     window.app = this
   }
 
@@ -468,7 +471,7 @@ export class App {
           <button class="sidebar-collapse-btn" id="sidebar-collapse-btn" aria-label="Toggle sidebar" title="${collapsed ? 'Expand sidebar' : 'Collapse sidebar'}">${this.iconCollapse()}</button>
         </div>
         <div class="nav-label">Main</div>
-        ${[['dashboard','Dashboard',this.iconPipeline()],['calendar','Calendar',this.iconCalendar()],['contacts','Contacts',this.iconContacts()],['projects','Projects',this.iconProjects()],['budgets','Budgets',this.iconBudgets()],['planning','Planning',this.iconPlanning()],['marketing','Marketing',this.iconMarketing()],['story-planner','Story Planner',this.iconStoryPlanner()]].map(([id,label,icon])=>`
+        ${[['dashboard','Dashboard',this.iconPipeline()],['calendar','Calendar',this.iconCalendar()],['contacts','Contacts',this.iconContacts()],['prospects','Prospects',this.iconProspects()],['projects','Projects',this.iconProjects()],['budgets','Budgets',this.iconBudgets()],['planning','Planning',this.iconPlanning()],['marketing','Marketing',this.iconMarketing()],['story-planner','Story Planner',this.iconStoryPlanner()]].map(([id,label,icon])=>`
           <div class="nav-item ${this.currentView===id?'active':''}" data-view="${id}" title="${label}">${icon}<span class="nav-text">${label}</span></div>`).join('')}
         <div class="sidebar-notes">
           <div class="sidebar-notes-header">
@@ -529,6 +532,9 @@ export class App {
     }
     if (this.currentView === 'marketing') {
       return `<button class="btn-primary" id="topbar-btn">+ New card</button>`
+    }
+    if (this.currentView === 'prospects') {
+      return p.contacts_edit ? `<button class="btn-primary" id="topbar-btn">+ New prospect</button>` : ''
     }
     if (this.currentView === 'planning') {
       if (this.boardsView.currentId || this.canvasView.currentId) return ''
@@ -667,6 +673,9 @@ export class App {
       else if (this.currentView === 'marketing') {
         this.marketingView.openCardModal(null, this.marketingView.activeTab === 'kanban' ? 'ideas' : 'ideas')
       }
+      else if (this.currentView === 'prospects') {
+        this.prospectsView.openNewModal()
+      }
       else if (this.currentView === 'planning') {
         if (this.boardsView.currentId || this.canvasView.currentId) return
         if (this.boardsView.activeTab === 'canvases') this.canvasView.openNewCanvasModal()
@@ -730,18 +739,20 @@ export class App {
   // Re-query the brand-scoped datasets for the active brand, then re-render.
   // Clears any open record editor so a now-out-of-scope record can't linger.
   async _reloadBrandScoped() {
-    const { getContacts, getProjects, getBudgets, getMarketingCards } = await import('./db/client.js')
+    const { getContacts, getProjects, getBudgets, getMarketingCards, getSectorAngles } = await import('./db/client.js')
     try {
-      const [contacts, projects, budgets, marketingCards] = await Promise.all([
+      const [contacts, projects, budgets, marketingCards, sectorAngles] = await Promise.all([
         getContacts(this.userId, this.brand),
         getProjects(this.userId, this.brand),
         getBudgets(this.userId, this.brand),
         getMarketingCards(this.userId, this.brand).catch(() => this.marketingCards),
+        getSectorAngles(this.userId, this.brand).catch(() => this.sectorAngles),
       ])
       this.contacts = contacts
       this.projects = projects
       this.budgets = budgets
       this.marketingCards = marketingCards
+      this.sectorAngles = sectorAngles
     } catch (e) {
       console.error('Brand reload failed:', e)
       this.toast('Could not switch brand')
@@ -751,6 +762,7 @@ export class App {
     this.projectsView.currentId = null; this.projectsView.editingId = null
     this.budgetsView.currentId  = null; this.budgetsView.editingId  = null
     this.contactsView.selectedId = null
+    this.prospectsView.selectedId = null
     this.render()
   }
 
@@ -765,7 +777,7 @@ export class App {
     if (!hash) return
     const parts = hash.split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses','leave','offload-log','planning']
+    const validViews = ['contacts','prospects','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses','leave','offload-log','planning']
     if (!validViews.includes(view)) return
     this.currentView = view
     if (view === 'projects' && id) {
@@ -790,7 +802,7 @@ export class App {
     const hash = location.hash.slice(1)
     const parts = (hash || 'dashboard').split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses','leave','offload-log','planning']
+    const validViews = ['contacts','prospects','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses','leave','offload-log','planning']
     if (!validViews.includes(view)) { this.currentView = 'dashboard'; this.render(); return }
 
     this.currentView = view
@@ -812,6 +824,9 @@ export class App {
     if (this.currentView === 'contacts') {
       if (!p.contacts_view) return locked("You don't have access to Contacts.")
       this.contactsView.render(mc)
+    } else if (this.currentView === 'prospects') {
+      if (!p.contacts_view) return locked("You don't have access to Prospects.")
+      this.prospectsView.render(mc)
     } else if (this.currentView === 'projects') {
       if (!p.projects_view) return locked("You don't have access to Projects.")
       this.projectsView.render(mc)
@@ -853,7 +868,7 @@ export class App {
     if (this.currentView === 'budgets'  && this.budgetsView?.currentId)  return this.budgets.find(b=>b.id===this.budgetsView.currentId)?.name  ?? 'Budget'
     if (this.currentView === 'planning' && this.canvasView?.currentId)   return this.canvasView.canvas?.name ?? 'Planning'
     if (this.currentView === 'planning' && this.boardsView?.currentId)   return this.boardsView.board?.name ?? 'Planning'
-    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',calendar:'Team Calendar',settings:'Settings',marketing:'Marketing',planning:'Planning',timetrack:'Time tracker','story-planner':'Story Planner','password-manager':'Passwords',expenses:'Expenses',leave:'Leave','offload-log':'Offload Log'}[this.currentView] ?? ''
+    return {contacts:'Contacts',prospects:'Prospects',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',calendar:'Team Calendar',settings:'Settings',marketing:'Marketing',planning:'Planning',timetrack:'Time tracker','story-planner':'Story Planner','password-manager':'Passwords',expenses:'Expenses',leave:'Leave','offload-log':'Offload Log'}[this.currentView] ?? ''
   }
 
   updateTitle() {
@@ -1170,6 +1185,7 @@ export class App {
       this.teamCalendarView.renderDashboardSection(mc)
       this._mountCountdownWidget(mc)
       this._mountDaysSinceWidget(mc)
+      this.prospectsView.renderDashboardWidget(mc)
       return
     }
 
@@ -1666,6 +1682,7 @@ export class App {
     this.teamCalendarView.renderDashboardSection(mc)
     this._mountCountdownWidget(mc)
     this._mountDaysSinceWidget(mc)
+    this.prospectsView.renderDashboardWidget(mc)
 
     // --- Stat cards navigate to their underlying list ---
     mc.querySelectorAll('[data-db-nav]').forEach(card => {
@@ -3543,6 +3560,7 @@ export class App {
 
   iconHamburger() { return `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 4.5h14M2 9h14M2 13.5h14"/></svg>` }
   iconContacts() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="6" cy="5" r="2.5"/><path d="M1 14c0-2.8 2.2-4.5 5-4.5s5 1.7 5 4.5"/><path d="M11 3.5a2 2 0 0 1 0 4M15 14c0-2.4-1.5-3.8-4-4"/></svg>` }
+  iconProspects() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6.5"/><circle cx="8" cy="8" r="2.5"/><path d="M8 0.5v3M8 12.5v3M0.5 8h3M12.5 8h3"/></svg>` }
   iconMarketing()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1 8c0 0 2-5 7-5s7 5 7 5-2 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>` }
   iconTimeTrack()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="9" r="5.5"/><path d="M8 6v3.5l2 1.5"/><path d="M6 1h4M8 1v2.5"/></svg>` }
   iconProjects() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 6h6M5 9h4"/></svg>` }

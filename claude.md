@@ -101,6 +101,34 @@ loop — a teal/river accent).
   Records derived from a parent (budget-from-project, project duplicate,
   crew→contact) inherit the parent's brand.
 
+### Prospecting & Outbound
+Businesses we're *trying* to win live in the **same `contacts` table** as clients —
+a prospect is just a contact whose `lifecycle_stage` isn't `won` yet, so
+converting one to a client is a status change, not a record migration (there is
+deliberately **no** separate `prospects` table).
+- Prospecting columns on `contacts`: `lifecycle_stage`
+  (`prospect|contacted|engaged|proposal|won|lost|nurture`, `NOT NULL DEFAULT 'won'`
+  so existing clients backfill to `won`), `sector`, `tier` (`A|B|C`), `priority`
+  (int, work-queue ordering), `fit_note`, `pitch_angle`, `area`, `website`,
+  `source_rating`/`source_review_count` (point-in-time Google Places, nullable),
+  `owner` (Clerk ID), `last_contacted_at`, `next_action_at`, `next_action`.
+  `first_name` is **nullable** so a Places-sourced org with no known person is
+  valid (its name lives in `company`).
+- `outreach_activity` — lightweight per-org timeline (`contact_id`, `user_id`,
+  `type` call|email|meeting|note, `body`). `addOutreachActivity()` bumps the
+  parent's `last_contacted_at`.
+- `sector_angles` — brand-scoped reusable playbook (sector, tier, why_video,
+  opening_hook, offer, best_time, proof), surfaced next to a prospect when its
+  sector matches.
+- UI is `src/views/prospects.js` (`ProspectsView`), a new brand-scoped nav item:
+  **Pipeline board** (kanban by `lifecycle_stage`, drag to move — mirrors the
+  Marketing kanban using the shared `.kanban-*` styles), **List** (fast
+  filter/sort + inline-edit table), **Work queue** (my overdue/due-today by
+  priority — the daily driver), a **detail slide-over** (record + matching sector
+  angle + outreach timeline + quick-log), and a **dashboard widget** (counts by
+  stage + overdue, mounted from `renderDashboard`). The board/list exclude
+  `type='subcontractor'` (shared crew).
+
 ### Views
 - Each feature (contacts, projects, etc.) has a view module in `src/views/`
 - View modules export a `render()` function that returns HTML
@@ -171,6 +199,8 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 
 ## Available Views/Modules
 - `contacts.js` - Contact management
+- `prospects.js` - Prospecting & Outbound (brand-scoped pipeline over `contacts`)
+  — board / list / work-queue / detail slide-over. See "Prospecting & Outbound".
 - `projects.js` - Project management. Its kanban (pipeline by stage, plus a
   Retainer lane) is one of three separate kanban implementations — see
   "Kanban boards" below.

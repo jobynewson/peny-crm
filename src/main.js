@@ -5,6 +5,7 @@ import {
   getOrCreateAppUser, getOrCreateWorkspace, resolvePermissions, getAllAppUsers,
   getSocialPosts, getMarketingCards, runMigrations, getTeamCalendarEntries,
   getLeaveRequests, getPublicHolidays, seedDemoBoard, seedDemoCanvas,
+  getSectorAngles,
 } from './db/client.js'
 
 async function bootstrap() {
@@ -49,7 +50,7 @@ async function bootstrap() {
   //    'loop' | 'all'); the switcher re-loads these on change. Shared operational
   //    data (calendar, leave, holidays) is brand-agnostic.
   const brand = (() => { try { return localStorage.getItem('slate-brand') || 'peny' } catch { return 'peny' } })()
-  const [contactsData, projectsData, budgetsData, settingsData, allUsersData, socialPostsData, marketingCardsData, teamCalendarData, leaveRequestsData, publicHolidaysData] = await Promise.all([
+  const [contactsData, projectsData, budgetsData, settingsData, allUsersData, socialPostsData, marketingCardsData, teamCalendarData, leaveRequestsData, publicHolidaysData, sectorAnglesData] = await Promise.all([
     getContacts(workspaceId, brand),
     getProjects(workspaceId, brand),
     getBudgets(workspaceId, brand),
@@ -60,6 +61,7 @@ async function bootstrap() {
     getTeamCalendarEntries(workspaceId).catch(() => []),
     getLeaveRequests(workspaceId).catch(() => []),
     getPublicHolidays(workspaceId).catch(() => []),
+    getSectorAngles(workspaceId, brand).catch(() => []),
   ])
 
   const { App } = await import('./app.js')
@@ -80,6 +82,7 @@ async function bootstrap() {
     teamCalendarEntries:   teamCalendarData,
     leaveRequests:         leaveRequestsData,
     publicHolidays:        publicHolidaysData,
+    sectorAngles:          sectorAnglesData,
     onSignOut: signOut,
   })
 
