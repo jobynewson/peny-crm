@@ -45,6 +45,25 @@ function daysUntil(d) {
   return Math.round((new Date(d + 'T00:00:00') - new Date(today() + 'T00:00:00')) / 86400000)
 }
 
+// Collapse a sector name to a canonical key so the fine-grained prospect sectors
+// ("Auto - classic/prestige dealer") line up with the broader sector-angle
+// playbook categories ("Classic & prestige car dealers"). Order matters —
+// more specific buckets are tested before the general ones.
+export function sectorKey(raw) {
+  const s = (raw || '').toLowerCase()
+  if (!s) return ''
+  if (/motorcycle|motorbike/.test(s)) return 'motorcycle'
+  if (/restoration|restor\b/.test(s)) return 'restoration'
+  if (/detail|ppf|ceramic|wrap|bodywork/.test(s)) return 'detailing'
+  if (/classic|prestige|performance|dealer/.test(s) && /auto|car/.test(s)) return 'cars'
+  if (/brewer|brewery|distiller|distillery|farm shop|producer|cafe/.test(s)) return 'producers'
+  if (/\bpubs?\b|\binns?\b|country .*room|hospitality/.test(s)) return 'pubs'
+  if (/stay|glamping|cabin|touring|lodge/.test(s)) return 'stays'
+  if (/outdoor|adventure|activity|bushcraft|dofe|expedition/.test(s)) return 'outdoor'
+  if (/attraction|heritage|museum|garden|estate/.test(s)) return 'attractions'
+  return s.trim()
+}
+
 export class ProspectsView {
   constructor(app) {
     this.app = app
@@ -69,11 +88,16 @@ export class ProspectsView {
     return id ? (this.app.allUsers || []).find(u => u.clerk_id === id) : null
   }
 
-  // The reusable sector playbook whose sector matches this org (brand already scoped).
+  // The reusable sector playbook whose sector matches this org (brand already
+  // scoped). Exact (case-insensitive) match first, then the canonical-key bridge
+  // so a granular prospect sector still finds its broader playbook category.
   matchingAngle(p) {
     if (!p.sector) return null
     const s = p.sector.trim().toLowerCase()
-    return (this.app.sectorAngles || []).find(a => (a.sector || '').trim().toLowerCase() === s) || null
+    const angles = this.app.sectorAngles || []
+    return angles.find(a => (a.sector || '').trim().toLowerCase() === s)
+      || angles.find(a => sectorKey(a.sector) === sectorKey(p.sector))
+      || null
   }
 
   // ── Shell ────────────────────────────────────────────────────────────────────

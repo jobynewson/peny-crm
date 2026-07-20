@@ -128,6 +128,16 @@ deliberately **no** separate `prospects` table).
   angle + outreach timeline + quick-log), and a **dashboard widget** (counts by
   stage + overdue, mounted from `renderDashboard`). The board/list exclude
   `type='subcontractor'` (shared crew).
+- Prospect sectors are finer-grained than the 9 sector-angle categories, so
+  `matchingAngle()` bridges them via `sectorKey()` (exact match first, then a
+  canonical-key fallback) — keep that map in step if you add sectors/angles.
+- **Seed:** `scripts/seed-loop-prospects.js` is a one-off, idempotent loader for
+  `Loop_Creative_outbound_tracker.xlsx` (repo root). Dry-run by default,
+  `--apply` to write; keyed on (brand='loop', lower(company)) / (brand,
+  lower(sector)) so re-runs never duplicate. Priority is inverted from the
+  sheet's 1=top scale to the app's higher=more-important int. Needs
+  `VITE_DATABASE_URL`. `xlsx` (SheetJS) is a devDependency used only by this
+  script — it is not imported anywhere under `src/` and never ships to Vercel.
 
 ### Views
 - Each feature (contacts, projects, etc.) has a view module in `src/views/`
