@@ -249,6 +249,12 @@ export class BudgetsView {
                 <input type="checkbox" id="bf-vat" style="width:auto;cursor:pointer" /> Add VAT (20%)
               </label>
             </div>
+            <div class="field" id="bf-brand-field" style="display:none"><div class="field-label">Brand<span class="req">*</span></div>
+              <select id="bf-brand">
+                <option value="peny">Peny</option>
+                <option value="loop">Loop</option>
+              </select>
+            </div>
           </div>
           <div class="modal-footer">
             <button class="btn-cancel" data-close="budget-new-modal">Cancel</button>
@@ -279,6 +285,13 @@ export class BudgetsView {
     mc.querySelector('#bf-preparedby').value = this.app.settings?.prepared_by ?? ''
     mc.querySelector('#bf-email').value      = ''
     if (clientId) mc.querySelector('#bf-client').value = clientId
+    // Brand: stamp the active brand automatically, or ask when viewing 'All'.
+    const brandField = mc.querySelector('#bf-brand-field')
+    const activeBrand = this.app.brandForCreate()
+    if (brandField) {
+      if (activeBrand) { brandField.style.display = 'none'; mc.querySelector('#bf-brand').value = activeBrand }
+      else { brandField.style.display = ''; mc.querySelector('#bf-brand').value = 'peny' }
+    }
     mc.querySelector('#budget-new-modal')?.classList.add('open')
   }
 
@@ -297,6 +310,12 @@ export class BudgetsView {
       mc.querySelector('#bf-name').value   = p.name ?? ''
       mc.querySelector('#bf-notes').value  = noteParts.join('\n')
       if (p.client_id) mc.querySelector('#bf-client').value = p.client_id
+      // Inherit the source project's brand; surface the picker only under 'All'.
+      const brandField = mc.querySelector('#bf-brand-field')
+      if (brandField) {
+        brandField.style.display = this.app.brand === 'all' ? '' : 'none'
+        mc.querySelector('#bf-brand').value = p.brand || this.app.brandForCreate() || 'peny'
+      }
       mc.querySelector('#budget-new-modal')?.classList.add('open')
 
       // Stash project ID and crew for after creation
@@ -341,6 +360,7 @@ export class BudgetsView {
 
     const data = {
       name,
+      brand:       mc.querySelector('#bf-brand')?.value || this.app.brandForCreate() || 'peny',
       client_id:   mc.querySelector('#bf-client')?.value     || null,
       notes:       mc.querySelector('#bf-notes')?.value.trim() || null,
       prepared_by: mc.querySelector('#bf-preparedby')?.value.trim() || this.app.settings?.prepared_by || null,
@@ -385,6 +405,7 @@ export class BudgetsView {
     try {
       const copy = {
         name: b.name + ' (copy)',
+        brand: b.brand,
         client_id: b.client_id,
         markup: b.markup, custom_pct: b.custom_pct, vat: b.vat, insurance: b.insurance ?? false,
         travel_rate: b.travel_rate ?? 50, prep_rate: b.prep_rate ?? 100, discount: b.discount ?? 0,

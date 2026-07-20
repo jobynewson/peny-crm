@@ -44,15 +44,19 @@ async function bootstrap() {
   await seedDemoBoard(workspaceId).catch(e => console.warn('Demo board seed failed:', e))
   await seedDemoCanvas(workspaceId).catch(e => console.warn('Demo canvas seed failed:', e))
 
-  // 4. Load all shared workspace data in parallel
+  // 4. Load all shared workspace data in parallel.
+  //    Client-facing pipeline data is scoped to the persisted brand ('peny' |
+  //    'loop' | 'all'); the switcher re-loads these on change. Shared operational
+  //    data (calendar, leave, holidays) is brand-agnostic.
+  const brand = (() => { try { return localStorage.getItem('slate-brand') || 'peny' } catch { return 'peny' } })()
   const [contactsData, projectsData, budgetsData, settingsData, allUsersData, socialPostsData, marketingCardsData, teamCalendarData, leaveRequestsData, publicHolidaysData] = await Promise.all([
-    getContacts(workspaceId),
-    getProjects(workspaceId),
-    getBudgets(workspaceId),
+    getContacts(workspaceId, brand),
+    getProjects(workspaceId, brand),
+    getBudgets(workspaceId, brand),
     getSettings(workspaceId),
     getAllAppUsers(),
     getSocialPosts(workspaceId).catch(() => []),
-    getMarketingCards(workspaceId).catch(() => []),
+    getMarketingCards(workspaceId, brand).catch(() => []),
     getTeamCalendarEntries(workspaceId).catch(() => []),
     getLeaveRequests(workspaceId).catch(() => []),
     getPublicHolidays(workspaceId).catch(() => []),
@@ -65,6 +69,7 @@ async function bootstrap() {
     user,
     appUser,
     permissions,
+    brand,
     contacts:              contactsData,
     projects:              projectsData,
     budgets:               budgetsData,

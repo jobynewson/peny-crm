@@ -4,9 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Slate</title>
-  <!-- Apply saved theme before first paint to avoid a light/dark flash -->
+  <!-- Apply saved theme + brand before first paint to avoid a colour flash -->
   <script>
     try { document.documentElement.setAttribute('data-theme', localStorage.getItem('slate-theme') || 'dark') } catch (e) {}
+    try { document.documentElement.setAttribute('data-brand', localStorage.getItem('slate-brand') || 'peny') } catch (e) {}
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

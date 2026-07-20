@@ -71,6 +71,36 @@ index.html                # App HTML shell
 - Current functions (12): `ai`, `blob`, `callsheet`, `generate-ra`, `google`,
   `invite`, `maps`, `packing`, `portal`, `quote`, `reminders`, `track`.
 
+### Brand context (Peny / Loop Creative)
+Slate serves two sister brands that share crew, kit and pipeline process but keep
+separate pipelines and reporting: **Peny** and **Loop Creative** (Loop targets
+Shrewsbury and the surrounding area; its identity references the River Severn
+loop — a teal/river accent).
+- A `brand` column (`'peny' | 'loop'`, `NOT NULL DEFAULT 'peny'`, CHECK-constrained,
+  indexed) lives on the **client-facing pipeline entities only**: `contacts`,
+  `projects`, `budgets`, `marketing_cards`. Shared operational tools (planning
+  boards, canvases, story planner, team calendar, leave, expenses, passwords,
+  offload log) are deliberately **brand-agnostic** — the crew and kit are shared.
+- A persistent **Peny / Loop / All** switcher sits in the topbar action cluster
+  (`app.brandSwitcherHTML()` / `_bindBrandSwitcher()` / `setBrand()`), persisted
+  to `localStorage['slate-brand']` and applied pre-paint via `data-brand` on
+  `<html>` (see `index.html`). `[data-brand="loop"]` in `style.css` repaints the
+  accent tokens teal so the whole chrome follows.
+- **Scoping is done in the SQL query, not the browser.** The loaders
+  `getContacts/getProjects/getBudgets/getMarketingCards` take an optional brand
+  and push `brand = $1` into the Neon WHERE clause (`brandCond()` in
+  `client.js`; `'all'` = no filter). Switching brand re-queries these four via
+  `app._reloadBrandScoped()` and re-renders. Initial boot load in `main.js` is
+  scoped by the persisted brand.
+- **Subcontractors are the exception on `contacts`:** they are shared crew, so
+  `getContacts` keeps `type='subcontractor'` rows visible under either brand
+  (`brand = X OR type = 'subcontractor'`). Only *clients* are brand-scoped.
+- **Stamping on create:** with a single brand active, new records are stamped
+  that brand automatically; while **All** is active the create form shows a
+  Peny/Loop picker (`app.brandForCreate()` returns the active brand or `null`).
+  Records derived from a parent (budget-from-project, project duplicate,
+  crew→contact) inherit the parent's brand.
+
 ### Views
 - Each feature (contacts, projects, etc.) has a view module in `src/views/`
 - View modules export a `render()` function that returns HTML

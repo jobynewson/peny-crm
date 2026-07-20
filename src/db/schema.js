@@ -59,6 +59,8 @@ export const settings = pgTable('settings', {
 export const contacts = pgTable('contacts', {
   id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
   user_id:    text('user_id').notNull(),
+  // Which brand this record belongs to — Peny or its sister brand Loop Creative.
+  brand:      text('brand').notNull().default('peny'),   // 'peny' | 'loop'
   first_name: text('first_name').notNull(),
   last_name:  text('last_name').notNull(),
   role:       text('role'),
@@ -77,6 +79,7 @@ export const contacts = pgTable('contacts', {
 export const projects = pgTable('projects', {
   id:          uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
   user_id:     text('user_id').notNull(),
+  brand:       text('brand').notNull().default('peny'),   // 'peny' | 'loop'
   client_id:   uuid('client_id').references(() => contacts.id, { onDelete: 'set null' }),
   name:        text('name').notNull(),
   status:      text('status').notNull().default('Enquiry'),
@@ -129,6 +132,7 @@ export const projects = pgTable('projects', {
 export const budgets = pgTable('budgets', {
   id:          uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
   user_id:     text('user_id').notNull(),
+  brand:       text('brand').notNull().default('peny'),   // 'peny' | 'loop'
   client_id:   uuid('client_id').references(() => contacts.id, { onDelete: 'set null' }),
   name:        text('name').notNull(),
   notes:       text('notes'),
@@ -382,6 +386,7 @@ export const camera_setups = pgTable('camera_setups', {
 export const marketing_cards = pgTable('marketing_cards', {
   id:            uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
   user_id:       text('user_id').notNull(),
+  brand:         text('brand').notNull().default('peny'),   // 'peny' | 'loop'
   title:         text('title').notNull(),
   card_type:     text('card_type').notNull().default('ad-hoc'),
   status:        text('status').notNull().default('ideas'),

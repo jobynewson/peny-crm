@@ -15,13 +15,23 @@ import { OffloadLogView } from './views/offload-log.js'
 import { BoardsView } from './views/boards.js'
 import { CanvasView } from './views/canvas.js'
 
+// The two real brands. 'all' is a view-scope only, never a stored record value.
+const BRANDS = ['peny', 'loop']
+const BRAND_META = {
+  peny: { label: 'Peny', short: 'P' },
+  loop: { label: 'Loop', short: 'L' },
+  all:  { label: 'All',  short: '∙' },
+}
+
 export class App {
-  constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, leaveRequests, publicHolidays, onSignOut }) {
+  constructor({ userId, clerkUserId, user, appUser, permissions, brand, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, leaveRequests, publicHolidays, onSignOut }) {
     this.userId         = userId
     this.clerkUserId    = clerkUserId
     this.user           = user
     this.appUser        = appUser
     this.permissions    = permissions
+    // Active brand scope: 'peny' | 'loop' | 'all' (persisted in localStorage).
+    this.brand          = BRANDS.includes(brand) || brand === 'all' ? brand : 'peny'
     this.contacts       = contacts ?? []
     this.projects       = projects ?? []
     this.budgets        = budgets  ?? []
@@ -55,6 +65,7 @@ export class App {
     this.container = container
     const saved = localStorage.getItem('slate-theme') || 'dark'
     document.documentElement.setAttribute('data-theme', saved)
+    document.documentElement.setAttribute('data-brand', this.brand)
     this._restoreFromHash()   // parse URL before first render
     this.render()
     this._bindKeyboard()
@@ -484,10 +495,7 @@ export class App {
         <div class="topbar">
           <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Toggle navigation">${this.iconHamburger()}</button>
           <div class="topbar-title" id="view-title">${this.viewTitle()}</div>
-          <div id="topbar-actions" style="display:flex;gap:8px;align-items:center;flex-shrink:0">${this.topbarSearch()}${this.topbarButton()}
-            <button class="theme-toggle" id="theme-toggle-btn" title="Toggle dark mode">${this.iconTheme()}</button>
-            <button id="shortcut-hint" class="theme-toggle" title="Keyboard shortcuts">?</button>
-          </div>
+          <div id="topbar-actions" style="display:flex;gap:8px;align-items:center;flex-shrink:0">${this._topbarActionsHTML()}</div>
         </div>
         <div class="content" id="main-content"></div>
       </div>
@@ -576,6 +584,33 @@ export class App {
     this.container.querySelector('#sign-out-btn')?.addEventListener('click', () => { this._closeMobileSidebar(); this.onSignOut() })
     this.container.querySelector('#dev-request-btn')?.addEventListener('click', () => { this._closeMobileSidebar(); this._openDevRequest() })
 
+    // Topbar action cluster (brand switcher, search, primary button, theme, shortcuts)
+    this._bindTopbarActions()
+    this._bindSidebarTT()
+
+    // Notes new button
+    this.container.querySelector('#notes-new-btn')?.addEventListener('click', () => this._newNote())
+  }
+
+  // The right-hand action cluster of the topbar. Kept as one helper so
+  // updateTitle() can rebuild it wholesale without dropping the always-present
+  // brand switcher / theme toggle / shortcut hint.
+  _topbarActionsHTML() {
+    return `${this.brandSwitcherHTML()}${this.topbarSearch()}${this.topbarButton()}
+      <button class="theme-toggle" id="theme-toggle-btn" title="Toggle dark mode">${this.iconTheme()}</button>
+      <button id="shortcut-hint" class="theme-toggle" title="Keyboard shortcuts">?</button>`
+  }
+
+  _bindTopbarActions() {
+    this._bindBrandSwitcher()
+    this.bindTopbarBtn()
+
+    const search = this.container.querySelector('#contact-search')
+    if (search) {
+      search.value = this.contactsView.search
+      search.addEventListener('input', e => { this.contactsView.search = e.target.value; this.contactsView.refreshList() })
+    }
+
     // Dark mode toggle
     const toggleBtn = this.container.querySelector('#theme-toggle-btn')
     if (toggleBtn) {
@@ -587,17 +622,6 @@ export class App {
         toggleBtn.innerHTML = this.iconTheme()
       })
     }
-
-    this.bindTopbarBtn()
-    this._bindSidebarTT()
-    const search = this.container.querySelector('#contact-search')
-    if (search) {
-      search.value = this.contactsView.search
-      search.addEventListener('input', e => { this.contactsView.search = e.target.value; this.contactsView.refreshList() })
-    }
-
-    // Notes new button
-    this.container.querySelector('#notes-new-btn')?.addEventListener('click', () => this._newNote())
 
     // Keyboard shortcut hint
     this.container.querySelector('#shortcut-hint')?.addEventListener('click', () => {
@@ -668,6 +692,65 @@ export class App {
     this.canvasView.currentId = null
     this.canvasView.canvas = null
     history.pushState({ view }, '', `#${view}`)
+    this.render()
+  }
+
+  // ── Brand context ─────────────────────────────────────────────────────────
+  // The brand to stamp on a newly-created record: the active brand when a single
+  // one is selected, or null when 'All' is active (the form must then ask).
+  brandForCreate() {
+    return BRANDS.includes(this.brand) ? this.brand : null
+  }
+
+  // Segmented Peny / Loop / All control for the topbar.
+  brandSwitcherHTML() {
+    const opts = ['peny', 'loop', 'all']
+    return `
+      <div class="brand-switch" data-brand="${this.brand}" role="group" aria-label="Brand">
+        ${opts.map(b => `
+          <button class="brand-opt${this.brand === b ? ' active' : ''}" data-brand-opt="${b}" title="${BRAND_META[b].label} pipeline">${BRAND_META[b].label}</button>`).join('')}
+      </div>`
+  }
+
+  _bindBrandSwitcher() {
+    this.container.querySelectorAll('.brand-opt[data-brand-opt]').forEach(btn => {
+      btn.addEventListener('click', () => this.setBrand(btn.dataset.brandOpt))
+    })
+  }
+
+  async setBrand(brand) {
+    if (brand === this.brand) return
+    if (!BRANDS.includes(brand) && brand !== 'all') return
+    this.brand = brand
+    try { localStorage.setItem('slate-brand', brand) } catch {}
+    document.documentElement.setAttribute('data-brand', brand)
+    await this._reloadBrandScoped()
+  }
+
+  // Re-query the brand-scoped datasets for the active brand, then re-render.
+  // Clears any open record editor so a now-out-of-scope record can't linger.
+  async _reloadBrandScoped() {
+    const { getContacts, getProjects, getBudgets, getMarketingCards } = await import('./db/client.js')
+    try {
+      const [contacts, projects, budgets, marketingCards] = await Promise.all([
+        getContacts(this.userId, this.brand),
+        getProjects(this.userId, this.brand),
+        getBudgets(this.userId, this.brand),
+        getMarketingCards(this.userId, this.brand).catch(() => this.marketingCards),
+      ])
+      this.contacts = contacts
+      this.projects = projects
+      this.budgets = budgets
+      this.marketingCards = marketingCards
+    } catch (e) {
+      console.error('Brand reload failed:', e)
+      this.toast('Could not switch brand')
+      return
+    }
+    // Drop editor/detail state that may point at another brand's record.
+    this.projectsView.currentId = null; this.projectsView.editingId = null
+    this.budgetsView.currentId  = null; this.budgetsView.editingId  = null
+    this.contactsView.selectedId = null
     this.render()
   }
 
@@ -777,10 +860,10 @@ export class App {
     const el = document.getElementById('view-title')
     if (el) el.textContent = this.viewTitle()
     const actions = document.getElementById('topbar-actions')
-    if (actions) actions.innerHTML = this.topbarSearch() + this.topbarButton()
-    const search = document.getElementById('contact-search')
-    if (search) search.addEventListener('input', e => { this.contactsView.search = e.target.value; this.contactsView.refreshList() })
-    this.bindTopbarBtn()
+    if (actions) {
+      actions.innerHTML = this._topbarActionsHTML()
+      this._bindTopbarActions()
+    }
   }
 
   openProject(id, tab) {

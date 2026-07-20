@@ -1,6 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
-import { eq, and, desc, inArray } from 'drizzle-orm'
+import { eq, and, or, desc, inArray } from 'drizzle-orm'
 import * as schema from './schema.js'
 import {
   contacts, projects, budgets, settings, workspace,
@@ -17,6 +17,16 @@ import {
 
 const sql = neon(import.meta.env.VITE_DATABASE_URL)
 export const db = drizzle(sql, { schema })
+
+// ── Brand scoping ─────────────────────────────────────────────────────────────
+// The active brand ('peny' | 'loop' | 'all') scopes every client-facing list.
+// Loaders below take an optional brand and push the filter into the SQL WHERE
+// clause (Neon runs it) rather than fetching all rows and filtering in the view.
+// 'all' (or an unrecognised value) means no brand filter.
+const BRANDS = ['peny', 'loop']
+function brandCond(column, brand) {
+  return BRANDS.includes(brand) ? eq(column, brand) : undefined
+}
 
 // ── Schema migrations ─────────────────────────────────────────────────────────
 export async function runMigrations() {
@@ -368,6 +378,26 @@ export async function runMigrations() {
   await sql`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS invoiced BOOLEAN NOT NULL DEFAULT false`
   await sql`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS invoiced_at TIMESTAMPTZ`
   await sql`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS invoiced_by TEXT`
+
+  // ── Brand context (Peny / Loop Creative) ───────────────────────────────────
+  // Every client-facing pipeline entity carries a brand. NOT NULL DEFAULT 'peny'
+  // backfills all existing rows to Peny automatically when the column is added.
+  await sql`ALTER TABLE contacts        ADD COLUMN IF NOT EXISTS brand TEXT NOT NULL DEFAULT 'peny'`
+  await sql`ALTER TABLE projects        ADD COLUMN IF NOT EXISTS brand TEXT NOT NULL DEFAULT 'peny'`
+  await sql`ALTER TABLE budgets         ADD COLUMN IF NOT EXISTS brand TEXT NOT NULL DEFAULT 'peny'`
+  await sql`ALTER TABLE marketing_cards ADD COLUMN IF NOT EXISTS brand TEXT NOT NULL DEFAULT 'peny'`
+  await sql`ALTER TABLE contacts        DROP CONSTRAINT IF EXISTS contacts_brand_check`
+  await sql`ALTER TABLE projects        DROP CONSTRAINT IF EXISTS projects_brand_check`
+  await sql`ALTER TABLE budgets         DROP CONSTRAINT IF EXISTS budgets_brand_check`
+  await sql`ALTER TABLE marketing_cards DROP CONSTRAINT IF EXISTS marketing_cards_brand_check`
+  await sql`ALTER TABLE contacts        ADD CONSTRAINT contacts_brand_check        CHECK (brand IN ('peny','loop'))`
+  await sql`ALTER TABLE projects        ADD CONSTRAINT projects_brand_check        CHECK (brand IN ('peny','loop'))`
+  await sql`ALTER TABLE budgets         ADD CONSTRAINT budgets_brand_check         CHECK (brand IN ('peny','loop'))`
+  await sql`ALTER TABLE marketing_cards ADD CONSTRAINT marketing_cards_brand_check CHECK (brand IN ('peny','loop'))`
+  await sql`CREATE INDEX IF NOT EXISTS idx_contacts_brand        ON contacts(brand)`
+  await sql`CREATE INDEX IF NOT EXISTS idx_projects_brand        ON projects(brand)`
+  await sql`CREATE INDEX IF NOT EXISTS idx_budgets_brand         ON budgets(brand)`
+  await sql`CREATE INDEX IF NOT EXISTS idx_marketing_cards_brand ON marketing_cards(brand)`
 }
 
 // One-time demo data so the first visit to Planning isn't an empty screen.
@@ -444,9 +474,13 @@ export async function upsertSettings(workspaceId, data) {
 }
 
 // ── Contacts ──────────────────────────────────────────────────────────────────
-export async function getContacts(workspaceId) {
+export async function getContacts(workspaceId, brand) {
+  // Clients are brand-specific, but subcontractors are shared crew — they must
+  // stay visible under either brand, so the brand filter spares them.
+  const bc = brandCond(contacts.brand, brand)
+  const scope = bc ? or(bc, eq(contacts.type, 'subcontractor')) : undefined
   return db.select().from(contacts)
-    .where(eq(contacts.user_id, workspaceId))
+    .where(and(eq(contacts.user_id, workspaceId), scope))
     .orderBy(desc(contacts.created_at))
 }
 export async function createContact(workspaceId, data) {
@@ -464,9 +498,9 @@ export async function deleteContact(workspaceId, id) {
 }
 
 // ── Projects ──────────────────────────────────────────────────────────────────
-export async function getProjects(workspaceId) {
+export async function getProjects(workspaceId, brand) {
   const rows = await db.select().from(projects)
-    .where(eq(projects.user_id, workspaceId))
+    .where(and(eq(projects.user_id, workspaceId), brandCond(projects.brand, brand)))
     .orderBy(desc(projects.created_at))
 
   if (!rows.length) return []
@@ -524,9 +558,9 @@ export async function getBudgetIdsForProject(projectId) {
 }
 
 // ── Budgets ───────────────────────────────────────────────────────────────────
-export async function getBudgets(workspaceId) {
+export async function getBudgets(workspaceId, brand) {
   return db.select().from(budgets)
-    .where(eq(budgets.user_id, workspaceId))
+    .where(and(eq(budgets.user_id, workspaceId), brandCond(budgets.brand, brand)))
     .orderBy(desc(budgets.created_at))
 }
 export async function createBudget(workspaceId, data) {
@@ -1081,9 +1115,9 @@ export async function deleteUserNote(clerkId, id) {
 }
 
 // ── Marketing cards ───────────────────────────────────────────────────────────
-export async function getMarketingCards(workspaceId) {
+export async function getMarketingCards(workspaceId, brand) {
   return db.select().from(marketing_cards)
-    .where(eq(marketing_cards.user_id, workspaceId))
+    .where(and(eq(marketing_cards.user_id, workspaceId), brandCond(marketing_cards.brand, brand)))
     .orderBy(marketing_cards.sort_order, desc(marketing_cards.created_at))
 }
 export async function createMarketingCard(workspaceId, data) {

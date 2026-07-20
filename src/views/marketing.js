@@ -255,12 +255,16 @@ export class MarketingView {
     const isNew = !card
     const subTasks = card ? [...(card.sub_tasks || [])] : []
     const cardType = card?.card_type || 'ad-hoc'
+    // Brand: stamp the active brand when a single one is selected; ask (or show,
+    // on edit) otherwise. #mkt-brand always holds the correct value.
+    const cardBrand = card?.brand || this.app.brandForCreate() || 'peny'
+    const showBrand = this.app.brand === 'all' || !isNew
 
     const overlay = document.createElement('div')
     overlay.id = 'mkt-card-modal'
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(9,30,66,0.54);z-index:200;display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;overflow-y:auto'
 
-    const renderModal = (localTasks, localType) => {
+    const renderModal = (localTasks, localType, localBrand = cardBrand) => {
       const typeInfo = CARD_TYPES.find(t => t.id === localType) ?? CARD_TYPES[4]
       const defaults = DEFAULT_CHECKLISTS[localType] || []
       const hasDefaults = defaults.length > 0
@@ -303,6 +307,13 @@ export class MarketingView {
               <input id="mkt-due" type="date" value="${card?.due_date || ''}"
                 style="font-size:13px;padding:5px 8px;border:1px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);outline:none">
             </div>
+            <div id="mkt-brand-field" style="display:${showBrand ? 'flex' : 'none'};flex-direction:column;gap:4px;flex:1;min-width:110px">
+              <label style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Brand</label>
+              <select id="mkt-brand" style="font-size:13px;padding:5px 8px;border:1px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);outline:none">
+                <option value="peny"${localBrand === 'peny' ? ' selected' : ''}>Peny</option>
+                <option value="loop"${localBrand === 'loop' ? ' selected' : ''}>Loop</option>
+              </select>
+            </div>
           </div>
 
           <!-- Notes -->
@@ -340,20 +351,20 @@ export class MarketingView {
       overlay.querySelector('#mkt-type')?.addEventListener('change', e => {
         const newType = e.target.value
         const currentTasks = this._collectSubTasks(overlay)
-        renderModal(currentTasks, newType)
+        renderModal(currentTasks, newType, overlay.querySelector('#mkt-brand')?.value)
       })
 
       overlay.querySelector('#mkt-load-defaults')?.addEventListener('click', () => {
         const currentType = overlay.querySelector('#mkt-type')?.value || 'ad-hoc'
         const defaults = (DEFAULT_CHECKLISTS[currentType] || []).map(text => ({ id: uuid(), text, owner_id: '', due_date: '', done: false }))
-        renderModal(defaults, currentType)
+        renderModal(defaults, currentType, overlay.querySelector('#mkt-brand')?.value)
       })
 
       overlay.querySelector('#mkt-add-subtask')?.addEventListener('click', () => {
         const currentTasks = this._collectSubTasks(overlay)
         currentTasks.push({ id: uuid(), text: '', owner_id: '', due_date: '', done: false })
         const currentType = overlay.querySelector('#mkt-type')?.value || 'ad-hoc'
-        renderModal(currentTasks, currentType)
+        renderModal(currentTasks, currentType, overlay.querySelector('#mkt-brand')?.value)
         // Focus the new task text input
         setTimeout(() => {
           const rows = overlay.querySelectorAll('.mkt-st-text')
@@ -367,7 +378,7 @@ export class MarketingView {
           const currentTasks = this._collectSubTasks(overlay)
           currentTasks.splice(idx, 1)
           const currentType = overlay.querySelector('#mkt-type')?.value || 'ad-hoc'
-          renderModal(currentTasks, currentType)
+          renderModal(currentTasks, currentType, overlay.querySelector('#mkt-brand')?.value)
         })
       })
 
@@ -445,6 +456,7 @@ export class MarketingView {
       due_date:      overlay.querySelector('#mkt-due')?.value || null,
       notes:         overlay.querySelector('#mkt-notes')?.value?.trim() || null,
       sub_tasks:     this._collectSubTasks(overlay).filter(s => s.text),
+      brand:         overlay.querySelector('#mkt-brand')?.value || this.app.brandForCreate() || 'peny',
     }
 
     try {

@@ -79,6 +79,29 @@
   --shadow-lg: 0 4px 12px rgba(0,0,0,0.30), 0 16px 48px rgba(0,0,0,0.50);
 }
 
+/* ── Loop Creative brand tint ──
+   Loop's identity references the River Severn loop around Shrewsbury — a
+   teal/river accent that repaints the whole chrome so it's never ambiguous
+   which brand you're looking at. Peny keeps the default indigo; 'all' keeps
+   indigo too (the switcher badge disambiguates). Overrides the accent tokens
+   only, so every var(--accent) button, active nav item and tint follows. */
+:root[data-brand="loop"] {
+  --accent: #0D9488;
+  --accent-hover: #0F766E;
+  --accent-text: #ffffff;
+  --accent-subtle: rgba(13,148,136,0.12);
+  --accent-rgb: 13,148,136;
+  --sb-accent: #2DD4BF;
+  --sb-accent-wash: rgba(45,212,191,0.14);
+}
+:root[data-brand="loop"][data-theme="dark"] {
+  --accent: #2DD4BF;
+  --accent-hover: #5EEAD4;
+  --accent-text: #062B28;
+  --accent-subtle: rgba(45,212,191,0.16);
+  --accent-rgb: 45,212,191;
+}
+
 /* ════════════════════════════════════════════════════════════════════════
    BASE
    ════════════════════════════════════════════════════════════════════════ */
@@ -612,6 +635,37 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* ── Brand switcher (Peny / Loop / All) ── */
+.brand-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-pill);
+  padding: 2px;
+  flex-shrink: 0;
+}
+.brand-opt {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 3px 11px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  line-height: 1.5;
+  transition: background 0.12s, color 0.12s;
+}
+.brand-opt:hover { color: var(--text-primary); }
+/* Each option owns its colour when active, so the choice reads at a glance
+   independent of the app-wide accent tint. */
+.brand-opt[data-brand-opt="peny"].active { background: #4F46E5; color: #fff; }
+.brand-opt[data-brand-opt="loop"].active { background: #0D9488; color: #fff; }
+.brand-opt[data-brand-opt="all"].active  { background: var(--text-secondary); color: var(--bg-primary); }
+
 .search-wrap { position: relative; }
 .search-wrap input {
   padding: 7px 12px 7px 34px;

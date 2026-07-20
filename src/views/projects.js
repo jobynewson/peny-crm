@@ -421,6 +421,12 @@ export class ProjectsView {
                 ${STAGES.map(s=>`<option value="${s}">${s}</option>`).join('')}
               </select>
             </div>
+            <div class="field" id="pf-brand-field" style="display:none"><div class="field-label">Brand<span class="req">*</span></div>
+              <select id="pf-brand">
+                <option value="peny">Peny</option>
+                <option value="loop">Loop</option>
+              </select>
+            </div>
           </div>
           <div class="modal-footer">
             <button class="btn-cancel" data-close="proj-new-modal">Cancel</button>
@@ -466,6 +472,13 @@ export class ProjectsView {
     const aiToggle = el.querySelector('#pf-ai-toggle')
     if (aiToggle) aiToggle.textContent = 'Paste text'
     this._aiExtraction = null
+    // Brand: stamp the active brand automatically, or ask when viewing 'All'.
+    const brandField = el.querySelector('#pf-brand-field')
+    const activeBrand = this.app.brandForCreate()
+    if (brandField) {
+      if (activeBrand) { brandField.style.display = 'none'; el.querySelector('#pf-brand').value = activeBrand }
+      else { brandField.style.display = ''; el.querySelector('#pf-brand').value = 'peny' }
+    }
     // Store retainer flag on the modal for saveNew to read
     const modal = el.querySelector('#proj-new-modal')
     if (modal) modal.dataset.isRetainer = isRetainer ? '1' : ''
@@ -477,6 +490,8 @@ export class ProjectsView {
     if (!name) { this.app.toast('Please enter a project title'); return }
     const isRetainer = mc.querySelector('#proj-new-modal')?.dataset.isRetainer === '1'
     const today = new Date().toISOString().split('T')[0]
+    // #pf-brand carries the active brand (single-brand) or the user's pick ('All').
+    const brand = mc.querySelector('#pf-brand')?.value || this.app.brandForCreate() || 'peny'
 
     // If new contact accordion is open, create the contact first
     let clientId = mc.querySelector('#pf-client')?.value || null
@@ -502,6 +517,7 @@ export class ProjectsView {
           location:   null,
           type:       'brand',
           status:     'Active',
+          brand,
         })
         this.app.contacts.unshift(newContact)
         clientId = newContact.id
@@ -515,6 +531,7 @@ export class ProjectsView {
 
     const data = {
       name,
+      brand,
       client_id:    clientId,
       status:       isRetainer ? 'Enquiry' : (mc.querySelector('#pf-status')?.value || 'Enquiry'),
       brief:        mc.querySelector('#pf-brief')?.value.trim() || '',
@@ -1243,7 +1260,7 @@ export class ProjectsView {
     })
     mc.querySelector('#pv-duplicate')?.addEventListener('click', async () => {
       const copy = {
-        name: p.name + ' (copy)', status: 'Enquiry', brief: p.brief, notes: p.notes,
+        name: p.name + ' (copy)', status: 'Enquiry', brief: p.brief, notes: p.notes, brand: p.brand,
         client_id: p.client_id, project_type: p.project_type, shoot_start: p.shoot_start, shoot_end: p.shoot_end,
         location: p.location, deliverables: JSON.parse(JSON.stringify(p.deliverables||[])),
         crew: JSON.parse(JSON.stringify(p.crew||[])), shots: JSON.parse(JSON.stringify(p.shots||[])),
@@ -4131,7 +4148,7 @@ export class ProjectsView {
         btn.disabled = true; btn.textContent = 'Creating…'
         const { createBudget, linkBudgetToProject } = await import('../db/client.js')
         const [budget] = await createBudget(this.app.userId, {
-          name, client_id: p.client_id ?? null,
+          name, brand: p.brand, client_id: p.client_id ?? null,
           markup: 0, custom_pct: 0, travel_rate: 50, discount: 0,
           vat: false,
           signed_off: false,
@@ -4796,6 +4813,7 @@ export class ProjectsView {
           role:       c.role,
           type:       c.ctype,
           status:     'Active',
+          brand:      p.brand || 'peny',
           notes:      `Auto-added from project: ${p.name} (${c.crew_kind})`,
         })
         const created = Array.isArray(result) ? result[0] : result
@@ -4838,6 +4856,7 @@ export class ProjectsView {
       const parts = fullName.split(' ')
       const first = parts[0]
       const last = parts.slice(1).join(' ')
+      const projBrand = this.app.projects.find(x => x.id === this.currentId)?.brand || this.app.brandForCreate() || 'peny'
       try {
         const { createContact } = await import('../db/client.js')
         const result = await createContact(this.app.userId, {
@@ -4849,6 +4868,7 @@ export class ProjectsView {
           role:       newRole,
           type:       contactType,
           status:     'Active',
+          brand:      projBrand,
           notes:      `Auto-added from shoot crew (${crewType})`,
         })
         const created = Array.isArray(result) ? result[0] : result

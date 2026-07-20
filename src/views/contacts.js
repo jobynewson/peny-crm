@@ -131,6 +131,12 @@ export class ContactsView {
                 ${['Active','Warm','Cold','Retired'].map(s=>`<option value="${s}" ${c?.status===s?'selected':''}>${s==='Warm'?'Warm lead':s}</option>`).join('')}
               </select>
             </div>
+            <div class="field" id="cf-brand-field" style="display:none"><div class="field-label">Brand<span class="req">*</span></div>
+              <select id="cf-brand">
+                <option value="peny">Peny</option>
+                <option value="loop">Loop</option>
+              </select>
+            </div>
           </div>
           <div class="modal-footer">
             <button class="btn-cancel" data-close="contact-modal">Cancel</button>
@@ -391,6 +397,11 @@ export class ContactsView {
     })
     mc.querySelector('#cf-type').value = 'brand'
     mc.querySelector('#cf-status').value = 'Active'
+    // Brand: stamp the active brand automatically, or ask when viewing 'All'.
+    const brandField = mc.querySelector('#cf-brand-field')
+    const activeBrand = this.app.brandForCreate()
+    if (activeBrand) { brandField.style.display = 'none'; mc.querySelector('#cf-brand').value = activeBrand }
+    else { brandField.style.display = ''; mc.querySelector('#cf-brand').value = 'peny' }
     mc.querySelector('#contact-modal')?.classList.add('open')
   }
 
@@ -408,6 +419,9 @@ export class ContactsView {
     mc.querySelector('#cf-location').value = c.location ?? ''
     mc.querySelector('#cf-type').value   = c.type       ?? 'brand'
     mc.querySelector('#cf-status').value = c.status     ?? 'Active'
+    // Show the brand on edit (prefilled) so it can be re-assigned if needed.
+    mc.querySelector('#cf-brand-field').style.display = ''
+    mc.querySelector('#cf-brand').value = c.brand ?? 'peny'
     mc.querySelector('#contact-modal')?.classList.add('open')
   }
 
@@ -448,6 +462,10 @@ export class ContactsView {
       location: mc.querySelector('#cf-location')?.value.trim() || null,
       type:     mc.querySelector('#cf-type')?.value   ?? 'brand',
       status:   mc.querySelector('#cf-status')?.value ?? 'Active',
+      // #cf-brand carries the right value in every path: the active brand when a
+      // single one is selected, the record's brand on edit, or the user's pick
+      // when creating under 'All'.
+      brand:    mc.querySelector('#cf-brand')?.value ?? 'peny',
     }
     await this.app.withBusy(mc.querySelector('#contact-save-btn'), async () => {
     try {
