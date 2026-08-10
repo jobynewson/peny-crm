@@ -172,6 +172,8 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
   implementations — see "Kanban boards" below.
 - `password-manager.js` - Password management
 - `offload-log.js` - Offload Log (read-only table of backup reports from Fence)
+- `todo.js` - Personal to-do list on the Dashboard — see "Dashboard to-do list"
+  below. Not a nav item; renders as a Dashboard section only.
 
 ### Kanban boards
 There is no shared kanban component — three independent implementations, each
@@ -191,3 +193,32 @@ above, a style or UX change to one should normally be ported to the other two:
 All three use the same "insert between neighbours, renumber the column when
 gaps run out" pattern for persisting drag order — see `_moveCard` /
 `_moveProjectCard` in the respective view files.
+
+### Dashboard to-do list
+`src/views/todo.js` renders one list on the Dashboard holding two kinds of row:
+- **Manual** — typed into the list, stored in `user_todos` (private per person,
+  keyed by Clerk ID like `user_notes`). Title, optional due date, done flag.
+- **Assigned** — outstanding tasks allocated to that person *elsewhere in the
+  app*. Gathered on each render and **never copied into `user_todos`** — the
+  source feature stays the single owner of the data.
+
+`collectAssignedTasks()` in `src/utils/assigned-tasks.js` is the one place that
+knows how each feature spells "allocated to me" (pure, unit-tested in
+`assigned-tasks.test.js`, run with `npm test`):
+
+| Source | Field | ID type | Tickable? |
+|---|---|---|---|
+| `projects.deliverables` / `.monthly_deliverables` | `assignee_id` | `app_users.id` | yes |
+| `pps_phases.blocks[]` (deadline blocks) | `assignee_id` | `app_users.id` | yes |
+| `marketing_cards.sub_tasks[]` | `owner_id` | Clerk ID | yes |
+| `canvas_items.sub_tasks[]` (`kind:'todo'`) | `owner_id` | Clerk ID | yes |
+| `board_cards` | `assignee_id` | `app_users.id` | no — column is the status |
+| `team_calendar_entries` (deadlines) | `assignee_id` | `app_users.id` | no — no completion field |
+
+Ticking a tickable assigned row writes straight back to its source table
+(`_completeAssigned`); the two read-only sources show a dashed marker plus a ↗
+that deep-links to where the task lives. **Adding an assignable task to a new
+feature means adding a branch to `collectAssignedTasks` (plus a test), or it
+won't reach anyone's to-do list.** Board cards and canvas checklists need two
+extra queries (`getAssignedBoardCards`, `getCanvasChecklists`); every other
+source is already in memory on the App instance.

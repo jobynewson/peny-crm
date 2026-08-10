@@ -5,7 +5,7 @@ import * as schema from './schema.js'
 import {
   contacts, projects, budgets, settings, workspace,
   project_budgets, budget_versions, activity_log,
-  app_users, time_entries, user_notes, social_posts, marketing_cards,
+  app_users, time_entries, user_notes, user_todos, social_posts, marketing_cards,
   story_plans, credentials, team_calendar_entries,
   post_production_schedules, pps_phases,
   expense_entries, expense_submissions,
@@ -368,6 +368,21 @@ export async function runMigrations() {
   await sql`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS invoiced BOOLEAN NOT NULL DEFAULT false`
   await sql`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS invoiced_at TIMESTAMPTZ`
   await sql`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS invoiced_by TEXT`
+
+  // ── Personal dashboard to-do list (private per user) ───────────────────────
+  await sql`
+    CREATE TABLE IF NOT EXISTS user_todos (
+      id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      clerk_id   TEXT NOT NULL,
+      title      TEXT NOT NULL DEFAULT '',
+      due_date   DATE,
+      done       BOOLEAN NOT NULL DEFAULT false,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS user_todos_clerk_idx ON user_todos (clerk_id)`
 }
 
 // One-time demo data so the first visit to Planning isn't an empty screen.
@@ -1078,6 +1093,79 @@ export async function updateUserNote(clerkId, id, data) {
 export async function deleteUserNote(clerkId, id) {
   return db.delete(user_notes)
     .where(and(eq(user_notes.id, id), eq(user_notes.clerk_id, clerkId)))
+}
+
+// ── User to-dos (Dashboard personal list) ─────────────────────────────────────
+// Hand-typed rows only — see collectAssignedTasks() for the tasks pulled in
+// from the rest of the app. Every query is scoped by Clerk ID so one user can
+// never read or write another's list.
+export async function getUserTodos(clerkId) {
+  return db.select().from(user_todos)
+    .where(eq(user_todos.clerk_id, clerkId))
+    .orderBy(user_todos.sort_order, desc(user_todos.created_at))
+}
+export async function createUserTodo(clerkId, data = {}) {
+  const [row] = await db.insert(user_todos)
+    .values({
+      clerk_id: clerkId,
+      title: data.title ?? '',
+      due_date: data.due_date || null,
+      done: data.done ?? false,
+      sort_order: data.sort_order ?? 0,
+    })
+    .returning()
+  return row
+}
+export async function updateUserTodo(clerkId, id, data) {
+  const [row] = await db.update(user_todos)
+    .set({ ...data, updated_at: new Date() })
+    .where(and(eq(user_todos.id, id), eq(user_todos.clerk_id, clerkId)))
+    .returning()
+  return row
+}
+export async function deleteUserTodo(clerkId, id) {
+  return db.delete(user_todos)
+    .where(and(eq(user_todos.id, id), eq(user_todos.clerk_id, clerkId)))
+}
+export async function deleteDoneUserTodos(clerkId) {
+  return db.delete(user_todos)
+    .where(and(eq(user_todos.clerk_id, clerkId), eq(user_todos.done, true)))
+}
+
+// ── Tasks allocated to a user elsewhere in the app ────────────────────────────
+// Two sources the dashboard doesn't already hold in memory. Everything else the
+// personal to-do list aggregates (deliverables, marketing sub-tasks, PPS blocks,
+// calendar deadlines) is already loaded on the App instance.
+
+// Planning board cards assigned to one person. The column name comes back with
+// each card because a kanban card has no done flag of its own — its column is
+// its status, so the collector drops cards already sitting in a "Done" column.
+export async function getAssignedBoardCards(workspaceId, appUserId) {
+  if (!appUserId) return []
+  return sql`
+    SELECT c.id, c.title, c.due_date, c.board_id,
+           b.name AS board_name, col.name AS column_name
+    FROM board_cards c
+    JOIN boards b          ON b.id = c.board_id
+    JOIN board_columns col ON col.id = c.column_id
+    WHERE b.user_id = ${workspaceId}
+      AND c.assignee_id = ${appUserId}
+    ORDER BY c.due_date NULLS LAST
+  `
+}
+
+// Canvas checklist ('todo' kind) rows across the workspace. Sub-task ownership
+// is a Clerk ID inside the JSON, so the per-owner filter happens in the
+// collector — this just fetches the non-empty checklists.
+export async function getCanvasChecklists(workspaceId) {
+  return sql`
+    SELECT ci.id, ci.sub_tasks, c.id AS canvas_id, c.name AS canvas_name
+    FROM canvas_items ci
+    JOIN canvases c ON c.id = ci.canvas_id
+    WHERE c.user_id = ${workspaceId}
+      AND ci.kind = 'todo'
+      AND jsonb_array_length(ci.sub_tasks) > 0
+  `
 }
 
 // ── Marketing cards ───────────────────────────────────────────────────────────

@@ -631,6 +631,21 @@ export const user_notes = pgTable('user_notes', {
   updated_at: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+// ── User to-dos (private per user, keyed by Clerk ID) ─────────────────────────
+// The Dashboard's personal to-do list. Only hand-typed rows are stored here —
+// tasks allocated to the user elsewhere (deliverables, marketing sub-tasks,
+// board cards, …) are gathered at read time by collectAssignedTasks() in
+// src/utils/assigned-tasks.js and never copied in.
+export const user_todos = pgTable('user_todos', {
+  id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  clerk_id:   text('clerk_id').notNull(),
+  title:      text('title').notNull().default(''),
+  due_date:   date('due_date'),
+  done:       boolean('done').notNull().default(false),
+  sort_order: integer('sort_order').notNull().default(0),
+  ...timestamps,
+})
+
 // ── Offload Log ───────────────────────────────────────────────────────────────
 // Backup reports received from Fence (our internal file-transfer tool) when a
 // project is offloaded from the server to external HDDs. Fully standalone — not

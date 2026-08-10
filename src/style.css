@@ -1094,6 +1094,43 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .db-enq-row:hover { background: var(--bg-secondary); }
 .db-enq-brief { font-size: 11px; color: var(--text-tertiary); flex: 1; min-width: 100%; margin-top: 2px; }
 
+/* ── Personal to-do list ── */
+/* One list holding two kinds of row: manual to-dos (editable text + date) and
+   tasks allocated to the user elsewhere in the app (static text + source chip
+   + due pill). Both use the same column slots so the list reads as one thing. */
+.todo-list { display: flex; flex-direction: column; border: 1px solid var(--border-light); border-radius: var(--radius-lg); background: var(--bg-primary); box-shadow: var(--shadow-sm); max-height: 520px; overflow-y: auto; }
+.todo-add { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border-light); background: var(--bg-primary); position: sticky; top: 0; z-index: 1; }
+.todo-new-text { flex: 1; min-width: 0; font-size: 13px; padding: 6px 10px; border: 1px solid var(--border-med); border-radius: var(--radius-md); background: var(--bg-secondary); color: var(--text-primary); font-family: var(--font); outline: none; transition: border 0.12s, background 0.12s; }
+.todo-new-text:focus { border-color: var(--accent); background: var(--bg-primary); }
+.todo-add .todo-due { border-color: var(--border-med); background: var(--bg-secondary); }
+.todo-add-btn { flex-shrink: 0; font-size: 12px; padding: 6px 14px; }
+.todo-row { display: flex; align-items: center; gap: 8px; padding: 5px 12px; border-bottom: 1px solid var(--border-light); min-height: 38px; transition: background 0.1s; }
+.todo-row:last-child { border-bottom: none; }
+.todo-row:hover { background: var(--bg-secondary); }
+.todo-row--done { opacity: 0.5; }
+.todo-row--done .todo-text, .todo-row--done .todo-text-static { text-decoration: line-through; color: var(--text-tertiary); }
+.todo-check { width: 14px; height: 14px; flex-shrink: 0; cursor: pointer; accent-color: var(--success); }
+/* Sources with no completion flag of their own (board cards, calendar
+   deadlines) get a dashed marker instead of a tick you can't save. */
+.todo-bullet { width: 14px; height: 14px; flex-shrink: 0; border-radius: 50%; border: 1.5px dashed var(--border-med); box-sizing: border-box; }
+.todo-text { flex: 1; min-width: 0; font-size: 13px; padding: 4px 6px; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--text-primary); font-family: var(--font); outline: none; transition: border 0.12s, background 0.12s; }
+.todo-text:hover { border-color: var(--border-light); }
+.todo-text:focus { border-color: var(--accent); background: var(--bg-primary); }
+.todo-text-static { flex: 1; min-width: 0; font-size: 13px; color: var(--text-primary); padding: 4px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.todo-chip { font-size: 10px; color: var(--text-tertiary); background: var(--bg-tertiary); border-radius: var(--radius-pill); padding: 2px 8px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+.todo-due { font-size: 11px; width: 120px; flex-shrink: 0; padding: 4px 6px; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--text-secondary); font-family: var(--font); outline: none; transition: border 0.12s, background 0.12s; }
+.todo-due:hover { border-color: var(--border-light); }
+.todo-due:focus { border-color: var(--accent); background: var(--bg-primary); }
+/* An unset date shouldn't shout its dd/mm/yyyy placeholder at every row — fade
+   it back until the row is hovered or the picker has focus. */
+.todo-due--empty { opacity: 0.3; }
+.todo-row:hover .todo-due--empty, .todo-add:hover .todo-due--empty, .todo-due--empty:focus { opacity: 1; }
+.todo-due-slot { width: 120px; flex-shrink: 0; display: flex; justify-content: flex-end; padding-right: 6px; }
+.todo-del, .todo-open { background: none; border: none; cursor: pointer; color: var(--text-tertiary); font-size: 14px; line-height: 1; padding: 3px 6px; flex-shrink: 0; border-radius: var(--radius-sm); font-family: var(--font); transition: color 0.12s, background 0.12s; }
+.todo-del:hover { color: var(--danger); background: var(--bg-tertiary); }
+.todo-open:hover { color: var(--accent); background: var(--bg-tertiary); }
+.todo-empty { font-size: 12px; color: var(--text-tertiary); padding: 14px; }
+
 /* ── Countdown widget ── */
 .cd-widget { background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 28px 24px 24px; margin-bottom: 24px; text-align: center; box-shadow: var(--shadow-sm); position: relative; overflow: hidden; }
 .cd-name { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 16px; }

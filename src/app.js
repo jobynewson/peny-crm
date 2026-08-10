@@ -14,6 +14,7 @@ import { ExpensesView } from './views/expenses.js'
 import { OffloadLogView } from './views/offload-log.js'
 import { BoardsView } from './views/boards.js'
 import { CanvasView } from './views/canvas.js'
+import { TodoView } from './views/todo.js'
 
 export class App {
   constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, leaveRequests, publicHolidays, onSignOut }) {
@@ -48,6 +49,7 @@ export class App {
     this.offloadLogView       = new OffloadLogView(this)
     this.boardsView           = new BoardsView(this)
     this.canvasView           = new CanvasView(this)
+    this.todoView             = new TodoView(this)
     window.app = this
   }
 
@@ -1085,6 +1087,7 @@ export class App {
         setTimeout(() => document.querySelector('#topbar-btn')?.click(), 50)
       })
       this.teamCalendarView.renderDashboardSection(mc)
+      this.todoView.renderDashboardSection(mc)
       this._mountCountdownWidget(mc)
       this._mountDaysSinceWidget(mc)
       return
@@ -1581,6 +1584,7 @@ export class App {
       </div>`
 
     this.teamCalendarView.renderDashboardSection(mc)
+    this.todoView.renderDashboardSection(mc)
     this._mountCountdownWidget(mc)
     this._mountDaysSinceWidget(mc)
 
