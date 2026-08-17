@@ -918,6 +918,12 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .mkt-card--dragging { opacity: 0.4; }
 .mkt-card--over { box-shadow: 0 -3px 0 0 var(--accent); }
 
+/* Marketing kanban — mobile swipe-paging indicator (row itself becomes a
+   snap-scrolling row of wider columns at the mobile breakpoint above) */
+.mkt-kanban-dots { display: none; justify-content: center; gap: 6px; margin-top: 12px; }
+.mkt-kanban-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border-med); border: none; padding: 0; cursor: pointer; transition: background 0.15s, transform 0.15s; }
+.mkt-kanban-dot.active { background: var(--accent); transform: scale(1.35); }
+
 /* ════════════════════════════════════════════════════════════════════════
    BUDGETS
    ════════════════════════════════════════════════════════════════════════ */
@@ -977,6 +983,15 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .proj-sidebar.collapsed { width: 0; overflow: hidden; opacity: 0; pointer-events: none; }
 .proj-tab-bar { display: flex; gap: 0; border-bottom: 1px solid var(--border-light); margin-bottom: 20px; overflow-x: auto; scrollbar-width: none; }
 .proj-tab-bar::-webkit-scrollbar { display: none; }
+/* Edge-fade scroll affordance — the bar's native scrollbar is hidden above,
+   so this is the only cue when tabs overflow. JS only ever adds the
+   --visible modifier when there's real overflow to scroll to, so this is a
+   no-op at any width where all tabs already fit. */
+.proj-tab-bar-wrap { position: relative; }
+.proj-tab-fade { position: absolute; top: 0; bottom: 0; width: 24px; pointer-events: none; opacity: 0; transition: opacity 0.15s; z-index: 1; }
+.proj-tab-fade--left  { left: 0;  background: linear-gradient(to right, var(--bg-primary), transparent); }
+.proj-tab-fade--right { right: 0; background: linear-gradient(to left,  var(--bg-primary), transparent); }
+.proj-tab-fade--visible { opacity: 1; }
 .proj-tab {
   padding: 10px 16px;
   font-size: 13px;
@@ -1622,6 +1637,11 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .cv-zoom button:hover { background: var(--bg-secondary); color: var(--text-primary); }
 #cv-zoom-pct { font-size: 11px; }
 
+/* Team calendar — mobile single-person switcher (hidden on desktop, where
+   the full grid shows everyone as columns already) */
+.tc-mobile-switcher { display: none; margin-bottom: 8px; }
+.tc-mobile-switcher select { width: 100%; }
+
 /* ════════════════════════════════════════════════════════════════════════
    MISC — resize handles, leave fields
    ════════════════════════════════════════════════════════════════════════ */
@@ -1783,6 +1803,7 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
   .topbar { padding: 0 12px !important; gap: 6px; }
   .content { padding: 16px !important; }
   .stats-row { grid-template-columns: repeat(2, 1fr) !important; }
+  .db-quad-row { grid-template-columns: 1fr !important; }
   .kanban-wrap {
     display: flex !important;
     overflow-x: auto;
@@ -1795,8 +1816,14 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
   .field-row { grid-template-columns: 1fr !important; }
   .budget-layout { flex-direction: column !important; }
   .budget-sidebar-panel { width: 100% !important; }
-  .proj-layout { flex-direction: column !important; }
+  .proj-layout { flex-direction: column !important; align-items: stretch !important; }
+  .proj-main { min-width: 0 !important; }
   .proj-sidebar { width: 100% !important; }
+  /* A sidebar collapsed on desktop must not carry that state into the
+     stacked mobile layout — force it visible regardless of the stored
+     preference (the collapse toggle itself is hidden below). */
+  .proj-sidebar.collapsed { opacity: 1 !important; pointer-events: auto !important; overflow: visible !important; }
+  .proj-sidebar-toggle { display: none !important; }
   .search-wrap input { width: 130px !important; }
   .topbar-title { font-size: 14px !important; }
   /* Contact table: show only Name + Actions columns */
@@ -1804,6 +1831,21 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
   .col-header > *:nth-child(2), .col-header > *:nth-child(3), .col-header > *:nth-child(4) { display: none !important; }
   .contact-row { grid-template-columns: 1fr 80px !important; }
   .contact-row > *:nth-child(2), .contact-row > *:nth-child(3), .contact-row > *:nth-child(4) { display: none !important; }
+  /* Team calendar: reveal the single-person switcher (grid itself is
+     already filtered to one person's columns in JS at this breakpoint) */
+  .tc-mobile-switcher { display: block; }
+  /* Marketing kanban: widen columns into swipeable, snap-scrolling pages
+     instead of squeezing all 5 into equal fractions */
+  .mkt-kanban-row {
+    grid-template-columns: none !important;
+    grid-auto-flow: column !important;
+    grid-auto-columns: minmax(240px, 78vw) !important;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+  }
+  .mkt-kanban-row .mkt-col { scroll-snap-align: start; }
+  .mkt-kanban-dots { display: flex !important; }
 }
 
 /* ── ≤480px (small mobile) ── */

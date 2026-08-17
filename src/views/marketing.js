@@ -85,7 +85,7 @@ export class MarketingView {
 
   renderKanban(mc) {
     mc.innerHTML = `
-      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;align-items:start;overflow-x:auto;padding-bottom:24px">
+      <div class="mkt-kanban-row" id="mkt-kanban-row" style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;align-items:start;overflow-x:auto;padding-bottom:24px">
         ${COLUMNS.map(col => {
           const colCards = this._marketingCardsFor(col.id)
           return `
@@ -104,6 +104,9 @@ export class MarketingView {
             </button>
           </div>`
         }).join('')}
+      </div>
+      <div class="mkt-kanban-dots" id="mkt-kanban-dots">
+        ${COLUMNS.map((col, i) => `<button class="mkt-kanban-dot${i === 0 ? ' active' : ''}" data-dot-idx="${i}" aria-label="Jump to ${esc(col.label)}"></button>`).join('')}
       </div>`
 
     mc.querySelectorAll('.mkt-card').forEach(el => {
@@ -118,6 +121,36 @@ export class MarketingView {
     })
 
     this._bindKanbanDnD(mc)
+    this._bindKanbanPagingDots(mc)
+  }
+
+  // Mobile swipe-paging indicator: highlights the dot for whichever column
+  // is currently scrolled into view, and jump-scrolls on click.
+  _bindKanbanPagingDots(mc) {
+    const row  = mc.querySelector('#mkt-kanban-row')
+    const dots = [...mc.querySelectorAll('.mkt-kanban-dot')]
+    if (!row || !dots.length) return
+    const cols = [...row.querySelectorAll('.mkt-col')]
+
+    let ticking = false
+    row.addEventListener('scroll', () => {
+      if (ticking) return
+      ticking = true
+      requestAnimationFrame(() => {
+        const rowLeft = row.getBoundingClientRect().left
+        let closest = 0, closestDist = Infinity
+        cols.forEach((col, i) => {
+          const dist = Math.abs(col.getBoundingClientRect().left - rowLeft)
+          if (dist < closestDist) { closestDist = dist; closest = i }
+        })
+        dots.forEach((d, i) => d.classList.toggle('active', i === closest))
+        ticking = false
+      })
+    }, { passive: true })
+
+    dots.forEach((dot, i) => {
+      dot.addEventListener('click', () => cols[i]?.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' }))
+    })
   }
 
   _bindKanbanDnD(mc) {
