@@ -1494,7 +1494,7 @@ export class App {
           </div>`
         }).join('')
 
-        return `<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:20px;margin-bottom:28px;align-items:flex-start">
+        return `<div class="db-quad-row" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:20px;margin-bottom:28px;align-items:flex-start">
 
           <!-- Marketing Tasks -->
           <div>

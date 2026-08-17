@@ -16,6 +16,53 @@ export class TeamCalendarView {
     // Axis orientation: false = dates down the rows, people across the columns
     // (default); true = people down the rows, dates across the columns.
     this._axisSwapped = localStorage.getItem('tc-axis-swapped') === 'true'
+    // Below the mobile breakpoint the spreadsheet grid narrows to a single
+    // person's column at a time, switched via a dropdown.
+    this._mobileUserId = localStorage.getItem('tc-mobile-user') || null
+    this._mqBound = false
+  }
+
+  // ── Mobile single-person view ─────────────────────────────────────────────────
+
+  _isMobile() {
+    return window.matchMedia('(max-width: 768px)').matches
+  }
+
+  // The user list to actually render as grid columns/rows — everyone on
+  // desktop, or just the selected person below the mobile breakpoint (the
+  // grid, chips, drag/resize and overlay code all work unmodified on a
+  // filtered 1-person list; see _mobileSwitcherHtml for the person picker).
+  _gridUsers() {
+    const users = this.app.allUsers || []
+    if (!this._isMobile() || users.length <= 1) return users
+    const sel = users.find(u => u.id === this._mobileUserId) || users[0]
+    return [sel]
+  }
+
+  _mobileSwitcherHtml() {
+    const users = this.app.allUsers || []
+    if (!this._isMobile() || users.length <= 1) return ''
+    const sel = users.find(u => u.id === this._mobileUserId) || users[0]
+    return `
+      <div class="tc-mobile-switcher">
+        <select id="tc-mobile-user-select" class="status-select">
+          ${users.map(u => `<option value="${u.id}" ${u.id === sel.id ? 'selected' : ''}>${esc(u.name || u.email.split('@')[0])}</option>`).join('')}
+        </select>
+      </div>`
+  }
+
+  // Re-renders whichever grid is currently mounted when the viewport crosses
+  // the mobile breakpoint (bound once — looked up fresh each fire, same
+  // pattern as _bindClipboardEscape, so it survives navigating away and back).
+  _bindResponsiveRefresh() {
+    if (this._mqBound) return
+    this._mqBound = true
+    const mq = window.matchMedia('(max-width: 768px)')
+    const handler = () => {
+      const section = document.querySelector('#tc-section')
+      if (section) this._refreshGrid(section)
+    }
+    mq.addEventListener ? mq.addEventListener('change', handler) : mq.addListener(handler)
   }
 
   // ── Date helpers ──────────────────────────────────────────────────────────────
@@ -199,12 +246,12 @@ export class TeamCalendarView {
       }
     }
 
-    const users   = this.app.allUsers || []
     const days    = this._activeDays()
     const entries = this.app.teamCalendarEntries || []
 
-    gridWrap.innerHTML = this._renderGrid(days, users, entries)
+    gridWrap.innerHTML = this._mobileSwitcherHtml() + this._renderGrid(days, this._gridUsers(), entries)
     this._bindGrid(gridWrap, section)
+    this._bindResponsiveRefresh()
   }
 
   _renderGrid(days, users, entries) {
@@ -439,7 +486,7 @@ export class TeamCalendarView {
       if (e.key === 'Escape' && this._clipboard) {
         this._clipboard = null
         const gw = document.querySelector('#tc-grid-wrap')
-        if (gw) { const s = document.querySelector('#tc-section'); if (s) { gw.innerHTML = this._renderGrid(this._activeDays(), this.app.allUsers || [], this.app.teamCalendarEntries || []); this._bindGrid(gw, s) } }
+        if (gw) { const s = document.querySelector('#tc-section'); if (s) { gw.innerHTML = this._mobileSwitcherHtml() + this._renderGrid(this._activeDays(), this._gridUsers(), this.app.teamCalendarEntries || []); this._bindGrid(gw, s) } }
       }
     })
   }
@@ -459,6 +506,12 @@ export class TeamCalendarView {
 
   _bindGrid(gridWrap, section) {
     this._lastDays = this._activeDays()
+
+    gridWrap.querySelector('#tc-mobile-user-select')?.addEventListener('change', e => {
+      this._mobileUserId = e.target.value
+      localStorage.setItem('tc-mobile-user', this._mobileUserId)
+      this._refreshGrid(section)
+    })
 
     gridWrap.querySelector('#tc-help')?.addEventListener('click', e => {
       e.stopPropagation()
@@ -947,7 +1000,7 @@ export class TeamCalendarView {
     const gw = section.querySelector('#tc-grid-wrap')
     if (!gw) return
     const days = this._activeDays()
-    gw.innerHTML = this._renderGrid(days, this.app.allUsers || [], this.app.teamCalendarEntries || [])
+    gw.innerHTML = this._mobileSwitcherHtml() + this._renderGrid(days, this._gridUsers(), this.app.teamCalendarEntries || [])
     this._bindGrid(gw, section)
     // Update header count (dashboard week section only)
     if (this._mode !== 'month') this._updateHeaderCount(section, days)

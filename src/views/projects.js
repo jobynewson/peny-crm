@@ -611,10 +611,14 @@ export class ProjectsView {
       <div class="proj-layout">
         <div class="proj-main">
           <div style="display:flex;align-items:center;gap:0;border-bottom:1px solid var(--border-light);margin-bottom:20px">
-            <div class="proj-tab-bar" style="flex:1;border-bottom:none">
-              ${TABS.map(t => t.disabled
-                ? `<button class="proj-tab proj-tab--disabled" disabled title="Coming soon">${t.label} <span class="proj-tab-soon">Soon</span></button>`
-                : `<button class="proj-tab ${t.id===tab?'active':''}" data-tab="${t.id}">${t.label}</button>`).join('')}
+            <div class="proj-tab-bar-wrap" style="flex:1;min-width:0">
+              <div class="proj-tab-bar" id="proj-tab-bar" style="border-bottom:none">
+                ${TABS.map(t => t.disabled
+                  ? `<button class="proj-tab proj-tab--disabled" disabled title="Coming soon">${t.label} <span class="proj-tab-soon">Soon</span></button>`
+                  : `<button class="proj-tab ${t.id===tab?'active':''}" data-tab="${t.id}">${t.label}</button>`).join('')}
+              </div>
+              <div class="proj-tab-fade proj-tab-fade--left" aria-hidden="true"></div>
+              <div class="proj-tab-fade proj-tab-fade--right" aria-hidden="true"></div>
             </div>
             <button class="proj-sidebar-toggle" id="sidebar-toggle" title="${sidebarCollapsed?'Show sidebar':'Hide sidebar'}">${sidebarCollapsed?'▷':'◁'}</button>
           </div>
@@ -658,6 +662,9 @@ export class ProjectsView {
 
     // Shared bindings (header row)
     this._bindViewerHeader(mc, p)
+    // Tab bar scroll-fade affordance (mobile — the bar itself already
+    // scrolls horizontally, this just makes that discoverable)
+    this._bindTabBarFade(mc)
     // Tab-specific bindings
     this._bindTabContent(mc, tab, p, cl, linked)
     // Sidebar bindings
@@ -1208,6 +1215,24 @@ export class ProjectsView {
     mc.querySelectorAll('[data-open-budget]').forEach(el => {
       el.addEventListener('click', () => this.app.openBudget(el.dataset.openBudget))
     })
+  }
+
+  // Shows/hides the tab bar's left/right edge fades based on scroll
+  // position, so the (deliberately hidden native scrollbar) tab bar reads
+  // as scrollable on mobile instead of just looking cut off.
+  _bindTabBarFade(mc) {
+    const bar  = mc.querySelector('#proj-tab-bar')
+    const wrap = mc.querySelector('.proj-tab-bar-wrap')
+    if (!bar || !wrap) return
+    const leftFade  = wrap.querySelector('.proj-tab-fade--left')
+    const rightFade = wrap.querySelector('.proj-tab-fade--right')
+    const update = () => {
+      const max = bar.scrollWidth - bar.clientWidth
+      leftFade?.classList.toggle('proj-tab-fade--visible', bar.scrollLeft > 4)
+      rightFade?.classList.toggle('proj-tab-fade--visible', bar.scrollLeft < max - 4)
+    }
+    update()
+    bar.addEventListener('scroll', update, { passive: true })
   }
 
   _bindViewerHeader(mc, p) {
