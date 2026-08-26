@@ -76,43 +76,21 @@ const { budget, sections, client, studio } = await res.json()
 const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 
 // ── Currency / FX ─────────────────────────────────────────────────────────────
-// The quote is issued in GBP; this lets the client view it converted to USD/EUR
-// using live ECB reference rates (free, no-key Frankfurter API) with an offline
-// fallback. gbp() honours the chosen display currency set via setMoney().
+// The quote is issued in GBP; the rate used to convert to USD/EUR was locked in
+// when this quote was created (or last refreshed by the studio), so what's shown
+// here matches what was actually quoted rather than drifting with the market.
+// gbp() honours the chosen display currency set via setMoney().
 const CURRENCIES = { GBP:{symbol:'£'}, USD:{symbol:'$'}, EUR:{symbol:'€'} }
-const FX_FALLBACK = { USD: 1.27, EUR: 1.17 }   // indicative GBP→X rates if live rates can't be fetched
+const FX_FALLBACK = { USD: 1.27, EUR: 1.17 }   // indicative GBP→X rates; used only if this quote predates rate-locking
 let MONEY = { code:'GBP', symbol:'£', rate:1 }
-let fxRates = null, fxMeta = null
+const fxRates = budget.fx_snapshot?.rates || null
+const fxMeta  = budget.fx_snapshot || null
 function setMoney(code, rates) {
   if (!CURRENCIES[code]) code = 'GBP'
   const rate = code === 'GBP' ? 1 : (Number(rates?.[code]) || FX_FALLBACK[code] || 1)
   MONEY = { code, symbol: CURRENCIES[code].symbol, rate }
 }
 const gbp = n => MONEY.symbol + (Math.round((Number(n)||0) * MONEY.rate)).toLocaleString('en-GB')
-
-async function ensureRates() {
-  const FRESH = 6 * 60 * 60 * 1000  // 6h
-  const fresh = m => m && m.source === 'ECB' && (Date.now() - m.ts) < FRESH
-  if (fresh(fxMeta)) return fxRates
-  try {
-    const c = JSON.parse(localStorage.getItem('slate_fx_gbp') || 'null')
-    if (fresh(c)) { fxRates = c.rates; fxMeta = c; return fxRates }
-  } catch {}
-  try {
-    const r = await fetch('https://api.frankfurter.app/latest?from=GBP&to=USD,EUR')
-    if (!r.ok) throw new Error('FX HTTP ' + r.status)
-    const d = await r.json()
-    const rates = { USD: Number(d?.rates?.USD), EUR: Number(d?.rates?.EUR) }
-    if (!rates.USD || !rates.EUR) throw new Error('FX rates missing')
-    fxRates = rates
-    fxMeta = { ts: Date.now(), date: d.date || null, source: 'ECB', rates }
-    try { localStorage.setItem('slate_fx_gbp', JSON.stringify(fxMeta)) } catch {}
-  } catch (e) {
-    if (!fxRates) fxRates = { ...FX_FALLBACK }
-    fxMeta = { ts: Date.now(), date: null, source: 'estimate', rates: fxRates }
-  }
-  return fxRates
-}
 
 const fmtDate = s => s ? new Date(s).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}) : ''
 
@@ -157,9 +135,9 @@ if (!CURRENCIES[ccy]) ccy = 'GBP'
 function ccyBarHTML() {
   let note = ''
   if (ccy !== 'GBP') {
-    const live = fxMeta?.source === 'ECB'
-    const src = live ? ('ECB reference rate' + (fxMeta?.date ? ' · ' + fmtDate(fxMeta.date) : '')) : 'indicative estimate'
-    note = `<div class="q-fx-note"><span class="q-fx-dot" style="background:${live?'#6ec96e':'#d6a020'}"></span>Converted from GBP at 1 £ = ${MONEY.rate.toFixed(4)} ${ccy} — ${src}. Indicative only; this quote is issued in GBP.</div>`
+    const locked = fxMeta?.source === 'ECB'
+    const src = locked ? ('rate locked' + (fxMeta?.date ? ' ' + fmtDate(fxMeta.date) : ' when this quote was issued')) : 'indicative estimate'
+    note = `<div class="q-fx-note"><span class="q-fx-dot" style="background:${locked?'#6ec96e':'#d6a020'}"></span>Converted from GBP at 1 £ = ${MONEY.rate.toFixed(4)} ${ccy} — ${src}. Indicative only; this quote is issued in GBP.</div>`
   }
   return `<div class="q-ccy-bar">
     <span class="q-ccy-label">View in</span>
@@ -233,21 +211,17 @@ function render() {
     <div class="q-footer">Powered by Slate${studio?.website?' · '+esc(studio.website):''}</div>`
 
   root.querySelectorAll('.q-ccy-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const code = btn.dataset.ccy
-      // Re-clicking the active non-GBP button while on an estimate retries the live fetch
-      if (code === ccy && (code === 'GBP' || fxMeta?.source === 'ECB')) return
-      ccy = code
-      try { localStorage.setItem('slate_quote_ccy', code) } catch {}
-      if (code !== 'GBP' && fxMeta?.source !== 'ECB') { btn.style.opacity = '0.55'; await ensureRates() }
+    btn.addEventListener('click', () => {
+      // No fetch needed here — the rate was locked in when this quote was issued,
+      // so switching currency is just re-reading that fixed snapshot.
+      ccy = btn.dataset.ccy
+      try { localStorage.setItem('slate_quote_ccy', ccy) } catch {}
       render()
     })
   })
 }
 
 render()
-// If a non-GBP currency is remembered but we don't have live rates yet, fetch & re-render
-if (ccy !== 'GBP' && fxMeta?.source !== 'ECB') ensureRates().then(render)
 </script>
 </body>
 </html>

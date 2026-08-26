@@ -19,7 +19,7 @@ export default async function handler(req, res) {
   const rows = await sql`
     SELECT b.id, b.name, b.sections, b.markup, b.custom_pct, b.vat, b.insurance,
            b.travel_rate, b.prep_rate, b.notes, b.prepared_by,
-           b.signed_off, b.created_at,
+           b.signed_off, b.created_at, b.fx_snapshot,
            c.first_name, c.last_name, c.company,
            s.company_name, s.address, s.email, s.phone, s.website, s.vat_number
     FROM budgets b
@@ -33,6 +33,9 @@ export default async function handler(req, res) {
   const b = rows[0]
   let sections = b.sections
   if (typeof sections === 'string') { try { sections = JSON.parse(sections) } catch { sections = [] } }
+  // Null on quotes created before rate-locking shipped — the client falls back to an indicative estimate.
+  let fx_snapshot = b.fx_snapshot
+  if (typeof fx_snapshot === 'string') { try { fx_snapshot = JSON.parse(fx_snapshot) } catch { fx_snapshot = null } }
 
   return res.status(200).json({
     budget: {
@@ -40,6 +43,7 @@ export default async function handler(req, res) {
       markup: b.markup, custom_pct: b.custom_pct, vat: b.vat,
       insurance: b.insurance, travel_rate: b.travel_rate, prep_rate: b.prep_rate,
       signed_off: b.signed_off, created_at: b.created_at,
+      fx_snapshot,
     },
     sections: (sections||[]).filter(s => s.enabled),
     client: b.first_name ? { name: `${b.first_name} ${b.last_name}`, company: b.company } : null,
