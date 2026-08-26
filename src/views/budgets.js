@@ -96,28 +96,37 @@ export class BudgetsView {
     return isFinite(v) && v >= 0 ? v : 3
   }
 
-  // Convert a GBP amount to USD/EUR using live (or fallback) rates plus the FX margin.
-  _convGBP(gbp, code) {
-    const base = Number(this._fxRates?.[code]) || FX_FALLBACK[code] || 1
+  // Convert a GBP amount to USD/EUR using the budget's locked-in rate (falling back to
+  // the shared live/estimate rate for budgets created before rate-locking) plus the FX margin.
+  _convGBP(gbp, code, b) {
+    const base = Number(this._ratesMeta(b).rates?.[code]) || FX_FALLBACK[code] || 1
     const rate = base * (1 + this._fxMarkup()/100)
     return CURRENCIES[code].symbol + Math.round((Number(gbp)||0) * rate).toLocaleString('en-GB')
   }
 
   // Small USD/EUR equivalents shown under the editor's GBP grand total.
-  _editorFxRowsHTML(tot) {
+  _editorFxRowsHTML(tot, b) {
     const sub = 'font-size:11px;color:var(--text-tertiary)'
-    return `<div class="bsum-row" style="padding-top:3px"><span class="sk" style="${sub}">Total USD</span><span class="sv" style="${sub}">${this._convGBP(tot,'USD')}</span></div>
-            <div class="bsum-row"><span class="sk" style="${sub}">Total EUR</span><span class="sv" style="${sub}">${this._convGBP(tot,'EUR')}</span></div>`
+    return `<div class="bsum-row" style="padding-top:3px"><span class="sk" style="${sub}">Total USD</span><span class="sv" style="${sub}">${this._convGBP(tot,'USD',b)}</span></div>
+            <div class="bsum-row"><span class="sk" style="${sub}">Total EUR</span><span class="sv" style="${sub}">${this._convGBP(tot,'EUR',b)}</span></div>`
+  }
+
+  // The effective FX snapshot for a given budget: its own locked-in rate if it has one,
+  // otherwise the shared live/estimate rate (only budgets predating rate-locking hit this).
+  _ratesMeta(b) {
+    if (b?.fx_snapshot?.rates) return { rates: b.fx_snapshot.rates, meta: b.fx_snapshot }
+    return { rates: this._fxRates, meta: this._fxMeta }
   }
 
   // Fetch live GBP→USD/EUR rates from the free, no-key Frankfurter API (ECB-backed,
   // CORS-enabled), cached in localStorage for 6h. Falls back to indicative rates
-  // offline. De-dupes concurrent calls via an in-flight promise.
-  async _ensureRates() {
+  // offline. De-dupes concurrent calls via an in-flight promise. Pass { force: true }
+  // to bypass both freshness checks and always hit the network (used by "Refresh rate").
+  async _ensureRates(opts = {}) {
     const FRESH = 6 * 60 * 60 * 1000  // 6h
     const fresh = m => m && m.source === 'ECB' && (Date.now() - m.ts) < FRESH
-    if (fresh(this._fxMeta)) return this._fxRates
-    if (!this._fxCheckedLS) {
+    if (!opts.force && fresh(this._fxMeta)) return this._fxRates
+    if (!opts.force && !this._fxCheckedLS) {
       this._fxCheckedLS = true
       try {
         const c = JSON.parse(localStorage.getItem('slate_fx_gbp') || 'null')
@@ -145,6 +154,13 @@ export class BudgetsView {
       return this._fxRates
     })()
     return this._fxInflight
+  }
+
+  // Fetch the current live rate and lock it to this budget (creation, duplication, and
+  // manual "Refresh rate" all funnel through here so the persisted shape stays identical).
+  async _lockFxSnapshot(opts = {}) {
+    await this._ensureRates(opts)
+    return this._fxMeta
   }
 
   render(mc) {
@@ -353,6 +369,9 @@ export class BudgetsView {
 
     await this.app.withBusy(mc.querySelector('#budget-save-btn'), async () => {
     try {
+      // Lock in today's GBP→USD/EUR rate so the quote's foreign-currency figures
+      // stay fixed from here on, regardless of what the market does afterwards.
+      data.fx_snapshot = await this._lockFxSnapshot()
       const [created] = await createBudget(this.app.userId, data)
       this.app.budgets.unshift(created)
 
@@ -394,6 +413,9 @@ export class BudgetsView {
         signed_off: false, signed_off_at: null, signed_off_by: null,
         include_in_pipeline: false,
       }
+      // A duplicate is a new budget in its own right — lock its own rate rather
+      // than carrying over whatever was locked in on the original.
+      copy.fx_snapshot = await this._lockFxSnapshot()
       const [created] = await createBudget(this.app.userId, copy)
       this.app.budgets.unshift(created)
       this.currentId = created.id
@@ -415,6 +437,26 @@ export class BudgetsView {
     } catch (e) { console.error(e); this.app.toast('Error deleting budget') }
   }
 
+  // Force-fetch the current live rate and re-lock this budget to it, overwriting
+  // whatever was locked in before. User-initiated only (see the "Refresh rate" button).
+  async refreshFxRate(b, mc) {
+    const btn = mc.querySelector('#bv-fx-refresh')
+    if (btn) { btn.disabled = true; btn.textContent = 'Refreshing…' }
+    try {
+      const snapshot = await this._lockFxSnapshot({ force: true })
+      const [updated] = await updateBudget(this.app.userId, b.id, { fx_snapshot: snapshot })
+      b.fx_snapshot = updated?.fx_snapshot ?? snapshot
+      const idx = this.app.budgets.findIndex(x => x.id === b.id)
+      if (idx >= 0) this.app.budgets[idx].fx_snapshot = b.fx_snapshot
+      this.app.toast('Exchange rate refreshed')
+      this.renderViewer(mc)
+    } catch (e) {
+      console.error(e)
+      this.app.toast('Error refreshing rate')
+      if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh rate' }
+    }
+  }
+
   // ── Viewer (read-only) ───────────────────────────────────────────────────────
 
   // £ / $ / € segmented switcher shown in the viewer header
@@ -425,19 +467,25 @@ export class BudgetsView {
     </div>`
   }
 
-  // Caption under the header noting the rate and its source when not in GBP
-  fxNoteHTML() {
+  // Caption under the header noting the rate, its source and lock status when not in GBP
+  fxNoteHTML(b) {
     const ccy = CURRENCIES[this.displayCurrency] ? this.displayCurrency : 'GBP'
     if (ccy === 'GBP') return ''
-    const m = this._fxMeta
+    const m = this._ratesMeta(b).meta
     const live = m?.source === 'ECB'
+    const locked = !!b?.fx_snapshot
     const src = live
       ? `ECB reference rate${m?.date ? ' · ' + new Date(m.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : ''}`
       : 'indicative offline estimate'
     const mkNote = MONEY.markupPct > 0 ? ` incl. ${MONEY.markupPct}% FX margin` : ''
+    const lockNote = locked ? ' · locked at quote creation' : ''
+    const refreshBtn = this.app.permissions?.budgets_edit
+      ? `<button id="bv-fx-refresh" title="Fetch the current rate and lock it to this budget" style="font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;padding:0;font-family:var(--font);white-space:nowrap">↻ Refresh rate</button>`
+      : ''
     return `<div id="bv-fx-note" style="font-size:11px;color:var(--text-tertiary);margin:-4px 0 14px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">
       <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${live?'#6ec96e':'#d6a020'};flex-shrink:0"></span>
-      Converted from GBP at 1 £ = ${MONEY.rate.toFixed(4)} ${ccy}${mkNote} — ${src}. Figures are indicative; the budget is held in GBP.
+      <span>Converted from GBP at 1 £ = ${MONEY.rate.toFixed(4)} ${ccy}${mkNote} — ${src}${lockNote}. Figures are indicative; the budget is held in GBP.</span>
+      ${refreshBtn}
     </div>`
   }
 
@@ -456,11 +504,14 @@ export class BudgetsView {
     const activeSecs = (b.sections||[]).filter(s => s.enabled && ((s.lines||[]).some(l => hasVisibleValue(l))))
     const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 
-    // Apply the chosen display currency to all figures below (base data stays GBP)
+    // Apply the chosen display currency to all figures below (base data stays GBP).
+    // A locked-in fx_snapshot always wins; only budgets predating rate-locking fall
+    // through to the shared live/estimate rate below.
     const ccy = CURRENCIES[this.displayCurrency] ? this.displayCurrency : 'GBP'
-    setMoney(ccy, this._fxRates, this._fxMarkup())
-    // Showing a foreign currency without live rates yet → fetch & upgrade once (throttled)
-    if (ccy !== 'GBP' && this._fxMeta?.source !== 'ECB' && (Date.now() - (this._fxLastAuto || 0) > 30000)) {
+    const { rates: viewRates, meta: viewMeta } = this._ratesMeta(b)
+    setMoney(ccy, viewRates, this._fxMarkup())
+    // Showing a foreign currency on an unlocked (legacy) budget without live rates yet → fetch & upgrade once (throttled)
+    if (!b.fx_snapshot && ccy !== 'GBP' && viewMeta?.source !== 'ECB' && (Date.now() - (this._fxLastAuto || 0) > 30000)) {
       this._fxLastAuto = Date.now()
       this._ensureRates().then(() => {
         if (this.currentId === b.id && this.editingId !== this.currentId) this.renderViewer(mc)
@@ -478,7 +529,7 @@ export class BudgetsView {
         <button class="btn-secondary" id="bv-pdf">Export PDF</button>
         ${this.app.permissions?.budgets_edit ? `<button class="btn-primary" id="bv-edit">Edit budget</button>` : ''}
       </div>
-      ${this.fxNoteHTML()}
+      ${this.fxNoteHTML(b)}
       <div id="bv-history-panel" style="display:none;background:var(--bg-secondary);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:16px"></div>
       ${b.notes ? `<div style="background:var(--bg-secondary);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:16px;font-size:13px;color:var(--text-secondary);line-height:1.6;white-space:pre-line">${esc(b.notes)}</div>` : ''}
       <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
@@ -619,12 +670,13 @@ export class BudgetsView {
     mc.querySelectorAll('.bv-ccy').forEach(btn => {
       btn.addEventListener('click', async () => {
         const code = btn.dataset.ccy
-        // Re-clicking the active non-GBP button while on an estimate retries the live fetch
-        const sameAndFresh = code === this.displayCurrency && (code === 'GBP' || this._fxMeta?.source === 'ECB')
+        // A locked budget never needs a fetch — switching currency just re-reads its snapshot.
+        // Re-clicking the active non-GBP button on an unlocked (legacy) estimate retries the live fetch.
+        const sameAndFresh = code === this.displayCurrency && (code === 'GBP' || !!b.fx_snapshot || this._fxMeta?.source === 'ECB')
         if (sameAndFresh) return
         this.displayCurrency = code
         try { localStorage.setItem('slate_budget_ccy', code) } catch {}
-        if (code !== 'GBP' && this._fxMeta?.source !== 'ECB') {
+        if (!b.fx_snapshot && code !== 'GBP' && this._fxMeta?.source !== 'ECB') {
           btn.style.opacity = '0.55'
           const note = mc.querySelector('#bv-fx-note')
           if (note) note.lastChild && (note.lastChild.textContent = ' Fetching live rate…')
@@ -633,6 +685,7 @@ export class BudgetsView {
         this.renderViewer(mc)
       })
     })
+    mc.querySelector('#bv-fx-refresh')?.addEventListener('click', () => this.refreshFxRate(b, mc))
 
     mc.querySelector('#bv-back')?.addEventListener('click', () => {
       this.currentId = null; this.editingId = null; this.renderList(mc); this.app.updateTitle()
@@ -720,7 +773,7 @@ export class BudgetsView {
             ${b.insurance&&insVal>0?`<div class="bsum-row"><span class="sk">Insurance (2.5%)</span><span class="sv">${gbpA(insVal)}</span></div>`:""}
             ${b.vat ? `<div class="bsum-row"><span class="sk">VAT (20%)</span><span class="sv">${gbpA(vatVal)}</span></div>` : ''}
             <div class="bsum-row grand"><span class="sk">Grand total</span><span class="sv">${gbpA(tot)}</span></div>
-            ${this._editorFxRowsHTML(tot)}
+            ${this._editorFxRowsHTML(tot, b)}
           </div>
           <div style="margin-top:14px;display:flex;flex-direction:column;gap:10px">
             <label style="display:flex;align-items:center;gap:9px;padding:10px 12px;background:var(--bg-secondary);border-radius:var(--radius-md);cursor:pointer;font-size:13px;color:var(--text-secondary)">
@@ -764,8 +817,9 @@ export class BudgetsView {
         </div>
       </div>`
 
-    // Pull live rates for the USD/EUR equivalents (throttled); re-render once upgraded
-    if (this._fxMeta?.source !== 'ECB' && (Date.now() - (this._fxLastAuto || 0) > 30000)) {
+    // Pull live rates for the USD/EUR preview (throttled); re-render once upgraded.
+    // Locked budgets skip this entirely — their preview already reflects the locked rate.
+    if (!b.fx_snapshot && this._fxMeta?.source !== 'ECB' && (Date.now() - (this._fxLastAuto || 0) > 30000)) {
       this._fxLastAuto = Date.now()
       this._ensureRates().then(() => {
         if (this.currentId === b.id && this.editingId === this.currentId) this.renderEditor(mc)
@@ -883,7 +937,7 @@ export class BudgetsView {
         ${b.insurance&&insVal>0?`<div class="bsum-row"><span class="sk">Insurance (2.5%)</span><span class="sv">${gbpA(insVal)}</span></div>`:""}
             ${b.vat?`<div class="bsum-row"><span class="sk">VAT (20%)</span><span class="sv">${gbpA(vatVal)}</span></div>`:''}
         <div class="bsum-row grand"><span class="sk">Grand total</span><span class="sv">${gbpA(tot)}</span></div>
-        ${this._editorFxRowsHTML(tot)}`
+        ${this._editorFxRowsHTML(tot, b)}`
     }
 
     mc.querySelector('#back-to-list')?.addEventListener('click', () => { this.currentId = null; this.editingId = null; this.renderList(mc); this.app.updateTitle() })
@@ -1180,8 +1234,10 @@ export class BudgetsView {
   // ── CSV Export ──────────────────────────────────────────────────────────────
 
   exportCSV(b) {
-    // Export in the currently-selected display currency (base figures are GBP)
-    setMoney(this.displayCurrency, this._fxRates, this._fxMarkup())
+    // Export in the currently-selected display currency (base figures are GBP),
+    // using this budget's locked-in rate where it has one.
+    const { rates: csvRates, meta: csvMeta } = this._ratesMeta(b)
+    setMoney(this.displayCurrency, csvRates, this._fxMarkup())
     const ccy = MONEY.code, rate = MONEY.rate
     const cv = n => Math.round((Number(n)||0) * rate)   // GBP → chosen currency
     const cl = this.app.contacts.find(c => c.id === b.client_id)
@@ -1194,7 +1250,7 @@ export class BudgetsView {
     const fxRow = ccy === 'GBP' ? [] : [
       ['Currency', ccy],
       ['Exchange rate', '1 GBP = ' + rate.toFixed(4) + ' ' + ccy + (MONEY.markupPct > 0 ? ' (incl. ' + MONEY.markupPct + '% FX margin)' : '')],
-      ['Rate source', this._fxMeta?.source === 'ECB' ? ('ECB' + (this._fxMeta?.date ? ' ' + this._fxMeta.date : '')) : 'Indicative estimate'],
+      ['Rate source', (csvMeta?.source === 'ECB' ? ('ECB' + (csvMeta?.date ? ' ' + csvMeta.date : '')) : 'Indicative estimate') + (b.fx_snapshot ? ' (locked at quote creation)' : '')],
     ]
     let rows = [
       ['Budget',b.name],['Client',cl?cl.first_name+' '+cl.last_name:''],
@@ -1231,12 +1287,15 @@ export class BudgetsView {
   // ── PDF Export ──────────────────────────────────────────────────────────────
 
   exportPDF(b) {
-    // Render in the currently-selected display currency (base figures are GBP)
-    setMoney(this.displayCurrency, this._fxRates, this._fxMarkup())
+    // Render in the currently-selected display currency (base figures are GBP),
+    // using this budget's locked-in rate where it has one.
+    const { rates: pdfRates, meta: pdfMeta } = this._ratesMeta(b)
+    setMoney(this.displayCurrency, pdfRates, this._fxMarkup())
     const ccy = MONEY.code
     const pdfMk = MONEY.markupPct > 0 ? ` incl. ${MONEY.markupPct}% FX margin` : ''
+    const pdfLockNote = b.fx_snapshot ? ' · rate locked at quote creation' : ''
     const fxNote = ccy === 'GBP' ? '' :
-      `Converted from GBP at 1 £ = ${MONEY.rate.toFixed(4)} ${ccy}${pdfMk} · ${this._fxMeta?.source === 'ECB' ? ('ECB reference rate' + (this._fxMeta?.date ? ' ' + this._fxMeta.date : '')) : 'indicative estimate'}. Figures are indicative; the budget is held in GBP.`
+      `Converted from GBP at 1 £ = ${MONEY.rate.toFixed(4)} ${ccy}${pdfMk} · ${pdfMeta?.source === 'ECB' ? ('ECB reference rate' + (pdfMeta?.date ? ' ' + pdfMeta.date : '')) : 'indicative estimate'}${pdfLockNote}. Figures are indicative; the budget is held in GBP.`
     const cl = this.app.contacts.find(c => c.id === b.client_id)
     const s  = this.app.settings || {}
     const pdfTr = parseFloat(b.travel_rate)||50

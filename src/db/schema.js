@@ -150,6 +150,9 @@ export const budgets = pgTable('budgets', {
   prep_rate:   numeric('prep_rate',   { precision: 5, scale: 2 }).notNull().default('100'),
   discount:    numeric('discount', { precision: 5, scale: 2 }).notNull().default('0'),
   sections:    jsonb('sections').notNull().default([]),
+  // GBP→USD/EUR rate locked in at creation (or last manual refresh): { ts, date, source:'ECB'|'estimate', rates }.
+  // Null on budgets created before this column existed — those fall back to a live-fetched rate until refreshed.
+  fx_snapshot: jsonb('fx_snapshot'),
   ...timestamps,
 })
 
