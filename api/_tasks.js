@@ -242,7 +242,8 @@ async function listTasks(req, res, { sql, user }) {
   const active = await sql`
     SELECT id, user_id, title, body, status, assignee_id, created_by, due_at,
            acknowledged_at, nudged_at, project_id, parent_type, parent_id,
-           position, archived_at, created_at, updated_at
+           position, archived_at, created_at, updated_at,
+           (SELECT count(*)::int FROM task_comments c WHERE c.task_id = tasks.id) AS comment_count
     FROM tasks
     WHERE user_id = ${ws}
       AND archived_at IS NULL
@@ -258,7 +259,8 @@ async function listTasks(req, res, { sql, user }) {
   const done = await sql`
     SELECT id, user_id, title, body, status, assignee_id, created_by, due_at,
            acknowledged_at, nudged_at, project_id, parent_type, parent_id,
-           position, archived_at, created_at, updated_at
+           position, archived_at, created_at, updated_at,
+           (SELECT count(*)::int FROM task_comments c WHERE c.task_id = tasks.id) AS comment_count
     FROM tasks
     WHERE user_id = ${ws}
       AND archived_at IS NULL
