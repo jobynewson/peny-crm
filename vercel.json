@@ -6,6 +6,10 @@
   ],
   "rewrites": [
     { "source": "/api/offloads", "destination": "/api/portal?view=offloads" },
+    { "source": "/api/tasks",              "destination": "/api/portal?view=tasks&route=tasks" },
+    { "source": "/api/tasks/(.*)",         "destination": "/api/portal?view=tasks&route=tasks/$1" },
+    { "source": "/api/notifications",      "destination": "/api/portal?view=tasks&route=notifications" },
+    { "source": "/api/notifications/(.*)", "destination": "/api/portal?view=tasks&route=notifications/$1" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/dashboard/(.*)", "destination": "/dashboard.html" },
     { "source": "/track/(.*)", "destination": "/track.html" },
