@@ -36,9 +36,16 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorised' })
   }
 
-  // ── Unacknowledged task nudge (hourly) ────────────────────────────────────
-  // Dispatched BEFORE the weekend guard below: "4 hours after assignment" only
-  // means anything if it can fire on the day the work was raised.
+  // ── Unacknowledged task nudge (daily, 14:00 UTC) ──────────────────────────
+  // Dispatched BEFORE the weekend guard below, so a Friday assignment is still
+  // chased at the weekend rather than waiting until Monday.
+  //
+  // This WANTS to run hourly — the rule is "4 hours after assignment" — but
+  // Vercel's Hobby plan caps crons at one run per day, and a more frequent
+  // expression fails the deployment outright. 14:00 UTC catches work raised in
+  // the morning; the 09:00 digest carries anything still outstanding the next
+  // day. Restoring true 4-hour behaviour needs the Pro plan, or a sweep
+  // triggered from somewhere other than a cron.
   if (req.query.type === 'task-nudge') {
     return handleTaskNudge(req, res, neon(process.env.VITE_DATABASE_URL))
   }
@@ -988,8 +995,10 @@ function isSecondToLastWorkingDay(date) {
 }
 
 // ── Unacknowledged task nudge ────────────────────────────────────────────────
-// Runs hourly. Finds tasks assigned more than 4 hours ago that the assignee has
-// not acknowledged, nudges once, and records that it did.
+// Finds tasks assigned more than 4 hours ago that the assignee has not
+// acknowledged, nudges once, and records that it did. Correct at any cadence —
+// the nudged_at claim below means one nudge per assignment however often this
+// runs — so it needs no change if the schedule ever gets tightened.
 //
 // "Assigned more than 4 hours ago" is read from the last `assigned` event, not
 // from updated_at — editing a task's title must not restart its clock.

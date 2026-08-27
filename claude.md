@@ -151,9 +151,14 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
   from `/api/portal?view=dashboard`). Unset = the dashboard returns 503.
 - `CRON_SECRET` - Bearer token Vercel Cron sends to `/api/reminders`. Four
   scheduled jobs run: deliverables (09:00), notes (21:00), expense-digest
-  (09:00) and task-nudge (hourly). The nudge dispatches BEFORE the weekday-only
+  (09:00) and task-nudge (14:00). The nudge dispatches BEFORE the weekday-only
   guard, so it fires at weekends too — an unacknowledged request should not wait
   until Monday.
+- **Vercel Hobby allows only ONE cron run per day per job.** An expression like
+  `0 * * * *` fails the deployment with "Hobby accounts are limited to daily
+  cron jobs" — it does not degrade quietly. The task nudge wants to be hourly
+  (its rule is "4 hours after assignment") and is capped at daily because of
+  this. Check any new schedule against that limit before pushing.
 - `FENCE_API_KEY` - Shared secret for the Offload Log ingest endpoint
   (`POST /api/offloads`). Fence sends it as `Authorization: Bearer <key>`.
   Unset = the endpoint returns 500 (so it fails closed rather than open).
