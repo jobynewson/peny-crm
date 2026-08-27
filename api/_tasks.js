@@ -142,6 +142,9 @@ async function workspaceId(sql) {
 // Task columns are listed explicitly in each query rather than SELECT *, so a
 // future column cannot reach the browser without someone deciding it should.
 
+// Deliberately does NOT filter archived_at: this is a fetch by id, not a list.
+// An archived task must stay reachable (Phase 2 needs to unarchive one). The
+// "every list query filters archived_at IS NULL" rule applies to listTasks.
 async function loadTask(sql, ws, id) {
   const rows = await sql`
     SELECT id, user_id, title, body, status, assignee_id, created_by, due_at,
