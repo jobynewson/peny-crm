@@ -368,6 +368,84 @@ export async function runMigrations() {
   await sql`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS invoiced BOOLEAN NOT NULL DEFAULT false`
   await sql`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS invoiced_at TIMESTAMPTZ`
   await sql`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS invoiced_by TEXT`
+
+  // ── Tasks (Slate task board) ───────────────────────────────────────────────
+  // One table behind the desktop board and the mobile list. See claude.md.
+  // The only enum type in the schema — CREATE TYPE has no IF NOT EXISTS, so it
+  // needs the DO block to stay idempotent across every app boot.
+  await sql`
+    DO $$ BEGIN
+      CREATE TYPE task_status AS ENUM ('todo', 'doing', 'done');
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS tasks (
+      id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id         TEXT NOT NULL,
+      title           TEXT NOT NULL,
+      body            TEXT,
+      status          task_status NOT NULL DEFAULT 'todo',
+      assignee_id     UUID REFERENCES app_users(id) ON DELETE SET NULL,
+      created_by      UUID NOT NULL REFERENCES app_users(id),
+      due_at          TIMESTAMPTZ,
+      acknowledged_at TIMESTAMPTZ,
+      nudged_at       TIMESTAMPTZ,
+      project_id      UUID REFERENCES projects(id) ON DELETE SET NULL,
+      parent_type     TEXT,
+      parent_id       UUID,
+      position        DOUBLE PRECISION NOT NULL DEFAULT 0,
+      archived_at     TIMESTAMPTZ,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS task_comments (
+      id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      task_id    UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      author_id  UUID NOT NULL REFERENCES app_users(id),
+      body       TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS task_events (
+      id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      task_id    UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      actor_id   UUID REFERENCES app_users(id) ON DELETE SET NULL,
+      type       TEXT NOT NULL,
+      payload    JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      recipient_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+      task_id      UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      event_id     UUID NOT NULL REFERENCES task_events(id) ON DELETE CASCADE,
+      type         TEXT NOT NULL,
+      read_at      TIMESTAMPTZ,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS tasks_status_archived_idx ON tasks (status, archived_at)`
+  await sql`CREATE INDEX IF NOT EXISTS tasks_assignee_status_idx ON tasks (assignee_id, status)`
+  await sql`CREATE INDEX IF NOT EXISTS tasks_project_idx         ON tasks (project_id)`
+  // Drives the polling loop's ?updated_since= filter.
+  await sql`CREATE INDEX IF NOT EXISTS tasks_updated_idx         ON tasks (updated_at)`
+  // Drives the unacknowledged-nudge cron — partial, so it stays tiny.
+  await sql`
+    CREATE INDEX IF NOT EXISTS tasks_unacknowledged_idx ON tasks (assignee_id)
+    WHERE acknowledged_at IS NULL AND assignee_id IS NOT NULL
+  `
+  await sql`CREATE INDEX IF NOT EXISTS task_comments_task_idx ON task_comments (task_id, created_at)`
+  await sql`CREATE INDEX IF NOT EXISTS task_events_task_idx    ON task_events (task_id, created_at DESC)`
+  await sql`CREATE INDEX IF NOT EXISTS notifications_inbox_idx ON notifications (recipient_id, read_at, created_at DESC)`
+  // One notification per recipient per event — makes the dedupe rule a DB
+  // guarantee, so a retried write cannot double-notify.
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS notifications_dedupe_uidx ON notifications (recipient_id, event_id)`
 }
 
 // One-time demo data so the first visit to Planning isn't an empty screen.
