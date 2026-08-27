@@ -22,7 +22,7 @@ import { sendImmediateTaskEmails } from './_task-mail.js'
 import {
   positionBetween, needsRebalance, rebalancedPositions,
   parseMentions, notificationsFor, acknowledgementPatch,
-  validateTaskInput, toTimestamp, POSITION_GAP,
+  validateTaskInput, toTimestamp, isUuid, POSITION_GAP,
 } from './_task-rules.js'
 
 // ── Response helpers ─────────────────────────────────────────────────────────
@@ -242,6 +242,13 @@ async function listTasks(req, res, { sql, user }) {
   const since = updated_since ? new Date(updated_since) : null
   if (updated_since && isNaN(since.getTime())) {
     return invalid(res, 'updated_since', 'updated_since could not be read as a date')
+  }
+
+  if (project_id && !isUuid(project_id)) {
+    return invalid(res, 'project_id', 'project_id is not a valid id')
+  }
+  if (assignee_id && !isUuid(assignee_id)) {
+    return invalid(res, 'assignee_id', 'assignee_id is not a valid id')
   }
 
   const mineOnly   = scope === 'mine'
@@ -538,6 +545,9 @@ async function markNotificationsRead(req, res, { sql, user }) {
 
   if (!Array.isArray(body.ids) || !body.ids.length) {
     return invalid(res, 'ids', 'Provide either { ids: [...] } or { all: true }')
+  }
+  if (!body.ids.every(isUuid)) {
+    return invalid(res, 'ids', 'One or more notification ids are not valid ids')
   }
   // Scoped to the caller, so one person cannot mark another's inbox read.
   await sql`

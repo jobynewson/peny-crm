@@ -3,7 +3,7 @@ import {
   positionBetween, needsRebalance, rebalancedPositions,
   parseMentions, userHandles,
   notificationsFor, acknowledgementPatch,
-  validateTaskInput, toTimestamp,
+  validateTaskInput, toTimestamp, isUuid,
   POSITION_GAP, TITLE_MAX,
 } from './_task-rules.js'
 
@@ -261,5 +261,20 @@ describe('toTimestamp', () => {
   })
   it('parses an ISO string', () => {
     expect(toTimestamp('2026-09-01T10:00:00Z')).toEqual(new Date('2026-09-01T10:00:00Z'))
+  })
+})
+
+describe('isUuid', () => {
+  it('accepts a real uuid in either case', () => {
+    expect(isUuid('3f2504e0-4f89-11d3-9a0c-0305e82c3301')).toBe(true)
+    expect(isUuid('3F2504E0-4F89-11D3-9A0C-0305E82C3301')).toBe(true)
+  })
+  it('rejects anything Postgres would raise on', () => {
+    for (const bad of ['', 'x', 'not-a-uuid', '123', null, undefined, 42, {},
+                       '3f2504e0-4f89-11d3-9a0c-0305e82c330',      // too short
+                       '3f2504e0-4f89-11d3-9a0c-0305e82c33011',    // too long
+                       "'; DROP TABLE tasks;--"]) {
+      expect(isUuid(bad)).toBe(false)
+    }
   })
 })

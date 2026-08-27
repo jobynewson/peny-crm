@@ -375,3 +375,34 @@ describeDb('nudge cron', () => {
     expect(html).toContain('&lt;script&gt;')
   })
 })
+
+// Bad input must be a 422 with a field, never a 500 — Postgres raises on a
+// malformed uuid, so anything reaching a ::uuid cast is checked first.
+describeDb('malformed input', () => {
+  beforeEach(() => { CURRENT = ana })
+
+  it('422s a malformed project_id filter', async () => {
+    const r = await call('GET', 'tasks', { query: { project_id: 'not-a-uuid' } })
+    expect(r.statusCode).toBe(422)
+    expect(r.body.error).toMatchObject({ code: 'validation_failed', field: 'project_id' })
+  })
+  it('422s a malformed assignee_id filter', async () => {
+    const r = await call('GET', 'tasks', { query: { assignee_id: 'x' } })
+    expect(r.statusCode).toBe(422)
+    expect(r.body.error.field).toBe('assignee_id')
+  })
+  it('422s malformed notification ids', async () => {
+    const r = await call('POST', 'notifications/read', { body: { ids: ['nope'] } })
+    expect(r.statusCode).toBe(422)
+    expect(r.body.error.field).toBe('ids')
+  })
+  it('422s an unreadable updated_since', async () => {
+    const r = await call('GET', 'tasks', { query: { updated_since: 'yesterday-ish' } })
+    expect(r.statusCode).toBe(422)
+    expect(r.body.error.field).toBe('updated_since')
+  })
+  it('422s a body that is not valid JSON', async () => {
+    const r = await call('POST', 'tasks', { body: '{not json' })
+    expect(r.statusCode).toBe(422)
+  })
+})

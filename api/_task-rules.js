@@ -6,6 +6,12 @@
 // Not a Vercel function: the `_` prefix keeps it out of the function count.
 
 export const TASK_STATUSES = ['todo', 'doing', 'done']
+
+// Anything interpolated into a ::uuid cast must be checked first — Postgres
+// raises on a malformed uuid, which would surface as a 500 for what is really
+// bad input.
+const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+export const isUuid = (v) => typeof v === 'string' && UUID_RE.test(v)
 export const TITLE_MAX = 500
 
 // Fractional indexing, same approach as board_cards.position — a move writes one
