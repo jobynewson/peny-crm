@@ -13,6 +13,7 @@ import nodemailer from 'nodemailer'
 import { verifyToken } from '@clerk/backend'
 import { syncLeaveRequestGoogle } from './google.js'
 import { groupDueSubTasks } from './_sub-tasks.js'
+import { taskMailer, taskEmailWrap, taskCardHtml, escapeHtml, appBaseUrl } from './_task-mail.js'
 
 export default async function handler(req, res) {
   // ── Leave approval (GET, token-based) ──────────────────────────────────────
@@ -33,6 +34,20 @@ export default async function handler(req, res) {
   const authHeader = req.headers['authorization']
   if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorised' })
+  }
+
+  // ── Unacknowledged task nudge (daily, 14:00 UTC) ──────────────────────────
+  // Dispatched BEFORE the weekend guard below, so a Friday assignment is still
+  // chased at the weekend rather than waiting until Monday.
+  //
+  // This WANTS to run hourly — the rule is "4 hours after assignment" — but
+  // Vercel's Hobby plan caps crons at one run per day, and a more frequent
+  // expression fails the deployment outright. 14:00 UTC catches work raised in
+  // the morning; the 09:00 digest carries anything still outstanding the next
+  // day. Restoring true 4-hour behaviour needs the Pro plan, or a sweep
+  // triggered from somewhere other than a cron.
+  if (req.query.type === 'task-nudge') {
+    return handleTaskNudge(req, res, neon(process.env.VITE_DATABASE_URL))
   }
 
   // No reminder emails on weekends (Saturday=6, Sunday=0, UTC)
@@ -130,14 +145,24 @@ export default async function handler(req, res) {
         <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:${colour(i.daysUntil)};white-space:nowrap;font-weight:500">${label(i.daysUntil)}</td>
       </tr>`).join('')
 
-    for (const [assigneeId, items] of Object.entries(byAssignee)) {
+    // Outstanding unacknowledged tasks ride at the TOP of this digest. Anyone
+    // with unacknowledged work is included even with no deliverables due —
+    // otherwise the section silently misses exactly the people it is for.
+    const unackByAssignee = await unacknowledgedByAssignee(sql)
+    const recipients = new Set([...Object.keys(byAssignee), ...Object.keys(unackByAssignee)])
+
+    for (const assigneeId of recipients) {
+      const items = byAssignee[assigneeId] ?? []
+      const unack = unackByAssignee[assigneeId] ?? []
       const user = userById[assigneeId]
       if (!user?.email) continue
       const overdueCount = items.filter(i => i.daysUntil < 0).length
-      const subject = overdueCount > 0
+      const subject = unack.length && !items.length
+        ? `👀 ${unack.length} task${unack.length > 1 ? 's' : ''} waiting on you`
+        : overdueCount > 0
         ? `⚠ ${overdueCount} overdue deliverable${overdueCount > 1 ? 's' : ''} — ${items.length} total need attention`
         : `⏰ ${items.length} deliverable${items.length > 1 ? 's' : ''} due soon`
-      const body = `
+      const body = unacknowledgedSectionHtml(unack) + (items.length ? `
         <table style="width:100%;border-collapse:collapse">
           <thead><tr>
             <th style="padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#999;border-bottom:2px solid #f0f0f0">Deliverable</th>
@@ -145,12 +170,15 @@ export default async function handler(req, res) {
             <th style="padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#999;border-bottom:2px solid #f0f0f0">Status</th>
           </tr></thead>
           <tbody>${tableRows(items)}</tbody>
-        </table>`
+        </table>` : '')
       const name = user.name || user.email.split('@')[0]
-      const html = emailWrap('Deliverable Reminders', `Hi ${name}, here's a summary of your deliverables that need attention:`, body)
+      const greeting = items.length
+        ? `Hi ${name}, here's a summary of your deliverables that need attention:`
+        : `Hi ${name}, nothing is due — but some tasks are still waiting for you to acknowledge them:`
+      const html = emailWrap('Deliverable Reminders', greeting, body)
       try {
         await sendMail(user.email, subject, html)
-        results.push({ type: 'deliverable', to: user.email, sent: items.length })
+        results.push({ type: 'deliverable', to: user.email, sent: items.length, unacknowledged: unack.length })
       } catch (err) {
         results.push({ type: 'deliverable', to: user.email, error: err.message })
       }
@@ -964,4 +992,114 @@ function isSecondToLastWorkingDay(date) {
   }
   if (workingDays.length < 2) return false
   return date.getUTCDate() === workingDays[workingDays.length - 2]
+}
+
+// ── Unacknowledged task nudge ────────────────────────────────────────────────
+// Finds tasks assigned more than 4 hours ago that the assignee has not
+// acknowledged, nudges once, and records that it did. Correct at any cadence —
+// the nudged_at claim below means one nudge per assignment however often this
+// runs — so it needs no change if the schedule ever gets tightened.
+//
+// "Assigned more than 4 hours ago" is read from the last `assigned` event, not
+// from updated_at — editing a task's title must not restart its clock.
+export async function handleTaskNudge(req, res, sql) {
+  const results = []
+
+  const due = await sql`
+    SELECT t.id, t.title, t.due_at, t.assignee_id, t.created_by,
+           u.email, u.name
+    FROM tasks t
+    JOIN app_users u ON u.id = t.assignee_id
+    WHERE t.assignee_id IS NOT NULL
+      AND t.acknowledged_at IS NULL
+      AND t.archived_at IS NULL
+      AND t.nudged_at IS NULL
+      AND t.status <> 'done'
+      AND COALESCE(
+            (SELECT MAX(e.created_at) FROM task_events e
+              WHERE e.task_id = t.id AND e.type = 'assigned'),
+            t.created_at
+          ) < NOW() - INTERVAL '4 hours'
+  `
+
+  const send = taskMailer()
+  const todayLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+
+  for (const task of due) {
+    // Claim the task atomically before doing anything else. Two overlapping
+    // cron runs cannot both win this UPDATE, so a task is nudged exactly once
+    // per assignment — the same trick as the board_recurrences next_due advance.
+    const claimed = await sql`
+      UPDATE tasks SET nudged_at = NOW()
+      WHERE id = ${task.id} AND nudged_at IS NULL
+      RETURNING id
+    `
+    if (!claimed[0]) continue
+
+    // Notifications come from events, never straight from a handler — so the
+    // nudge writes one too, with no actor because nobody did this.
+    const [event] = await sql`
+      INSERT INTO task_events (task_id, actor_id, type, payload)
+      VALUES (${task.id}, NULL, 'nudged', '{}'::jsonb)
+      RETURNING id
+    `
+    await sql`
+      INSERT INTO notifications (recipient_id, task_id, event_id, type)
+      VALUES (${task.assignee_id}, ${task.id}, ${event.id}, 'unacknowledged_nudge')
+      ON CONFLICT (recipient_id, event_id) DO NOTHING
+    `
+
+    if (send && task.email) {
+      const name = task.name || task.email.split('@')[0]
+      try {
+        await send(task.email, `Still waiting on you: ${task.title}`, taskEmailWrap(
+          'A task is waiting',
+          todayLabel,
+          `Hi ${name}, this was assigned to you a few hours ago and hasn't been acknowledged. Open it and hit "Got it" so the person who raised it knows you've seen it.`,
+          taskCardHtml(task),
+        ))
+        results.push({ type: 'task-nudge', to: task.email, task: task.title })
+      } catch (err) {
+        results.push({ type: 'task-nudge', to: task.email, error: err.message })
+      }
+    } else {
+      results.push({ type: 'task-nudge', task: task.title, skipped: 'no mail configured' })
+    }
+  }
+
+  return res.status(200).json({ ok: true, nudged: results.length, results })
+}
+
+// Outstanding unacknowledged tasks per assignee, for the top of the daily
+// digest. Unlike the nudge this repeats daily until acknowledged — the nudge is
+// the one-shot, the digest is the standing reminder.
+export async function unacknowledgedByAssignee(sql) {
+  const rows = await sql`
+    SELECT t.id, t.title, t.due_at, t.assignee_id, u.email, u.name
+    FROM tasks t
+    JOIN app_users u ON u.id = t.assignee_id
+    WHERE t.assignee_id IS NOT NULL
+      AND t.acknowledged_at IS NULL
+      AND t.archived_at IS NULL
+      AND t.status <> 'done'
+    ORDER BY t.created_at
+  `
+  const byAssignee = {}
+  for (const row of rows) (byAssignee[row.assignee_id] ||= []).push(row)
+  return byAssignee
+}
+
+// The section itself — rendered at the TOP of the digest body.
+export function unacknowledgedSectionHtml(tasks) {
+  if (!tasks?.length) return ''
+  return `
+    <div style="margin:0 0 22px">
+      <h2 style="margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:0.5px;color:#E5484D">
+        Waiting on you — ${tasks.length} unacknowledged
+      </h2>
+      ${tasks.map(t => taskCardHtml(t)).join('')}
+      <p style="margin:8px 0 0;font-size:12px;color:#999">
+        Open each one and hit &ldquo;Got it&rdquo; so the person who raised it knows you&rsquo;ve seen it.
+      </p>
+    </div>`
 }

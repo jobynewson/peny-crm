@@ -14,6 +14,7 @@ import { ExpensesView } from './views/expenses.js'
 import { OffloadLogView } from './views/offload-log.js'
 import { BoardsView } from './views/boards.js'
 import { CanvasView } from './views/canvas.js'
+import { TasksView } from './views/tasks.js'
 
 export class App {
   constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, leaveRequests, publicHolidays, onSignOut }) {
@@ -48,6 +49,7 @@ export class App {
     this.offloadLogView       = new OffloadLogView(this)
     this.boardsView           = new BoardsView(this)
     this.canvasView           = new CanvasView(this)
+    this.tasksView            = new TasksView(this)
     window.app = this
   }
 
@@ -457,7 +459,7 @@ export class App {
           <button class="sidebar-collapse-btn" id="sidebar-collapse-btn" aria-label="Toggle sidebar" title="${collapsed ? 'Expand sidebar' : 'Collapse sidebar'}">${this.iconCollapse()}</button>
         </div>
         <div class="nav-label">Main</div>
-        ${[['dashboard','Dashboard',this.iconPipeline()],['calendar','Calendar',this.iconCalendar()],['contacts','Contacts',this.iconContacts()],['projects','Projects',this.iconProjects()],['budgets','Budgets',this.iconBudgets()],['planning','Planning',this.iconPlanning()],['marketing','Marketing',this.iconMarketing()],['story-planner','Story Planner',this.iconStoryPlanner()]].map(([id,label,icon])=>`
+        ${[['dashboard','Dashboard',this.iconPipeline()],['tasks','Tasks',this.iconTasks()],['calendar','Calendar',this.iconCalendar()],['contacts','Contacts',this.iconContacts()],['projects','Projects',this.iconProjects()],['budgets','Budgets',this.iconBudgets()],['planning','Planning',this.iconPlanning()],['marketing','Marketing',this.iconMarketing()],['story-planner','Story Planner',this.iconStoryPlanner()]].map(([id,label,icon])=>`
           <div class="nav-item ${this.currentView===id?'active':''}" data-view="${id}" title="${label}">${icon}<span class="nav-text">${label}</span></div>`).join('')}
         <div class="sidebar-notes">
           <div class="sidebar-notes-header">
@@ -682,7 +684,7 @@ export class App {
     if (!hash) return
     const parts = hash.split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses','leave','offload-log','planning']
+    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses','leave','offload-log','planning','tasks']
     if (!validViews.includes(view)) return
     this.currentView = view
     if (view === 'projects' && id) {
@@ -707,7 +709,7 @@ export class App {
     const hash = location.hash.slice(1)
     const parts = (hash || 'dashboard').split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses','leave','offload-log','planning']
+    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses','leave','offload-log','planning','tasks']
     if (!validViews.includes(view)) { this.currentView = 'dashboard'; this.render(); return }
 
     this.currentView = view
@@ -758,6 +760,8 @@ export class App {
       this.leaveView.render(mc)
     } else if (this.currentView === 'calendar') {
       this.teamCalendarView.renderFullPage(mc)
+    } else if (this.currentView === 'tasks') {
+      this.tasksView.render(mc)
     } else if (this.currentView === 'dashboard') {
       this.renderDashboard(mc)
     } else {
@@ -770,7 +774,7 @@ export class App {
     if (this.currentView === 'budgets'  && this.budgetsView?.currentId)  return this.budgets.find(b=>b.id===this.budgetsView.currentId)?.name  ?? 'Budget'
     if (this.currentView === 'planning' && this.canvasView?.currentId)   return this.canvasView.canvas?.name ?? 'Planning'
     if (this.currentView === 'planning' && this.boardsView?.currentId)   return this.boardsView.board?.name ?? 'Planning'
-    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',calendar:'Team Calendar',settings:'Settings',marketing:'Marketing',planning:'Planning',timetrack:'Time tracker','story-planner':'Story Planner','password-manager':'Passwords',expenses:'Expenses',leave:'Leave','offload-log':'Offload Log'}[this.currentView] ?? ''
+    return {tasks:'Tasks',contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',calendar:'Team Calendar',settings:'Settings',marketing:'Marketing',planning:'Planning',timetrack:'Time tracker','story-planner':'Story Planner','password-manager':'Passwords',expenses:'Expenses',leave:'Leave','offload-log':'Offload Log'}[this.currentView] ?? ''
   }
 
   updateTitle() {
@@ -3465,6 +3469,7 @@ export class App {
   iconProjects() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 6h6M5 9h4"/></svg>` }
   iconBudgets()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 3h12v2H2zM2 7h9M2 11h7"/><circle cx="13" cy="11" r="2.2"/><path d="M13 9.8v1l.7.7"/></svg>` }
   iconPlanning() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="2" width="3.6" height="12" rx="0.8"/><rect x="6.2" y="2" width="3.6" height="8.5" rx="0.8"/><rect x="10.9" y="2" width="3.6" height="5.5" rx="0.8"/></svg>` }
+  iconTasks() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4.5l1.6 1.6L6.6 3"/><path d="M2 11.5l1.6 1.6L6.6 10"/><line x1="8.5" y1="4.5" x2="14" y2="4.5"/><line x1="8.5" y1="11.5" x2="14" y2="11.5"/></svg>` }
   iconPipeline() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1" y="4" width="4" height="9" rx="1"/><rect x="6" y="6" width="4" height="7" rx="1"/><rect x="11" y="8" width="4" height="5" rx="1"/></svg>` }
   iconCalendar() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="3" width="13" height="11.5" rx="1.5"/><path d="M1.5 6.5h13M5 1.5v3M11 1.5v3"/></svg>` }
   iconStoryPlanner() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="2" width="13" height="3.5" rx="0.8"/><rect x="1.5" y="6.5" width="13" height="3.5" rx="0.8"/><rect x="1.5" y="11" width="8" height="3.5" rx="0.8"/></svg>` }

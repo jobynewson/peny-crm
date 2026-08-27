@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, boolean, numeric, jsonb, date, timestamp, integer, bigint, doublePrecision } from 'drizzle-orm/pg-core'
+import { pgTable, pgEnum, uuid, text, boolean, numeric, jsonb, date, timestamp, integer, bigint, doublePrecision } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 
 const timestamps = {
@@ -668,4 +668,81 @@ export const offload_backups = pgTable('offload_backups', {
   total_size_bytes:  bigint('total_size_bytes', { mode: 'number' }).notNull().default(0),
   passed:            boolean('passed').notNull().default(false),
   created_at:        timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// ── Tasks (Slate task board) ─────────────────────────────────────────────────
+// ONE table backs the desktop board, the mobile list and (later) canvas
+// checklists. Do not create a second task store — see claude.md.
+//
+// Identity note: assignee_id / created_by / author_id / actor_id are all
+// `app_users.id` UUIDs, matching board_cards.assignee_id. They are NOT Clerk
+// IDs — marketing_cards.lead_owner_id and canvas_items.sub_tasks[].owner_id use
+// that other convention, so absorbing those in Phase 3 needs a clerk_id lookup.
+
+// The only real Postgres enum in the schema. Every other status column here is
+// TEXT; a proper type is used because the API validates status against it and a
+// bad value should be impossible at the DB level, not just in a handler.
+export const task_status = pgEnum('task_status', ['todo', 'doing', 'done'])
+
+export const tasks = pgTable('tasks', {
+  id:              uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  // Workspace owner's Clerk ID, same as every other table — NOT the assignee.
+  user_id:         text('user_id').notNull(),
+  title:           text('title').notNull(),
+  body:            text('body'),                     // markdown
+  status:          task_status('status').notNull().default('todo'),
+  assignee_id:     uuid('assignee_id').references(() => app_users.id, { onDelete: 'set null' }),
+  // No onDelete: a task must always name its creator, so removing a user who
+  // has raised work is blocked rather than silently deleting the team's board.
+  created_by:      uuid('created_by').notNull().references(() => app_users.id),
+  due_at:          timestamp('due_at',          { withTimezone: true }),
+  // Set when the assignee says "Got it" — the WhatsApp blue tick. Cleared on
+  // reassignment, because the new person has not seen it.
+  acknowledged_at: timestamp('acknowledged_at', { withTimezone: true }),
+  nudged_at:       timestamp('nudged_at',       { withTimezone: true }),
+  project_id:      uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
+  // Reserved for Phase 3 (canvas checklist absorption). Columns only, no logic.
+  parent_type:     text('parent_type'),
+  parent_id:       uuid('parent_id'),
+  // Fractional index within the column — same drag-reorder pattern as
+  // board_cards.position and projects.kanban_position.
+  position:        doublePrecision('position').notNull().default(0),
+  archived_at:     timestamp('archived_at',     { withTimezone: true }),
+  ...timestamps,
+})
+
+export const task_comments = pgTable('task_comments', {
+  id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  task_id:    uuid('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  author_id:  uuid('author_id').notNull().references(() => app_users.id),
+  body:       text('body').notNull(),
+  created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// Append-only audit trail. EVERY mutation writes one, and notifications are
+// generated from these rows and nowhere else — this is the single choke point
+// (see claude.md). type is one of: created, assigned, unassigned, acknowledged,
+// status_changed, commented, due_changed, archived.
+export const task_events = pgTable('task_events', {
+  id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  task_id:    uuid('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  // Nullable: the unacknowledged-nudge cron acts with no human actor.
+  actor_id:   uuid('actor_id').references(() => app_users.id, { onDelete: 'set null' }),
+  type:       text('type').notNull(),
+  payload:    jsonb('payload').notNull().default({}),
+  created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// recipient_id, not user_id: everywhere else in this schema `user_id` means the
+// workspace owner's Clerk ID. Reusing that name for an app_users UUID recipient
+// would make `WHERE user_id = workspaceId` silently return nothing.
+export const notifications = pgTable('notifications', {
+  id:           uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  recipient_id: uuid('recipient_id').notNull().references(() => app_users.id, { onDelete: 'cascade' }),
+  task_id:      uuid('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  event_id:     uuid('event_id').notNull().references(() => task_events.id, { onDelete: 'cascade' }),
+  // assigned | mentioned | commented | acknowledged | completed | unacknowledged_nudge
+  type:         text('type').notNull(),
+  read_at:      timestamp('read_at',    { withTimezone: true }),
+  created_at:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
