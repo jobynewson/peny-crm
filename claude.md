@@ -5,7 +5,7 @@ Peny CRM is a web-based CRM system for managing contacts, projects, budgets, tim
 
 ## Tech Stack
 - **Frontend:** Vanilla JavaScript (ES modules) + Vite
-- **Auth:** Clerk (handles all auth, no user table in DB)
+- **Auth:** Clerk (identity provider; `app_users` is the DB-side user table)
 - **Database:** PostgreSQL (Neon) via Drizzle ORM
 - **File Storage:** Vercel Blob
 - **Email:** Nodemailer
@@ -37,9 +37,39 @@ index.html                # App HTML shell
 ## Important Architecture Details
 
 ### Authentication
-- Clerk handles 100% of auth (signup, signin, session management)
-- No user table in database — Clerk user IDs stored as `user_id TEXT` on every table
-- All queries are scoped by `user_id` to isolate multi-tenant data
+- Clerk handles signup, signin and session management.
+- There IS a user table: `app_users` (`id` UUID pk, `clerk_id TEXT` unique,
+  email, name, role). Clerk is the identity provider; `app_users` is the row
+  the rest of the schema points at.
+- **Two identity conventions exist — know which one a column uses:**
+  - `app_users.id` (UUID): `board_cards.assignee_id`, `tasks.assignee_id`,
+    `projects.deliverables[].assignee_id`, `leave_requests.*`, and all the
+    `task_*` tables.
+  - Clerk ID (TEXT): `marketing_cards.lead_owner_id`,
+    `canvas_items.sub_tasks[].owner_id`, `user_notes.user_id`.
+- `user_id TEXT` on a table means the **workspace owner's Clerk ID**, not the
+  row's author. There is one shared workspace (`getOrCreateWorkspace` returns
+  the first user's Clerk ID and every query scopes by it) — this is shared-team
+  scoping, not per-user multi-tenant isolation.
+
+### Database access
+- The browser talks to Neon **directly** via `import.meta.env.VITE_DATABASE_URL`
+  (`src/db/client.js`). Most features have no server component at all; `/api/*`
+  exists for work needing server-only secrets.
+- Because the connection string reaches the browser, server-side checks are a
+  convention rather than a security boundary. The tasks API is server-owned so
+  its rules live in one place, but it is not an access-control barrier while
+  direct DB access remains.
+
+### Migrations
+- **`drizzle/*.sql` files are a hand-written record, not a tool output.** There
+  is no `drizzle/meta/` and no `drizzle-kit generate` step in this repo.
+- The path that actually runs is `runMigrations()` in `src/db/client.js`:
+  idempotent `CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS` /
+  `CREATE INDEX IF NOT EXISTS`, executed **from the browser on every app boot**
+  (`src/main.js`). Anything added there must be safe to re-run every time.
+- Use `uuid_generate_v4()`, not `gen_random_uuid()` — it is what every existing
+  table uses.
 
 ### Database
 - Neon PostgreSQL with `@neondatabase/serverless` driver (supports edge runtimes)
@@ -119,6 +149,11 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 - `DASHBOARD_TOKEN` - Fixed secret token gating the public office-display
   dashboard at `/dashboard/<token>` (served by `public/dashboard.html`, data
   from `/api/portal?view=dashboard`). Unset = the dashboard returns 503.
+- `CRON_SECRET` - Bearer token Vercel Cron sends to `/api/reminders`. Four
+  scheduled jobs run: deliverables (09:00), notes (21:00), expense-digest
+  (09:00) and task-nudge (hourly). The nudge dispatches BEFORE the weekday-only
+  guard, so it fires at weekends too — an unacknowledged request should not wait
+  until Monday.
 - `FENCE_API_KEY` - Shared secret for the Offload Log ingest endpoint
   (`POST /api/offloads`). Fence sends it as `Authorization: Bearer <key>`.
   Unset = the endpoint returns 500 (so it fails closed rather than open).
@@ -151,6 +186,9 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 - `team-calendar.js` - Team calendar
 - `leave.js` - Leave/absence management
 - `story-planner.js` - Story planning
+- `tasks.js` - Task board (Phase 1). Desktop column board + mobile list over
+  the `/api/tasks` API — the only view that does NOT query the DB directly.
+  See "Tasks system" at the end of this file.
 - `boards.js` - Planning boards (kanban) — standalone via the Planning nav item
   AND embedded in each project's Planning tab. Granular rows (`boards`,
   `board_columns`, `board_cards`, `board_recurrences`); card order uses
@@ -191,3 +229,30 @@ above, a style or UX change to one should normally be ported to the other two:
 All three use the same "insert between neighbours, renumber the column when
 gaps run out" pattern for persisting drag order — see `_moveCard` /
 `_moveProjectCard` in the respective view files.
+
+## Tasks system
+- Tasks live in one `tasks` table. The board, the mobile list and (later)
+  canvas checklists are all views over it. Do not create a second task store.
+- Notifications are generated from `task_events` only. If you add a mutation,
+  write the event; do not create notifications directly from a handler. The
+  single choke point is `recordEvent()` in `api/_tasks.js` — immediate email
+  rides on it too.
+- The Vercel function ceiling is 12 and we are AT it. New task API routes go in
+  the `ROUTES` table in `api/_tasks.js` — never as a new file under `api/`.
+  The router is reached via `vercel.json` rewrites onto `/api/portal?view=tasks`
+  (the same delegation pattern as `_dashboard.js` and `_offloads.js`), so
+  `/api/tasks/*` and `/api/notifications/*` stay clean URLs at zero function
+  cost. A new file under `api/` fails the deployment outright.
+- Desktop and mobile are separate shells over a shared API and shared card
+  detail component (`src/views/tasks.js`). Do not attempt to make the column
+  board responsive.
+- Due dates and project links are always optional. Nothing may block task
+  creation except a non-empty title.
+- `tasks.parent_type` / `parent_id` are reserved for Phase 3 (absorbing canvas
+  checklist items). Columns only — no logic reads them.
+- Behaviour rules (ordering, mentions, notification fan-out, acknowledgement,
+  validation) are pure functions in `api/_task-rules.js` and unit-tested there.
+  Put new rules in that file rather than inline in a handler.
+- `api/_tasks.integration.test.js` exercises the handlers against a real
+  Postgres. It skips unless `TASKS_TEST_DATABASE_URL` is set and needs
+  `npm i -D pg` (the app's Neon HTTP driver cannot reach localhost).

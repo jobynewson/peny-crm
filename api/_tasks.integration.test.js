@@ -272,3 +272,106 @@ describeDb('notifications inbox', () => {
     expect(read_at).toBeNull()
   })
 })
+
+// ── Unacknowledged nudge cron ───────────────────────────────────────────────
+describeDb('nudge cron', () => {
+  let handleTaskNudge, unacknowledgedByAssignee, unacknowledgedSectionHtml
+  beforeAll(async () => {
+    ({ handleTaskNudge, unacknowledgedByAssignee, unacknowledgedSectionHtml } = await import('./reminders.js'))
+  })
+
+  // Assign a task and backdate its `assigned` event by `hoursAgo`.
+  const assignedHoursAgo = async (title, hoursAgo, assignee) => {
+    const [t] = await sql`
+      INSERT INTO tasks (user_id, title, created_by, assignee_id, position)
+      VALUES ('user_a', ${title}, ${ana.id}, ${assignee.id}, 1024) RETURNING id`
+    await sql`
+      INSERT INTO task_events (task_id, actor_id, type, payload, created_at)
+      VALUES (${t.id}, ${ana.id}, 'assigned', '{}'::jsonb, NOW() - (${hoursAgo} || ' hours')::interval)`
+    return t.id
+  }
+  const runNudge = async () => {
+    const res = res$()
+    await handleTaskNudge({ query: { type: 'task-nudge' } }, res, sql)
+    return res.body
+  }
+
+  it('nudges a task assigned 5 hours ago exactly once, not once per run', async () => {
+    const id = await assignedHoursAgo('waiting on ben', 5, ben)
+
+    const first = await runNudge()
+    expect(first.nudged).toBe(1)
+
+    // The acceptance criterion: three more cron runs must add nothing.
+    for (let i = 0; i < 3; i++) expect((await runNudge()).nudged).toBe(0)
+
+    const events = await sql`SELECT type FROM task_events WHERE task_id=${id} AND type='nudged'`
+    expect(events).toHaveLength(1)
+    const notifs = await sql`SELECT type FROM notifications WHERE task_id=${id} AND type='unacknowledged_nudge'`
+    expect(notifs).toHaveLength(1)
+    const [t] = await sql`SELECT nudged_at FROM tasks WHERE id=${id}`
+    expect(t.nudged_at).not.toBeNull()
+  })
+
+  it('leaves a task assigned 3 hours ago alone', async () => {
+    await assignedHoursAgo('too recent', 3, ben)
+    expect((await runNudge()).nudged).toBe(0)
+  })
+
+  it('does not nudge an acknowledged task', async () => {
+    const id = await assignedHoursAgo('already seen', 9, ben)
+    await sql`UPDATE tasks SET acknowledged_at=NOW() WHERE id=${id}`
+    expect((await runNudge()).nudged).toBe(0)
+  })
+
+  it('does not nudge archived or done tasks', async () => {
+    const a = await assignedHoursAgo('archived', 9, ben)
+    await sql`UPDATE tasks SET archived_at=NOW() WHERE id=${a}`
+    const d = await assignedHoursAgo('finished', 9, ben)
+    await sql`UPDATE tasks SET status='done' WHERE id=${d}`
+    expect((await runNudge()).nudged).toBe(0)
+  })
+
+  it('does not nudge an unassigned task', async () => {
+    await sql`
+      INSERT INTO tasks (user_id, title, created_by, position, created_at)
+      VALUES ('user_a', 'nobody', ${ana.id}, 1024, NOW() - INTERVAL '9 hours')`
+    expect((await runNudge()).nudged).toBe(0)
+  })
+
+  // Reassignment clears nudged_at, which must re-arm the nudge for the new person.
+  it('re-arms after reassignment', async () => {
+    const id = await assignedHoursAgo('handed over', 6, ben)
+    expect((await runNudge()).nudged).toBe(1)
+
+    await sql`UPDATE tasks SET assignee_id=${ana.id}, nudged_at=NULL, acknowledged_at=NULL WHERE id=${id}`
+    await sql`
+      INSERT INTO task_events (task_id, actor_id, type, payload, created_at)
+      VALUES (${id}, ${ben.id}, 'assigned', '{}'::jsonb, NOW() - INTERVAL '5 hours')`
+
+    expect((await runNudge()).nudged).toBe(1)
+    const notifs = await sql`SELECT recipient_id FROM notifications WHERE task_id=${id} AND type='unacknowledged_nudge' ORDER BY created_at`
+    expect(notifs.map(n => n.recipient_id)).toEqual([ben.id, ana.id])
+  })
+
+  // Editing a task must not restart its acknowledgement clock.
+  it('measures from the assigned event, not updated_at', async () => {
+    const id = await assignedHoursAgo('renamed since', 6, ben)
+    await sql`UPDATE tasks SET title='renamed just now', updated_at=NOW() WHERE id=${id}`
+    expect((await runNudge()).nudged).toBe(1)
+  })
+
+  it('builds the digest section only when something is outstanding', async () => {
+    await assignedHoursAgo('outstanding', 6, ben)
+    const byAssignee = await unacknowledgedByAssignee(sql)
+    expect(byAssignee[ben.id]).toHaveLength(1)
+    expect(unacknowledgedSectionHtml(byAssignee[ben.id])).toContain('Waiting on you')
+    expect(unacknowledgedSectionHtml([])).toBe('')
+  })
+
+  it('escapes task titles in the digest section', async () => {
+    const html = unacknowledgedSectionHtml([{ title: '<script>alert(1)</script>', due_at: null }])
+    expect(html).not.toContain('<script>')
+    expect(html).toContain('&lt;script&gt;')
+  })
+})

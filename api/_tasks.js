@@ -18,6 +18,7 @@
 //     validation failures add a `field` so the UI can point at the input.
 
 import { verifyClerkUser } from './_auth.js'
+import { sendImmediateTaskEmails } from './_task-mail.js'
 import {
   positionBetween, needsRebalance, rebalancedPositions,
   parseMentions, notificationsFor, acknowledgementPatch,
@@ -159,13 +160,14 @@ async function workspaceUserIds(sql) {
 // THE choke point. Every mutation writes its event here, and notifications are
 // generated from that event — never directly by a handler. Adding a mutation
 // means calling this; see claude.md.
-async function recordEvent(sql, { task, actorId, type, payload = {}, mentionedIds = [] }) {
+async function recordEvent(sql, { task, actorId, actorName, type, payload = {}, mentionedIds = [] }) {
   const [event] = await sql`
     INSERT INTO task_events (task_id, actor_id, type, payload)
     VALUES (${task.id}, ${actorId}, ${type}, ${JSON.stringify(payload)}::jsonb)
     RETURNING id, task_id, actor_id, type, payload, created_at
   `
-  for (const r of notificationsFor({ type, actorId, task, mentionedIds })) {
+  const recipients = notificationsFor({ type, actorId, task, mentionedIds })
+  for (const r of recipients) {
     // ON CONFLICT makes a retried write a no-op rather than a double-notify;
     // the unique index is the real guarantee.
     await sql`
@@ -173,6 +175,16 @@ async function recordEvent(sql, { task, actorId, type, payload = {}, mentionedId
       VALUES (${r.recipient_id}, ${task.id}, ${event.id}, ${r.type})
       ON CONFLICT (recipient_id, event_id) DO NOTHING
     `
+  }
+
+  // Immediate mail rides on the same choke point (assigned + mentioned only).
+  // Deliberately swallowed: a Gmail outage must not fail the mutation.
+  if (actorName) {
+    try {
+      await sendImmediateTaskEmails(sql, { task, actorName, notifications: recipients })
+    } catch (err) {
+      console.error('[tasks] notification email failed:', err.message)
+    }
   }
   return event
 }
@@ -345,9 +357,9 @@ async function createTask(req, res, { sql, user }) {
               position, archived_at, created_at, updated_at
   `
 
-  await recordEvent(sql, { task, actorId: user.id, type: 'created', payload: { title: task.title } })
+  await recordEvent(sql, { task, actorId: user.id, actorName: user.name || user.email, type: 'created', payload: { title: task.title } })
   if (assignee) {
-    await recordEvent(sql, { task, actorId: user.id, type: 'assigned', payload: { assignee_id: assignee } })
+    await recordEvent(sql, { task, actorId: user.id, actorName: user.name || user.email, type: 'assigned', payload: { assignee_id: assignee } })
   }
   return res.status(201).json({ task })
 }
@@ -399,27 +411,27 @@ async function patchTask(req, res, { sql, user, params }) {
   // and so does every notification.
   if (has('assignee_id') && patch.assignee_id !== task.assignee_id) {
     await recordEvent(sql, {
-      task: updated, actorId: user.id,
+      task: updated, actorId: user.id, actorName: user.name || user.email,
       type: patch.assignee_id ? 'assigned' : 'unassigned',
       payload: { from: task.assignee_id, to: patch.assignee_id },
     })
   }
   if (has('status') && patch.status !== task.status) {
     await recordEvent(sql, {
-      task: updated, actorId: user.id, type: 'status_changed',
+      task: updated, actorId: user.id, actorName: user.name || user.email, type: 'status_changed',
       payload: { from: task.status, to: patch.status },
     })
   }
   if (has('due_at') && String(patch.due_at) !== String(task.due_at)) {
     await recordEvent(sql, {
-      task: updated, actorId: user.id, type: 'due_changed',
+      task: updated, actorId: user.id, actorName: user.name || user.email, type: 'due_changed',
       payload: { from: task.due_at, to: patch.due_at },
     })
   }
   // An implicit acknowledgement (assignee moved their own card to doing/done)
   // still owes the creator a receipt.
   if (!task.acknowledged_at && updated.acknowledged_at) {
-    await recordEvent(sql, { task: updated, actorId: user.id, type: 'acknowledged' })
+    await recordEvent(sql, { task: updated, actorId: user.id, actorName: user.name || user.email, type: 'acknowledged' })
   }
 
   if (has('position')) await rebalanceColumn(sql, ws, updated.status)
@@ -451,7 +463,7 @@ async function acknowledgeTask(req, res, { sql, user, params }) {
               acknowledged_at, nudged_at, project_id, parent_type, parent_id,
               position, archived_at, created_at, updated_at
   `
-  await recordEvent(sql, { task: updated, actorId: user.id, type: 'acknowledged' })
+  await recordEvent(sql, { task: updated, actorId: user.id, actorName: user.name || user.email, type: 'acknowledged' })
   return res.status(200).json({ task: updated })
 }
 
@@ -479,7 +491,7 @@ async function createComment(req, res, { sql, user, params }) {
   const mentionedIds = parseMentions(comment.body, users)
 
   await recordEvent(sql, {
-    task, actorId: user.id, type: 'commented',
+    task, actorId: user.id, actorName: user.name || user.email, type: 'commented',
     payload: { comment_id: comment.id, mentioned_ids: mentionedIds },
     mentionedIds,
   })
