@@ -684,7 +684,7 @@ export class App {
     if (!hash) return
     const parts = hash.split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses','leave','offload-log','planning']
+    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses','leave','offload-log','planning','tasks']
     if (!validViews.includes(view)) return
     this.currentView = view
     if (view === 'projects' && id) {
@@ -709,7 +709,7 @@ export class App {
     const hash = location.hash.slice(1)
     const parts = (hash || 'dashboard').split('/')
     const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses','leave','offload-log','planning']
+    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses','leave','offload-log','planning','tasks']
     if (!validViews.includes(view)) { this.currentView = 'dashboard'; this.render(); return }
 
     this.currentView = view
