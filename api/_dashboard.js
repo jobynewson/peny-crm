@@ -179,9 +179,15 @@ export async function handleDashboard(req, res, sql) {
     const allocation = p.retainer_hours != null ? parseFloat(p.retainer_hours) : null
     let used = 0
     let periodStartStr = null
+    let periodEndStr = null
     if (p.retainer_start) {
       const ps = retainerPeriodStart(p.retainer_start, now)
       periodStartStr = toDateStr(ps)
+      // Inclusive last day of the period: the day before the next one starts.
+      // Periods are anchored on retainer_start's day-of-month, so this is
+      // usually not a calendar month — the card shows the dates for that reason.
+      const pe = new Date(Date.UTC(ps.getUTCFullYear(), ps.getUTCMonth() + 1, ps.getUTCDate()) - 86400000)
+      periodEndStr = toDateStr(pe)
       for (const e of (usedByProject[p.id] || [])) {
         if (e.date >= periodStartStr) used += e.hours
       }
@@ -200,6 +206,7 @@ export async function handleDashboard(req, res, sql) {
       pct: allocation ? Math.round((used / allocation) * 100) : null,
       alert: p.retainer_alert != null ? parseFloat(p.retainer_alert) : 80,
       periodStart: periodStartStr,
+      periodEnd: periodEndStr,
     })
   }
   retainers.sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1))

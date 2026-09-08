@@ -6,6 +6,7 @@ import {
   sumHours, hoursByMonth, entriesByMonth, allocationLines, lineUsage,
   monthlyUsage, overallUsage, windowUsage,
   usagePct, usageColour, hasAmortisedItems, OTHER_LINE, LEGACY_LINE,
+  isTimeItem, itemContractHours, contractLines, hasPerUnitItems,
 } from './retainer-usage.js'
 
 const entry = (entry_date, hours, line_label = 'Editing') => ({ entry_date, hours, line_label })
@@ -377,5 +378,127 @@ describe('windowUsage completeness', () => {
     const u = windowUsage(project, [], null, at('2026-09-08'))
     expect(u.complete).toBe(true)
     expect(u.monthsElapsed).toBe(12)
+  })
+})
+
+
+describe('per-unit items', () => {
+  const unitItem = { label: 'Social posts', qty: 4, unit: 'unit', period: 'month' }
+
+  it('recognises which units are time', () => {
+    expect(isTimeItem({ unit: 'hours' })).toBe(true)
+    expect(isTimeItem({ unit: 'days' })).toBe(true)
+    expect(isTimeItem(unitItem)).toBe(false)
+    // Only the explicit 'unit' value is excluded; a missing unit reads as days.
+    expect(isTimeItem({})).toBe(true)
+    expect(isTimeItem(null)).toBe(false)
+  })
+
+  it('contributes no hours — a per-unit item is not 8 hours each', () => {
+    expect(itemMonthlyHours(unitItem)).toBe(0)
+    expect(itemContractHours(unitItem)).toBe(0)
+  })
+
+  it('is left out of the monthly allocation', () => {
+    const p = { retainer_items: [
+      { label: 'Editing', qty: 4, unit: 'hours', period: 'month' },
+      unitItem,
+    ] }
+    expect(monthlyAllocationHours(p)).toBe(4)   // not 4 + 32
+  })
+
+  it('gets no allocation line, so it never appears in a block', () => {
+    const p = { retainer_start: '2025-03-01', retainer_items: [
+      { label: 'Editing', qty: 4, unit: 'hours', period: 'month' },
+      unitItem,
+    ] }
+    expect(allocationLines(p).map(l => l.label)).toEqual(['Editing'])
+    const blocks = monthlyUsage(p, [], at('2025-03-20'))
+    expect(blocks[0].lines.map(l => l.label)).toEqual(['Editing'])
+    expect(overallUsage(p, [], at('2025-03-20')).lines.map(l => l.label)).toEqual(['Editing'])
+    expect(windowUsage(p, [], null, at('2025-03-20')).lines.map(l => l.label)).toEqual(['Editing'])
+  })
+
+  it('still surfaces hours if someone logs time against one, rather than losing them', () => {
+    const p = { retainer_start: '2025-03-01', retainer_items: [
+      { label: 'Editing', qty: 4, unit: 'hours', period: 'month' },
+      unitItem,
+    ] }
+    const lines = monthlyUsage(p, [entry('2025-03-04', 2, 'Social posts')], at('2025-03-20'))[0].lines
+    expect(line(lines, 'Social posts')).toBeUndefined()
+    expect(line(lines, OTHER_LINE)).toEqual({ label: OTHER_LINE, logged: 2, allocated: 0, isOther: true })
+  })
+
+  it('is reported so its absence can be explained', () => {
+    expect(hasPerUnitItems({ retainer_items: [unitItem] })).toBe(true)
+    expect(hasPerUnitItems({ retainer_items: [{ label: 'Editing', qty: 4, unit: 'hours' }] })).toBe(false)
+  })
+
+  it('does not make a monthly-only retainer look amortised', () => {
+    expect(hasAmortisedItems({ retainer_items: [{ label: 'Posts', qty: 4, unit: 'unit', period: 'quarter' }] })).toBe(false)
+  })
+
+  it('falls back to legacy hours when every item is per-unit', () => {
+    const p = { retainer_items: [unitItem], retainer_hours: '10' }
+    expect(allocationLines(p)).toEqual([{ label: LEGACY_LINE, monthly: 10, legacy: true }])
+  })
+})
+
+describe('contractLines', () => {
+  it('reports each item over its own period, un-amortised', () => {
+    const p = { retainer_items: [
+      { label: 'Editing', qty: 4, unit: 'hours', period: 'month' },
+      { label: 'Social', qty: 6, unit: 'hours', period: 'quarter' },
+      { label: 'Strategy', qty: 2, unit: 'days', period: 'year' },
+    ] }
+    expect(contractLines(p)).toEqual([
+      { label: 'Editing',  hours: 4,  period: 'month',   periodLabel: 'month' },
+      { label: 'Social',   hours: 6,  period: 'quarter', periodLabel: 'quarter' },
+      { label: 'Strategy', hours: 16, period: 'year',    periodLabel: 'year' },
+    ])
+  })
+  it('omits per-unit and zero-hour items', () => {
+    const p = { retainer_items: [
+      { label: 'Posts', qty: 4, unit: 'unit', period: 'month' },
+      { label: 'Empty', qty: 0, unit: 'hours', period: 'month' },
+      { label: 'Editing', qty: 4, unit: 'hours', period: 'month' },
+    ] }
+    expect(contractLines(p).map(l => l.label)).toEqual(['Editing'])
+  })
+  it('merges items sharing a label and period', () => {
+    const p = { retainer_items: [
+      { label: 'Editing', qty: 4, unit: 'hours', period: 'month' },
+      { label: 'Editing', qty: 2, unit: 'hours', period: 'month' },
+    ] }
+    expect(contractLines(p)).toEqual([{ label: 'Editing', hours: 6, period: 'month', periodLabel: 'month' }])
+  })
+  it('keeps the same label separate when the periods differ', () => {
+    const p = { retainer_items: [
+      { label: 'Editing', qty: 4, unit: 'hours', period: 'month' },
+      { label: 'Editing', qty: 6, unit: 'hours', period: 'quarter' },
+    ] }
+    expect(contractLines(p).map(l => `${l.hours}h/${l.periodLabel}`)).toEqual(['4h/month', '6h/quarter'])
+  })
+  it('describes a legacy retainer as monthly hours', () => {
+    expect(contractLines({ retainer_items: [], retainer_hours: '10' }))
+      .toEqual([{ label: LEGACY_LINE, hours: 10, period: 'month', periodLabel: 'month' }])
+  })
+  it('is empty when nothing is contracted', () => {
+    expect(contractLines({})).toEqual([])
+  })
+})
+
+describe('items with no unit set', () => {
+  // Every path that creates a retainer item sets a unit, but older rows may not
+  // have one. Those are read as days, as they were before per-unit items were
+  // excluded, so legacy data keeps its hours.
+  it('is treated as days, not dropped', () => {
+    expect(isTimeItem({ qty: 2, period: 'month' })).toBe(true)
+    expect(itemContractHours({ qty: 2, period: 'month' })).toBe(16)
+    expect(itemMonthlyHours({ qty: 2, period: 'month' })).toBe(16)
+  })
+  it('still gets an allocation line', () => {
+    expect(allocationLines({ retainer_items: [{ label: 'Legacy', qty: 1 }] }))
+      .toEqual([{ label: 'Legacy', monthly: 8, legacy: false }])
   })
 })

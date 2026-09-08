@@ -34,6 +34,20 @@ export const PERIOD_MULT = { week: 4.33, month: 1, quarter: 1 / 3, half: 1 / 6, 
 // Hours in a day, for retainer items measured in days rather than hours.
 export const HOURS_PER_DAY = 8
 
+// A retainer item's unit is 'hours', 'days' or 'unit'. A 'unit' item counts
+// deliverables ("4 social posts a month"), carries no hours, and so is excluded
+// from this view entirely: it contributes nothing to any allocation and gets no
+// line in any block.
+//
+// Only that explicit value is excluded. Every path that creates an item sets a
+// unit, but an older row missing one is read as days — the app's default, and
+// how this was treated before — so legacy data never silently loses its hours.
+export const NON_TIME_UNITS = new Set(['unit'])
+export function isTimeItem(item) { return !!item && !NON_TIME_UNITS.has(item.unit) }
+
+// Human wording for a contract period.
+export const PERIOD_LABEL = { week: 'week', month: 'month', quarter: 'quarter', half: 'half year', year: 'year' }
+
 // Guard against a nonsense retainer_start (or a clock skew) producing a
 // runaway month list.
 const MAX_MONTHS = 600
@@ -69,11 +83,18 @@ export function monthLabel(key) {
 
 // Monthly hours contributed by one retainer item, amortised over its period.
 export function itemMonthlyHours(item) {
-  if (!item) return 0
+  if (!isTimeItem(item)) return 0
   const mult = PERIOD_MULT[item.period || 'month'] ?? 1
-  const qty = parseFloat(item.qty) || 0
-  const hours = item.unit === 'hours' ? qty : qty * HOURS_PER_DAY
-  return hours * mult
+  return itemContractHours(item) * mult
+}
+
+// Hours an item contracts over its OWN period, un-amortised — 2 days per
+// quarter is 16 hours per quarter, not its monthly share. This is what the
+// contracted summary shows, so the period is visible at a glance.
+export function itemContractHours(item) {
+  if (!isTimeItem(item)) return 0
+  const qty = parseFloat(item?.qty) || 0
+  return item.unit === 'hours' ? qty : qty * HOURS_PER_DAY
 }
 
 // Total hours a retainer allocates per month. Prefers the itemised breakdown
@@ -147,7 +168,8 @@ export function allocationLines(project) {
   const byLabel = new Map()
   for (const item of items) {
     const label = String(item?.label ?? '').trim()
-    if (!label) continue
+    // Per-unit items are deliverable counts, not time — they get no line here.
+    if (!label || !isTimeItem(item)) continue
     byLabel.set(label, (byLabel.get(label) || 0) + itemMonthlyHours(item))
   }
   if (byLabel.size) {
@@ -155,6 +177,36 @@ export function allocationLines(project) {
   }
   const legacy = parseFloat(project?.retainer_hours) || 0
   return legacy > 0 ? [{ label: LEGACY_LINE, monthly: legacy, legacy: true }] : []
+}
+
+// The contracted terms behind the allocation lines: each time-based item's
+// hours over its own period, so "4h a month" and "6h a quarter" are
+// distinguishable at a glance rather than both showing as monthly shares.
+// Items with the same label and period are merged; per-unit items are omitted.
+export function contractLines(project) {
+  const items = Array.isArray(project?.retainer_items) ? project.retainer_items : []
+  const merged = new Map()
+  for (const item of items) {
+    const label = String(item?.label ?? '').trim()
+    if (!label || !isTimeItem(item)) continue
+    const hours = itemContractHours(item)
+    if (hours <= 0) continue
+    const period = PERIOD_LABEL[item.period || 'month'] ? (item.period || 'month') : 'month'
+    const key = `${label}|${period}`
+    const prev = merged.get(key)
+    if (prev) prev.hours += hours
+    else merged.set(key, { label, hours, period, periodLabel: PERIOD_LABEL[period] })
+  }
+  if (merged.size) return [...merged.values()]
+  const legacy = parseFloat(project?.retainer_hours) || 0
+  return legacy > 0 ? [{ label: LEGACY_LINE, hours: legacy, period: 'month', periodLabel: PERIOD_LABEL.month }] : []
+}
+
+// True if the retainer has any per-unit items, which are deliberately absent
+// from every block — worth footnoting so their absence isn't a mystery.
+export function hasPerUnitItems(project) {
+  const items = Array.isArray(project?.retainer_items) ? project.retainer_items : []
+  return items.some(i => String(i?.label ?? '').trim() && !isTimeItem(i))
 }
 
 // Break a set of entries down across a retainer's allocation lines. `months`
@@ -271,5 +323,5 @@ export function usageColour(logged, allocated, alertPct = 80) {
 // the monthly figures shown are amortised and worth footnoting.
 export function hasAmortisedItems(project) {
   const items = Array.isArray(project?.retainer_items) ? project.retainer_items : []
-  return items.some(i => (i?.period || 'month') !== 'month' && (parseFloat(i?.qty) || 0) > 0)
+  return items.some(i => isTimeItem(i) && (i?.period || 'month') !== 'month' && (parseFloat(i?.qty) || 0) > 0)
 }
