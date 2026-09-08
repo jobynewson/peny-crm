@@ -1139,6 +1139,15 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .ds-widget { display: inline-flex; align-items: baseline; gap: 6px; padding: 7px 18px; background: #D92D20; color: #fff; border-radius: var(--radius-pill); box-shadow: var(--shadow-sm); }
 .ds-days { font-size: 18px; font-weight: 700; line-height: 1; color: #fff; font-variant-numeric: tabular-nums; }
 .ds-label { font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.9); }
+
+/* YouTube view-count ticker — mirrors the office dashboard's pill
+   (public/dashboard.html). Distinct from the days-since red above so the two
+   don't read as the same widget when both are on. */
+#yt-widget-wrap { display: flex; justify-content: center; padding: 0 16px 10px; }
+.yt-widget { display: inline-flex; align-items: baseline; gap: 7px; padding: 7px 18px; background: #FF0033; color: #fff; border-radius: var(--radius-pill); box-shadow: var(--shadow-sm); }
+.yt-views { font-size: 18px; font-weight: 700; line-height: 1; color: #fff; font-variant-numeric: tabular-nums; }
+.yt-label { font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.9); }
+.yt-widget--error { background: var(--bg-secondary); color: var(--text-secondary); border: 1px solid var(--border-med); font-size: 12px; box-shadow: none; }
 .ds-name { font-weight: 700; color: #fff; }
 
 /* ════════════════════════════════════════════════════════════════════════

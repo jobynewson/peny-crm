@@ -24,16 +24,25 @@ const cache = new Map() // videoId -> { views, fetchedAt, title }
 
 const VIDEO_ID_RE = /^[a-zA-Z0-9_-]{11}$/
 
-// Resolve the view count for `videoId`, or null if it can't be determined and
-// nothing usable is cached. Never throws.
+// Resolve the view count for `videoId`. Returns { views } on success (with
+// `stale: true` when serving a cached value after a failed refresh), or
+// { error } describing why there is no number. Never throws.
+//
+// The error strings are surfaced on the token-gated dashboard endpoint so a
+// ticker that isn't appearing can be diagnosed without guessing — they never
+// contain the API key (Google's own messages are scrubbed of it below).
 export async function getYoutubeViews(videoId) {
-  if (!VIDEO_ID_RE.test(String(videoId || ''))) return null
+  if (!VIDEO_ID_RE.test(String(videoId || ''))) {
+    return { error: 'The saved video ID is not a valid YouTube ID — re-save the video URL in Settings' }
+  }
 
   const cached = cache.get(videoId)
-  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) return cached
+  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) return { views: cached.views }
 
   const key = process.env.YOUTUBE_API_KEY
-  if (!key) return null
+  if (!key) {
+    return { error: 'YOUTUBE_API_KEY is not set on this deployment — note that adding it in Vercel only takes effect on the next deploy' }
+  }
 
   const url = 'https://www.googleapis.com/youtube/v3/videos'
     + `?part=statistics&id=${encodeURIComponent(videoId)}&key=${encodeURIComponent(key)}`
@@ -42,21 +51,36 @@ export async function getYoutubeViews(videoId) {
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
   try {
     const res = await fetch(url, { signal: controller.signal })
-    if (!res.ok) throw new Error(`YouTube responded ${res.status}`)
+    if (!res.ok) {
+      // Google explains the real cause (key restrictions, API not enabled,
+      // quota) in the body. Surface it, with the key scrubbed just in case.
+      let detail = ''
+      try {
+        const body = await res.json()
+        if (body?.error?.message) detail = ` — ${String(body.error.message).split(key).join('[key]')}`
+      } catch {}
+      throw new Error(`YouTube API returned ${res.status}${detail}`)
+    }
     const body = await res.json()
-    const stats = body?.items?.[0]?.statistics
+    if (!body?.items?.length) {
+      throw new Error('YouTube returned no such video — check the video is public or unlisted, not private or deleted')
+    }
+    const stats = body.items[0].statistics
     // A video with statistics hidden by its owner has no viewCount at all.
-    if (!stats || stats.viewCount == null) throw new Error('No view count available')
+    if (!stats || stats.viewCount == null) {
+      throw new Error('That video does not expose a view count — its owner has hidden its statistics')
+    }
     const views = Number(stats.viewCount)
-    if (!Number.isFinite(views)) throw new Error('Unparseable view count')
-    const entry = { views, fetchedAt: Date.now() }
-    cache.set(videoId, entry)
-    return entry
+    if (!Number.isFinite(views)) throw new Error('YouTube returned an unparseable view count')
+    cache.set(videoId, { views, fetchedAt: Date.now() })
+    return { views }
   } catch (e) {
-    // Quota exhausted, video deleted/private, network blip — fall back to the
-    // last good number if we have one, otherwise hide the ticker.
-    console.error('[youtube-ticker]', e.message)
-    return cached || null
+    const reason = e.name === 'AbortError' ? `YouTube did not respond within ${TIMEOUT_MS}ms` : e.message
+    console.error('[youtube-ticker]', reason)
+    // Quota exhausted, video deleted, network blip — keep showing the last good
+    // number rather than letting the pill vanish off an office screen.
+    if (cached) return { views: cached.views, stale: true }
+    return { error: reason }
   } finally {
     clearTimeout(timer)
   }

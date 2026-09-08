@@ -126,6 +126,21 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
   used by the office dashboard's view-count ticker (`api/_youtube.js`). No
   OAuth, so it only reads public/unlisted videos. Unset = the ticker just
   doesn't render; the rest of the dashboard is unaffected.
+  - **Debugging a ticker that won't appear:** open the office dashboard with
+    `?debug=1` (e.g. `/dashboard/<token>?debug=1`) and the pill is replaced by
+    the reason — unset key, key restricted to HTTP referrers, API not enabled
+    on the Google project, quota exhausted, private/deleted video, or nothing
+    configured in Settings. The same string is always in the JSON as
+    `timers.youtubeError`, so `curl`ing the endpoint works too. It is never
+    shown without `?debug=1`, so an office screen stays clean, and it never
+    contains the API key.
+  - The ticker appears on BOTH the office dashboard and the in-app Dashboard,
+    sharing the `settings.youtube_ticker` row. They reach the count by
+    different routes: the office display via `/api/portal?view=dashboard`
+    (gated by DASHBOARD_TOKEN), the app via `GET /api/blob?action=youtube&id=`
+    (gated by Clerk). The app cannot call YouTube directly — YOUTUBE_API_KEY is
+    server-side only and must never be given a VITE_ prefix, which would ship
+    it to the browser. `?debug=1` surfaces the reason on both.
 
 ## Common Tasks
 

@@ -168,6 +168,9 @@
   <script type="module">
     const fromPath = location.pathname.split('/dashboard/')[1]?.split('/')[0]
     const token = fromPath || new URLSearchParams(location.search).get('token')
+    // ?debug=1 surfaces why the YouTube ticker isn't rendering. Off by default
+    // so an office screen never shows diagnostics.
+    const DEBUG = new URLSearchParams(location.search).has('debug')
     const REFRESH_MS = 3 * 60 * 1000
 
     const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
@@ -312,6 +315,12 @@
           <div class="yt-widget">
             <span class="yt-views">${tm.youtube.views.toLocaleString('en-GB')}</span>
             <span class="yt-label">${esc(tm.youtube.label)}</span>
+          </div>
+        </div>`
+      } else if (DEBUG && tm.youtubeError) {
+        ytHTML = `<div id="yt-widget-wrap">
+          <div class="yt-widget" style="background:var(--surface2);border:1px solid var(--border2)">
+            <span class="yt-label" style="color:var(--amber)">YouTube ticker: ${esc(tm.youtubeError)}</span>
           </div>
         </div>`
       }
