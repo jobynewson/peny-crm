@@ -185,6 +185,18 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
   block per calendar month, an "Overall" cumulative figure, and a 12-month
   window. Below them the entry log concertinas away (state remembered in
   `localStorage` under `slate-tt-log-open`).
+- **Every block breaks down by retainer line item — there is no combined
+  total anywhere in this section.** Each item gets its own logged/allocated
+  figure and bar, so you can see which item is running hot rather than a sum
+  that hides it. Lines with neither allocation nor logged time are omitted, so
+  a fee-only item with no hours stays out of the way until time lands on it.
+- Entries are matched to items by `time_entries.line_label` against
+  `retainer_items[].label`, the same way the dashboard bars do it. Anything
+  that matches no current item (a renamed item, or hours logged against a
+  budget line before the project became a retainer) is collected into an
+  "Other" line with no allocation, rather than being silently dropped. A
+  retainer with no items at all runs on the legacy `retainer_hours` field as a
+  single line, and every logged hour counts toward it.
 - The maths is pure and unit-tested in `src/utils/retainer-usage.js`
   (+ `retainer-usage.test.js`, run with `npm test` / vitest). Nothing in the
   view does its own arithmetic — extend the module, not the template.
