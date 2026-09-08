@@ -78,9 +78,18 @@ export async function handleDashboard(req, res, sql) {
     youtube: null,
   }
 
+  // youtubeError explains an absent pill (unset key, restricted key, API not
+  // enabled, private video, nothing configured). It is only rendered on the
+  // page when ?debug=1 is passed, but is always in the payload so the endpoint
+  // can be curled. Contains no secrets.
   if (yt?.video_id && yt?.label) {
     const stats = await getYoutubeViews(yt.video_id)
-    if (stats) timers.youtube = { label: yt.label, views: stats.views }
+    if (stats?.views != null) timers.youtube = { label: yt.label, views: stats.views, stale: !!stats.stale }
+    else if (stats?.error) timers.youtubeError = stats.error
+  } else if (yt) {
+    timers.youtubeError = 'The ticker is saved but incomplete — it needs both a video URL and wording'
+  } else {
+    timers.youtubeError = 'No ticker is configured — set one in Settings → Dashboard YouTube ticker'
   }
 
   const now = new Date()
