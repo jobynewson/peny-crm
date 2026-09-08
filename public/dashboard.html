@@ -38,6 +38,12 @@
     .ds-label { font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.9) }
     .ds-name  { font-weight: 700; color: #fff }
 
+    /* ── YouTube view-count ticker ──────────────────────────────────── */
+    #yt-widget-wrap { display: flex; justify-content: center; padding: 10px 16px }
+    .yt-widget { display: inline-flex; align-items: baseline; gap: 7px; padding: 6px 18px; background: #ff0033; color: #fff; border-radius: 999px }
+    .yt-views { font-size: 18px; font-weight: 700; line-height: 1; color: #fff; font-variant-numeric: tabular-nums }
+    .yt-label { font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.9) }
+
     /* ── Countdown: exact match to app (src/app.js inlined styles) ──── */
     #cd-widget-wrap { padding: 0 24px 16px }
     .cd-widget { background: var(--surface); border: 1px solid var(--border2); border-radius: 10px; padding: 28px 24px 24px; text-align: center; position: relative; overflow: hidden }
@@ -299,6 +305,17 @@
         }
       }
 
+      // YouTube view-count pill. Wording after the number is set in Settings.
+      let ytHTML = ''
+      if (tm.youtube && Number.isFinite(tm.youtube.views)) {
+        ytHTML = `<div id="yt-widget-wrap">
+          <div class="yt-widget">
+            <span class="yt-views">${tm.youtube.views.toLocaleString('en-GB')}</span>
+            <span class="yt-label">${esc(tm.youtube.label)}</span>
+          </div>
+        </div>`
+      }
+
       let cdHTML = ''
       if (cdTarget != null && (cdTarget - Date.now()) > -86400000) {
         const diff = cdTarget - Date.now()
@@ -481,6 +498,7 @@
 
         ${cdHTML}
         ${dsHTML}
+        ${ytHTML}
 
         <div class="body">
           <!-- Left: Team Calendar -->

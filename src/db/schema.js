@@ -42,6 +42,8 @@ export const settings = pgTable('settings', {
   countdown_timer: jsonb('countdown_timer'),
   // Dashboard days-since timer
   days_since_timer: jsonb('days_since_timer'),
+  // Dashboard YouTube view-count ticker — { label, url, video_id }
+  youtube_ticker: jsonb('youtube_ticker'),
   // Email: receive daily roundup of all reminders sent to all users
   reminder_roundup: boolean('reminder_roundup').notNull().default(false),
   // Expense tracker: who receives the monthly expense email (array of clerk_ids)

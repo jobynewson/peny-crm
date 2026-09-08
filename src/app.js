@@ -2447,6 +2447,19 @@ export class App {
         </div>
 
         <div class="panel">
+          <div class="panel-header"><span class="panel-title">Dashboard YouTube ticker</span></div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Show a live view count for one YouTube video at the top of the office Dashboard. The wording next to the number is yours — the count refreshes with the rest of the dashboard.</div>
+            <div class="field"><div class="field-label">Video URL</div><input type="text" id="s-yt-url" value="${s.youtube_ticker?.url??''}" placeholder="https://www.youtube.com/watch?v=..." /></div>
+            <div class="field"><div class="field-label">Wording after the number</div><input type="text" id="s-yt-label" value="${s.youtube_ticker?.label??''}" placeholder="e.g. views on the showreel" /></div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button class="btn-primary" id="settings-save-yt-btn">Save ticker</button>
+              ${s.youtube_ticker ? `<button class="btn-cancel" id="settings-clear-yt-btn">Remove ticker</button>` : ''}
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
           <div class="panel-header"><span class="panel-title">Dashboard countdown timer</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
             <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Pin a countdown to the top of the Dashboard — great for project wrap dates or big deadlines. For 24 hours after the deadline, a celebration kicks off.</div>
@@ -2552,6 +2565,8 @@ export class App {
     mc.querySelector('#account-job-title-save')?.addEventListener('click', () => this._saveJobTitle(mc))
     mc.querySelector('#settings-save-ds-btn')?.addEventListener('click', () => this._saveDaysSinceTimer(mc))
     mc.querySelector('#settings-clear-ds-btn')?.addEventListener('click', () => this._clearDaysSinceTimer(mc))
+    mc.querySelector('#settings-save-yt-btn')?.addEventListener('click', () => this._saveYoutubeTicker(mc))
+    mc.querySelector('#settings-clear-yt-btn')?.addEventListener('click', () => this._clearYoutubeTicker(mc))
     mc.querySelector('#settings-save-cd-btn')?.addEventListener('click', () => this._saveCountdownTimer(mc))
     mc.querySelector('#settings-clear-cd-btn')?.addEventListener('click', () => this._clearCountdownTimer(mc))
     mc.querySelector('#settings-save-roundup-btn')?.addEventListener('click', () => this._saveReminderRoundup(mc))
@@ -3087,6 +3102,41 @@ export class App {
       this.toast('Timer removed')
       this.renderSettings(mc)
     } catch (e) { console.error(e); this.toast('Error removing timer') }
+  }
+
+  // Pull the 11-character video ID out of any of the usual YouTube URL shapes
+  // (watch?v=, youtu.be/, /embed/, /shorts/). Returns null if there isn't one.
+  // Mirrors parseVideoUrl() in api/_preview.js, plus /shorts/.
+  _parseYoutubeId(url) {
+    const m = String(url || '').match(
+      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/
+    )
+    return m ? m[1] : null
+  }
+
+  async _saveYoutubeTicker(mc) {
+    const url   = mc.querySelector('#s-yt-url')?.value.trim()
+    const label = mc.querySelector('#s-yt-label')?.value.trim()
+    if (!url || !label) { this.toast('Please fill in both fields'); return }
+    const videoId = this._parseYoutubeId(url)
+    if (!videoId) { this.toast("That doesn't look like a YouTube video link"); return }
+    const data = { ...this.settings, youtube_ticker: { label, url, video_id: videoId } }
+    try {
+      const [updated] = await upsertSettings(this.userId, data)
+      this.settings = updated
+      this.toast('Ticker saved')
+      this.renderSettings(mc)
+    } catch (e) { console.error(e); this.toast('Error saving ticker') }
+  }
+
+  async _clearYoutubeTicker(mc) {
+    const data = { ...this.settings, youtube_ticker: null }
+    try {
+      const [updated] = await upsertSettings(this.userId, data)
+      this.settings = updated
+      this.toast('Ticker removed')
+      this.renderSettings(mc)
+    } catch (e) { console.error(e); this.toast('Error removing ticker') }
   }
 
   _mountDaysSinceWidget(mc) {

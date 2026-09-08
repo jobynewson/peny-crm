@@ -122,6 +122,10 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 - `FENCE_API_KEY` - Shared secret for the Offload Log ingest endpoint
   (`POST /api/offloads`). Fence sends it as `Authorization: Bearer <key>`.
   Unset = the endpoint returns 500 (so it fails closed rather than open).
+- `YOUTUBE_API_KEY` - Google API key with the YouTube Data API v3 enabled,
+  used by the office dashboard's view-count ticker (`api/_youtube.js`). No
+  OAuth, so it only reads public/unlisted videos. Unset = the ticker just
+  doesn't render; the rest of the dashboard is unaffected.
 
 ## Common Tasks
 
