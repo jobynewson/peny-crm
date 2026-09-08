@@ -795,6 +795,14 @@ export class App {
   openBudget(id)  { this.currentView = 'budgets';  this.budgetsView.currentId  = id; this.render() }
 
   // Returns [periodStart, periodEnd] Date objects for the current retainer period
+  // A retainer item's unit is 'hours', 'days' or 'unit'. A per-unit item counts
+  // deliverables ("4 social posts a month") and carries no hours, so it must be
+  // excluded from every hours calculation — it was previously counted as 8h
+  // each, inflating allocations. Only the explicit 'unit' value is excluded; an
+  // older row with no unit is read as days, as it always was.
+  // Mirrors isTimeItem() in src/utils/retainer-usage.js.
+  _isTimeItem(item) { return !!item && item.unit !== 'unit' }
+
   _retainerPeriod(retainerStart) {
     if (!retainerStart) return [null, null]
     const anchor = new Date(retainerStart)
@@ -1453,7 +1461,7 @@ export class App {
         const retainerCards = retainers.map(p => {
           const cl = this.contacts.find(c => c.id === p.client_id)
           const periodMult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}
-          const calcHours = (p.retainer_items||[]).reduce((s,i) => { const mult = periodMult[i.period||'month']||1; return s + (i.unit==='hours' ? (parseFloat(i.qty)||0)*mult : (parseFloat(i.qty)||0)*8*mult) }, 0)
+          const calcHours = (p.retainer_items||[]).reduce((s,i) => { if (!this._isTimeItem(i)) return s; const mult = periodMult[i.period||'month']||1; return s + (i.unit==='hours' ? (parseFloat(i.qty)||0)*mult : (parseFloat(i.qty)||0)*8*mult) }, 0)
           const hours = calcHours || (parseFloat(p.retainer_hours)||0)
           const calcFee = (p.retainer_items||[]).reduce((s,i) => { const mult = periodMult[i.period||'month']||1; return s + (parseFloat(i.rate)||0)*(parseFloat(i.qty)||0)*mult }, 0)
           const fee = p.retainer_fee_mode==='calculated' ? calcFee : (parseFloat(p.retainer_fee)||0)
@@ -1467,7 +1475,7 @@ export class App {
               <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px" data-ret-items="${p.id}">
                 ${(p.retainer_items||[]).map((item,ii) => {
                   const mult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}[item.period||'month']||1
-                  const allocH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
+                  const allocH = !this._isTimeItem(item) ? 0 : item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
                   const periodLabel = {week:'/ wk',month:'/ mo',quarter:'/ qtr',half:'/ 6mo',year:'/ yr'}[item.period||'month']||'/ mo'
                   return allocH ? `<div>
                     <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px">
@@ -1947,6 +1955,7 @@ export class App {
         const periodMult2 = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}
         const calcH = (p.retainer_items||[]).reduce((s,i) => {
           const mult = periodMult2[i.period||'month']||1
+          if (!this._isTimeItem(i)) return s
           return s + (i.unit==='hours' ? (parseFloat(i.qty)||0)*mult : (parseFloat(i.qty)||0)*8*mult)
         }, 0)
         const allocH = calcH || (parseFloat(p.retainer_hours)||0)
@@ -1971,7 +1980,7 @@ export class App {
               const pm4 = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}
               for (const item of items) {
                 const mult = pm4[item.period||'month'] || 1
-                const prevAllocH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
+                const prevAllocH = !this._isTimeItem(item) ? 0 : item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
                 const prevLogged = prevEntries.filter(e => e.line_label === item.label).reduce((s,e) => s + parseFloat(e.hours), 0)
                 rolloverDeltas[item.label] = prevAllocH - prevLogged
               }
@@ -1983,7 +1992,7 @@ export class App {
             let totalEffective = 0
             items.forEach((item, ii) => {
               const mult = pm3[item.period||'month'] || 1
-              const baseH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
+              const baseH = !this._isTimeItem(item) ? 0 : item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
               if (!baseH) return
               const delta = rolloverDeltas[item.label] ?? 0
               const aH = Math.max(0, baseH + delta)

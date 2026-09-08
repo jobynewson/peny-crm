@@ -1,7 +1,7 @@
 import { createProject, updateProject, deleteProject, renumberProjectKanban, linkBudgetToProject, unlinkBudgetFromProject, logActivity, getActivityLog, getTimeEntries, setTrackToken, deleteTimeEntry, getWorkLog, addWorkLogEntry, deleteWorkLogEntry, updateBudget } from '../db/client.js'
 import { PostProductionView } from './post-production.js'
 import { continuationScript, PDF_CONTINUED_CSS, a4ContentWidthPx, a4ContentHeightPx } from '../utils/pdfContinuation.js'
-import { monthlyUsage, overallUsage, windowUsage, monthlyAllocationHours, usagePct, usageColour, hasAmortisedItems, parseDateUTC } from '../utils/retainer-usage.js'
+import { monthlyUsage, overallUsage, windowUsage, monthlyAllocationHours, usagePct, usageColour, hasAmortisedItems, hasPerUnitItems, contractLines, parseDateUTC } from '../utils/retainer-usage.js'
 
 const STAGES = ['Enquiry','Pre-production','In Production','Post','Delivered']
 const RETAINER_STAGE = 'Retainer'
@@ -3541,6 +3541,7 @@ export class ProjectsView {
     const alertPct = parseFloat(p.retainer_alert) || 80
     const overall  = overallUsage(p, entries)
     const win      = windowUsage(p, entries, p.retainer_year_start)
+    const contract = contractLines(p)
 
     const fmtH = n => (Math.round(n * 10) / 10).toLocaleString('en-GB')
     const fmtD = d => d ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
@@ -3592,6 +3593,9 @@ export class ProjectsView {
     if (hasAmortisedItems(p)) {
       notes.push('Retainer items priced per quarter, half-year or year are spread evenly across the months.')
     }
+    if (hasPerUnitItems(p)) {
+      notes.push('Per-unit retainer items are left out — they count deliverables rather than hours.')
+    }
     if (overall.lines.some(l => l.isOther)) {
       notes.push(`"Other" is time logged under a label that no longer matches a retainer item.`)
     }
@@ -3613,6 +3617,16 @@ export class ProjectsView {
               : `<span style="font-size:11px;color:var(--text-secondary)">${fmtD(win.start)}</span>`}
           </div>
         </div>
+
+        ${contract.length ? `
+        <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <span style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;flex-shrink:0">Contracted</span>
+          ${contract.map(c => `
+            <span style="display:inline-flex;align-items:baseline;gap:5px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:999px;padding:2px 9px">
+              <span style="font-size:11px;color:var(--text-secondary)">${esc(c.label)}</span>
+              <span style="font-size:11px;font-weight:600;color:var(--text-primary);white-space:nowrap">${fmtH(c.hours)}h<span style="color:var(--text-tertiary);font-weight:500">/${esc(c.periodLabel)}</span></span>
+            </span>`).join('')}
+        </div>` : ''}
 
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
           ${summary('Overall', overall.lines,
