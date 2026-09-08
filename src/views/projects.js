@@ -3525,6 +3525,8 @@ export class ProjectsView {
   // ── Retainer long-term usage ────────────────────────────────────────────────
   // Calendar-month blocks plus cumulative and 12-month totals, so a retainer's
   // usage can be read across many months rather than just the live period.
+  // Every block breaks down by retainer line item — there is no combined
+  // total, because what matters is which item is running hot, not the sum.
   //
   // NOTE: this buckets by CALENDAR month, whereas the dashboard's retainer bar,
   // rollover and monthly-deliverable resets all use periods anchored on
@@ -3537,28 +3539,41 @@ export class ProjectsView {
     if (!months.length) return ''
 
     const alertPct = parseFloat(p.retainer_alert) || 80
-    const perMonth = monthlyAllocationHours(p)
     const overall  = overallUsage(p, entries)
     const win      = windowUsage(p, entries, p.retainer_year_start)
 
     const fmtH = n => (Math.round(n * 10) / 10).toLocaleString('en-GB')
     const fmtD = d => d ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
-    // A zero allocation means there is nothing to measure against, so show the
-    // bare hours rather than a misleading "x / 0h".
-    const pair = (logged, allocated) => allocated > 0
-      ? `${fmtH(logged)}<span style="color:var(--text-tertiary);font-weight:500"> / ${fmtH(allocated)}h</span>`
-      : `${fmtH(logged)}h`
-    const bar = (logged, allocated) => `
-      <div style="height:5px;background:var(--bg-secondary);border-radius:3px;overflow:hidden;margin-top:7px">
-        <div style="width:${usagePct(logged, allocated)}%;height:100%;background:${usageColour(logged, allocated, alertPct)}"></div>
-      </div>`
 
-    const summary = (label, logged, allocated, sub) => `
-      <div style="flex:1;min-width:160px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px 14px">
+    // One row per retainer item: label, logged against allocated, and a bar.
+    // An unallocated line (the "Other" bucket) has nothing to measure against,
+    // so it shows bare hours and no bar rather than a misleading "2 / 0h".
+    const lineRow = (l, sm) => {
+      const has = l.allocated > 0
+      const value = has
+        ? `${fmtH(l.logged)}<span style="color:var(--text-tertiary);font-weight:500"> / ${fmtH(l.allocated)}h</span>`
+        : `${fmtH(l.logged)}h`
+      return `
+        <div style="margin-top:${sm ? 6 : 8}px">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">
+            <span style="font-size:${sm ? 10 : 11}px;color:var(--text-${l.isOther ? 'tertiary' : 'secondary'});overflow:hidden;text-overflow:ellipsis;white-space:nowrap${l.isOther ? ';font-style:italic' : ''}" title="${esc(l.label)}">${esc(l.label)}</span>
+            <span style="font-size:${sm ? 11 : 13}px;font-weight:600;color:var(--text-primary);white-space:nowrap">${value}</span>
+          </div>
+          ${has ? `<div style="height:4px;background:var(--bg-secondary);border-radius:2px;overflow:hidden;margin-top:4px">
+            <div style="width:${usagePct(l.logged, l.allocated)}%;height:100%;background:${usageColour(l.logged, l.allocated, alertPct)}"></div>
+          </div>` : ''}
+        </div>`
+    }
+
+    const linesHTML = (lines, sm) => lines.length
+      ? lines.map(l => lineRow(l, sm)).join('')
+      : `<div style="font-size:${sm ? 10 : 11}px;color:var(--text-tertiary);margin-top:6px">No items</div>`
+
+    const summary = (label, lines, sub) => `
+      <div style="flex:1;min-width:190px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px 14px">
         <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">${label}</div>
-        <div style="font-size:20px;font-weight:600;color:var(--text-primary);margin-top:4px">${pair(logged, allocated)}</div>
-        ${bar(logged, allocated)}
-        <div style="font-size:10px;color:var(--text-tertiary);margin-top:6px">${sub}</div>
+        ${linesHTML(lines, false)}
+        <div style="font-size:10px;color:var(--text-tertiary);margin-top:8px">${sub}</div>
       </div>`
 
     // windowUsage returns an exclusive end; show the last day inside the window.
@@ -3567,10 +3582,9 @@ export class ProjectsView {
     const monthWord = n => `${n} month${n === 1 ? '' : 's'}`
 
     const monthBlock = m => `
-      <div style="flex:0 0 auto;width:104px;background:var(--bg-primary);border:1px solid ${m.isCurrent ? 'var(--accent)' : 'var(--border-light)'};border-radius:var(--radius-md);padding:9px 10px">
+      <div style="flex:0 0 auto;width:152px;background:var(--bg-primary);border:1px solid ${m.isCurrent ? 'var(--accent)' : 'var(--border-light)'};border-radius:var(--radius-md);padding:9px 11px">
         <div style="font-size:10px;font-weight:600;color:${m.isCurrent ? 'var(--accent)' : 'var(--text-tertiary)'};text-transform:uppercase;letter-spacing:0.5px">${esc(m.label)}</div>
-        <div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-top:3px;white-space:nowrap">${pair(m.logged, m.allocated)}</div>
-        ${bar(m.logged, m.allocated)}
+        ${linesHTML(m.lines, true)}
       </div>`
 
     // Footnotes, only when they actually apply to this retainer.
@@ -3578,10 +3592,13 @@ export class ProjectsView {
     if (hasAmortisedItems(p)) {
       notes.push('Retainer items priced per quarter, half-year or year are spread evenly across the months.')
     }
+    if (overall.lines.some(l => l.isOther)) {
+      notes.push(`"Other" is time logged under a label that no longer matches a retainer item.`)
+    }
     if (overall.priorLogged > 0) {
       notes.push(`${fmtH(overall.priorLogged)}h was logged before the retainer start date and sits outside these totals.`)
     }
-    if (!(perMonth > 0)) {
+    if (!(monthlyAllocationHours(p) > 0)) {
       notes.push('No monthly hours are configured on this retainer, so there is nothing to measure usage against yet.')
     }
 
@@ -3598,9 +3615,9 @@ export class ProjectsView {
         </div>
 
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-          ${summary('Overall', overall.logged, overall.allocated,
+          ${summary('Overall', overall.lines,
             `${monthWord(overall.months)} since ${fmtD(parseDateUTC(p.retainer_start))}`)}
-          ${summary('12-month total', win.logged, win.allocated,
+          ${summary('12-month total', win.lines,
             win.start ? `${fmtD(win.start)} – ${fmtD(winEnd)} · ${win.complete ? 'window complete' : `month ${win.monthsElapsed} of 12`}` : '')}
         </div>
 

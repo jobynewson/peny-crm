@@ -117,53 +117,125 @@ export function hoursByMonth(entries) {
   return out
 }
 
-// One block per calendar month from the retainer start to today, each with the
-// hours logged in that month and the hours allocated to it.
+// Time logged under a label that matches no current retainer item is collected
+// here rather than dropped — it happens when an item is renamed, or when hours
+// are logged against a budget line on a project that later became a retainer.
+export const OTHER_LINE = 'Other'
+
+// Label used when a retainer has no itemised breakdown at all and is running on
+// the legacy flat retainer_hours field.
+export const LEGACY_LINE = 'Retainer hours'
+
+// Group entries into 'YYYY-MM' buckets, keeping the entries themselves so each
+// month can be broken down by line item.
+export function entriesByMonth(entries) {
+  const out = new Map()
+  for (const e of entries || []) {
+    const key = monthKey(e?.entry_date)
+    if (!key) continue
+    if (!out.has(key)) out.set(key, [])
+    out.get(key).push(e)
+  }
+  return out
+}
+
+// One allocation line per retainer item, merged by label, each carrying its
+// amortised monthly hours. Items with the same label are summed. A retainer
+// with no items falls back to a single legacy line covering all its hours.
+export function allocationLines(project) {
+  const items = Array.isArray(project?.retainer_items) ? project.retainer_items : []
+  const byLabel = new Map()
+  for (const item of items) {
+    const label = String(item?.label ?? '').trim()
+    if (!label) continue
+    byLabel.set(label, (byLabel.get(label) || 0) + itemMonthlyHours(item))
+  }
+  if (byLabel.size) {
+    return [...byLabel.entries()].map(([label, monthly]) => ({ label, monthly, legacy: false }))
+  }
+  const legacy = parseFloat(project?.retainer_hours) || 0
+  return legacy > 0 ? [{ label: LEGACY_LINE, monthly: legacy, legacy: true }] : []
+}
+
+// Break a set of entries down across a retainer's allocation lines. `months`
+// scales each line's monthly allocation to the period being measured: 1 for a
+// single month, the elapsed count for a cumulative figure, 12 for a year.
+//
+// Lines with no allocation AND no time logged are dropped, so a fee-only item
+// carrying no hours doesn't clutter every block — but the moment time lands on
+// it, it appears.
+export function lineUsage(project, entries, months = 1) {
+  const lines = allocationLines(project)
+  const isLegacy = lines.length === 1 && lines[0].legacy
+  const logged = new Map(lines.map(l => [l.label, 0]))
+  let other = 0
+
+  for (const e of entries || []) {
+    const hours = parseFloat(e?.hours) || 0
+    if (!hours) continue
+    // A legacy retainer has no item labels to match against, so every hour
+    // counts toward its single line.
+    const label = isLegacy ? LEGACY_LINE : String(e?.line_label ?? '').trim()
+    if (logged.has(label)) logged.set(label, logged.get(label) + hours)
+    else other += hours
+  }
+
+  const out = lines
+    .map(l => ({ label: l.label, logged: logged.get(l.label) || 0, allocated: l.monthly * months }))
+    .filter(l => l.allocated > 0 || l.logged > 0)
+  if (other > 0) out.push({ label: OTHER_LINE, logged: other, allocated: 0, isOther: true })
+  return out
+}
+
+// One block per calendar month from the retainer start to today, each broken
+// down by retainer line item.
 export function monthlyUsage(project, entries, now = new Date()) {
-  const allocated = monthlyAllocationHours(project)
-  const logged = hoursByMonth(entries)
+  const byMonth = entriesByMonth(entries)
   const currentKey = monthKey(now)
   return monthRange(project?.retainer_start, now).map(key => ({
     key,
     label: monthLabel(key),
-    logged: logged.get(key) || 0,
-    allocated,
     isCurrent: key === currentKey,
+    lines: lineUsage(project, byMonth.get(key) || [], 1),
   }))
 }
 
-// Cumulative usage since the retainer went live. The month in progress counts
-// as a full month in the denominator, so this reads as the total commitment
-// taken on to date rather than a pro-rata figure.
+// Cumulative usage since the retainer went live, broken down by line item. The
+// month in progress counts as a full month in each line's denominator, so this
+// reads as the total commitment taken on to date rather than a pro-rata figure.
 export function overallUsage(project, entries, now = new Date()) {
   const months = monthRange(project?.retainer_start, now)
-  const perMonth = monthlyAllocationHours(project)
-  const byMonth = hoursByMonth(entries)
   const inRange = new Set(months)
-  let logged = 0, priorLogged = 0
-  for (const [key, hours] of byMonth) {
-    if (inRange.has(key)) logged += hours
-    // Time logged against the project before it became a retainer. Counted
-    // nowhere in this view's denominators, but surfaced so the numbers here
-    // can be reconciled against the panel's overall "Total tracked".
-    else if (months.length && key < months[0]) priorLogged += hours
+  const within = [], prior = []
+  for (const e of entries || []) {
+    const key = monthKey(e?.entry_date)
+    if (!key) continue
+    if (inRange.has(key)) within.push(e)
+    // Time logged against the project before it became a retainer. Counted in
+    // no denominator here, but surfaced so these figures can be reconciled
+    // against the panel's overall "Total tracked".
+    else if (months.length && key < months[0]) prior.push(e)
   }
-  return { months: months.length, logged, allocated: months.length * perMonth, priorLogged }
+  return {
+    months: months.length,
+    lines: lineUsage(project, within, months.length),
+    priorLogged: sumHours(prior),
+  }
 }
 
 // The 12-month window starting at `windowStart` (defaulting to the retainer
-// start). Allocation is 12x the monthly figure, which — because items are
-// amortised — correctly counts a quarterly item as four quarters over the year.
+// start), broken down by line item. Each line's allocation is 12x its monthly
+// figure, which — because items are amortised — correctly counts a quarterly
+// item as four quarters over the year.
 export function windowUsage(project, entries, windowStart, now = new Date()) {
   const start = parseDateUTC(windowStart) || parseDateUTC(project?.retainer_start)
-  const perMonth = monthlyAllocationHours(project)
-  if (!start) return { start: null, end: null, logged: 0, allocated: 12 * perMonth, monthsElapsed: 0, complete: false }
+  if (!start) return { start: null, end: null, lines: [], monthsElapsed: 0, complete: false }
 
   const end = new Date(Date.UTC(start.getUTCFullYear() + 1, start.getUTCMonth(), start.getUTCDate()))
-  const logged = sumHours((entries || []).filter(e => {
+  const within = (entries || []).filter(e => {
     const d = parseDateUTC(e?.entry_date)
     return d && d >= start && d < end
-  }))
+  })
 
   // How far into the window we are, in whole months, capped at 12.
   const n = parseDateUTC(now) || new Date()
@@ -175,7 +247,7 @@ export function windowUsage(project, entries, windowStart, now = new Date()) {
   }
   // A window whose end has passed is finished, not "month 12 of 12" forever —
   // the caller words it differently so a stale window is obvious.
-  return { start, end, logged, allocated: 12 * perMonth, monthsElapsed, complete: n >= end }
+  return { start, end, lines: lineUsage(project, within, 12), monthsElapsed, complete: n >= end }
 }
 
 // Percentage of an allocation used, clamped to 0-100 for bar widths. An

@@ -3,8 +3,9 @@ import {
   PERIOD_MULT, HOURS_PER_DAY,
   parseDateUTC, monthKey, monthLabel, monthRange,
   itemMonthlyHours, monthlyAllocationHours,
-  sumHours, hoursByMonth, monthlyUsage, overallUsage, windowUsage,
-  usagePct, usageColour, hasAmortisedItems,
+  sumHours, hoursByMonth, entriesByMonth, allocationLines, lineUsage,
+  monthlyUsage, overallUsage, windowUsage,
+  usagePct, usageColour, hasAmortisedItems, OTHER_LINE, LEGACY_LINE,
 } from './retainer-usage.js'
 
 const entry = (entry_date, hours, line_label = 'Editing') => ({ entry_date, hours, line_label })
@@ -120,15 +121,127 @@ describe('hoursByMonth / sumHours', () => {
   })
 })
 
-describe('monthlyUsage', () => {
-  const project = { retainer_start: '2025-03-01', retainer_items: [{ qty: 1, unit: 'hours', period: 'month' }] }
+// Convenience: pull one line out of a result by label.
+const line = (lines, label) => lines.find(l => l.label === label)
 
-  it('produces one block per calendar month, including empty ones', () => {
-    const blocks = monthlyUsage(project, [entry('2025-03-10', 1), entry('2025-05-02', 1)], at('2025-05-20'))
-    expect(blocks.map(b => b.key)).toEqual(['2025-03', '2025-04', '2025-05'])
-    expect(blocks.map(b => b.logged)).toEqual([1, 0, 1])
-    expect(blocks.every(b => b.allocated === 1)).toBe(true)
+describe('allocationLines', () => {
+  it('gives one line per item with its amortised monthly hours', () => {
+    const p = { retainer_items: [
+      { label: 'Editing', qty: 4, unit: 'hours', period: 'month' },
+      { label: 'Social', qty: 6, unit: 'hours', period: 'quarter' },
+    ] }
+    const lines = allocationLines(p)
+    expect(lines.map(l => l.label)).toEqual(['Editing', 'Social'])
+    expect(line(lines, 'Editing').monthly).toBe(4)
+    expect(line(lines, 'Social').monthly).toBeCloseTo(2, 10)
   })
+  it('merges duplicate labels', () => {
+    const p = { retainer_items: [
+      { label: 'Editing', qty: 4, unit: 'hours', period: 'month' },
+      { label: 'Editing', qty: 2, unit: 'hours', period: 'month' },
+    ] }
+    expect(allocationLines(p)).toEqual([{ label: 'Editing', monthly: 6, legacy: false }])
+  })
+  it('skips unlabelled items', () => {
+    expect(allocationLines({ retainer_items: [{ qty: 4, unit: 'hours' }] })).toEqual([])
+  })
+  it('falls back to a single legacy line when there are no items', () => {
+    const lines = allocationLines({ retainer_items: [], retainer_hours: '10' })
+    expect(lines).toEqual([{ label: LEGACY_LINE, monthly: 10, legacy: true }])
+  })
+  it('is empty when nothing is configured', () => {
+    expect(allocationLines({})).toEqual([])
+  })
+})
+
+describe('lineUsage', () => {
+  const project = { retainer_items: [
+    { label: 'Editing', qty: 4, unit: 'hours', period: 'month' },
+    { label: 'Social', qty: 6, unit: 'hours', period: 'quarter' },
+  ] }
+
+  it('splits logged hours across the matching item labels', () => {
+    const lines = lineUsage(project, [entry('2025-03-02', 3, 'Editing'), entry('2025-03-09', 1, 'Social')])
+    expect(line(lines, 'Editing')).toEqual({ label: 'Editing', logged: 3, allocated: 4 })
+    expect(line(lines, 'Social').logged).toBe(1)
+    expect(line(lines, 'Social').allocated).toBeCloseTo(2, 10)
+  })
+
+  it('scales allocations by the number of months being measured', () => {
+    const lines = lineUsage(project, [], 12)
+    expect(line(lines, 'Editing').allocated).toBe(48)
+    expect(line(lines, 'Social').allocated).toBeCloseTo(24, 10)  // four quarters
+  })
+
+  it('keeps lines with no time logged, so unused allocation stays visible', () => {
+    const lines = lineUsage(project, [entry('2025-03-02', 3, 'Editing')])
+    expect(line(lines, 'Social').logged).toBe(0)
+    expect(line(lines, 'Social').allocated).toBeCloseTo(2, 10)
+  })
+
+  it('buckets time logged under an unrecognised label as Other', () => {
+    const lines = lineUsage(project, [entry('2025-03-02', 2, 'Old name')])
+    expect(line(lines, OTHER_LINE)).toEqual({ label: OTHER_LINE, logged: 2, allocated: 0, isOther: true })
+  })
+
+  it('omits the Other line when everything matches', () => {
+    const lines = lineUsage(project, [entry('2025-03-02', 2, 'Editing')])
+    expect(line(lines, OTHER_LINE)).toBeUndefined()
+  })
+
+  it('drops a zero-hour item until time is logged against it', () => {
+    const p = { retainer_items: [
+      { label: 'Editing', qty: 4, unit: 'hours', period: 'month' },
+      { label: 'Monthly report', qty: 0, unit: 'hours', period: 'month' },
+    ] }
+    expect(lineUsage(p, []).map(l => l.label)).toEqual(['Editing'])
+    const withTime = lineUsage(p, [entry('2025-03-02', 1.5, 'Monthly report')])
+    expect(line(withTime, 'Monthly report')).toEqual({ label: 'Monthly report', logged: 1.5, allocated: 0 })
+  })
+
+  it('counts every hour toward the single line of a legacy retainer', () => {
+    const legacy = { retainer_items: [], retainer_hours: '10' }
+    const lines = lineUsage(legacy, [entry('2025-03-02', 3, 'anything'), entry('2025-03-04', 2, 'else')])
+    expect(lines).toEqual([{ label: LEGACY_LINE, logged: 5, allocated: 10 }])
+  })
+})
+
+describe('entriesByMonth', () => {
+  it('keeps the entries so each month can be broken down', () => {
+    const by = entriesByMonth([entry('2025-03-04', 1), entry('2025-03-20', 2), entry('2025-04-02', 3)])
+    expect(by.get('2025-03').length).toBe(2)
+    expect(by.get('2025-04').length).toBe(1)
+  })
+})
+
+describe('monthlyUsage', () => {
+  const project = {
+    retainer_start: '2025-03-01',
+    retainer_items: [
+      { label: 'Editing', qty: 4, unit: 'hours', period: 'month' },
+      { label: 'Social', qty: 2, unit: 'hours', period: 'month' },
+    ],
+  }
+
+  it('produces one block per calendar month, each broken down by item', () => {
+    const blocks = monthlyUsage(project, [
+      entry('2025-03-10', 3, 'Editing'),
+      entry('2025-03-12', 1, 'Social'),
+      entry('2025-05-02', 5, 'Editing'),
+    ], at('2025-05-20'))
+    expect(blocks.map(b => b.key)).toEqual(['2025-03', '2025-04', '2025-05'])
+    expect(line(blocks[0].lines, 'Editing')).toEqual({ label: 'Editing', logged: 3, allocated: 4 })
+    expect(line(blocks[0].lines, 'Social')).toEqual({ label: 'Social', logged: 1, allocated: 2 })
+    // An empty month still shows both items sitting unused.
+    expect(blocks[1].lines.map(l => l.logged)).toEqual([0, 0])
+    expect(line(blocks[2].lines, 'Editing').logged).toBe(5)
+  })
+
+  it('allocates each block a single month of hours', () => {
+    const blocks = monthlyUsage(project, [], at('2025-05-20'))
+    expect(blocks.every(b => line(b.lines, 'Editing').allocated === 4)).toBe(true)
+  })
+
   it('flags the month in progress', () => {
     const blocks = monthlyUsage(project, [], at('2025-05-20'))
     expect(blocks.filter(b => b.isCurrent).map(b => b.key)).toEqual(['2025-05'])
@@ -136,78 +249,79 @@ describe('monthlyUsage', () => {
 })
 
 describe('overallUsage', () => {
-  // The example from the brief: three months elapsed, 1h/month budgeted, an
-  // hour logged in two of them -> 2 / 3.
+  // The example from the brief, now per item: three months elapsed, 1h/month
+  // budgeted on a single item, an hour logged in two of them -> 2 / 3.
   it('matches the worked example', () => {
-    const project = { retainer_start: '2025-03-01', retainer_items: [{ qty: 1, unit: 'hours', period: 'month' }] }
-    const entries = [entry('2025-03-10', 1), entry('2025-04-14', 1)]
+    const project = { retainer_start: '2025-03-01', retainer_items: [{ label: 'Editing', qty: 1, unit: 'hours', period: 'month' }] }
+    const entries = [entry('2025-03-10', 1, 'Editing'), entry('2025-04-14', 1, 'Editing')]
     const u = overallUsage(project, entries, at('2025-05-20'))
     expect(u.months).toBe(3)
-    expect(u.logged).toBe(2)
-    expect(u.allocated).toBe(3)
+    expect(line(u.lines, 'Editing')).toEqual({ label: 'Editing', logged: 2, allocated: 3 })
   })
 
-  it('counts the month in progress as a full month in the denominator', () => {
-    const project = { retainer_start: '2025-03-01', retainer_items: [{ qty: 2, unit: 'hours', period: 'month' }] }
-    // One day into May: May still contributes its full 2h to the target.
+  it('counts the month in progress as a full month in each line denominator', () => {
+    const project = { retainer_start: '2025-03-01', retainer_items: [{ label: 'Editing', qty: 2, unit: 'hours', period: 'month' }] }
     const u = overallUsage(project, [], at('2025-05-01'))
     expect(u.months).toBe(3)
-    expect(u.allocated).toBe(6)
+    expect(line(u.lines, 'Editing').allocated).toBe(6)
+  })
+
+  it('tracks each item separately', () => {
+    const project = { retainer_start: '2025-03-01', retainer_items: [
+      { label: 'Editing', qty: 4, unit: 'hours', period: 'month' },
+      { label: 'Social', qty: 6, unit: 'hours', period: 'quarter' },
+    ] }
+    const u = overallUsage(project, [entry('2025-03-10', 9, 'Editing'), entry('2025-04-01', 1, 'Social')], at('2025-05-20'))
+    expect(line(u.lines, 'Editing')).toEqual({ label: 'Editing', logged: 9, allocated: 12 })
+    expect(line(u.lines, 'Social').logged).toBe(1)
+    expect(line(u.lines, 'Social').allocated).toBeCloseTo(6, 10)  // 3 months x 2h = one quarter
   })
 
   it('separates time logged before the retainer went live', () => {
-    const project = { retainer_start: '2025-03-01', retainer_items: [{ qty: 1, unit: 'hours', period: 'month' }] }
-    const entries = [entry('2025-01-09', 5), entry('2025-03-10', 1)]
+    const project = { retainer_start: '2025-03-01', retainer_items: [{ label: 'Editing', qty: 1, unit: 'hours', period: 'month' }] }
+    const entries = [entry('2025-01-09', 5, 'Editing'), entry('2025-03-10', 1, 'Editing')]
     const u = overallUsage(project, entries, at('2025-04-10'))
-    expect(u.logged).toBe(1)
+    expect(line(u.lines, 'Editing').logged).toBe(1)
     expect(u.priorLogged).toBe(5)
-    expect(u.allocated).toBe(2)
-  })
-
-  it('handles a quarterly-only retainer', () => {
-    const project = { retainer_start: '2025-01-01', retainer_items: [{ qty: 6, unit: 'hours', period: 'quarter' }] }
-    const u = overallUsage(project, [entry('2025-02-01', 3)], at('2025-03-15'))
-    expect(u.months).toBe(3)
-    expect(u.allocated).toBeCloseTo(6, 10)  // 3 months x 2h = one full quarter
-    expect(u.logged).toBe(3)
+    expect(line(u.lines, 'Editing').allocated).toBe(2)
   })
 
   it('is empty and safe with no retainer start', () => {
     const u = overallUsage({ retainer_items: [] }, [entry('2025-03-01', 2)], at('2025-04-01'))
-    expect(u).toEqual({ months: 0, logged: 0, allocated: 0, priorLogged: 0 })
+    expect(u).toEqual({ months: 0, lines: [], priorLogged: 0 })
   })
 })
 
 describe('windowUsage', () => {
-  const project = { retainer_start: '2025-03-15', retainer_items: [{ qty: 4, unit: 'hours', period: 'month' }] }
+  const project = { retainer_start: '2025-03-15', retainer_items: [{ label: 'Editing', qty: 4, unit: 'hours', period: 'month' }] }
 
   it('runs 12 months from the retainer start by default', () => {
     const u = windowUsage(project, [], null, at('2025-06-01'))
     expect(u.start.toISOString().slice(0, 10)).toBe('2025-03-15')
     expect(u.end.toISOString().slice(0, 10)).toBe('2026-03-15')
-    expect(u.allocated).toBe(48)
+    expect(line(u.lines, 'Editing').allocated).toBe(48)
   })
 
   it('counts only entries inside the window', () => {
     const entries = [
-      entry('2025-03-14', 10),  // day before the window opens
-      entry('2025-03-15', 1),   // first day, inclusive
-      entry('2026-03-14', 2),   // last day, inclusive
-      entry('2026-03-15', 10),  // day the window closes, exclusive
+      entry('2025-03-14', 10, 'Editing'),  // day before the window opens
+      entry('2025-03-15', 1, 'Editing'),   // first day, inclusive
+      entry('2026-03-14', 2, 'Editing'),   // last day, inclusive
+      entry('2026-03-15', 10, 'Editing'),  // day the window closes, exclusive
     ]
-    expect(windowUsage(project, entries, null, at('2026-01-01')).logged).toBe(3)
+    expect(line(windowUsage(project, entries, null, at('2026-01-01')).lines, 'Editing').logged).toBe(3)
   })
 
   it('honours an adjusted window start', () => {
-    const u = windowUsage(project, [entry('2025-03-20', 5), entry('2025-07-04', 2)], '2025-06-01', at('2025-08-01'))
+    const u = windowUsage(project, [entry('2025-03-20', 5, 'Editing'), entry('2025-07-04', 2, 'Editing')], '2025-06-01', at('2025-08-01'))
     expect(u.start.toISOString().slice(0, 10)).toBe('2025-06-01')
     expect(u.end.toISOString().slice(0, 10)).toBe('2026-06-01')
-    expect(u.logged).toBe(2)
+    expect(line(u.lines, 'Editing').logged).toBe(2)
   })
 
   it('multiplies a quarterly item out to four quarters over the year', () => {
-    const quarterly = { retainer_start: '2025-01-01', retainer_items: [{ qty: 6, unit: 'hours', period: 'quarter' }] }
-    expect(windowUsage(quarterly, [], null, at('2025-06-01')).allocated).toBeCloseTo(24, 10)
+    const quarterly = { retainer_start: '2025-01-01', retainer_items: [{ label: 'Social', qty: 6, unit: 'hours', period: 'quarter' }] }
+    expect(line(windowUsage(quarterly, [], null, at('2025-06-01')).lines, 'Social').allocated).toBeCloseTo(24, 10)
   })
 
   it('tracks how far into the window we are, capped at 12', () => {
