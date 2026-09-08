@@ -1106,6 +1106,7 @@ export class App {
       this.teamCalendarView.renderDashboardSection(mc)
       this._mountCountdownWidget(mc)
       this._mountDaysSinceWidget(mc)
+      this._mountYoutubeWidget(mc)
       return
     }
 
@@ -1610,6 +1611,7 @@ export class App {
     this.teamCalendarView.renderDashboardSection(mc)
     this._mountCountdownWidget(mc)
     this._mountDaysSinceWidget(mc)
+    this._mountYoutubeWidget(mc)
 
     // --- Stat cards navigate to their underlying list ---
     mc.querySelectorAll('[data-db-nav]').forEach(card => {
@@ -3162,6 +3164,7 @@ export class App {
     try {
       const [updated] = await upsertSettings(this.userId, data)
       this.settings = updated
+      document.getElementById('yt-widget-wrap')?.remove()
       this.toast('Ticker removed')
       this.renderSettings(mc)
     } catch (e) { console.error(e); this.toast('Error removing ticker') }
@@ -3198,6 +3201,60 @@ export class App {
       wrapper.remove()
     })
     mc.prepend(wrapper)
+  }
+
+  // Mirrors the office dashboard's YouTube pill (public/dashboard.html) in the
+  // app. The count comes from /api/blob?action=youtube rather than being
+  // fetched here, because YOUTUBE_API_KEY is server-side only and must never
+  // reach the browser. Settings shape is shared: settings.youtube_ticker.
+  async _mountYoutubeWidget(mc) {
+    document.getElementById('yt-widget-wrap')?.remove()
+
+    const yt = this.settings?.youtube_ticker
+    if (!yt?.video_id || !yt?.label) return
+
+    const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+
+    // Rendered empty first so the pill can't shift the page in after the fetch.
+    const wrapper = document.createElement('div')
+    wrapper.id = 'yt-widget-wrap'
+    wrapper.style.display = 'none'
+    mc.prepend(wrapper)
+
+    let data
+    try {
+      const { getAuthToken } = await import('./auth/clerk.js')
+      const authToken = await getAuthToken()
+      const res = await fetch(`/api/blob?action=youtube&id=${encodeURIComponent(yt.video_id)}`, {
+        headers: { 'Authorization': `Bearer ${authToken}` },
+      })
+      data = await res.json()
+    } catch (e) {
+      console.error('[youtube-ticker]', e.message)
+      return
+    }
+
+    // The view the widget was mounted into may have been navigated away from
+    // while the request was in flight.
+    if (!wrapper.isConnected) return
+
+    if (!Number.isFinite(data?.views)) {
+      // Same contract as the office dashboard: silent unless ?debug=1, so the
+      // reason is reachable without cluttering the page.
+      if (data?.error) console.error('[youtube-ticker]', data.error)
+      if (new URLSearchParams(location.search).has('debug') && data?.error) {
+        wrapper.style.display = ''
+        wrapper.innerHTML = `<div class="yt-widget yt-widget--error">YouTube ticker: ${esc(data.error)}</div>`
+      }
+      return
+    }
+
+    wrapper.style.display = ''
+    wrapper.innerHTML = `
+      <div class="yt-widget">
+        <span class="yt-views">${data.views.toLocaleString('en-GB')}</span>
+        <span class="yt-label">${esc(yt.label)}</span>
+      </div>`
   }
 
   async _saveCountdownTimer(mc) {

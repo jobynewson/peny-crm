@@ -133,8 +133,14 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
     configured in Settings. The same string is always in the JSON as
     `timers.youtubeError`, so `curl`ing the endpoint works too. It is never
     shown without `?debug=1`, so an office screen stays clean, and it never
-    contains the API key. Note the ticker lives ONLY on the office dashboard,
-    not the in-app Dashboard view.
+    contains the API key.
+  - The ticker appears on BOTH the office dashboard and the in-app Dashboard,
+    sharing the `settings.youtube_ticker` row. They reach the count by
+    different routes: the office display via `/api/portal?view=dashboard`
+    (gated by DASHBOARD_TOKEN), the app via `GET /api/blob?action=youtube&id=`
+    (gated by Clerk). The app cannot call YouTube directly — YOUTUBE_API_KEY is
+    server-side only and must never be given a VITE_ prefix, which would ship
+    it to the browser. `?debug=1` surfaces the reason on both.
 
 ## Common Tasks
 
