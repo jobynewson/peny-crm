@@ -179,6 +179,22 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 - `password-manager.js` - Password management
 - `offload-log.js` - Offload Log (read-only table of backup reports from Fence)
 
+### Retainer period labelling on dashboards
+- Retainer periods are anchored on `retainer_start`'s day-of-month, so they are
+  usually NOT calendar months. Both dashboards therefore state the period's
+  actual dates ("15 Aug – 14 Sep") rather than a vague label:
+  - App Dashboard retainer cards (`src/app.js`, `_retainerPeriodLabel()`) show
+    the range under the client name.
+  - Office dashboard cards (`public/dashboard.html`) show it in place of the
+    old "This period"; `api/_dashboard.js` sends `periodStart` + `periodEnd`.
+- On the app Dashboard's per-item rows, the suffix used to read `/ qtr` beside
+  a figure that was the item's MONTHLY share, so it looked like a quarterly
+  total. It now shows the contracted amount instead (`6h/qtr`), and only when
+  the item isn't already billed monthly.
+- Known gap, not yet addressed: the office dashboard's allocation comes from
+  the legacy `retainer_hours` column only, so a retainer configured with
+  `retainer_items` shows hours used but no target or bar there.
+
 ### Retainer time tracking
 - A retainer's Time tracking panel (project Overview tab, `#pv-timetrack` in
   `projects.js`) shows a long-term usage view above the existing breakdown: one

@@ -460,6 +460,15 @@
           : `<div class="empty">No hours this month.</div>`}`
 
       // ── Retainers (mimic kanban-card from dashboard) ──────────────
+      // Retainer periods are anchored on the retainer's start day-of-month, so
+      // "this period" is usually not a calendar month. Show the dates.
+      const retPeriodLabel = (r) => {
+        if (!r.periodStart || !r.periodEnd) return 'This period'
+        const a = parseDay(r.periodStart), b = parseDay(r.periodEnd)
+        if (!a || !b) return 'This period'
+        const fmt = dt => `${dt.getDate()} ${MONTH[dt.getMonth()]}`
+        return `${fmt(a)} – ${fmt(b)}`
+      }
       const retHTML = d.retainers.length
         ? d.retainers.map(r => {
             const hasAlloc = r.allocation != null && r.allocation > 0
@@ -472,12 +481,12 @@
               ${r.client ? `<div class="ret-card-client">${esc(r.client)}</div>` : ''}
               ${hasAlloc ? `
                 <div class="ret-bar-lbl">
-                  <span class="ret-bar-lbl-l">This period</span>
+                  <span class="ret-bar-lbl-l">${retPeriodLabel(r)}</span>
                   <span class="ret-bar-lbl-r">${r.used} / ${r.allocation}h</span>
                 </div>
                 <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div>
                 <div class="ret-alert" style="color:${col}">${over ? `${r.pct - 100}% over` : `${r.pct}% used · ${r.remaining}h remaining`}</div>`
-              : `<div class="ret-bar-lbl"><span class="ret-bar-lbl-l">This period</span><span class="ret-bar-lbl-r">${r.used}h</span></div>`}
+              : `<div class="ret-bar-lbl"><span class="ret-bar-lbl-l">${retPeriodLabel(r)}</span><span class="ret-bar-lbl-r">${r.used}h</span></div>`}
             </div>`
           }).join('')
         : `<div class="empty" style="padding:8px 0">No retainers.</div>`

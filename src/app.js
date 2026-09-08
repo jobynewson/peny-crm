@@ -803,6 +803,17 @@ export class App {
   // Mirrors isTimeItem() in src/utils/retainer-usage.js.
   _isTimeItem(item) { return !!item && item.unit !== 'unit' }
 
+  // The current retainer period as "15 Mar – 14 Apr". Periods are anchored on
+  // retainer_start's day-of-month, so they are usually NOT calendar months —
+  // showing the dates is the only way to make a card's figures unambiguous.
+  _retainerPeriodLabel(retainerStart) {
+    const [start, end] = this._retainerPeriod(retainerStart)
+    if (!start || !end) return null
+    const fmt = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+    // `end` is exclusive; the period's last day is the day before it.
+    return `${fmt(start)} – ${fmt(new Date(end.getTime() - 86400000))}`
+  }
+
   _retainerPeriod(retainerStart) {
     if (!retainerStart) return [null, null]
     const anchor = new Date(retainerStart)
@@ -1465,22 +1476,30 @@ export class App {
           const hours = calcHours || (parseFloat(p.retainer_hours)||0)
           const calcFee = (p.retainer_items||[]).reduce((s,i) => { const mult = periodMult[i.period||'month']||1; return s + (parseFloat(i.rate)||0)*(parseFloat(i.qty)||0)*mult }, 0)
           const fee = p.retainer_fee_mode==='calculated' ? calcFee : (parseFloat(p.retainer_fee)||0)
+          const retPeriod = this._retainerPeriodLabel(p.retainer_start)
           return `<div class="kanban-card" style="border-left:3px solid #a78bfa;cursor:default" data-retainer="${p.id}">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
               <div class="kanban-card-title" style="cursor:pointer" data-open-pid="${p.id}">${esc(p.name)}</div>
               ${fee ? `<div style="font-size:12px;font-weight:600;color:#a78bfa;white-space:nowrap;margin-left:8px">£${fee.toLocaleString('en-GB')}/mo</div>` : ''}
             </div>
             <div class="kanban-card-client">${cl ? esc(cl.first_name+' '+cl.last_name) : 'No client'}</div>
+            ${retPeriod ? `<div style="font-size:10px;color:var(--text-tertiary);margin-top:3px">${retPeriod}</div>` : ''}
             ${(p.retainer_items||[]).length ? `
               <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px" data-ret-items="${p.id}">
                 ${(p.retainer_items||[]).map((item,ii) => {
                   const mult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}[item.period||'month']||1
                   const allocH = !this._isTimeItem(item) ? 0 : item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
-                  const periodLabel = {week:'/ wk',month:'/ mo',quarter:'/ qtr',half:'/ 6mo',year:'/ yr'}[item.period||'month']||'/ mo'
+                  // The figure beside each item is its share of THIS period, so a
+                  // "/ qtr" suffix here read as a quarterly total when it was a
+                  // monthly one. Show the contracted amount instead, and only
+                  // when the item isn't already billed monthly.
+                  const contractH = !this._isTimeItem(item) ? 0 : item.unit==='hours' ? (parseFloat(item.qty)||0) : (parseFloat(item.qty)||0)*8
+                  const periodShort = {week:'wk',month:'mo',quarter:'qtr',half:'6mo',year:'yr'}[item.period||'month']||'mo'
+                  const periodLabel = (item.period && item.period !== 'month' && contractH) ? `${Math.round(contractH*10)/10}h/${periodShort}` : ''
                   return allocH ? `<div>
                     <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px">
                       <span style="color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">${esc(item.label)}</span>
-                      <span style="display:flex;align-items:center;gap:4px;flex-shrink:0"><span data-ret-item-label="${p.id}-${ii}" style="color:var(--text-secondary);white-space:nowrap">— / ${allocH}h</span><span style="color:var(--text-tertiary);opacity:0.6;font-size:9px">${periodLabel}</span></span>
+                      <span style="display:flex;align-items:center;gap:4px;flex-shrink:0"><span data-ret-item-label="${p.id}-${ii}" style="color:var(--text-secondary);white-space:nowrap">— / ${allocH}h</span>${periodLabel ? `<span style="color:var(--text-tertiary);opacity:0.6;font-size:9px" title="Contracted amount">${periodLabel}</span>` : ''}</span>
                     </div>
                     <div style="height:4px;background:var(--bg-secondary);border-radius:2px;overflow:hidden">
                       <div style="height:100%;width:0%;border-radius:2px;transition:width 0.3s" data-ret-item-bar="${p.id}-${ii}"></div>
@@ -1491,7 +1510,7 @@ export class App {
               </div>` : hours ? `
               <div style="margin-top:8px">
                 <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px">
-                  <span style="color:var(--text-tertiary)">This month</span>
+                  <span style="color:var(--text-tertiary)">${retPeriod ? 'This period' : 'This month'}</span>
                   <span style="color:var(--text-secondary)" data-ret-label="${p.id}">— / ${hours}h</span>
                 </div>
                 <div style="height:6px;background:var(--bg-secondary);border-radius:var(--radius-sm);overflow:hidden">
