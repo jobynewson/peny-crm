@@ -12,6 +12,8 @@
 // Access is gated by a single fixed token held in the DASHBOARD_TOKEN env var,
 // so the link is totally separate from the authenticated app.
 
+import { getYoutubeViews } from './_youtube.js'
+
 // Mirror the app's calendar palette (src/views/team-calendar.js).
 const TYPE_COLORS = { shoot: '#4CAF50', post_production: '#C47E3A', leave: '#0891b2', other: '#7B6EAB' }
 const TYPE_LABELS = { shoot: 'Shoot', post_production: 'Post Production', leave: 'Leave', other: 'Other' }
@@ -56,7 +58,7 @@ export async function handleDashboard(req, res, sql) {
   const uid = wsRows[0].owner_id
 
   const settingsRows = await sql`
-    SELECT company_name, countdown_timer, days_since_timer
+    SELECT company_name, countdown_timer, days_since_timer, youtube_ticker
     FROM settings WHERE user_id = ${uid} LIMIT 1
   `
   const companyName = settingsRows[0]?.company_name || 'Slate'
@@ -67,9 +69,18 @@ export async function handleDashboard(req, res, sql) {
   }
   const cd = parseObj(settingsRows[0]?.countdown_timer)
   const ds = parseObj(settingsRows[0]?.days_since_timer)
+  const yt = parseObj(settingsRows[0]?.youtube_ticker)
   const timers = {
     countdown: cd?.name && cd?.target ? { name: cd.name, target: cd.target } : null,
     daysSince: ds?.name && ds?.since ? { name: ds.name, since: ds.since } : null,
+    // Resolved below — the YouTube lookup is async and must never be able to
+    // fail the whole dashboard response.
+    youtube: null,
+  }
+
+  if (yt?.video_id && yt?.label) {
+    const stats = await getYoutubeViews(yt.video_id)
+    if (stats) timers.youtube = { label: yt.label, views: stats.views }
   }
 
   const now = new Date()
