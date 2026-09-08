@@ -147,7 +147,9 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 - `contacts.js` - Contact management
 - `projects.js` - Project management. Its kanban (pipeline by stage, plus a
   Retainer lane) is one of three separate kanban implementations — see
-  "Kanban boards" below.
+  "Kanban boards" below. A retainer project's Time tracking panel also
+  carries a long-term usage view (calendar-month blocks, a cumulative total
+  and an adjustable 12-month window) — see "Retainer time tracking" below.
 - `budgets.js` - Budget tracking
 - `expenses.js` - Expense tracking
 - `timetrack.js` - Time tracking
@@ -176,6 +178,37 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
   implementations — see "Kanban boards" below.
 - `password-manager.js` - Password management
 - `offload-log.js` - Offload Log (read-only table of backup reports from Fence)
+
+### Retainer time tracking
+- A retainer's Time tracking panel (project Overview tab, `#pv-timetrack` in
+  `projects.js`) shows a long-term usage view above the existing breakdown: one
+  block per calendar month, an "Overall" cumulative figure, and a 12-month
+  window. Below them the entry log concertinas away (state remembered in
+  `localStorage` under `slate-tt-log-open`).
+- The maths is pure and unit-tested in `src/utils/retainer-usage.js`
+  (+ `retainer-usage.test.js`, run with `npm test` / vitest). Nothing in the
+  view does its own arithmetic — extend the module, not the template.
+- **Two conventions that look like bugs but aren't:**
+  - **Calendar months, not anniversary periods.** This view buckets by calendar
+    month. The dashboard's retainer bar, rollover and monthly-deliverable
+    resets all use periods anchored on `retainer_start`'s day-of-month
+    (`_retainerPeriod` in `src/app.js`), so for a retainer that began mid-month
+    the "this month" figure here will NOT match the dashboard's "this period"
+    figure. Deliberate: the long view reads against months and invoices, the
+    dashboard bar polices the live period.
+  - **Amortised items.** A `retainer_items` entry priced per quarter/half/year
+    contributes an evenly amortised share to every month (a 6h quarterly item
+    is 2h/month), using the same `PERIOD_MULT` multipliers `app.js` applies. So
+    a 12-month target is exactly 12x the monthly figure and a quarterly item
+    lands as four quarters over the year.
+- Rollover (`retainer_rollover`) is deliberately NOT applied here — the
+  cumulative figure already measures total logged against total allocated, so
+  applying rollover on top would count the same slack twice.
+- The current month counts as a full month in the "Overall" denominator, so it
+  reads as the total commitment taken on to date rather than a pro-rata figure.
+- The 12-month window starts at `projects.retainer_year_start`, falling back to
+  `retainer_start` when unset. Clearing the date input resets it to that
+  fallback.
 
 ### Kanban boards
 There is no shared kanban component — three independent implementations, each

@@ -103,6 +103,9 @@ export const projects = pgTable('projects', {
   retainer_items:   jsonb('retainer_items').notNull().default([]),
   retainer_fee_mode: text('retainer_fee_mode').notNull().default('fixed'),
   retainer_rollover: boolean('retainer_rollover').notNull().default(false),
+  // Start of the 12-month window in the retainer's long-term time-tracking
+  // view. Defaults to retainer_start when unset; adjustable per project.
+  retainer_year_start: date('retainer_year_start'),
   monthly_deliverables: jsonb('monthly_deliverables').notNull().default([]),
   location_address:  text('location_address'),
   location_map_link: text('location_map_link'),
