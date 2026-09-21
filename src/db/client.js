@@ -123,6 +123,11 @@ export async function runMigrations() {
   `
   await sql`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS google_tokens JSONB`
   await sql`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS gcal_event_id TEXT`
+  // ── External calendar push (Team Calendar → each user's "Slate" calendar) ──
+  await sql`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS gcal_calendar_id TEXT`
+  await sql`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS gcal_push_entries BOOLEAN NOT NULL DEFAULT true`
+  await sql`ALTER TABLE team_calendar_entries ADD COLUMN IF NOT EXISTS gcal_event_id TEXT`
+  await sql`ALTER TABLE team_calendar_entries ADD COLUMN IF NOT EXISTS gcal_user_id UUID`
   await sql`ALTER TABLE post_production_schedules ADD COLUMN IF NOT EXISTS lead_assignee_id UUID`
   await sql`
     CREATE TABLE IF NOT EXISTS post_production_schedules (
@@ -641,8 +646,9 @@ export async function getOrCreateAppUser(clerkUser) {
 
 export async function getAllAppUsers() {
   const rows = await db.select().from(app_users).orderBy(app_users.created_at)
-  // Strip raw OAuth tokens — never expose refresh_token to the browser
-  return rows.map(({ google_tokens, ...rest }) => ({
+  // Strip raw OAuth tokens — never expose refresh_token to the browser — and
+  // the Slate calendar id, which only the server ever needs.
+  return rows.map(({ google_tokens, gcal_calendar_id, ...rest }) => ({
     ...rest,
     google_calendar_connected: !!(google_tokens?.refresh_token),
   }))
@@ -1166,15 +1172,21 @@ export async function getTeamCalendarEntries(workspaceId) {
     .where(eq(team_calendar_entries.user_id, workspaceId))
     .orderBy(team_calendar_entries.entry_date)
 }
+// The Google push columns are owned by the server (api/_gcal-entries.js) —
+// strip them so a caller spreading an existing row (copy/paste an entry, say)
+// can never hand a new row someone else's event id.
+function withoutGcalFields({ gcal_event_id, gcal_user_id, ...rest } = {}) {
+  return rest
+}
 export async function createTeamCalendarEntry(workspaceId, data) {
   const [row] = await db.insert(team_calendar_entries)
-    .values({ user_id: workspaceId, ...data })
+    .values({ user_id: workspaceId, ...withoutGcalFields(data) })
     .returning()
   return row
 }
 export async function updateTeamCalendarEntry(workspaceId, id, data) {
   const [row] = await db.update(team_calendar_entries)
-    .set({ ...data, updated_at: new Date() })
+    .set({ ...withoutGcalFields(data), updated_at: new Date() })
     .where(and(eq(team_calendar_entries.id, id), eq(team_calendar_entries.user_id, workspaceId)))
     .returning()
   return row

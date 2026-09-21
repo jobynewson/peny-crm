@@ -70,6 +70,9 @@ index.html                # App HTML shell
     clean URL without adding a function.
 - Current functions (12): `ai`, `blob`, `callsheet`, `generate-ra`, `google`,
   `invite`, `maps`, `packing`, `portal`, `quote`, `reminders`, `track`.
+  All Google Calendar work lives behind the single `google` function: shared
+  plumbing in `api/_gcal.js`, the Team Calendar entry push in
+  `api/_gcal-entries.js` — see "External calendar sync" below.
 
 ### Views
 - Each feature (contacts, projects, etc.) has a view module in `src/views/`
@@ -122,6 +125,10 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 - `FENCE_API_KEY` - Shared secret for the Offload Log ingest endpoint
   (`POST /api/offloads`). Fence sends it as `Authorization: Bearer <key>`.
   Unset = the endpoint returns 500 (so it fails closed rather than open).
+- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` - OAuth client for the per-user
+  Google Calendar connection (server-side, used by `api/google.js`).
+- `VITE_GOOGLE_CLIENT_ID` - the same client id, exposed to the browser so it
+  can start the OAuth redirect. Unset = the Connect button just toasts.
 - `YOUTUBE_API_KEY` - Google API key with the YouTube Data API v3 enabled,
   used by the office dashboard's view-count ticker (`api/_youtube.js`). No
   OAuth, so it only reads public/unlisted videos. Unset = the ticker just
@@ -169,7 +176,8 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 - `expenses.js` - Expense tracking
 - `timetrack.js` - Time tracking
 - `callsheets.js` / `callsheet.js` - Call sheet management
-- `team-calendar.js` - Team calendar
+- `team-calendar.js` - Team calendar. Entries also push one-way to each user's
+  own Google Calendar — see "External calendar sync" below.
 - `leave.js` - Leave/absence management
 - `story-planner.js` - Story planning
 - `boards.js` - Planning boards (kanban) — standalone via the Planning nav item
@@ -193,6 +201,58 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
   implementations — see "Kanban boards" below.
 - `password-manager.js` - Password management
 - `offload-log.js` - Offload Log (read-only table of backup reports from Fence)
+
+### External calendar sync (Team Calendar → Google)
+Each user can connect their own Google account in Settings → Users, and Slate
+then pushes **their own** Team Calendar entries to it. One-way only: Slate is
+always the source of truth and nothing is ever read back from Google.
+- **Events go to a dedicated "Slate" calendar**, a secondary calendar created
+  in the user's account on connect (`app_users.gcal_calendar_id`). Slate never
+  writes to their primary calendar here, so it cannot touch their own events
+  and they can hide or delete the whole thing in one click. The one exception
+  is the older **leave** sync, which still writes to `primary` — see below.
+- **Scope.** Connecting asks for `https://www.googleapis.com/auth/calendar`.
+  The narrower `calendar.events` this used to request cannot create a
+  secondary calendar, so **anyone connected before this feature has to
+  reconnect**; until they do, a sync returns `code: 'reconnect_required'` and
+  the UI says so rather than failing silently.
+- **What is pushed:** `shoot`, `post_production` and `other` entries where the
+  user is the assignee. All-day events (entries hold dates, not times); a
+  deadline entry lands on its final day only and is marked `transparent` so it
+  doesn't look like booked time.
+- **`leave` entries are deliberately NOT pushed from here.** Approved leave
+  already reaches the requester's *primary* calendar via
+  `syncLeaveRequestGoogle()` (`api/google.js`, also driven by the email
+  approval flow in `reminders.js`); pushing the mirrored Team Calendar row as
+  well would double it up. `PUSHABLE_TYPES` in `api/_gcal-entries.js` is the
+  single guard.
+- **Wiring.** Every mutation site in `src/views/team-calendar.js` (modal save,
+  drag-move, resize, paste, delete) calls `_pushEntry()` / `_unpushEntry()`
+  fire-and-forget, the same pattern as `leave.js`'s `_syncGoogleCalendar` — a
+  slow or disconnected calendar never holds up the grid. The push response
+  carries the event id, which is written back onto the in-memory row so a
+  later delete knows what to remove.
+- **Bookkeeping.** `team_calendar_entries.gcal_event_id` +
+  `gcal_user_id` record the event and *whose* calendar it is on. They are kept
+  separate from `assignee_id` so reassigning an entry can delete the event
+  from the old person's calendar before creating it on the new one. Both
+  columns are server-owned — `createTeamCalendarEntry`/`updateTeamCalendarEntry`
+  strip them so copy/paste can't clone someone else's event id.
+- **Turning it off.** The per-user checkbox (`app_users.gcal_push_entries`)
+  removes the already-pushed events when switched off, so a stale rota can't
+  linger. Disconnecting leaves events in Google (that's what the dialog
+  promises) but forgets the tokens, the calendar id and every event id, so a
+  reconnect starts clean. "Sync now" / connecting backfills entries from 30
+  days ago onwards.
+- **Permissions.** `entry-sync` and `entry-delete` are open to any signed-in
+  user, because the Team Calendar is shared and anyone can already move
+  anyone's entry. `disconnect`, `entry-sync-all` and `entry-purge` act on one
+  person's own connection, so they check the caller's Clerk id against
+  `app_users.clerk_id` (`assertOwnAccount`).
+- **Known gap:** the Team Calendar also shows dashed "auto" chips derived from
+  shoot plans and post-production phases. Those are not
+  `team_calendar_entries` rows (they're read live from `shoots` /
+  post-production schedules), so they are NOT pushed — only real entries are.
 
 ### Retainer period labelling on dashboards
 - Retainer periods are anchored on `retainer_start`'s day-of-month, so they are
