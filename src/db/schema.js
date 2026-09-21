@@ -196,6 +196,10 @@ export const app_users = pgTable('app_users', {
   approver_id:      uuid('approver_id'),   // app_users.id of this person's leave approver
   // Google Calendar OAuth tokens (server-only — never exposed to the browser)
   google_tokens:    jsonb('google_tokens'),
+  // Dedicated "Slate" secondary calendar in the user's Google account, created
+  // on connect — the only calendar Team Calendar entries are ever written to.
+  gcal_calendar_id:  text('gcal_calendar_id'),
+  gcal_push_entries: boolean('gcal_push_entries').notNull().default(true),
   created_at:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updated_at:   timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
@@ -428,6 +432,10 @@ export const team_calendar_entries = pgTable('team_calendar_entries', {
   line_label:   text('line_label'),
   notes:        text('notes'),
   is_deadline:  boolean('is_deadline').notNull().default(false),
+  // One-way Google push: the event we wrote, and whose Slate calendar it sits
+  // on (kept separately from assignee_id so a reassignment can clean up).
+  gcal_event_id: text('gcal_event_id'),
+  gcal_user_id:  uuid('gcal_user_id'),
   ...timestamps,
 })
 

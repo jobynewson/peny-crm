@@ -66,6 +66,14 @@ export class App {
     if (urlParams.has('gc_connected')) {
       setTimeout(() => this.toast('Google Calendar connected!'), 400)
       history.replaceState(null, '', location.pathname + location.hash)
+      // Backfill the entries already on the Team Calendar so a fresh
+      // connection isn't empty until the next time something is edited.
+      if (this.appUser?.id) {
+        this._googleEntrySync('entry-sync-all', this.appUser.id).then(res => {
+          if (res?.error) this.toast(res.error)
+          else if (res?.synced) this.toast(`${res.synced} calendar entr${res.synced === 1 ? 'y' : 'ies'} pushed to Google`)
+        })
+      }
     } else if (urlParams.has('gc_error')) {
       const msg = urlParams.get('gc_error')
       setTimeout(() => this.toast(`Google Calendar error: ${msg || 'unknown'}`), 400)
@@ -2827,18 +2835,27 @@ export class App {
               ${users.filter(x => x.id !== u.id).map(x => `<option value="${x.id}" ${u.approver_id === x.id ? 'selected' : ''}>${esc(x.name || x.email)}</option>`).join('')}
             </select>
           </div>
-          <div style="margin-top:8px;display:flex;align-items:center;gap:10px">
+          <div style="margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <div style="font-size:12px;color:var(--text-secondary);white-space:nowrap">Google Calendar:</div>
             ${isSelf
               ? u.google_calendar_connected
                 ? `<span style="font-size:12px;color:#16a34a;font-weight:500">✓ Connected</span>
                    <button class="row-btn" data-gcal-disconnect="${u.id}" style="font-size:11px;color:var(--red,#e05252);border-color:var(--red,#e05252)">Disconnect</button>`
                 : `<button class="row-btn" data-gcal-connect="${u.id}" style="font-size:11px">Connect Google Calendar</button>
-                   <span style="font-size:11px;color:var(--text-tertiary)">Approved leave will appear on your personal calendar</span>`
+                   <span style="font-size:11px;color:var(--text-tertiary)">Approved leave and your calendar entries appear on your own calendar</span>`
               : u.google_calendar_connected
                 ? `<span style="font-size:12px;color:#16a34a">✓ Connected</span>`
                 : `<span style="font-size:12px;color:var(--text-tertiary)">Not connected</span>`}
           </div>
+          ${isSelf && u.google_calendar_connected ? `
+          <div style="margin-top:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-left:2px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer">
+              <input type="checkbox" data-gcal-push="${u.id}" ${u.gcal_push_entries === false ? '' : 'checked'} style="cursor:pointer" />
+              Push my Team Calendar entries to Google
+            </label>
+            <button class="row-btn" data-gcal-sync="${u.id}" style="font-size:11px" ${u.gcal_push_entries === false ? 'disabled' : ''}>Sync now</button>
+            <span style="font-size:11px;color:var(--text-tertiary)">One-way, into a separate “Slate” calendar — your own events are never touched</span>
+          </div>` : ''}
           <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
             ${!isSelf ? `<button class="row-btn" data-remove-user="${u.id}" data-remove-name="${esc(u.name)||esc(u.email)}" style="font-size:11px;color:var(--red,#e05252);border-color:var(--red,#e05252)">Remove user</button>` : '<span></span>'}
             <button class="row-btn" data-save-user="${u.id}" style="font-size:11px">Save changes</button>
@@ -2888,11 +2905,45 @@ export class App {
       el.querySelectorAll('[data-gcal-connect]').forEach(btn => {
         btn.addEventListener('click', () => this._startGoogleOAuth())
       })
+      // Google Calendar — push my Team Calendar entries on/off
+      el.querySelectorAll('[data-gcal-push]').forEach(box => {
+        box.addEventListener('change', async () => {
+          const uid = box.dataset.gcalPush
+          const on  = box.checked
+          box.disabled = true
+          try {
+            await updateAppUser(uid, { gcal_push_entries: on })
+            const u = this.allUsers?.find(x => x.id === uid)
+            if (u) u.gcal_push_entries = on
+            // Turning it on backfills; turning it off takes the events away
+            // again, so a stale copy of the rota can't linger in Google.
+            const res = await this._googleEntrySync(on ? 'entry-sync-all' : 'entry-purge', uid)
+            if (res?.error) this.toast(res.error)
+            else if (on)    this.toast(`Pushing entries to Google — ${res?.synced ?? 0} synced`)
+            else            this.toast('Entry push off — synced entries removed from Google')
+            this._loadUsersPanel(mc)
+          } catch(e) {
+            console.error(e); this.toast('Could not change the calendar push setting')
+            box.checked = !on; box.disabled = false
+          }
+        })
+      })
+      // Google Calendar — push everything now
+      el.querySelectorAll('[data-gcal-sync]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const label = btn.textContent
+          btn.disabled = true; btn.textContent = 'Syncing…'
+          const res = await this._googleEntrySync('entry-sync-all', btn.dataset.gcalSync)
+          btn.disabled = false; btn.textContent = label
+          if (res?.error) this.toast(res.error)
+          else this.toast(`${res?.synced ?? 0} entr${(res?.synced ?? 0) === 1 ? 'y' : 'ies'} synced to Google${res?.failed ? ` — ${res.failed} failed` : ''}`)
+        })
+      })
       // Google Calendar — disconnect
       el.querySelectorAll('[data-gcal-disconnect]').forEach(btn => {
         btn.addEventListener('click', async () => {
           const uid = btn.dataset.gcalDisconnect
-          if (!await this.confirm({ title: 'Disconnect Google Calendar?', message: 'Existing calendar events will not be deleted.', confirmLabel: 'Disconnect' })) return
+          if (!await this.confirm({ title: 'Disconnect Google Calendar?', message: 'Events already in Google are left alone — Slate just stops updating them.', confirmLabel: 'Disconnect' })) return
           try {
             const { getAuthToken } = await import('./auth/clerk.js')
             const token = await getAuthToken()
@@ -2912,6 +2963,32 @@ export class App {
     } catch(e) { console.error(e); el.innerHTML = '<div style="font-size:12px;color:var(--text-tertiary)">Could not load users</div>' }
   }
 
+  // Backfill or withdraw the Team Calendar entries pushed to one user's Google
+  // calendar. Returns the server's JSON, or `{ error }` — a connection made
+  // before the dedicated "Slate" calendar existed needs reconnecting for the
+  // wider OAuth scope, and the message says so rather than failing silently.
+  async _googleEntrySync(action, appUserId) {
+    try {
+      const { getAuthToken } = await import('./auth/clerk.js')
+      const token = await getAuthToken()
+      const r = await fetch('/api/google', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body:    JSON.stringify({ action, appUserId }),
+      })
+      const data = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        return { error: data.code === 'reconnect_required'
+          ? 'Reconnect Google Calendar to finish setting up entry sync'
+          : (data.error || 'Google Calendar sync failed') }
+      }
+      return data
+    } catch (e) {
+      console.error(e)
+      return { error: 'Google Calendar sync failed' }
+    }
+  }
+
   _startGoogleOAuth() {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID
     if (!clientId) { this.toast('VITE_GOOGLE_CLIENT_ID is not configured'); return }
@@ -2920,7 +2997,10 @@ export class App {
       client_id:     clientId,
       redirect_uri:  `${location.origin}/api/google`,
       response_type: 'code',
-      scope:         'https://www.googleapis.com/auth/calendar.events',
+      // Full calendar scope: `calendar.events` alone cannot create the
+      // dedicated "Slate" secondary calendar that Team Calendar entries are
+      // pushed to. Anyone connected before this change must reconnect.
+      scope:         'https://www.googleapis.com/auth/calendar',
       access_type:   'offline',
       prompt:        'consent',
       state,
