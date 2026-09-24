@@ -18,7 +18,7 @@
 
 import {
   getCanvasData, createCanvas, updateCanvas, deleteCanvas,
-  createCanvasItem, updateCanvasItem, deleteCanvasItem, updateCanvasItemGeometry,
+  createCanvasItems, updateCanvasItem, deleteCanvasItems, updateCanvasItemGeometry,
   createCanvasArrow, updateCanvasArrow, deleteCanvasArrow,
   moveCanvasItems, getCanvasPreviews, duplicateCanvasTree,
 } from '../db/client.js'
@@ -261,13 +261,14 @@ export class CanvasSurface {
     if (this._destroyed) return
     this._destroyed = true
     this._endGesture?.()
+    // Anything still debounced (typing, a nudge burst) is written now, not dropped.
+    this._flushAllSaves()
     if (this._pollTimer) clearInterval(this._pollTimer)
     this._pollTimer = null
     if (this._raf) cancelAnimationFrame(this._raf)
     for (const [target, type, fn, o] of this._docListeners) target.removeEventListener(type, fn, o)
     this._docListeners = []
     for (const t of Object.values(this._saveTimers)) clearTimeout(t)
-    this._flushNudge()
     document.querySelectorAll(`[data-cv-owner="${this.uid}"]`).forEach(el => el.remove())
   }
 
@@ -398,11 +399,11 @@ export class CanvasSurface {
         <div class="cv-world">
           <svg class="cv-links" aria-hidden="true">
             <defs>
-              <marker id="${this.uid}-head" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
-                <path d="M0,0 L10,5 L0,10 z" class="cv-head"></path>
+              <marker id="${this.uid}-head" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="13" markerHeight="13" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+                <path d="M1,1.5 L11,6 L1,10.5 L3.2,6 z" class="cv-head"></path>
               </marker>
-              <marker id="${this.uid}-head-sel" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
-                <path d="M0,0 L10,5 L0,10 z" class="cv-head cv-head--sel"></path>
+              <marker id="${this.uid}-head-sel" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="13" markerHeight="13" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+                <path d="M1,1.5 L11,6 L1,10.5 L3.2,6 z" class="cv-head cv-head--sel"></path>
               </marker>
             </defs>
             <g class="cv-link-layer"></g>
@@ -514,7 +515,9 @@ export class CanvasSurface {
     if (it.kind === 'link') {
       return `
         <div class="cv-link-body">
-          ${it.image_url ? `<div class="cv-link-thumb"><img src="${imgSrc(it.image_url)}" alt="" draggable="false" loading="lazy"></div>` : ''}
+          ${it.image_url
+            ? `<div class="cv-link-thumb"><img src="${imgSrc(it.image_url)}" alt="" draggable="false" loading="lazy"></div>`
+            : `<div class="cv-link-thumb cv-link-thumb--none"><span class="cv-link-glyph">${esc(displayUrl(it.url).charAt(0).toUpperCase() || '🔗')}</span></div>`}
           <div class="cv-link-meta">
             <div class="cv-link-title">${esc(it.content || displayUrl(it.url))}</div>
             <a class="cv-link-url" href="${esc(/^https?:\/\//i.test(it.url || '') ? it.url : '#')}" target="_blank" rel="noopener noreferrer">${esc(displayUrl(it.url))}</a>
@@ -593,11 +596,11 @@ export class CanvasSurface {
       <div class="cv-todo-row${st.done ? ' cv-todo-row--done' : ''}" data-st-id="${esc(st.id || '')}">
         <input type="checkbox" class="cv-todo-done" ${st.done ? 'checked' : ''} ${dis}>
         <input class="cv-todo-text" value="${esc(st.text || '')}" placeholder="Item…" ${dis}>
-        <select class="cv-todo-owner" ${dis} title="Owner">
+        <select class="cv-todo-owner${st.owner_id ? ' is-set' : ''}" ${dis} title="Owner">
           <option value="">Owner</option>
           ${users.map((/** @type {any} */ u) => `<option value="${esc(u.clerk_id)}"${st.owner_id === u.clerk_id ? ' selected' : ''}>${esc(u.name || u.email)}</option>`).join('')}
         </select>
-        <input type="date" class="cv-todo-due" value="${esc(st.due_date || '')}" ${dis} title="Due date">
+        <input type="date" class="cv-todo-due${st.due_date ? ' is-set' : ''}" value="${esc(st.due_date || '')}" ${dis} title="Due date">
         ${this.canEdit ? '<button class="cv-todo-del" data-card-act="todo-del" title="Remove">×</button>' : ''}
       </div>`
   }
@@ -631,6 +634,7 @@ export class CanvasSurface {
     this._paintItem(el, it)
     this._sigs.set(id, this._sig(it))
     this._place(el, it)
+    this._markItem(id)
   }
 
   // ── Rendering: connectors ────────────────────────────────────────────────────
@@ -893,6 +897,7 @@ export class CanvasSurface {
       if (e.key === ' ' && this._spaceDown) { this._spaceDown = false; wrap.classList.remove('cv-wrap--space') }
     })
     this._listen(window, 'blur', () => { this._spaceDown = false; wrap.classList.remove('cv-wrap--space') })
+    this._listen(window, 'pagehide', () => this._flushAllSaves())
     this._listen(document, 'copy', (/** @type {ClipboardEvent} */ e) => this._onCopy(e, false))
     this._listen(document, 'cut', (/** @type {ClipboardEvent} */ e) => this._onCopy(e, true))
     this._listen(document, 'paste', (/** @type {ClipboardEvent} */ e) => this._onPaste(e))
@@ -1497,6 +1502,7 @@ export class CanvasSurface {
       t.closest('.cv-todo-row')?.classList.toggle('cv-todo-row--done', /** @type {HTMLInputElement} */ (t).checked)
       this._saveTodo(id, false)
     } else if (t.classList.contains('cv-todo-owner') || t.classList.contains('cv-todo-due')) {
+      t.classList.toggle('is-set', !!(/** @type {HTMLInputElement} */ (t).value))
       this._saveTodo(id, false)
     }
   }
@@ -1729,13 +1735,11 @@ export class CanvasSurface {
     this._reconcile()
     this._syncArrows()
     const ok = await this._write(async () => {
-      for (const it of items) {
-        await createCanvasItem(this.canvasId, {
-          id: it.id, kind: it.kind, x: it.x, y: it.y, w: it.w, h: it.h, z: it.z,
-          content: it.content ?? null, color: it.color ?? null, image_url: it.image_url ?? null, url: it.url ?? null,
-          links: it.links ?? [], sub_tasks: it.sub_tasks ?? [], child_canvas_id: it.child_canvas_id ?? null,
-        })
-      }
+      await createCanvasItems(this.canvasId, items.map(it => ({
+        id: it.id, kind: it.kind, x: it.x, y: it.y, w: it.w, h: it.h, z: Math.round(it.z || 0),
+        content: it.content ?? null, color: it.color ?? null, image_url: it.image_url ?? null, url: it.url ?? null,
+        links: it.links ?? [], sub_tasks: it.sub_tasks ?? [], child_canvas_id: it.child_canvas_id ?? null,
+      })))
       await Promise.all(arrows.map(a => createCanvasArrow(this.canvasId, a.from_item_id, a.to_item_id, { id: a.id, label: a.label ?? null })))
       return true
     }, 'Could not save to the canvas')
@@ -2002,8 +2006,9 @@ export class CanvasSurface {
     const snapItems = items.map(i => ({ ...i })), snapArrows = arrows.map(a => ({ ...a }))
     this._removeLocal(ids, aids)
     const ok = await this._write(async () => {
+      // Connectors attached to a deleted card go with it (ON DELETE CASCADE).
       await Promise.all(arrows.filter(a => !ids.has(a.from_item_id) && !ids.has(a.to_item_id)).map(a => deleteCanvasArrow(a.id)))
-      await Promise.all(items.map(i => deleteCanvasItem(i.id)))
+      await deleteCanvasItems([...ids])
       return true
     }, 'Could not delete')
     if (!ok) {
@@ -2150,13 +2155,17 @@ export class CanvasSurface {
   // entries that refer to them still resolve.
   /** @param {string} label @param {Item[]} items @param {Arrow[]} arrows @returns {HistoryEntry} */
   _createEntry(label, items, arrows) {
-    const snapI = items.map(i => ({ ...i })), snapA = arrows.map(a => ({ ...a }))
+    let snapI = items.map(i => ({ ...i })), snapA = arrows.map(a => ({ ...a }))
     return {
       label,
       undo: async () => {
-        const live = snapI.map(s => this.byId.get(s.id)).filter(Boolean)
-        const liveA = snapA.filter(s => this.arrows.some(a => a.id === s.id))
-        await this._deleteRecords(/** @type {Item[]} */ (live), liveA)
+        // Re-snapshot what is live now, so a redo brings back later edits
+        // (typed text, moves) and not the card as it was first created.
+        const live = /** @type {Item[]} */ (snapI.map(s => this.byId.get(s.id)).filter(Boolean))
+        const liveA = this.arrows.filter(a => snapA.some(s => s.id === a.id))
+        snapI = live.map(i => ({ ...i }))
+        snapA = liveA.map(a => ({ ...a }))
+        await this._deleteRecords(live, liveA)
       },
       redo: async () => { await this._insertRecords(snapI.map(s => ({ ...s })), snapA.map(s => ({ ...s }))) },
     }

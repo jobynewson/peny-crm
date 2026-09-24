@@ -1534,18 +1534,13 @@ body.cv-body-lock { overflow: hidden; }
 .cv-wrap:not(.cv-wrap--readonly) .cv-item { cursor: grab; }
 .cv-wrap--dragging .cv-item--selected { box-shadow: var(--shadow-lg); }
 .cv-wrap--dropping .cv-item--selected { opacity: 0.55; }
-.cv-item--selected::after, .cv-item--link-target::after, .cv-item--drop-target::after, .cv-item--file-over::after {
-  content: '';
-  position: absolute;
-  inset: -3px;
-  border: 2px solid var(--accent);
-  border-radius: calc(var(--radius-md) + 3px);
-  pointer-events: none;
+.cv-item--selected, .cv-item--link-target, .cv-item--drop-target, .cv-item--file-over {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
-.cv-item--link-target::after, .cv-item--file-over::after { border-style: dashed; }
-.cv-item--drop-target { transform-origin: center; }
-.cv-item--drop-target .cv-board-tile { filter: brightness(1.12); }
-.cv-item--drop-target::after { inset: -6px; border-width: 3px; border-radius: calc(var(--radius-md) + 6px); background: rgba(var(--accent-rgb), 0.08); }
+.cv-item--link-target, .cv-item--file-over { outline-style: dashed; }
+.cv-item--drop-target { outline-width: 3px; outline-offset: 5px; }
+.cv-item--drop-target .cv-board-tile { filter: brightness(1.15); }
 .cv-item--absorbed { transition: transform 0.16s ease-in, opacity 0.16s ease-in; opacity: 0; }
 
 /* Connection ports: one dot on each side, shown on hover / while linking. */
@@ -1674,6 +1669,8 @@ body.cv-body-lock { overflow: hidden; }
 .cv-link-body { flex: 1; min-height: 0; display: flex; flex-direction: column; border-radius: inherit; overflow: hidden; }
 .cv-link-thumb { flex: 1; min-height: 0; overflow: hidden; background: var(--bg-secondary); }
 .cv-link-thumb img { width: 100%; height: 100%; object-fit: cover; pointer-events: none; display: block; }
+.cv-link-thumb--none { display: flex; align-items: center; justify-content: center; background: var(--accent-subtle); }
+.cv-link-glyph { font-size: 26px; font-weight: 700; color: var(--accent); opacity: 0.8; }
 .cv-link-meta { padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; }
 .cv-link-title {
   font-size: 13px; font-weight: 550; color: var(--text-primary); line-height: 1.35;
@@ -1703,12 +1700,13 @@ body.cv-body-lock { overflow: hidden; }
 .cv-todo-done { flex-shrink: 0; cursor: pointer; accent-color: var(--accent); }
 .cv-todo-text {
   flex: 1; min-width: 0;
-  font-size: 12px; padding: 4px 7px;
-  border: 1px solid var(--border-light); border-radius: var(--radius-sm);
-  background: var(--bg-secondary); color: var(--text-primary);
+  font-size: 13px; padding: 3px 6px;
+  border: 1px solid transparent; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-primary);
   font-family: var(--font); outline: none;
 }
-.cv-todo-text:focus { border-color: var(--accent); }
+.cv-todo-row:hover .cv-todo-text:not(:disabled) { background: var(--bg-secondary); }
+.cv-todo-text:focus { border-color: var(--accent); background: var(--bg-primary) !important; }
 .cv-todo-owner, .cv-todo-due {
   font-size: 10px; padding: 3px 5px;
   border: 1px solid var(--border-light); border-radius: var(--radius-sm);
@@ -1716,7 +1714,13 @@ body.cv-body-lock { overflow: hidden; }
   font-family: var(--font); outline: none;
 }
 .cv-todo-owner { max-width: 84px; flex-shrink: 0; }
-.cv-todo-due { flex-shrink: 0; }
+.cv-todo-due { flex-shrink: 0; max-width: 112px; }
+/* Owner / due stay out of the way until they're set or the row is in use. */
+.cv-todo-owner:not(.is-set), .cv-todo-due:not(.is-set), .cv-todo-del { display: none; }
+.cv-todo-row:hover .cv-todo-owner, .cv-todo-row:focus-within .cv-todo-owner,
+.cv-todo-row:hover .cv-todo-due, .cv-todo-row:focus-within .cv-todo-due,
+.cv-todo-row:hover .cv-todo-del, .cv-todo-row:focus-within .cv-todo-del { display: inline-block; }
+.cv-wrap--readonly .cv-todo-owner:not(.is-set), .cv-wrap--readonly .cv-todo-due:not(.is-set) { display: none !important; }
 .cv-todo-del {
   flex-shrink: 0; background: none; border: none; cursor: pointer;
   color: var(--text-tertiary); font-size: 14px; line-height: 1; padding: 1px 3px;

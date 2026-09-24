@@ -1636,6 +1636,18 @@ export async function createCanvasItem(canvasId, data) {
     .returning()
   return row
 }
+// Many cards in one INSERT (paste, duplicate, undo of a delete). Rows may
+// carry client-generated ids so connectors can reference them immediately.
+export async function createCanvasItems(canvasId, rows) {
+  if (!rows.length) return []
+  return db.insert(canvas_items)
+    .values(rows.map(r => ({ ...r, canvas_id: canvasId })))
+    .returning()
+}
+export async function deleteCanvasItems(ids) {
+  if (!ids.length) return
+  await db.delete(canvas_items).where(inArray(canvas_items.id, ids))
+}
 export async function updateCanvasItem(id, data) {
   const [row] = await db.update(canvas_items)
     .set({ ...data, updated_at: new Date() })
