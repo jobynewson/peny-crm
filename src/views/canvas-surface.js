@@ -933,7 +933,12 @@ export class CanvasSurface {
       const t = /** @type {Node} */ (e.target)
       this._active = wrap.contains(t) || !!asEl(e.target)?.closest(`[data-cv-owner="${this.uid}"]`)
     }, true)
-    this._listen(document, 'keydown', (/** @type {KeyboardEvent} */ e) => this._onKeyDown(e))
+    // Capture phase on window: runs before the app's global shortcuts (whose
+    // Esc means "go back"), and any key the canvas acts on stops there.
+    this._listen(window, 'keydown', (/** @type {KeyboardEvent} */ e) => {
+      this._onKeyDown(e)
+      if (e.defaultPrevented) e.stopImmediatePropagation()
+    }, true)
     this._listen(document, 'keyup', (/** @type {KeyboardEvent} */ e) => {
       if (e.key === ' ' && this._spaceDown) { this._spaceDown = false; wrap.classList.remove('cv-wrap--space') }
     })
@@ -2674,9 +2679,11 @@ export class CanvasSurface {
     if (k === 'Escape') {
       if (typing) return
       if (this._gesture) { this._endGesture?.(); e.preventDefault(); return }
-      if (this.tool !== 'select') { this._setTool('select'); return }
-      if (this.sel.size || this.selArrow) { this._setSelection([]); this._selectArrow(null); return }
-      if (this._wrap?.classList.contains('cv-wrap--full')) this._toggleFullscreen()
+      if (this._wrap?.querySelector('.cv-help')) { this._toggleHelp(); e.preventDefault(); return }
+      if (this.tool !== 'select') { this._setTool('select'); e.preventDefault(); return }
+      if (this.sel.size || this.selArrow) { this._setSelection([]); this._selectArrow(null); e.preventDefault(); return }
+      if (this._wrap?.classList.contains('cv-wrap--full')) { this._toggleFullscreen(); e.preventDefault() }
+      // Nothing to cancel on the canvas: let the app's Esc (go back) run.
       return
     }
     if (typing) return
