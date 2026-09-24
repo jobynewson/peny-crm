@@ -14,6 +14,7 @@ import { ExpensesView } from './views/expenses.js'
 import { OffloadLogView } from './views/offload-log.js'
 import { BoardsView } from './views/boards.js'
 import { CanvasView } from './views/canvas.js'
+import { PlanningTabsView } from './views/planning-tabs.js'
 
 export class App {
   constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, leaveRequests, publicHolidays, onSignOut }) {
@@ -48,6 +49,7 @@ export class App {
     this.offloadLogView       = new OffloadLogView(this)
     this.boardsView           = new BoardsView(this)
     this.canvasView           = new CanvasView(this)
+    this.planningTabs         = new PlanningTabsView(this)
     window.app = this
   }
 

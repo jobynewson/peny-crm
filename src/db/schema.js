@@ -127,6 +127,9 @@ export const projects = pgTable('projects', {
   // Fractional index within its kanban column (stage, or the retainer lane) —
   // see board_cards.position below for the same drag-reorder pattern.
   kanban_position: doublePrecision('kanban_position').notNull().default(0),
+  // Planning tab strip order: ['board:<id>' | 'canvas:<id>', …] — see
+  // src/utils/planning-tabs.js. Unlisted boards/canvases append by age.
+  planning_tab_order: jsonb('planning_tab_order').notNull().default([]),
   ...timestamps,
 })
 
@@ -592,10 +595,14 @@ export const board_recurrences = pgTable('board_recurrences', {
 
 // ── Planning canvases (moodboarding / visual planning) ───────────────────────
 // Same availability pattern as boards: standalone or linked to a project.
+// parent_id nests a canvas inside another one (reached through a 'board' item
+// on the parent); only root canvases (parent_id NULL) are listed or linked to
+// a project. Deleting a canvas cascades to its whole sub-tree.
 export const canvases = pgTable('canvases', {
   id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
   user_id:    text('user_id').notNull(),
   project_id: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
+  parent_id:  uuid('parent_id').references(() => canvases.id, { onDelete: 'cascade' }),
   name:       text('name').notNull(),
   ...timestamps,
 })
@@ -608,6 +615,9 @@ export const canvases = pgTable('canvases', {
 //             content reused as the fetched title
 //   'todo'  — sub_tasks checklist ([{ id, text, owner_id, due_date, done }],
 //             owner_id is a Clerk ID, same shape as marketing_cards.sub_tasks)
+//   'swatch'— color (#RRGGBB); content is the swatch's name
+//   'board' — child_canvas_id: a portal to a nested canvas (content caches
+//             its name for the card face)
 export const canvas_items = pgTable('canvas_items', {
   id:        uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
   canvas_id: uuid('canvas_id').notNull().references(() => canvases.id, { onDelete: 'cascade' }),
@@ -623,6 +633,7 @@ export const canvas_items = pgTable('canvas_items', {
   url:       text('url'),                              // 'link' kind: destination URL
   links:     jsonb('links').notNull().default([]),     // same entity chips as board cards
   sub_tasks: jsonb('sub_tasks').notNull().default([]), // 'todo' kind: checklist rows
+  child_canvas_id: uuid('child_canvas_id').references(() => canvases.id, { onDelete: 'set null' }), // 'board' kind
   ...timestamps,
 })
 
@@ -631,6 +642,7 @@ export const canvas_arrows = pgTable('canvas_arrows', {
   canvas_id:    uuid('canvas_id').notNull().references(() => canvases.id, { onDelete: 'cascade' }),
   from_item_id: uuid('from_item_id').notNull().references(() => canvas_items.id, { onDelete: 'cascade' }),
   to_item_id:   uuid('to_item_id').notNull().references(() => canvas_items.id, { onDelete: 'cascade' }),
+  label:        text('label'),
   created_at:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
