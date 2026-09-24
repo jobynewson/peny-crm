@@ -1160,8 +1160,10 @@ export class TasksView {
           <div class="tk-dash-row-title">${esc(task.title)}</div>
           ${meta ? `<div class="tk-dash-row-meta ${due?.overdue ? 'tk-dash-row-meta--over' : ''}">${meta}</div>` : ''}
         </div>
-        ${unack  ? `<button class="tk-got-it tk-got-it--sm" data-ack-id="${esc(task.id)}">Got it</button>` : ''}
-        ${groupId === 'free' ? `<button class="tk-dash-claim" data-claim-id="${esc(task.id)}">Claim</button>` : ''}
+        ${unack ? `<button class="tk-got-it tk-got-it--sm" data-ack-id="${esc(task.id)}">Got it</button>` : ''}
+        ${groupId === 'free'
+          ? `<button class="tk-dash-act" data-claim-id="${esc(task.id)}">Claim</button>`
+          : `<button class="tk-dash-act" data-done-id="${esc(task.id)}">Done</button>`}
       </div>`
   }
 
@@ -1190,6 +1192,62 @@ export class TasksView {
         await this._claimTask(btn.dataset.claimId)
       })
     })
+    section.querySelectorAll('[data-done-id]').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation()
+        await this._completeTask(btn.dataset.doneId)
+      })
+    })
+  }
+
+  // Completing from the dashboard. The row disappears the moment it is clicked
+  // (Done is not one of the groups shown here), so a mis-tap would otherwise be
+  // silent — hence the undo rather than a plain toast.
+  //
+  // Marking an unacknowledged task done also acknowledges it server-side, since
+  // the actor is the assignee. That is the intended shortcut: finishing
+  // something is a stronger signal than saying you have seen it.
+  async _completeTask(id) {
+    const task = this.tasks.find(t => t.id === id)
+    if (!task || task.status === 'done') return
+
+    const previous = { status: task.status, acknowledged_at: task.acknowledged_at }
+    Object.assign(task, { status: 'done', acknowledged_at: task.acknowledged_at || new Date().toISOString() })
+    this._refreshBoard()
+
+    try {
+      await this._write(async () => {
+        const { task: saved } = await api.patchTask(id, { status: 'done' })
+        Object.assign(task, saved)
+      })
+      this._refreshBoard()
+      this.app.toastAction('Marked done', 'Undo', () => this._undoComplete(id, previous))
+    } catch (err) {
+      Object.assign(task, previous)
+      this._refreshBoard()
+      this.app.toast(err.message || 'Could not mark that done')
+    }
+  }
+
+  // Puts the task back where it was. Acknowledgement is left alone: it is not
+  // undone by reopening, and the person has plainly seen the task by now.
+  async _undoComplete(id, previous) {
+    const task = this.tasks.find(t => t.id === id)
+    if (!task) return
+    const current = { status: task.status }
+    task.status = previous.status
+    this._refreshBoard()
+    try {
+      await this._write(async () => {
+        const { task: saved } = await api.patchTask(id, { status: previous.status })
+        Object.assign(task, saved)
+      })
+      this._refreshBoard()
+    } catch (err) {
+      Object.assign(task, current)
+      this._refreshBoard()
+      this.app.toast(err.message || 'Could not undo that')
+    }
   }
 
   // Claiming assigns the task to whoever clicked — the same thing dragging out

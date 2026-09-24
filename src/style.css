@@ -2204,12 +2204,15 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 .tk-dash-row-meta { font-size: 11.5px; color: var(--text-tertiary); margin-top: 2px; overflow-wrap: anywhere; }
 .tk-dash-row-meta--over { color: var(--danger); font-weight: 550; }
 .tk-got-it--sm { padding: 5px 11px; font-size: 12px; flex-shrink: 0; }
-.tk-dash-claim {
+/* Row actions — Claim and Done share one outlined style so neither reads as
+   the more important of the two. "Got it" stays filled: acknowledging is the
+   one action the section is really asking for. */
+.tk-dash-act {
   flex-shrink: 0; padding: 5px 11px; font-size: 12px; font-weight: 600; cursor: pointer;
   background: var(--bg-primary); color: var(--accent);
   border: 1px solid var(--accent); border-radius: var(--radius-md);
 }
-.tk-dash-claim:hover { background: var(--accent); color: var(--accent-text); }
+.tk-dash-act:hover { background: var(--accent); color: var(--accent-text); }
 .tk-dash-more {
   display: block; width: 100%; text-align: left; cursor: pointer;
   padding: 8px 14px; background: none; border: none; border-top: 1px solid var(--border-light);
