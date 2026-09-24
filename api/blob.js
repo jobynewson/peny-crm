@@ -4,10 +4,12 @@
 //   DELETE /api/blob?url=<blobUrl>        — delete image
 //   GET    /api/blob?url=<blobUrl>        — proxy private blob for <img> tags
 //   GET    /api/blob?action=preview&url=  — SSRF-guarded link/URL preview
+//   GET    /api/blob?action=youtube&id=   — view count for the dashboard ticker
 
 import { put, del } from '@vercel/blob'
 import { verifyToken } from '@clerk/backend'
 import { fetchLinkPreview } from './_preview.js'
+import { getYoutubeViews } from './_youtube.js'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -43,6 +45,23 @@ export default async function handler(req, res) {
     } catch (err) {
       return res.status(422).json({ error: err.message || 'Preview failed' })
     }
+  }
+
+  // ── GET ?action=youtube: view count for the in-app dashboard ticker ────────
+  // The office dashboard gets this from /api/portal?view=dashboard, but that is
+  // gated by DASHBOARD_TOKEN which the app doesn't hold. This is the same
+  // lookup behind Clerk auth instead. It lives here rather than in a new file
+  // because we are at Vercel's 12-function limit (see claude.md), and above the
+  // blob-token check because, like ?action=preview, it doesn't need one.
+  // YOUTUBE_API_KEY stays server-side — it is never shipped to the browser.
+  if (req.method === 'GET' && req.query.action === 'youtube') {
+    const userId = await requireAuth(req, res)
+    if (!userId) return
+    const { id } = req.query
+    if (!id) return res.status(400).json({ error: 'Missing id parameter' })
+    const stats = await getYoutubeViews(id)
+    if (stats?.views != null) return res.status(200).json({ views: stats.views, stale: !!stats.stale })
+    return res.status(200).json({ error: stats?.error || 'No view count available' })
   }
 
   const token = process.env.BLOB_READ_WRITE_TOKEN

@@ -1,57 +1,42 @@
 // All Google Calendar operations in one function (Vercel Hobby plan: 12-function limit).
 //
 // GET  (code + state params) — OAuth callback: exchange code → store tokens → redirect
-// POST ?action=disconnect    — Remove stored tokens          (Clerk auth required)
-// POST ?action=create        — Create a calendar event       (Clerk auth required)
-// POST ?action=delete        — Delete a calendar event       (Clerk auth required)
+// POST action=disconnect      — Remove stored tokens + the Slate calendar link
+// POST action=create|delete   — Create/delete the leave event on the primary calendar
+// POST action=entry-sync      — Push one Team Calendar entry to the assignee's Slate calendar
+// POST action=entry-delete    — Remove one pushed Team Calendar event
+// POST action=entry-sync-all  — Backfill every current entry for one user
+// POST action=entry-purge     — Take every pushed entry back off a user's Slate calendar
+// (all POSTs require Clerk auth, or the internal CRON_SECRET)
 
 import { neon } from '@neondatabase/serverless'
 import { verifyToken } from '@clerk/backend'
+import { ensureFreshToken, toDateOnly, addUtcDays, ensureSlateCalendar } from './_gcal.js'
+import {
+  syncCalendarEntryGoogle, deleteCalendarEntryGoogle,
+  syncAllCalendarEntriesGoogle, purgeCalendarEntriesGoogle,
+} from './_gcal-entries.js'
 
+// Returns the verified Clerk payload so callers can check *who* is asking —
+// `sub` is the Clerk user id, which maps to app_users.clerk_id.
 async function verifyClerkToken(req) {
   const raw = req.headers.authorization?.replace('Bearer ', '').trim()
   if (!raw) throw Object.assign(new Error('Unauthorised'), { status: 401 })
-  await verifyToken(raw, { secretKey: process.env.CLERK_SECRET_KEY })
+  return verifyToken(raw, { secretKey: process.env.CLERK_SECRET_KEY })
 }
 
-async function ensureFreshToken(sql, tokens, requesterId) {
-  if (tokens.access_token && Date.now() < tokens.expiry_date - 60_000) {
-    return tokens.access_token
+// Connecting, disconnecting and bulk-syncing a calendar are personal actions:
+// only the owner of that app_users row may run them (a CRON_SECRET caller is
+// the server talking to itself, so it passes). Editing an individual entry is
+// not covered here — the Team Calendar is shared, and anyone on the team can
+// already move anyone else's entry.
+async function assertOwnAccount(sql, clerkPayload, appUserId) {
+  if (!clerkPayload) return
+  const rows = await sql`SELECT clerk_id FROM app_users WHERE id = ${appUserId} LIMIT 1`
+  if (!rows[0]) throw Object.assign(new Error('User not found'), { status: 404 })
+  if (rows[0].clerk_id !== clerkPayload.sub) {
+    throw Object.assign(new Error('You can only change your own calendar connection'), { status: 403 })
   }
-  const r = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id:     process.env.GOOGLE_CLIENT_ID,
-      client_secret: process.env.GOOGLE_CLIENT_SECRET,
-      refresh_token: tokens.refresh_token,
-      grant_type:    'refresh_token',
-    }),
-  })
-  const refreshed = await r.json()
-  if (refreshed.error) throw new Error(refreshed.error_description || refreshed.error)
-  const newTokens = { ...tokens, access_token: refreshed.access_token, expiry_date: Date.now() + (refreshed.expires_in || 3600) * 1000 }
-  await sql`UPDATE app_users SET google_tokens = ${JSON.stringify(newTokens)}::jsonb WHERE id = ${requesterId}`
-  return refreshed.access_token
-}
-
-// Normalise a Postgres DATE value — which Neon may return as a string
-// ('2026-06-01' or '2026-06-01T00:00:00.000Z') or as a JS Date — to a plain
-// 'YYYY-MM-DD' string suitable for an all-day Google Calendar event.
-function toDateOnly(value) {
-  if (value == null) return value
-  if (value instanceof Date) return value.toISOString().slice(0, 10)
-  return String(value).slice(0, 10)
-}
-
-// Add whole days to a 'YYYY-MM-DD' string using UTC math so there is no
-// local-timezone drift. Google Calendar all-day events use an *exclusive* end
-// date, so a request's end date on the calendar is its last day + 1.
-function addUtcDays(dateOnly, days) {
-  const [y, m, d] = dateOnly.split('-').map(Number)
-  const dt = new Date(Date.UTC(y, m - 1, d))
-  dt.setUTCDate(dt.getUTCDate() + days)
-  return dt.toISOString().slice(0, 10)
 }
 
 // Shared create/delete implementation used by both the POST endpoint below and
@@ -182,6 +167,16 @@ export default async function handler(req, res) {
       return res.redirect(`${base}/?gc_error=db_error#settings`)
     }
 
+    // Best effort: make the user's dedicated "Slate" calendar straight away so
+    // a missing permission shows up now rather than on the first entry push.
+    // A reconnect reuses the calendar they already have.
+    try {
+      const [user] = await sql`SELECT id, gcal_calendar_id FROM app_users WHERE id = ${appUserId} LIMIT 1`
+      if (user) await ensureSlateCalendar(sql, user, tokens.access_token)
+    } catch (err) {
+      console.warn('Could not create the Slate calendar on connect:', err.message)
+    }
+
     return res.redirect(`${base}/?gc_connected=1#settings`)
   }
 
@@ -192,21 +187,56 @@ export default async function handler(req, res) {
   const authHeader = req.headers['authorization']
   const isCronSecret = process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`
 
+  let clerkPayload = null
   if (!isCronSecret) {
     try {
-      await verifyClerkToken(req)
+      clerkPayload = await verifyClerkToken(req)
     } catch (err) {
       return res.status(err.status || 401).json({ error: err.message })
     }
   }
 
-  const { action, requestId, appUserId } = req.body ?? {}
+  const { action, requestId, appUserId, entryId, eventId } = req.body ?? {}
 
   // ── Disconnect ─────────────────────────────────────────────────────────────
+  // Events already written are left in Google (that is what the UI promises) —
+  // we just forget the tokens, the Slate calendar and every event id, so a
+  // reconnect starts clean instead of trying to patch events it can't see.
   if (action === 'disconnect') {
     if (!appUserId) return res.status(400).json({ error: 'appUserId required' })
-    await sql`UPDATE app_users SET google_tokens = NULL, updated_at = NOW() WHERE id = ${appUserId}`
+    try {
+      await assertOwnAccount(sql, clerkPayload, appUserId)
+    } catch (err) {
+      return res.status(err.status || 403).json({ error: err.message })
+    }
+    await sql`
+      UPDATE team_calendar_entries SET gcal_event_id = NULL, gcal_user_id = NULL
+      WHERE gcal_user_id = ${appUserId}
+    `
+    await sql`
+      UPDATE app_users
+      SET google_tokens = NULL, gcal_calendar_id = NULL, updated_at = NOW()
+      WHERE id = ${appUserId}
+    `
     return res.status(200).json({ ok: true })
+  }
+
+  // ── Team Calendar entry push (one-way: Slate → the assignee's calendar) ────
+  if (action?.startsWith('entry-')) {
+    try {
+      if (action === 'entry-sync')      return res.status(200).json(await syncCalendarEntryGoogle(sql, { entryId }))
+      if (action === 'entry-delete')    return res.status(200).json(await deleteCalendarEntryGoogle(sql, { eventId, appUserId, entryId }))
+      if (action === 'entry-sync-all' || action === 'entry-purge') {
+        if (!appUserId) return res.status(400).json({ error: 'appUserId required' })
+        await assertOwnAccount(sql, clerkPayload, appUserId)
+        return res.status(200).json(action === 'entry-sync-all'
+          ? await syncAllCalendarEntriesGoogle(sql, { appUserId })
+          : await purgeCalendarEntriesGoogle(sql, { appUserId }))
+      }
+      return res.status(400).json({ error: `Unknown action: ${action}` })
+    } catch (err) {
+      return res.status(err.status || 500).json({ error: err.message, code: err.code })
+    }
   }
 
   // ── Calendar event create / delete ─────────────────────────────────────────

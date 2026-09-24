@@ -42,6 +42,8 @@ export const settings = pgTable('settings', {
   countdown_timer: jsonb('countdown_timer'),
   // Dashboard days-since timer
   days_since_timer: jsonb('days_since_timer'),
+  // Dashboard YouTube view-count ticker — { label, url, video_id }
+  youtube_ticker: jsonb('youtube_ticker'),
   // Email: receive daily roundup of all reminders sent to all users
   reminder_roundup: boolean('reminder_roundup').notNull().default(false),
   // Expense tracker: who receives the monthly expense email (array of clerk_ids)
@@ -101,6 +103,9 @@ export const projects = pgTable('projects', {
   retainer_items:   jsonb('retainer_items').notNull().default([]),
   retainer_fee_mode: text('retainer_fee_mode').notNull().default('fixed'),
   retainer_rollover: boolean('retainer_rollover').notNull().default(false),
+  // Start of the 12-month window in the retainer's long-term time-tracking
+  // view. Defaults to retainer_start when unset; adjustable per project.
+  retainer_year_start: date('retainer_year_start'),
   monthly_deliverables: jsonb('monthly_deliverables').notNull().default([]),
   location_address:  text('location_address'),
   location_map_link: text('location_map_link'),
@@ -191,6 +196,10 @@ export const app_users = pgTable('app_users', {
   approver_id:      uuid('approver_id'),   // app_users.id of this person's leave approver
   // Google Calendar OAuth tokens (server-only — never exposed to the browser)
   google_tokens:    jsonb('google_tokens'),
+  // Dedicated "Slate" secondary calendar in the user's Google account, created
+  // on connect — the only calendar Team Calendar entries are ever written to.
+  gcal_calendar_id:  text('gcal_calendar_id'),
+  gcal_push_entries: boolean('gcal_push_entries').notNull().default(true),
   created_at:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updated_at:   timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
@@ -423,6 +432,10 @@ export const team_calendar_entries = pgTable('team_calendar_entries', {
   line_label:   text('line_label'),
   notes:        text('notes'),
   is_deadline:  boolean('is_deadline').notNull().default(false),
+  // One-way Google push: the event we wrote, and whose Slate calendar it sits
+  // on (kept separately from assignee_id so a reassignment can clean up).
+  gcal_event_id: text('gcal_event_id'),
+  gcal_user_id:  uuid('gcal_user_id'),
   ...timestamps,
 })
 

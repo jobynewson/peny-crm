@@ -100,6 +100,9 @@ index.html                # App HTML shell
     clean URL without adding a function.
 - Current functions (12): `ai`, `blob`, `callsheet`, `generate-ra`, `google`,
   `invite`, `maps`, `packing`, `portal`, `quote`, `reminders`, `track`.
+  All Google Calendar work lives behind the single `google` function: shared
+  plumbing in `api/_gcal.js`, the Team Calendar entry push in
+  `api/_gcal-entries.js` — see "External calendar sync" below.
 
 ### Views
 - Each feature (contacts, projects, etc.) has a view module in `src/views/`
@@ -162,6 +165,29 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 - `FENCE_API_KEY` - Shared secret for the Offload Log ingest endpoint
   (`POST /api/offloads`). Fence sends it as `Authorization: Bearer <key>`.
   Unset = the endpoint returns 500 (so it fails closed rather than open).
+- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` - OAuth client for the per-user
+  Google Calendar connection (server-side, used by `api/google.js`).
+- `VITE_GOOGLE_CLIENT_ID` - the same client id, exposed to the browser so it
+  can start the OAuth redirect. Unset = the Connect button just toasts.
+- `YOUTUBE_API_KEY` - Google API key with the YouTube Data API v3 enabled,
+  used by the office dashboard's view-count ticker (`api/_youtube.js`). No
+  OAuth, so it only reads public/unlisted videos. Unset = the ticker just
+  doesn't render; the rest of the dashboard is unaffected.
+  - **Debugging a ticker that won't appear:** open the office dashboard with
+    `?debug=1` (e.g. `/dashboard/<token>?debug=1`) and the pill is replaced by
+    the reason — unset key, key restricted to HTTP referrers, API not enabled
+    on the Google project, quota exhausted, private/deleted video, or nothing
+    configured in Settings. The same string is always in the JSON as
+    `timers.youtubeError`, so `curl`ing the endpoint works too. It is never
+    shown without `?debug=1`, so an office screen stays clean, and it never
+    contains the API key.
+  - The ticker appears on BOTH the office dashboard and the in-app Dashboard,
+    sharing the `settings.youtube_ticker` row. They reach the count by
+    different routes: the office display via `/api/portal?view=dashboard`
+    (gated by DASHBOARD_TOKEN), the app via `GET /api/blob?action=youtube&id=`
+    (gated by Clerk). The app cannot call YouTube directly — YOUTUBE_API_KEY is
+    server-side only and must never be given a VITE_ prefix, which would ship
+    it to the browser. `?debug=1` surfaces the reason on both.
 
 ## Common Tasks
 
@@ -183,12 +209,15 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 - `contacts.js` - Contact management
 - `projects.js` - Project management. Its kanban (pipeline by stage, plus a
   Retainer lane) is one of three separate kanban implementations — see
-  "Kanban boards" below.
+  "Kanban boards" below. A retainer project's Time tracking panel also
+  carries a long-term usage view (calendar-month blocks, a cumulative total
+  and an adjustable 12-month window) — see "Retainer time tracking" below.
 - `budgets.js` - Budget tracking
 - `expenses.js` - Expense tracking
 - `timetrack.js` - Time tracking
 - `callsheets.js` / `callsheet.js` - Call sheet management
-- `team-calendar.js` - Team calendar
+- `team-calendar.js` - Team calendar. Entries also push one-way to each user's
+  own Google Calendar — see "External calendar sync" below.
 - `leave.js` - Leave/absence management
 - `story-planner.js` - Story planning
 - `tasks.js` - Task board (Phase 1). Desktop column board + mobile list over
@@ -215,6 +244,135 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
   implementations — see "Kanban boards" below.
 - `password-manager.js` - Password management
 - `offload-log.js` - Offload Log (read-only table of backup reports from Fence)
+
+### External calendar sync (Team Calendar → Google)
+Each user can connect their own Google account in Settings → Users, and Slate
+then pushes **their own** Team Calendar entries to it. One-way only: Slate is
+always the source of truth and nothing is ever read back from Google.
+- **Events go to a dedicated "Slate" calendar**, a secondary calendar created
+  in the user's account on connect (`app_users.gcal_calendar_id`). Slate never
+  writes to their primary calendar here, so it cannot touch their own events
+  and they can hide or delete the whole thing in one click. The one exception
+  is the older **leave** sync, which still writes to `primary` — see below.
+- **Scope.** Connecting asks for `https://www.googleapis.com/auth/calendar`.
+  The narrower `calendar.events` this used to request cannot create a
+  secondary calendar, so **anyone connected before this feature has to
+  reconnect**; until they do, a sync returns `code: 'reconnect_required'` and
+  the UI says so rather than failing silently.
+- **What is pushed:** `shoot`, `post_production` and `other` entries where the
+  user is the assignee. All-day events (entries hold dates, not times); a
+  deadline entry lands on its final day only and is marked `transparent` so it
+  doesn't look like booked time.
+- **`leave` entries are deliberately NOT pushed from here.** Approved leave
+  already reaches the requester's *primary* calendar via
+  `syncLeaveRequestGoogle()` (`api/google.js`, also driven by the email
+  approval flow in `reminders.js`); pushing the mirrored Team Calendar row as
+  well would double it up. `PUSHABLE_TYPES` in `api/_gcal-entries.js` is the
+  single guard.
+- **Wiring.** Every mutation site in `src/views/team-calendar.js` (modal save,
+  drag-move, resize, paste, delete) calls `_pushEntry()` / `_unpushEntry()`
+  fire-and-forget, the same pattern as `leave.js`'s `_syncGoogleCalendar` — a
+  slow or disconnected calendar never holds up the grid. The push response
+  carries the event id, which is written back onto the in-memory row so a
+  later delete knows what to remove.
+- **Bookkeeping.** `team_calendar_entries.gcal_event_id` +
+  `gcal_user_id` record the event and *whose* calendar it is on. They are kept
+  separate from `assignee_id` so reassigning an entry can delete the event
+  from the old person's calendar before creating it on the new one. Both
+  columns are server-owned — `createTeamCalendarEntry`/`updateTeamCalendarEntry`
+  strip them so copy/paste can't clone someone else's event id.
+- **Turning it off.** The per-user checkbox (`app_users.gcal_push_entries`)
+  removes the already-pushed events when switched off, so a stale rota can't
+  linger. Disconnecting leaves events in Google (that's what the dialog
+  promises) but forgets the tokens, the calendar id and every event id, so a
+  reconnect starts clean. "Sync now" / connecting backfills entries from 30
+  days ago onwards.
+- **Permissions.** `entry-sync` and `entry-delete` are open to any signed-in
+  user, because the Team Calendar is shared and anyone can already move
+  anyone's entry. `disconnect`, `entry-sync-all` and `entry-purge` act on one
+  person's own connection, so they check the caller's Clerk id against
+  `app_users.clerk_id` (`assertOwnAccount`).
+- **Known gap:** the Team Calendar also shows dashed "auto" chips derived from
+  shoot plans and post-production phases. Those are not
+  `team_calendar_entries` rows (they're read live from `shoots` /
+  post-production schedules), so they are NOT pushed — only real entries are.
+
+### Retainer period labelling on dashboards
+- Retainer periods are anchored on `retainer_start`'s day-of-month, so they are
+  usually NOT calendar months. Both dashboards therefore state the period's
+  actual dates ("15 Aug – 14 Sep") rather than a vague label:
+  - App Dashboard retainer cards (`src/app.js`, `_retainerPeriodLabel()`) show
+    the range under the client name.
+  - Office dashboard cards (`public/dashboard.html`) show it in place of the
+    old "This period"; `api/_dashboard.js` sends `periodStart` + `periodEnd`.
+- On the app Dashboard's per-item rows, the suffix used to read `/ qtr` beside
+  a figure that was the item's MONTHLY share, so it looked like a quarterly
+  total. It now shows the contracted amount instead (`6h/qtr`), and only when
+  the item isn't already billed monthly.
+- Known gap, not yet addressed: the office dashboard's allocation comes from
+  the legacy `retainer_hours` column only, so a retainer configured with
+  `retainer_items` shows hours used but no target or bar there.
+
+### Retainer time tracking
+- A retainer's Time tracking panel (project Overview tab, `#pv-timetrack` in
+  `projects.js`) shows a long-term usage view above the existing breakdown: one
+  block per calendar month, an "Overall" cumulative figure, and a 12-month
+  window. Below them the entry log concertinas away (state remembered in
+  `localStorage` under `slate-tt-log-open`).
+- **Every block breaks down by retainer line item — there is no combined
+  total anywhere in this section.** Each item gets its own logged/allocated
+  figure and bar, so you can see which item is running hot rather than a sum
+  that hides it. Lines with neither allocation nor logged time are omitted, so
+  a fee-only item with no hours stays out of the way until time lands on it.
+- **Per-unit items are excluded entirely.** A retainer item's unit is `hours`,
+  `days` or `unit`; a `unit` item counts deliverables ("4 social posts a
+  month"), carries no hours, and so gets no line, no allocation and no display
+  in this section. Only that explicit value is excluded — an older row with no
+  `unit` at all is read as days, as it always was, so legacy data never
+  silently loses hours. `isTimeItem()` is the single guard, mirrored as
+  `_isTimeItem()` in `src/app.js`.
+  - This was a live bug: every hours calculation used
+    `unit === 'hours' ? qty : qty * 8`, so a per-unit item counted as 8 hours
+    each and inflated allocations. Fixed in the five sites in `src/app.js`
+    (dashboard retainer cards and bars) as well as here. `projects.js`'s
+    "create budget from retainer" mapping handles units correctly and is
+    untouched — it deals in fees, not hours.
+- A "Contracted" strip at the top of the section lists each time-based item
+  over its OWN period — `Editing 4h/month`, `Social 6h/quarter`,
+  `Strategy 1h/week` — so the contract shape is readable at a glance. The
+  blocks below show amortised monthly shares, so without this strip a weekly
+  item just reads as an odd `4.3h` a month.
+- Entries are matched to items by `time_entries.line_label` against
+  `retainer_items[].label`, the same way the dashboard bars do it. Anything
+  that matches no current item (a renamed item, or hours logged against a
+  budget line before the project became a retainer) is collected into an
+  "Other" line with no allocation, rather than being silently dropped. A
+  retainer with no items at all runs on the legacy `retainer_hours` field as a
+  single line, and every logged hour counts toward it.
+- The maths is pure and unit-tested in `src/utils/retainer-usage.js`
+  (+ `retainer-usage.test.js`, run with `npm test` / vitest). Nothing in the
+  view does its own arithmetic — extend the module, not the template.
+- **Two conventions that look like bugs but aren't:**
+  - **Calendar months, not anniversary periods.** This view buckets by calendar
+    month. The dashboard's retainer bar, rollover and monthly-deliverable
+    resets all use periods anchored on `retainer_start`'s day-of-month
+    (`_retainerPeriod` in `src/app.js`), so for a retainer that began mid-month
+    the "this month" figure here will NOT match the dashboard's "this period"
+    figure. Deliberate: the long view reads against months and invoices, the
+    dashboard bar polices the live period.
+  - **Amortised items.** A `retainer_items` entry priced per quarter/half/year
+    contributes an evenly amortised share to every month (a 6h quarterly item
+    is 2h/month), using the same `PERIOD_MULT` multipliers `app.js` applies. So
+    a 12-month target is exactly 12x the monthly figure and a quarterly item
+    lands as four quarters over the year.
+- Rollover (`retainer_rollover`) is deliberately NOT applied here — the
+  cumulative figure already measures total logged against total allocated, so
+  applying rollover on top would count the same slack twice.
+- The current month counts as a full month in the "Overall" denominator, so it
+  reads as the total commitment taken on to date rather than a pro-rata figure.
+- The 12-month window starts at `projects.retainer_year_start`, falling back to
+  `retainer_start` when unset. Clearing the date input resets it to that
+  fallback.
 
 ### Kanban boards
 There is no shared kanban component — three independent implementations, each

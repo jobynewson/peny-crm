@@ -68,6 +68,14 @@ export class App {
     if (urlParams.has('gc_connected')) {
       setTimeout(() => this.toast('Google Calendar connected!'), 400)
       history.replaceState(null, '', location.pathname + location.hash)
+      // Backfill the entries already on the Team Calendar so a fresh
+      // connection isn't empty until the next time something is edited.
+      if (this.appUser?.id) {
+        this._googleEntrySync('entry-sync-all', this.appUser.id).then(res => {
+          if (res?.error) this.toast(res.error)
+          else if (res?.synced) this.toast(`${res.synced} calendar entr${res.synced === 1 ? 'y' : 'ies'} pushed to Google`)
+        })
+      }
     } else if (urlParams.has('gc_error')) {
       const msg = urlParams.get('gc_error')
       setTimeout(() => this.toast(`Google Calendar error: ${msg || 'unknown'}`), 400)
@@ -799,6 +807,25 @@ export class App {
   openBudget(id)  { this.currentView = 'budgets';  this.budgetsView.currentId  = id; this.render() }
 
   // Returns [periodStart, periodEnd] Date objects for the current retainer period
+  // A retainer item's unit is 'hours', 'days' or 'unit'. A per-unit item counts
+  // deliverables ("4 social posts a month") and carries no hours, so it must be
+  // excluded from every hours calculation — it was previously counted as 8h
+  // each, inflating allocations. Only the explicit 'unit' value is excluded; an
+  // older row with no unit is read as days, as it always was.
+  // Mirrors isTimeItem() in src/utils/retainer-usage.js.
+  _isTimeItem(item) { return !!item && item.unit !== 'unit' }
+
+  // The current retainer period as "15 Mar – 14 Apr". Periods are anchored on
+  // retainer_start's day-of-month, so they are usually NOT calendar months —
+  // showing the dates is the only way to make a card's figures unambiguous.
+  _retainerPeriodLabel(retainerStart) {
+    const [start, end] = this._retainerPeriod(retainerStart)
+    if (!start || !end) return null
+    const fmt = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+    // `end` is exclusive; the period's last day is the day before it.
+    return `${fmt(start)} – ${fmt(new Date(end.getTime() - 86400000))}`
+  }
+
   _retainerPeriod(retainerStart) {
     if (!retainerStart) return [null, null]
     const anchor = new Date(retainerStart)
@@ -1092,6 +1119,7 @@ export class App {
       this.tasksView.renderDashboardSection(mc)
       this._mountCountdownWidget(mc)
       this._mountDaysSinceWidget(mc)
+      this._mountYoutubeWidget(mc)
       return
     }
 
@@ -1458,26 +1486,34 @@ export class App {
         const retainerCards = retainers.map(p => {
           const cl = this.contacts.find(c => c.id === p.client_id)
           const periodMult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}
-          const calcHours = (p.retainer_items||[]).reduce((s,i) => { const mult = periodMult[i.period||'month']||1; return s + (i.unit==='hours' ? (parseFloat(i.qty)||0)*mult : (parseFloat(i.qty)||0)*8*mult) }, 0)
+          const calcHours = (p.retainer_items||[]).reduce((s,i) => { if (!this._isTimeItem(i)) return s; const mult = periodMult[i.period||'month']||1; return s + (i.unit==='hours' ? (parseFloat(i.qty)||0)*mult : (parseFloat(i.qty)||0)*8*mult) }, 0)
           const hours = calcHours || (parseFloat(p.retainer_hours)||0)
           const calcFee = (p.retainer_items||[]).reduce((s,i) => { const mult = periodMult[i.period||'month']||1; return s + (parseFloat(i.rate)||0)*(parseFloat(i.qty)||0)*mult }, 0)
           const fee = p.retainer_fee_mode==='calculated' ? calcFee : (parseFloat(p.retainer_fee)||0)
+          const retPeriod = this._retainerPeriodLabel(p.retainer_start)
           return `<div class="kanban-card" style="border-left:3px solid #a78bfa;cursor:default" data-retainer="${p.id}">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
               <div class="kanban-card-title" style="cursor:pointer" data-open-pid="${p.id}">${esc(p.name)}</div>
               ${fee ? `<div style="font-size:12px;font-weight:600;color:#a78bfa;white-space:nowrap;margin-left:8px">£${fee.toLocaleString('en-GB')}/mo</div>` : ''}
             </div>
             <div class="kanban-card-client">${cl ? esc(cl.first_name+' '+cl.last_name) : 'No client'}</div>
+            ${retPeriod ? `<div style="font-size:10px;color:var(--text-tertiary);margin-top:3px">${retPeriod}</div>` : ''}
             ${(p.retainer_items||[]).length ? `
               <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px" data-ret-items="${p.id}">
                 ${(p.retainer_items||[]).map((item,ii) => {
                   const mult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}[item.period||'month']||1
-                  const allocH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
-                  const periodLabel = {week:'/ wk',month:'/ mo',quarter:'/ qtr',half:'/ 6mo',year:'/ yr'}[item.period||'month']||'/ mo'
+                  const allocH = !this._isTimeItem(item) ? 0 : item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
+                  // The figure beside each item is its share of THIS period, so a
+                  // "/ qtr" suffix here read as a quarterly total when it was a
+                  // monthly one. Show the contracted amount instead, and only
+                  // when the item isn't already billed monthly.
+                  const contractH = !this._isTimeItem(item) ? 0 : item.unit==='hours' ? (parseFloat(item.qty)||0) : (parseFloat(item.qty)||0)*8
+                  const periodShort = {week:'wk',month:'mo',quarter:'qtr',half:'6mo',year:'yr'}[item.period||'month']||'mo'
+                  const periodLabel = (item.period && item.period !== 'month' && contractH) ? `${Math.round(contractH*10)/10}h/${periodShort}` : ''
                   return allocH ? `<div>
                     <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px">
                       <span style="color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">${esc(item.label)}</span>
-                      <span style="display:flex;align-items:center;gap:4px;flex-shrink:0"><span data-ret-item-label="${p.id}-${ii}" style="color:var(--text-secondary);white-space:nowrap">— / ${allocH}h</span><span style="color:var(--text-tertiary);opacity:0.6;font-size:9px">${periodLabel}</span></span>
+                      <span style="display:flex;align-items:center;gap:4px;flex-shrink:0"><span data-ret-item-label="${p.id}-${ii}" style="color:var(--text-secondary);white-space:nowrap">— / ${allocH}h</span>${periodLabel ? `<span style="color:var(--text-tertiary);opacity:0.6;font-size:9px" title="Contracted amount">${periodLabel}</span>` : ''}</span>
                     </div>
                     <div style="height:4px;background:var(--bg-secondary);border-radius:2px;overflow:hidden">
                       <div style="height:100%;width:0%;border-radius:2px;transition:width 0.3s" data-ret-item-bar="${p.id}-${ii}"></div>
@@ -1488,7 +1524,7 @@ export class App {
               </div>` : hours ? `
               <div style="margin-top:8px">
                 <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px">
-                  <span style="color:var(--text-tertiary)">This month</span>
+                  <span style="color:var(--text-tertiary)">${retPeriod ? 'This period' : 'This month'}</span>
                   <span style="color:var(--text-secondary)" data-ret-label="${p.id}">— / ${hours}h</span>
                 </div>
                 <div style="height:6px;background:var(--bg-secondary);border-radius:var(--radius-sm);overflow:hidden">
@@ -1590,6 +1626,7 @@ export class App {
     this.tasksView.renderDashboardSection(mc)
     this._mountCountdownWidget(mc)
     this._mountDaysSinceWidget(mc)
+    this._mountYoutubeWidget(mc)
 
     // --- Stat cards navigate to their underlying list ---
     mc.querySelectorAll('[data-db-nav]').forEach(card => {
@@ -1954,6 +1991,7 @@ export class App {
         const periodMult2 = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}
         const calcH = (p.retainer_items||[]).reduce((s,i) => {
           const mult = periodMult2[i.period||'month']||1
+          if (!this._isTimeItem(i)) return s
           return s + (i.unit==='hours' ? (parseFloat(i.qty)||0)*mult : (parseFloat(i.qty)||0)*8*mult)
         }, 0)
         const allocH = calcH || (parseFloat(p.retainer_hours)||0)
@@ -1978,7 +2016,7 @@ export class App {
               const pm4 = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}
               for (const item of items) {
                 const mult = pm4[item.period||'month'] || 1
-                const prevAllocH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
+                const prevAllocH = !this._isTimeItem(item) ? 0 : item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
                 const prevLogged = prevEntries.filter(e => e.line_label === item.label).reduce((s,e) => s + parseFloat(e.hours), 0)
                 rolloverDeltas[item.label] = prevAllocH - prevLogged
               }
@@ -1990,7 +2028,7 @@ export class App {
             let totalEffective = 0
             items.forEach((item, ii) => {
               const mult = pm3[item.period||'month'] || 1
-              const baseH = item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
+              const baseH = !this._isTimeItem(item) ? 0 : item.unit==='hours' ? Math.round((parseFloat(item.qty)||0)*mult) : Math.round((parseFloat(item.qty)||0)*8*mult)
               if (!baseH) return
               const delta = rolloverDeltas[item.label] ?? 0
               const aH = Math.max(0, baseH + delta)
@@ -2454,6 +2492,19 @@ export class App {
         </div>
 
         <div class="panel">
+          <div class="panel-header"><span class="panel-title">Dashboard YouTube ticker</span></div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Show a live view count for one YouTube video at the top of the office Dashboard. The wording next to the number is yours — the count refreshes with the rest of the dashboard.</div>
+            <div class="field"><div class="field-label">Video URL</div><input type="text" id="s-yt-url" value="${s.youtube_ticker?.url??''}" placeholder="https://www.youtube.com/watch?v=..." /></div>
+            <div class="field"><div class="field-label">Wording after the number</div><input type="text" id="s-yt-label" value="${s.youtube_ticker?.label??''}" placeholder="e.g. views on the showreel" /></div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button class="btn-primary" id="settings-save-yt-btn">Save ticker</button>
+              ${s.youtube_ticker ? `<button class="btn-cancel" id="settings-clear-yt-btn">Remove ticker</button>` : ''}
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
           <div class="panel-header"><span class="panel-title">Dashboard countdown timer</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
             <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Pin a countdown to the top of the Dashboard — great for project wrap dates or big deadlines. For 24 hours after the deadline, a celebration kicks off.</div>
@@ -2559,6 +2610,8 @@ export class App {
     mc.querySelector('#account-job-title-save')?.addEventListener('click', () => this._saveJobTitle(mc))
     mc.querySelector('#settings-save-ds-btn')?.addEventListener('click', () => this._saveDaysSinceTimer(mc))
     mc.querySelector('#settings-clear-ds-btn')?.addEventListener('click', () => this._clearDaysSinceTimer(mc))
+    mc.querySelector('#settings-save-yt-btn')?.addEventListener('click', () => this._saveYoutubeTicker(mc))
+    mc.querySelector('#settings-clear-yt-btn')?.addEventListener('click', () => this._clearYoutubeTicker(mc))
     mc.querySelector('#settings-save-cd-btn')?.addEventListener('click', () => this._saveCountdownTimer(mc))
     mc.querySelector('#settings-clear-cd-btn')?.addEventListener('click', () => this._clearCountdownTimer(mc))
     mc.querySelector('#settings-save-roundup-btn')?.addEventListener('click', () => this._saveReminderRoundup(mc))
@@ -2789,18 +2842,27 @@ export class App {
               ${users.filter(x => x.id !== u.id).map(x => `<option value="${x.id}" ${u.approver_id === x.id ? 'selected' : ''}>${esc(x.name || x.email)}</option>`).join('')}
             </select>
           </div>
-          <div style="margin-top:8px;display:flex;align-items:center;gap:10px">
+          <div style="margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <div style="font-size:12px;color:var(--text-secondary);white-space:nowrap">Google Calendar:</div>
             ${isSelf
               ? u.google_calendar_connected
                 ? `<span style="font-size:12px;color:#16a34a;font-weight:500">✓ Connected</span>
                    <button class="row-btn" data-gcal-disconnect="${u.id}" style="font-size:11px;color:var(--red,#e05252);border-color:var(--red,#e05252)">Disconnect</button>`
                 : `<button class="row-btn" data-gcal-connect="${u.id}" style="font-size:11px">Connect Google Calendar</button>
-                   <span style="font-size:11px;color:var(--text-tertiary)">Approved leave will appear on your personal calendar</span>`
+                   <span style="font-size:11px;color:var(--text-tertiary)">Approved leave and your calendar entries appear on your own calendar</span>`
               : u.google_calendar_connected
                 ? `<span style="font-size:12px;color:#16a34a">✓ Connected</span>`
                 : `<span style="font-size:12px;color:var(--text-tertiary)">Not connected</span>`}
           </div>
+          ${isSelf && u.google_calendar_connected ? `
+          <div style="margin-top:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-left:2px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer">
+              <input type="checkbox" data-gcal-push="${u.id}" ${u.gcal_push_entries === false ? '' : 'checked'} style="cursor:pointer" />
+              Push my Team Calendar entries to Google
+            </label>
+            <button class="row-btn" data-gcal-sync="${u.id}" style="font-size:11px" ${u.gcal_push_entries === false ? 'disabled' : ''}>Sync now</button>
+            <span style="font-size:11px;color:var(--text-tertiary)">One-way, into a separate “Slate” calendar — your own events are never touched</span>
+          </div>` : ''}
           <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
             ${!isSelf ? `<button class="row-btn" data-remove-user="${u.id}" data-remove-name="${esc(u.name)||esc(u.email)}" style="font-size:11px;color:var(--red,#e05252);border-color:var(--red,#e05252)">Remove user</button>` : '<span></span>'}
             <button class="row-btn" data-save-user="${u.id}" style="font-size:11px">Save changes</button>
@@ -2850,11 +2912,45 @@ export class App {
       el.querySelectorAll('[data-gcal-connect]').forEach(btn => {
         btn.addEventListener('click', () => this._startGoogleOAuth())
       })
+      // Google Calendar — push my Team Calendar entries on/off
+      el.querySelectorAll('[data-gcal-push]').forEach(box => {
+        box.addEventListener('change', async () => {
+          const uid = box.dataset.gcalPush
+          const on  = box.checked
+          box.disabled = true
+          try {
+            await updateAppUser(uid, { gcal_push_entries: on })
+            const u = this.allUsers?.find(x => x.id === uid)
+            if (u) u.gcal_push_entries = on
+            // Turning it on backfills; turning it off takes the events away
+            // again, so a stale copy of the rota can't linger in Google.
+            const res = await this._googleEntrySync(on ? 'entry-sync-all' : 'entry-purge', uid)
+            if (res?.error) this.toast(res.error)
+            else if (on)    this.toast(`Pushing entries to Google — ${res?.synced ?? 0} synced`)
+            else            this.toast('Entry push off — synced entries removed from Google')
+            this._loadUsersPanel(mc)
+          } catch(e) {
+            console.error(e); this.toast('Could not change the calendar push setting')
+            box.checked = !on; box.disabled = false
+          }
+        })
+      })
+      // Google Calendar — push everything now
+      el.querySelectorAll('[data-gcal-sync]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const label = btn.textContent
+          btn.disabled = true; btn.textContent = 'Syncing…'
+          const res = await this._googleEntrySync('entry-sync-all', btn.dataset.gcalSync)
+          btn.disabled = false; btn.textContent = label
+          if (res?.error) this.toast(res.error)
+          else this.toast(`${res?.synced ?? 0} entr${(res?.synced ?? 0) === 1 ? 'y' : 'ies'} synced to Google${res?.failed ? ` — ${res.failed} failed` : ''}`)
+        })
+      })
       // Google Calendar — disconnect
       el.querySelectorAll('[data-gcal-disconnect]').forEach(btn => {
         btn.addEventListener('click', async () => {
           const uid = btn.dataset.gcalDisconnect
-          if (!await this.confirm({ title: 'Disconnect Google Calendar?', message: 'Existing calendar events will not be deleted.', confirmLabel: 'Disconnect' })) return
+          if (!await this.confirm({ title: 'Disconnect Google Calendar?', message: 'Events already in Google are left alone — Slate just stops updating them.', confirmLabel: 'Disconnect' })) return
           try {
             const { getAuthToken } = await import('./auth/clerk.js')
             const token = await getAuthToken()
@@ -2874,6 +2970,32 @@ export class App {
     } catch(e) { console.error(e); el.innerHTML = '<div style="font-size:12px;color:var(--text-tertiary)">Could not load users</div>' }
   }
 
+  // Backfill or withdraw the Team Calendar entries pushed to one user's Google
+  // calendar. Returns the server's JSON, or `{ error }` — a connection made
+  // before the dedicated "Slate" calendar existed needs reconnecting for the
+  // wider OAuth scope, and the message says so rather than failing silently.
+  async _googleEntrySync(action, appUserId) {
+    try {
+      const { getAuthToken } = await import('./auth/clerk.js')
+      const token = await getAuthToken()
+      const r = await fetch('/api/google', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body:    JSON.stringify({ action, appUserId }),
+      })
+      const data = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        return { error: data.code === 'reconnect_required'
+          ? 'Reconnect Google Calendar to finish setting up entry sync'
+          : (data.error || 'Google Calendar sync failed') }
+      }
+      return data
+    } catch (e) {
+      console.error(e)
+      return { error: 'Google Calendar sync failed' }
+    }
+  }
+
   _startGoogleOAuth() {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID
     if (!clientId) { this.toast('VITE_GOOGLE_CLIENT_ID is not configured'); return }
@@ -2882,7 +3004,10 @@ export class App {
       client_id:     clientId,
       redirect_uri:  `${location.origin}/api/google`,
       response_type: 'code',
-      scope:         'https://www.googleapis.com/auth/calendar.events',
+      // Full calendar scope: `calendar.events` alone cannot create the
+      // dedicated "Slate" secondary calendar that Team Calendar entries are
+      // pushed to. Anyone connected before this change must reconnect.
+      scope:         'https://www.googleapis.com/auth/calendar',
       access_type:   'offline',
       prompt:        'consent',
       state,
@@ -3096,6 +3221,42 @@ export class App {
     } catch (e) { console.error(e); this.toast('Error removing timer') }
   }
 
+  // Pull the 11-character video ID out of any of the usual YouTube URL shapes
+  // (watch?v=, youtu.be/, /embed/, /shorts/). Returns null if there isn't one.
+  // Mirrors parseVideoUrl() in api/_preview.js, plus /shorts/.
+  _parseYoutubeId(url) {
+    const m = String(url || '').match(
+      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/
+    )
+    return m ? m[1] : null
+  }
+
+  async _saveYoutubeTicker(mc) {
+    const url   = mc.querySelector('#s-yt-url')?.value.trim()
+    const label = mc.querySelector('#s-yt-label')?.value.trim()
+    if (!url || !label) { this.toast('Please fill in both fields'); return }
+    const videoId = this._parseYoutubeId(url)
+    if (!videoId) { this.toast("That doesn't look like a YouTube video link"); return }
+    const data = { ...this.settings, youtube_ticker: { label, url, video_id: videoId } }
+    try {
+      const [updated] = await upsertSettings(this.userId, data)
+      this.settings = updated
+      this.toast('Ticker saved')
+      this.renderSettings(mc)
+    } catch (e) { console.error(e); this.toast('Error saving ticker') }
+  }
+
+  async _clearYoutubeTicker(mc) {
+    const data = { ...this.settings, youtube_ticker: null }
+    try {
+      const [updated] = await upsertSettings(this.userId, data)
+      this.settings = updated
+      document.getElementById('yt-widget-wrap')?.remove()
+      this.toast('Ticker removed')
+      this.renderSettings(mc)
+    } catch (e) { console.error(e); this.toast('Error removing ticker') }
+  }
+
   _mountDaysSinceWidget(mc) {
     document.getElementById('ds-widget-wrap')?.remove()
 
@@ -3127,6 +3288,60 @@ export class App {
       wrapper.remove()
     })
     mc.prepend(wrapper)
+  }
+
+  // Mirrors the office dashboard's YouTube pill (public/dashboard.html) in the
+  // app. The count comes from /api/blob?action=youtube rather than being
+  // fetched here, because YOUTUBE_API_KEY is server-side only and must never
+  // reach the browser. Settings shape is shared: settings.youtube_ticker.
+  async _mountYoutubeWidget(mc) {
+    document.getElementById('yt-widget-wrap')?.remove()
+
+    const yt = this.settings?.youtube_ticker
+    if (!yt?.video_id || !yt?.label) return
+
+    const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+
+    // Rendered empty first so the pill can't shift the page in after the fetch.
+    const wrapper = document.createElement('div')
+    wrapper.id = 'yt-widget-wrap'
+    wrapper.style.display = 'none'
+    mc.prepend(wrapper)
+
+    let data
+    try {
+      const { getAuthToken } = await import('./auth/clerk.js')
+      const authToken = await getAuthToken()
+      const res = await fetch(`/api/blob?action=youtube&id=${encodeURIComponent(yt.video_id)}`, {
+        headers: { 'Authorization': `Bearer ${authToken}` },
+      })
+      data = await res.json()
+    } catch (e) {
+      console.error('[youtube-ticker]', e.message)
+      return
+    }
+
+    // The view the widget was mounted into may have been navigated away from
+    // while the request was in flight.
+    if (!wrapper.isConnected) return
+
+    if (!Number.isFinite(data?.views)) {
+      // Same contract as the office dashboard: silent unless ?debug=1, so the
+      // reason is reachable without cluttering the page.
+      if (data?.error) console.error('[youtube-ticker]', data.error)
+      if (new URLSearchParams(location.search).has('debug') && data?.error) {
+        wrapper.style.display = ''
+        wrapper.innerHTML = `<div class="yt-widget yt-widget--error">YouTube ticker: ${esc(data.error)}</div>`
+      }
+      return
+    }
+
+    wrapper.style.display = ''
+    wrapper.innerHTML = `
+      <div class="yt-widget">
+        <span class="yt-views">${data.views.toLocaleString('en-GB')}</span>
+        <span class="yt-label">${esc(yt.label)}</span>
+      </div>`
   }
 
   async _saveCountdownTimer(mc) {

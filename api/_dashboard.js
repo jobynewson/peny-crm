@@ -12,6 +12,8 @@
 // Access is gated by a single fixed token held in the DASHBOARD_TOKEN env var,
 // so the link is totally separate from the authenticated app.
 
+import { getYoutubeViews } from './_youtube.js'
+
 // Mirror the app's calendar palette (src/views/team-calendar.js).
 const TYPE_COLORS = { shoot: '#4CAF50', post_production: '#C47E3A', leave: '#0891b2', other: '#7B6EAB' }
 const TYPE_LABELS = { shoot: 'Shoot', post_production: 'Post Production', leave: 'Leave', other: 'Other' }
@@ -56,7 +58,7 @@ export async function handleDashboard(req, res, sql) {
   const uid = wsRows[0].owner_id
 
   const settingsRows = await sql`
-    SELECT company_name, countdown_timer, days_since_timer
+    SELECT company_name, countdown_timer, days_since_timer, youtube_ticker
     FROM settings WHERE user_id = ${uid} LIMIT 1
   `
   const companyName = settingsRows[0]?.company_name || 'Slate'
@@ -67,9 +69,27 @@ export async function handleDashboard(req, res, sql) {
   }
   const cd = parseObj(settingsRows[0]?.countdown_timer)
   const ds = parseObj(settingsRows[0]?.days_since_timer)
+  const yt = parseObj(settingsRows[0]?.youtube_ticker)
   const timers = {
     countdown: cd?.name && cd?.target ? { name: cd.name, target: cd.target } : null,
     daysSince: ds?.name && ds?.since ? { name: ds.name, since: ds.since } : null,
+    // Resolved below — the YouTube lookup is async and must never be able to
+    // fail the whole dashboard response.
+    youtube: null,
+  }
+
+  // youtubeError explains an absent pill (unset key, restricted key, API not
+  // enabled, private video, nothing configured). It is only rendered on the
+  // page when ?debug=1 is passed, but is always in the payload so the endpoint
+  // can be curled. Contains no secrets.
+  if (yt?.video_id && yt?.label) {
+    const stats = await getYoutubeViews(yt.video_id)
+    if (stats?.views != null) timers.youtube = { label: yt.label, views: stats.views, stale: !!stats.stale }
+    else if (stats?.error) timers.youtubeError = stats.error
+  } else if (yt) {
+    timers.youtubeError = 'The ticker is saved but incomplete — it needs both a video URL and wording'
+  } else {
+    timers.youtubeError = 'No ticker is configured — set one in Settings → Dashboard YouTube ticker'
   }
 
   const now = new Date()
@@ -168,9 +188,15 @@ export async function handleDashboard(req, res, sql) {
     const allocation = p.retainer_hours != null ? parseFloat(p.retainer_hours) : null
     let used = 0
     let periodStartStr = null
+    let periodEndStr = null
     if (p.retainer_start) {
       const ps = retainerPeriodStart(p.retainer_start, now)
       periodStartStr = toDateStr(ps)
+      // Inclusive last day of the period: the day before the next one starts.
+      // Periods are anchored on retainer_start's day-of-month, so this is
+      // usually not a calendar month — the card shows the dates for that reason.
+      const pe = new Date(Date.UTC(ps.getUTCFullYear(), ps.getUTCMonth() + 1, ps.getUTCDate()) - 86400000)
+      periodEndStr = toDateStr(pe)
       for (const e of (usedByProject[p.id] || [])) {
         if (e.date >= periodStartStr) used += e.hours
       }
@@ -189,6 +215,7 @@ export async function handleDashboard(req, res, sql) {
       pct: allocation ? Math.round((used / allocation) * 100) : null,
       alert: p.retainer_alert != null ? parseFloat(p.retainer_alert) : 80,
       periodStart: periodStartStr,
+      periodEnd: periodEndStr,
     })
   }
   retainers.sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1))

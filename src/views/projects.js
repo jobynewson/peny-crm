@@ -1,6 +1,7 @@
 import { createProject, updateProject, deleteProject, renumberProjectKanban, linkBudgetToProject, unlinkBudgetFromProject, logActivity, getActivityLog, getTimeEntries, setTrackToken, deleteTimeEntry, getWorkLog, addWorkLogEntry, deleteWorkLogEntry, updateBudget } from '../db/client.js'
 import { PostProductionView } from './post-production.js'
 import { continuationScript, PDF_CONTINUED_CSS, a4ContentWidthPx, a4ContentHeightPx } from '../utils/pdfContinuation.js'
+import { monthlyUsage, overallUsage, windowUsage, monthlyAllocationHours, usagePct, usageColour, hasAmortisedItems, hasPerUnitItems, contractLines, parseDateUTC } from '../utils/retainer-usage.js'
 
 const STAGES = ['Enquiry','Pre-production','In Production','Post','Delivered']
 const RETAINER_STAGE = 'Retainer'
@@ -3521,6 +3522,127 @@ export class ProjectsView {
     }
   }
 
+  // ── Retainer long-term usage ────────────────────────────────────────────────
+  // Calendar-month blocks plus cumulative and 12-month totals, so a retainer's
+  // usage can be read across many months rather than just the live period.
+  // Every block breaks down by retainer line item — there is no combined
+  // total, because what matters is which item is running hot, not the sum.
+  //
+  // NOTE: this buckets by CALENDAR month, whereas the dashboard's retainer bar,
+  // rollover and monthly-deliverable resets all use periods anchored on
+  // retainer_start's day-of-month. For a retainer that began mid-month the
+  // "this month" figure here will not match the dashboard's "this period"
+  // figure — that is intended. See the header of src/utils/retainer-usage.js.
+  _renderRetainerUsage(p, entries, canEdit) {
+    if (!p.is_retainer || !p.retainer_start) return ''
+    const months = monthlyUsage(p, entries)
+    if (!months.length) return ''
+
+    const alertPct = parseFloat(p.retainer_alert) || 80
+    const overall  = overallUsage(p, entries)
+    const win      = windowUsage(p, entries, p.retainer_year_start)
+    const contract = contractLines(p)
+
+    const fmtH = n => (Math.round(n * 10) / 10).toLocaleString('en-GB')
+    const fmtD = d => d ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+
+    // One row per retainer item: label, logged against allocated, and a bar.
+    // An unallocated line (the "Other" bucket) has nothing to measure against,
+    // so it shows bare hours and no bar rather than a misleading "2 / 0h".
+    const lineRow = (l, sm) => {
+      const has = l.allocated > 0
+      const value = has
+        ? `${fmtH(l.logged)}<span style="color:var(--text-tertiary);font-weight:500"> / ${fmtH(l.allocated)}h</span>`
+        : `${fmtH(l.logged)}h`
+      return `
+        <div style="margin-top:${sm ? 6 : 8}px">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">
+            <span style="font-size:${sm ? 10 : 11}px;color:var(--text-${l.isOther ? 'tertiary' : 'secondary'});overflow:hidden;text-overflow:ellipsis;white-space:nowrap${l.isOther ? ';font-style:italic' : ''}" title="${esc(l.label)}">${esc(l.label)}</span>
+            <span style="font-size:${sm ? 11 : 13}px;font-weight:600;color:var(--text-primary);white-space:nowrap">${value}</span>
+          </div>
+          ${has ? `<div style="height:4px;background:var(--bg-secondary);border-radius:2px;overflow:hidden;margin-top:4px">
+            <div style="width:${usagePct(l.logged, l.allocated)}%;height:100%;background:${usageColour(l.logged, l.allocated, alertPct)}"></div>
+          </div>` : ''}
+        </div>`
+    }
+
+    const linesHTML = (lines, sm) => lines.length
+      ? lines.map(l => lineRow(l, sm)).join('')
+      : `<div style="font-size:${sm ? 10 : 11}px;color:var(--text-tertiary);margin-top:6px">No items</div>`
+
+    const summary = (label, lines, sub) => `
+      <div style="flex:1;min-width:190px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px 14px">
+        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">${label}</div>
+        ${linesHTML(lines, false)}
+        <div style="font-size:10px;color:var(--text-tertiary);margin-top:8px">${sub}</div>
+      </div>`
+
+    // windowUsage returns an exclusive end; show the last day inside the window.
+    const winEnd = win.end ? new Date(win.end.getTime() - 86400000) : null
+    const winStartStr = win.start ? win.start.toISOString().slice(0, 10) : ''
+    const monthWord = n => `${n} month${n === 1 ? '' : 's'}`
+
+    const monthBlock = m => `
+      <div style="flex:0 0 auto;width:152px;background:var(--bg-primary);border:1px solid ${m.isCurrent ? 'var(--accent)' : 'var(--border-light)'};border-radius:var(--radius-md);padding:9px 11px">
+        <div style="font-size:10px;font-weight:600;color:${m.isCurrent ? 'var(--accent)' : 'var(--text-tertiary)'};text-transform:uppercase;letter-spacing:0.5px">${esc(m.label)}</div>
+        ${linesHTML(m.lines, true)}
+      </div>`
+
+    // Footnotes, only when they actually apply to this retainer.
+    const notes = []
+    if (hasAmortisedItems(p)) {
+      notes.push('Retainer items priced per quarter, half-year or year are spread evenly across the months.')
+    }
+    if (hasPerUnitItems(p)) {
+      notes.push('Per-unit retainer items are left out — they count deliverables rather than hours.')
+    }
+    if (overall.lines.some(l => l.isOther)) {
+      notes.push(`"Other" is time logged under a label that no longer matches a retainer item.`)
+    }
+    if (overall.priorLogged > 0) {
+      notes.push(`${fmtH(overall.priorLogged)}h was logged before the retainer start date and sits outside these totals.`)
+    }
+    if (!(monthlyAllocationHours(p) > 0)) {
+      notes.push('No monthly hours are configured on this retainer, so there is nothing to measure usage against yet.')
+    }
+
+    return `
+      <div style="margin-bottom:18px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+          <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Retainer usage</div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:10px;color:var(--text-tertiary)">12-month window from</span>
+            ${canEdit
+              ? `<input type="date" id="pv-tt-winstart" value="${winStartStr}" title="Clear to reset to the retainer start date" style="font-size:11px;padding:2px 6px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border-light);border-radius:var(--radius-sm);color-scheme:var(--color-scheme,light)" />`
+              : `<span style="font-size:11px;color:var(--text-secondary)">${fmtD(win.start)}</span>`}
+          </div>
+        </div>
+
+        ${contract.length ? `
+        <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <span style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;flex-shrink:0">Contracted</span>
+          ${contract.map(c => `
+            <span style="display:inline-flex;align-items:baseline;gap:5px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:999px;padding:2px 9px">
+              <span style="font-size:11px;color:var(--text-secondary)">${esc(c.label)}</span>
+              <span style="font-size:11px;font-weight:600;color:var(--text-primary);white-space:nowrap">${fmtH(c.hours)}h<span style="color:var(--text-tertiary);font-weight:500">/${esc(c.periodLabel)}</span></span>
+            </span>`).join('')}
+        </div>` : ''}
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          ${summary('Overall', overall.lines,
+            `${monthWord(overall.months)} since ${fmtD(parseDateUTC(p.retainer_start))}`)}
+          ${summary('12-month total', win.lines,
+            win.start ? `${fmtD(win.start)} – ${fmtD(winEnd)} · ${win.complete ? 'window complete' : `month ${win.monthsElapsed} of 12`}` : '')}
+        </div>
+
+        <div id="pv-tt-months" style="display:flex;gap:8px;overflow-x:auto;padding-bottom:6px">
+          ${months.map(monthBlock).join('')}
+        </div>
+
+        ${notes.length ? `<div style="font-size:10px;color:var(--text-tertiary);line-height:1.6;margin-top:8px">${notes.map(esc).join('<br>')}</div>` : ''}
+      </div>`
+  }
+
   async _loadTimeTracking(mc, p) {
     const el = mc.querySelector('#pv-timetrack')
     if (!el) return
@@ -3538,8 +3660,14 @@ export class ProjectsView {
       return
     }
 
+    const usageHTML = this._renderRetainerUsage(p, entries, canEdit)
+
     if (!entries.length) {
-      el.innerHTML = '<div style="font-size:11px;color:var(--text-tertiary);padding:8px 0">No time logged yet. Use the Time Tracker to log hours against this project.</div>'
+      // A retainer with no time logged yet still has a useful view: the month
+      // blocks show the allocation sitting unused.
+      el.innerHTML = usageHTML +
+        '<div style="font-size:11px;color:var(--text-tertiary);padding:8px 0">No time logged yet. Use the Time Tracker to log hours against this project.</div>'
+      this._wireRetainerUsage(el, mc, p)
       return
     }
 
@@ -3575,7 +3703,17 @@ export class ProjectsView {
     }
     const breakdownRows = (rows) => rows.map(([label, hours]) => bar(label, hours)).join('')
 
+    // The entry log concertinas away — on a long-running retainer the usage
+    // blocks above are the point of this panel, not the individual rows. The
+    // open/closed choice is remembered across projects and reloads.
+    let logOpen
+    try { logOpen = localStorage.getItem('slate-tt-log-open') } catch {}
+    if (logOpen == null) logOpen = usageHTML ? '0' : '1'
+    const open = logOpen === '1'
+
     el.innerHTML = `
+      ${usageHTML}
+
       <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px">
         <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Total tracked</div>
         <div style="font-size:18px;font-weight:600;color:var(--text-primary)">${fmtH(totalHours)}h</div>
@@ -3587,8 +3725,12 @@ export class ProjectsView {
       </div>
       <div id="pv-tt-breakdown" style="margin-bottom:16px"></div>
 
-      <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Log (${entries.length})</div>
-      <div>
+      <button id="pv-tt-log-toggle" aria-expanded="${open}" aria-controls="pv-tt-log"
+        style="display:flex;align-items:center;gap:6px;width:100%;background:none;border:none;padding:0 0 6px;cursor:pointer;font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;font-family:inherit;text-align:left">
+        <span id="pv-tt-log-chev" style="display:inline-block;transition:transform 0.15s;transform:rotate(${open ? 90 : 0}deg)">▶</span>
+        <span>Log (${entries.length})</span>
+      </button>
+      <div id="pv-tt-log" ${open ? '' : 'hidden'}>
         ${entries.map(e => `
           <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-light)">
             <div style="flex:1;min-width:0">
@@ -3602,6 +3744,20 @@ export class ProjectsView {
             ${canEdit ? `<button data-del-tt="${e.id}" style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:13px;padding:0;flex-shrink:0" title="Delete">×</button>` : ''}
           </div>`).join('')}
       </div>`
+
+    this._wireRetainerUsage(el, mc, p)
+
+    // Log concertina
+    const logEl = el.querySelector('#pv-tt-log')
+    const logBtn = el.querySelector('#pv-tt-log-toggle')
+    const chev = el.querySelector('#pv-tt-log-chev')
+    logBtn?.addEventListener('click', () => {
+      const nowOpen = logEl.hidden
+      logEl.hidden = !nowOpen
+      logBtn.setAttribute('aria-expanded', String(nowOpen))
+      if (chev) chev.style.transform = `rotate(${nowOpen ? 90 : 0}deg)`
+      try { localStorage.setItem('slate-tt-log-open', nowOpen ? '1' : '0') } catch {}
+    })
 
     // Breakdown tab switching
     const bdEl = el.querySelector('#pv-tt-breakdown')
@@ -3627,6 +3783,29 @@ export class ProjectsView {
           this._loadTimeTracking(mc, p)
         } catch (err) { console.error(err); this.app.toast('Error deleting entry') }
       })
+    })
+  }
+
+  // Scroll the month row to the most recent month and persist edits to the
+  // 12-month window start. Clearing the date resets it to the retainer start.
+  _wireRetainerUsage(el, mc, p) {
+    const row = el.querySelector('#pv-tt-months')
+    if (row) row.scrollLeft = row.scrollWidth
+
+    el.querySelector('#pv-tt-winstart')?.addEventListener('change', async (ev) => {
+      const value = ev.target.value || null
+      const prev = p.retainer_year_start ?? null
+      p.retainer_year_start = value
+      try {
+        await updateProject(this.app.userId, p.id, { retainer_year_start: value })
+        const idx = this.app.projects.findIndex(x => x.id === p.id)
+        if (idx >= 0) this.app.projects[idx].retainer_year_start = value
+        this._loadTimeTracking(mc, p)
+      } catch (err) {
+        console.error(err)
+        p.retainer_year_start = prev
+        this.app.toast('Error saving the 12-month window')
+      }
     })
   }
 

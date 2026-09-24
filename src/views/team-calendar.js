@@ -65,6 +65,55 @@ export class TeamCalendarView {
     mq.addEventListener ? mq.addEventListener('change', handler) : mq.addListener(handler)
   }
 
+  // ── Google Calendar push (one-way: Slate → the assignee's own calendar) ─────
+  // Fire-and-forget, exactly like the leave sync: a calendar that is slow or
+  // not connected must never hold up the grid. The server decides whether the
+  // assignee has connected Google and whether they want entries pushed, so
+  // nothing here needs to know about tokens.
+
+  async _callGoogle(body) {
+    try {
+      const { getAuthToken } = await import('../auth/clerk.js')
+      const token = await getAuthToken()
+      const res = await fetch('/api/google', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body:    JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      return await res.json()
+    } catch (e) {
+      console.warn('Google Calendar sync failed (non-fatal):', e)
+      return null
+    }
+  }
+
+  // Push a created/updated entry. The response carries the event id, which we
+  // write back onto the in-memory row so a later delete knows what to remove
+  // without waiting for a page reload.
+  _pushEntry(entry) {
+    if (!entry?.id) return
+    this._callGoogle({ action: 'entry-sync', entryId: entry.id }).then(result => {
+      const row = (this.app.teamCalendarEntries || []).find(e => e.id === entry.id)
+      if (!row || !result) return
+      row.gcal_event_id = result.eventId || null
+      row.gcal_user_id  = result.eventId ? result.appUserId : null
+    })
+  }
+
+  // Remove a deleted entry's event. Both the entry id and the last known event
+  // id are sent: the server prefers a fresh row lookup and falls back to the
+  // ids we captured here once the row itself is gone.
+  _unpushEntry(entry) {
+    if (!entry?.gcal_event_id) return
+    this._callGoogle({
+      action:    'entry-delete',
+      entryId:   entry.id,
+      eventId:   entry.gcal_event_id,
+      appUserId: entry.gcal_user_id,
+    })
+  }
+
   // ── Date helpers ──────────────────────────────────────────────────────────────
 
   _getWeekStart() {
@@ -939,6 +988,7 @@ export class TeamCalendarView {
         })
         const idx = (this.app.teamCalendarEntries || []).findIndex(x => x.id === entry.id)
         if (idx >= 0) this.app.teamCalendarEntries[idx] = updated
+        this._pushEntry(updated)
         this._refreshGrid(section)
       } catch (err) {
         console.error(err)
@@ -974,6 +1024,7 @@ export class TeamCalendarView {
       })
       const idx = (this.app.teamCalendarEntries || []).findIndex(e => e.id === entryId)
       if (idx >= 0) this.app.teamCalendarEntries[idx] = updated
+      this._pushEntry(updated)
       this._refreshGrid(section)
     } catch (e) { console.error(e) }
   }
@@ -992,6 +1043,7 @@ export class TeamCalendarView {
       const created = await createTeamCalendarEntry(this.app.userId, data)
       if (!this.app.teamCalendarEntries) this.app.teamCalendarEntries = []
       this.app.teamCalendarEntries.push(created)
+      this._pushEntry(created)
       this._refreshGrid(section)
     } catch (e) { console.error(e) }
   }
@@ -1339,10 +1391,12 @@ export class TeamCalendarView {
         const updated = await updateTeamCalendarEntry(this.app.userId, entry.id, payload)
         const idx = (this.app.teamCalendarEntries || []).findIndex(e => e.id === entry.id)
         if (idx >= 0) this.app.teamCalendarEntries[idx] = updated
+        this._pushEntry(updated)
       } else {
         const created = await createTeamCalendarEntry(this.app.userId, payload)
         if (!this.app.teamCalendarEntries) this.app.teamCalendarEntries = []
         this.app.teamCalendarEntries.push(created)
+        this._pushEntry(created)
       }
       overlay.remove()
       this._refreshGrid(section)
@@ -1352,6 +1406,9 @@ export class TeamCalendarView {
   async _deleteEntry(id, section) {
     try {
       const { deleteTeamCalendarEntry } = await import('../db/client.js')
+      // Take the Google event off first, while the row (and its event id) is
+      // still there to find; the request itself is not awaited.
+      this._unpushEntry((this.app.teamCalendarEntries || []).find(e => e.id === id))
       await deleteTeamCalendarEntry(this.app.userId, id)
       this.app.teamCalendarEntries = (this.app.teamCalendarEntries || []).filter(e => e.id !== id)
       this._refreshGrid(section)
