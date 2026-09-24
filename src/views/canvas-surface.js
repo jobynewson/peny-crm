@@ -210,7 +210,8 @@ export class CanvasSurface {
     /** @type {Map<string, Geo> | null} */ this._nudgeBefore = null
     /** @type {ReturnType<typeof setTimeout> | undefined} */ this._nudgeTimer = undefined
     this._nudging = false
-    /** @type {{ items: Item[], arrows: Arrow[] } | null} */ this._clip = null
+    // Last copy, kept for browsers (Safari) that drop the custom clipboard type.
+    /** @type {{ items: Item[], arrows: Arrow[], text: string } | null} */ this._clip = null
     /** @type {string | null} */ this._fileTarget = null
     /** @type {HTMLElement | null} */ this._dropHi = null
     /** @type {(() => Promise<void>) | null} */ this._popoverClose = null
@@ -2634,7 +2635,7 @@ export class CanvasSurface {
     const text = snap.items.map(i => i.kind === 'link' ? i.url : i.kind === 'swatch' ? safeColor(i.color, '') : i.kind === 'board' ? this._boardName(i) : (i.content || '')).filter(Boolean).join('\n\n')
     e.clipboardData?.setData('text/plain', text)
     e.clipboardData?.setData(CLIP_MIME, JSON.stringify({ v: 1, ...snap }))
-    this._clip = snap
+    this._clip = { ...snap, text }
     if (cut && this.canEdit) this._deleteSelection()
   }
 
@@ -2662,6 +2663,11 @@ export class CanvasSurface {
       return
     }
     const text = cd.getData('text/plain')
+    if (this._clip && text === this._clip.text) {
+      e.preventDefault()
+      this._insertSnapshot({ items: this._clip.items, arrows: this._clip.arrows }, { at })
+      return
+    }
     if (text) { e.preventDefault(); this._pasteText(text, at) }
   }
 
