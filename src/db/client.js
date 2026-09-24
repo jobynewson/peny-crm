@@ -1,6 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
-import { eq, and, desc, inArray } from 'drizzle-orm'
+import { eq, and, desc, inArray, isNull, sql as dsql } from 'drizzle-orm'
 import * as schema from './schema.js'
 import {
   contacts, projects, budgets, settings, workspace,
@@ -359,6 +359,11 @@ export async function runMigrations() {
   `
   await sql`CREATE INDEX IF NOT EXISTS canvas_items_canvas_idx ON canvas_items (canvas_id)`
   await sql`CREATE INDEX IF NOT EXISTS canvas_arrows_canvas_idx ON canvas_arrows (canvas_id)`
+  // Nested boards + connector labels (drizzle/0028_add_canvas_nesting.sql)
+  await sql`ALTER TABLE canvases ADD COLUMN IF NOT EXISTS parent_id UUID REFERENCES canvases(id) ON DELETE CASCADE`
+  await sql`ALTER TABLE canvas_items ADD COLUMN IF NOT EXISTS child_canvas_id UUID REFERENCES canvases(id) ON DELETE SET NULL`
+  await sql`ALTER TABLE canvas_arrows ADD COLUMN IF NOT EXISTS label TEXT`
+  await sql`CREATE INDEX IF NOT EXISTS canvases_parent_idx ON canvases (parent_id)`
 
   // ── Projects kanban drag-reorder ───────────────────────────────────────────
   await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS kanban_position DOUBLE PRECISION NOT NULL DEFAULT 0`
@@ -1582,14 +1587,19 @@ export async function getCanvases(workspaceId) {
 
 export async function getCanvasForProject(workspaceId, projectId) {
   const rows = await db.select().from(canvases)
-    .where(and(eq(canvases.user_id, workspaceId), eq(canvases.project_id, projectId)))
+    .where(and(eq(canvases.user_id, workspaceId), eq(canvases.project_id, projectId), isNull(canvases.parent_id)))
     .limit(1)
   return rows[0] ?? null
 }
 
 export async function createCanvas(workspaceId, data) {
   const [row] = await db.insert(canvases)
-    .values({ user_id: workspaceId, name: data.name, project_id: data.project_id ?? null })
+    .values({
+      user_id: workspaceId,
+      name: data.name,
+      project_id: data.parent_id ? null : (data.project_id ?? null),
+      parent_id: data.parent_id ?? null,
+    })
     .returning()
   return row
 }
@@ -1637,12 +1647,105 @@ export async function deleteCanvasItem(id) {
   return db.delete(canvas_items).where(eq(canvas_items.id, id))
 }
 
-export async function createCanvasArrow(canvasId, fromItemId, toItemId) {
+// Geometry for many items in ONE statement — a group move of hundreds of
+// cards is a single round-trip rather than one PATCH per card.
+export async function updateCanvasItemGeometry(rows) {
+  if (!rows.length) return
+  const values = dsql.join(rows.map(r =>
+    dsql`(${r.id}::uuid, ${r.x}::float8, ${r.y}::float8, ${r.w}::float8, ${r.h}::float8, ${Math.round(r.z)}::int)`), dsql`, `)
+  await db.execute(dsql`
+    UPDATE canvas_items AS c
+    SET x = v.x, y = v.y, w = v.w, h = v.h, z = v.z, updated_at = NOW()
+    FROM (VALUES ${values}) AS v(id, x, y, w, h, z)
+    WHERE c.id = v.id`)
+}
+
+// `extra` may carry a client-generated id (undo/redo re-creates an arrow under
+// its original id so later history entries still resolve) and a label.
+export async function createCanvasArrow(canvasId, fromItemId, toItemId, extra = {}) {
   const [row] = await db.insert(canvas_arrows)
-    .values({ canvas_id: canvasId, from_item_id: fromItemId, to_item_id: toItemId })
+    .values({ ...extra, canvas_id: canvasId, from_item_id: fromItemId, to_item_id: toItemId })
+    .returning()
+  return row
+}
+export async function updateCanvasArrow(id, data) {
+  const [row] = await db.update(canvas_arrows)
+    .set(data)
+    .where(eq(canvas_arrows.id, id))
     .returning()
   return row
 }
 export async function deleteCanvasArrow(id) {
   return db.delete(canvas_arrows).where(eq(canvas_arrows.id, id))
+}
+
+// Move items (and the arrows running only between them) into another canvas —
+// what happens when a selection is dropped onto a board card. Arrows that
+// would be left with one end behind are removed; positions are rewritten so
+// the group lands where the caller placed it on the destination.
+export async function moveCanvasItems(fromCanvasId, toCanvasId, moves) {
+  const ids = moves.map(m => m.id)
+  if (!ids.length) return
+  await Promise.all(moves.map(m => db.update(canvas_items)
+    .set({ canvas_id: toCanvasId, x: m.x, y: m.y, updated_at: new Date() })
+    .where(and(eq(canvas_items.id, m.id), eq(canvas_items.canvas_id, fromCanvasId)))))
+  const arrows = await db.select().from(canvas_arrows).where(eq(canvas_arrows.canvas_id, fromCanvasId))
+  const idSet = new Set(ids)
+  const inside = arrows.filter(a => idSet.has(a.from_item_id) && idSet.has(a.to_item_id)).map(a => a.id)
+  const dangling = arrows.filter(a => idSet.has(a.from_item_id) !== idSet.has(a.to_item_id)).map(a => a.id)
+  if (inside.length) await db.update(canvas_arrows).set({ canvas_id: toCanvasId }).where(inArray(canvas_arrows.id, inside))
+  if (dangling.length) await db.delete(canvas_arrows).where(inArray(canvas_arrows.id, dangling))
+  // Boards carried along re-parent their nested canvas so breadcrumbs follow.
+  const childIds = moves.map(m => m.child_canvas_id).filter(Boolean)
+  if (childIds.length) await db.update(canvases).set({ parent_id: toCanvasId }).where(inArray(canvases.id, childIds))
+}
+
+// Deep copy of a canvas and everything nested inside it — duplicating a board
+// card gives an independent board rather than a second portal to the same one.
+export async function duplicateCanvasTree(workspaceId, sourceId, parentId, name) {
+  const [src] = await db.select().from(canvases).where(and(eq(canvases.id, sourceId), eq(canvases.user_id, workspaceId)))
+  if (!src) return null
+  const copy = await createCanvas(workspaceId, { name: name ?? src.name, parent_id: parentId })
+  const { items, arrows } = await getCanvasData(sourceId)
+  const idMap = new Map()
+  const rows = []
+  for (const it of items) {
+    const id = crypto.randomUUID()
+    idMap.set(it.id, id)
+    let child = null
+    if (it.kind === 'board' && it.child_canvas_id) {
+      child = (await duplicateCanvasTree(workspaceId, it.child_canvas_id, copy.id))?.id ?? null
+    }
+    rows.push({
+      id, canvas_id: copy.id, kind: it.kind, x: it.x, y: it.y, w: it.w, h: it.h, z: it.z,
+      content: it.content, color: it.color, image_url: it.image_url, url: it.url,
+      links: it.links ?? [], sub_tasks: it.sub_tasks ?? [], child_canvas_id: child,
+    })
+  }
+  if (rows.length) await db.insert(canvas_items).values(rows)
+  const arrowRows = arrows
+    .filter(a => idMap.has(a.from_item_id) && idMap.has(a.to_item_id))
+    .map(a => ({ canvas_id: copy.id, from_item_id: idMap.get(a.from_item_id), to_item_id: idMap.get(a.to_item_id), label: a.label }))
+  if (arrowRows.length) await db.insert(canvas_arrows).values(arrowRows)
+  return copy
+}
+
+// Keep the cached name on the parent's board card in step when a nested
+// canvas is renamed from inside itself.
+export async function syncBoardCardName(canvasId, name) {
+  await db.update(canvas_items)
+    .set({ content: name, updated_at: new Date() })
+    .where(and(eq(canvas_items.child_canvas_id, canvasId), eq(canvas_items.kind, 'board')))
+}
+
+// Lightweight contents of several canvases at once — drives the miniature
+// preview drawn on board cards.
+export async function getCanvasPreviews(canvasIds) {
+  if (!canvasIds.length) return []
+  return db.select({
+    canvas_id: canvas_items.canvas_id,
+    kind: canvas_items.kind,
+    x: canvas_items.x, y: canvas_items.y, w: canvas_items.w, h: canvas_items.h,
+    color: canvas_items.color,
+  }).from(canvas_items).where(inArray(canvas_items.canvas_id, canvasIds))
 }
