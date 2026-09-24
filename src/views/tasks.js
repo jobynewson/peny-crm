@@ -91,6 +91,10 @@ export class TasksView {
     this.doneOpen    = false
 
     this._pollTimer = null
+    // The board can be mounted in two places at once: the full Tasks route
+    // (_mc) and the compact dashboard section (_dashHost). One polling loop
+    // serves both; whichever is in the DOM gets re-rendered.
+    this._dashHost  = null
     this._failures  = 0
     this._writes    = 0        // merges pause while a write is in flight
     this._dragId    = null
@@ -189,10 +193,19 @@ export class TasksView {
     return this._failures >= FAIL_THRESHOLD ? POLL_BACKOFF_MS : POLL_MS
   }
 
+  // Which mount points are currently on screen. Stale refs are dropped rather
+  // than tracked, so navigating away needs no teardown call.
+  _liveHosts() {
+    const hosts = []
+    if (this._mc && document.contains(this._mc)) hosts.push('board')
+    if (this._dashHost && document.contains(this._dashHost)) hosts.push('dash')
+    return hosts
+  }
+
   async poll() {
-    // Self-terminating, like the boards poll: once the board is off-screen the
+    // Self-terminating, like the boards poll: once nothing is on screen the
     // interval stops itself rather than relying on the router to tear it down.
-    if (!this._mc || !document.contains(this._mc)) { this.stopPolling(); return }
+    if (!this._liveHosts().length) { this.stopPolling(); return }
     // Nothing to poll for while the tab is hidden or a write is settling.
     if (document.visibilityState === 'hidden') return
     if (this._writes > 0) return
@@ -297,8 +310,10 @@ export class TasksView {
   }
 
   _refreshBoard() {
-    if (this._mc && !document.contains(this._mc)) { this.closeDetail(); return }
-    if (this._mc) this._renderShell(this._mc)
+    const live = this._liveHosts()
+    if (!live.length) { this.closeDetail(); return }
+    if (live.includes('board')) this._renderShell(this._mc)
+    if (live.includes('dash'))  this._renderDashSection()
     if (this.detailId) this._refreshDetailTask()
   }
 
@@ -1026,5 +1041,188 @@ export class TasksView {
         } catch { /* not worth a toast */ }
       })
     })
+  }
+
+  // ── Dashboard section ──────────────────────────────────────────────────────
+  // A compact view of the same board, mounted on the dashboard between the
+  // calendar and Live Projects. Same insertion pattern as
+  // TeamCalendarView.renderDashboardSection.
+  //
+  // Shows what needs doing, not everything: the viewer's own open tasks plus
+  // the unassigned tray (which belongs to everyone and is claimable from here).
+  // Done is left out — the dashboard is about outstanding work.
+
+  DASH_LIMIT = 5
+
+  async renderDashboardSection(container) {
+    let section = container.querySelector('#tk-dash-section')
+    if (!section) {
+      section = document.createElement('div')
+      section.id = 'tk-dash-section'
+      section.style.cssText = 'margin-bottom:28px'
+      // Sits directly below the calendar; falls back to the top of the
+      // dashboard if the calendar has not mounted.
+      const cal = container.querySelector('#tc-section')
+      if (cal) cal.insertAdjacentElement('afterend', section)
+      else container.prepend(section)
+    }
+    this._dashHost = section
+
+    if (!this.loaded) {
+      section.innerHTML = `<div class="db-section-head"><span class="db-section-dot" style="background:var(--accent)"></span>Tasks</div>
+        <div class="tk-dash-empty">Loading…</div>`
+      await this.load()
+      if (!document.contains(section)) return        // navigated away mid-load
+    }
+    this._renderDashSection()
+    this.startPolling()
+  }
+
+  _dashGroups() {
+    const me = this.me()
+    const mine = this.tasks.filter(t => !t.archived_at && t.assignee_id === me && t.status !== 'done')
+    const byDue = (a, b) => {
+      if (!a.due_at && !b.due_at) return new Date(a.created_at) - new Date(b.created_at)
+      if (!a.due_at) return 1
+      if (!b.due_at) return -1
+      return new Date(a.due_at) - new Date(b.due_at)
+    }
+    return [
+      { id: 'needs', label: 'Needs a reply', dot: 'var(--danger)',
+        items: mine.filter(t => this.isUnacknowledged(t)).sort(byDue) },
+      { id: 'doing', label: 'Doing', dot: '#6ec96e',
+        items: mine.filter(t => !this.isUnacknowledged(t) && t.status === 'doing').sort(byDue) },
+      { id: 'todo', label: 'To do', dot: 'var(--accent)',
+        items: mine.filter(t => !this.isUnacknowledged(t) && t.status === 'todo').sort(byDue) },
+      { id: 'free', label: 'Up for grabs', dot: '#f59e0b',
+        items: this.tasks.filter(t => !t.archived_at && !t.assignee_id && t.status !== 'done').sort(byDue) },
+    ]
+  }
+
+  _renderDashSection() {
+    const section = this._dashHost
+    if (!section) return
+    const groups = this._dashGroups()
+    const total = groups.reduce((n, g) => n + g.items.length, 0)
+    const unackCount = groups[0].items.length
+
+    section.innerHTML = `
+      <div class="db-section-head">
+        <span class="db-section-dot" style="background:${unackCount ? 'var(--danger)' : 'var(--accent)'}"></span>
+        Tasks
+        <span class="db-section-count">${total}</span>
+        ${unackCount ? `<span class="tk-pill" style="margin-left:2px">${unackCount} to reply</span>` : ''}
+        <button class="tk-dash-all" id="tk-dash-all" style="margin-left:auto">View board →</button>
+      </div>
+
+      <div class="tk-dash-card">
+        <div class="tk-dash-add">
+          <input type="text" id="tk-qa-title" class="tk-dash-input"
+                 placeholder="Raise a request…  (press Enter)" autocomplete="off" maxlength="500" />
+          <button class="btn-primary tk-qa-btn" id="tk-qa-add">Add</button>
+        </div>
+
+        ${total === 0
+          ? `<div class="tk-dash-empty">Nothing outstanding. Raise a request above.</div>`
+          : groups.filter(g => g.items.length).map(g => `
+            <div class="tk-dash-group">
+              <div class="tk-dash-group-head">
+                <span class="db-section-dot" style="background:${g.dot}"></span>
+                ${esc(g.label)}
+                <span class="db-section-count">${g.items.length}</span>
+              </div>
+              ${g.items.slice(0, this.DASH_LIMIT).map(t => this._dashRowHtml(t, g.id)).join('')}
+              ${g.items.length > this.DASH_LIMIT
+                ? `<button class="tk-dash-more" data-dash-more="1">+ ${g.items.length - this.DASH_LIMIT} more on the board</button>`
+                : ''}
+            </div>`).join('')}
+      </div>`
+
+    this._bindDashSection(section)
+  }
+
+  _dashRowHtml(task, groupId) {
+    const due = dueLabel(task.due_at, task.status)
+    const unack = this.isUnacknowledged(task)
+    const project = (this.app.projects || []).find(p => p.id === task.project_id)
+    const creator = this.userById(task.created_by)
+    const meta = [
+      project ? esc(project.name) : null,
+      // On an unclaimed task, who asked matters more than who owns it.
+      groupId === 'free' && creator ? `from ${esc(creator.name || creator.email)}` : null,
+      due ? esc(due.text) : null,
+      task.comment_count > 0 ? `💬 ${task.comment_count}` : null,
+    ].filter(Boolean).join(' · ')
+
+    return `
+      <div class="tk-dash-row ${unack ? 'tk-dash-row--unack' : ''}" data-task-id="${esc(task.id)}">
+        <div class="tk-dash-row-main">
+          <div class="tk-dash-row-title">${esc(task.title)}</div>
+          ${meta ? `<div class="tk-dash-row-meta ${due?.overdue ? 'tk-dash-row-meta--over' : ''}">${meta}</div>` : ''}
+        </div>
+        ${unack  ? `<button class="tk-got-it tk-got-it--sm" data-ack-id="${esc(task.id)}">Got it</button>` : ''}
+        ${groupId === 'free' ? `<button class="tk-dash-claim" data-claim-id="${esc(task.id)}">Claim</button>` : ''}
+      </div>`
+  }
+
+  _bindDashSection(section) {
+    section.querySelector('#tk-dash-all')?.addEventListener('click', () => this.app.navigate('tasks'))
+    section.querySelectorAll('[data-dash-more]').forEach(b =>
+      b.addEventListener('click', () => this.app.navigate('tasks')))
+
+    this._bindQuickAdd(section)
+
+    section.querySelectorAll('[data-task-id]').forEach(row => {
+      row.addEventListener('click', e => {
+        if (e.target.closest('button')) return
+        this.openDetail(row.dataset.taskId)
+      })
+    })
+    section.querySelectorAll('[data-ack-id]').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation()
+        await this._acknowledge(btn.dataset.ackId)
+      })
+    })
+    section.querySelectorAll('[data-claim-id]').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation()
+        await this._claimTask(btn.dataset.claimId)
+      })
+    })
+  }
+
+  // Claiming assigns the task to whoever clicked — the same thing dragging out
+  // of the unassigned tray does on the desktop board.
+  async _claimTask(id) {
+    const task = this.tasks.find(t => t.id === id)
+    const me = this.me()
+    if (!task || !me) return
+
+    const snapshot = { ...task }
+    // Claiming IS seeing it, so it is acknowledged in the same move — the
+    // server applies the same rule when the actor is the new assignee.
+    Object.assign(task, { assignee_id: me, acknowledged_at: new Date().toISOString() })
+    this._refreshBoard()
+
+    try {
+      await this._write(async () => {
+        const { task: saved } = await api.patchTask(id, { assignee_id: me })
+        Object.assign(task, saved)
+      })
+      // The server does not acknowledge on assignment alone, so confirm it.
+      if (!task.acknowledged_at) {
+        await this._write(async () => {
+          const { task: acked } = await api.acknowledgeTask(id)
+          Object.assign(task, acked)
+        })
+      }
+      this._refreshBoard()
+      this.app.toast('Yours now')
+    } catch (err) {
+      Object.assign(task, snapshot)
+      this._refreshBoard()
+      this.app.toast(err.message || 'Could not claim that task')
+    }
   }
 }

@@ -1089,6 +1089,7 @@ export class App {
         setTimeout(() => document.querySelector('#topbar-btn')?.click(), 50)
       })
       this.teamCalendarView.renderDashboardSection(mc)
+      this.tasksView.renderDashboardSection(mc)
       this._mountCountdownWidget(mc)
       this._mountDaysSinceWidget(mc)
       return
@@ -1585,6 +1586,8 @@ export class App {
       </div>`
 
     this.teamCalendarView.renderDashboardSection(mc)
+    // Tasks sits between the calendar and Live Projects.
+    this.tasksView.renderDashboardSection(mc)
     this._mountCountdownWidget(mc)
     this._mountDaysSinceWidget(mc)
 
