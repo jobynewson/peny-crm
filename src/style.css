@@ -1381,6 +1381,121 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 }
 
 /* ════════════════════════════════════════════════════════════════════════
+   PROJECT PLANNING TABS — planning-tabs.js
+   One strip of tabs for all of a project's kanban boards and canvases.
+   ════════════════════════════════════════════════════════════════════════ */
+
+.pt-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  border-bottom: 1px solid var(--border-light);
+  margin-bottom: 12px;
+}
+.pt-tabs {
+  display: flex;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  position: relative;
+}
+.pt-tabs::-webkit-scrollbar { display: none; }
+.pt-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  flex-shrink: 0;
+  max-width: 220px;
+  padding: 8px 12px;
+  margin-bottom: -1px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  font-family: var(--font); font-size: 13px; font-weight: 500;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  user-select: none;
+  touch-action: pan-x;
+  transition: color 0.1s, background 0.1s, transform 0.15s ease;
+}
+.pt-tab:hover { color: var(--text-primary); background: var(--bg-secondary); }
+.pt-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.pt-tab--active, .pt-tab--active:hover { color: var(--accent); border-bottom-color: var(--accent); font-weight: 550; background: none; }
+.pt-tab-icon { font-size: 13px; line-height: 1; flex-shrink: 0; }
+.pt-tab-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pt-tabs--dragging .pt-tab { cursor: grabbing; }
+.pt-tab--dragging {
+  position: relative; z-index: 2;
+  transition: none;
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-md);
+  color: var(--text-primary);
+}
+.pt-tab-input {
+  font-family: var(--font); font-size: 13px; font-weight: 550;
+  padding: 1px 4px;
+  border: 1px solid var(--accent); border-radius: var(--radius-sm);
+  background: var(--bg-primary); color: var(--text-primary);
+  outline: none;
+  min-width: 0;
+}
+.pt-add {
+  flex-shrink: 0;
+  width: 28px; height: 28px;
+  margin: 0 0 4px 2px;
+  border: 1px dashed var(--border-med);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-tertiary);
+  font-size: 16px; line-height: 1;
+  cursor: pointer;
+}
+.pt-add:hover { color: var(--accent); border-color: var(--accent); }
+
+.pt-menu {
+  position: fixed;
+  z-index: 9000;
+  min-width: 200px;
+  padding: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-med);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  display: flex; flex-direction: column;
+}
+.pt-menu button {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px;
+  background: none; border: none; border-radius: var(--radius-sm);
+  font-family: var(--font); font-size: 13px; text-align: left;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.pt-menu button:hover, .pt-menu button:focus-visible { background: var(--bg-secondary); outline: none; }
+.pt-menu-sep { height: 1px; background: var(--border-light); margin: 4px 2px; }
+
+.pt-link {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-med);
+  border-radius: var(--radius-lg);
+  width: 100%; max-width: 440px;
+  padding: 20px;
+}
+.pt-link-list { margin-top: 10px; max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.pt-link-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px;
+  background: none; border: none; border-radius: var(--radius-sm);
+  font-family: var(--font); font-size: 13px; text-align: left;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.pt-link-row:hover { background: var(--bg-secondary); }
+.pt-link-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pt-link-kind { font-size: 11px; color: var(--text-tertiary); flex-shrink: 0; }
+.pt-link-empty { font-size: 12px; color: var(--text-tertiary); padding: 16px 4px; text-align: center; line-height: 1.5; }
+
+/* ════════════════════════════════════════════════════════════════════════
    PLANNING CANVAS — canvas.js / canvas-surface.js
    Stacking inside .cv-world (all positioned, painted in this order):
      .cv-links (connectors) < .cv-items (cards, own stacking context so

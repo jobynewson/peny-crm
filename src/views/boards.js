@@ -258,13 +258,14 @@ export class BoardsView {
 
   // ── Board (embedded in a project's Planning tab) ─────────────────────────────
 
-  async renderEmbedded(container, project) {
+  // `board` is the specific board to show (a tab in the project's Planning
+  // strip); without it the project's first board is used.
+  async renderEmbedded(container, project, board = null) {
     this._stopPolling()
     container.innerHTML = '<div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">Loading board…</div>'
-    let board
     try {
       spawnDueBoardRecurrences(this.app.userId).catch(e => console.warn('Recurrence spawn failed:', e))
-      board = await getBoardForProject(this.app.userId, project.id)
+      board ??= await getBoardForProject(this.app.userId, project.id)
     } catch (e) {
       console.error(e)
       container.innerHTML = '<div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">Could not load board.</div>'
@@ -289,18 +290,23 @@ export class BoardsView {
       return
     }
 
-    this.board = board
-    this.currentId = board.id
+    // A newer render (e.g. the user switched Planning tabs) replaced this
+    // container while we were loading — don't clobber the board it shows.
+    if (!document.contains(container)) return
+    let data
     try {
-      const { columns, cards } = await getBoardData(board.id)
-      this.columns = columns
-      this.cards = cards
-      this._snapshot = this._serialize(columns, cards)
+      data = await getBoardData(board.id)
     } catch (e) {
       console.error(e)
       container.innerHTML = '<div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">Could not load board.</div>'
       return
     }
+    if (!document.contains(container)) return
+    this.board = board
+    this.currentId = board.id
+    this.columns = data.columns
+    this.cards = data.cards
+    this._snapshot = this._serialize(data.columns, data.cards)
 
     container.innerHTML = `
       ${this.canEdit ? `

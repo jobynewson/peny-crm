@@ -127,6 +127,9 @@ export const projects = pgTable('projects', {
   // Fractional index within its kanban column (stage, or the retainer lane) —
   // see board_cards.position below for the same drag-reorder pattern.
   kanban_position: doublePrecision('kanban_position').notNull().default(0),
+  // Planning tab strip order: ['board:<id>' | 'canvas:<id>', …] — see
+  // src/utils/planning-tabs.js. Unlisted boards/canvases append by age.
+  planning_tab_order: jsonb('planning_tab_order').notNull().default([]),
   ...timestamps,
 })
 

@@ -367,6 +367,8 @@ export async function runMigrations() {
 
   // ── Projects kanban drag-reorder ───────────────────────────────────────────
   await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS kanban_position DOUBLE PRECISION NOT NULL DEFAULT 0`
+  // Planning tab strip order (drizzle/0029_add_planning_tab_order.sql)
+  await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS planning_tab_order JSONB NOT NULL DEFAULT '[]'::jsonb`
 
   // ── Budget sign-off / invoicing ─────────────────────────────────────────────
   // Columns declared in schema.js but never added to existing DBs — every
@@ -1396,6 +1398,37 @@ export async function getBoards(workspaceId) {
   return db.select().from(boards)
     .where(eq(boards.user_id, workspaceId))
     .orderBy(desc(boards.created_at))
+}
+
+// Everything shown in a project's Planning tab strip: its kanban boards and
+// its root canvases (nested canvases are reached through board cards).
+export async function getProjectPlanning(workspaceId, projectId) {
+  const [bs, cs] = await Promise.all([
+    db.select().from(boards)
+      .where(and(eq(boards.user_id, workspaceId), eq(boards.project_id, projectId))),
+    db.select().from(canvases)
+      .where(and(eq(canvases.user_id, workspaceId), eq(canvases.project_id, projectId), isNull(canvases.parent_id))),
+  ])
+  return { boards: bs, canvases: cs }
+}
+
+// Standalone boards/canvases (no project yet) that can be linked in as tabs.
+export async function getLinkablePlanning(workspaceId) {
+  const [bs, cs] = await Promise.all([
+    db.select().from(boards)
+      .where(and(eq(boards.user_id, workspaceId), isNull(boards.project_id)))
+      .orderBy(desc(boards.created_at)),
+    db.select().from(canvases)
+      .where(and(eq(canvases.user_id, workspaceId), isNull(canvases.project_id), isNull(canvases.parent_id)))
+      .orderBy(desc(canvases.created_at)),
+  ])
+  return { boards: bs, canvases: cs }
+}
+
+export async function setPlanningTabOrder(workspaceId, projectId, order) {
+  await db.update(projects)
+    .set({ planning_tab_order: order })
+    .where(and(eq(projects.id, projectId), eq(projects.user_id, workspaceId)))
 }
 
 export async function getBoardForProject(workspaceId, projectId) {

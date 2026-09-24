@@ -28,6 +28,9 @@ export class CanvasView {
     /** @type {CanvasRow[] | null} */ this._canvases = null   // every canvas in the workspace, nested ones included
     /** @type {CanvasSurface | null} */ this.surface = null
     /** @type {{ projectId: string, rootId: string, currentId: string } | null} */ this._embedded = null
+    // Nested board each embedded root canvas was last showing, so switching
+    // Planning tabs away and back returns to the same place.
+    /** @type {Map<string, string>} */ this._embeddedPos = new Map()
   }
 
   get canEdit() { return this.app.permissions?.projects_edit !== false }
@@ -304,13 +307,15 @@ export class CanvasView {
 
   // ── Canvas (embedded in a project's Planning tab) ────────────────────────────
 
-  /** @param {HTMLElement} container @param {any} project */
-  async renderEmbedded(container, project) {
+  // `canvas` is the specific root canvas to show (a tab in the project's
+  // Planning strip); without it the project's first canvas is used.
+  /** @param {HTMLElement} container @param {any} project @param {CanvasRow | null} [canvas] */
+  async renderEmbedded(container, project, canvas = null) {
     this._destroySurface()
     container.innerHTML = '<div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">Loading canvas…</div>'
-    /** @type {CanvasRow | null} */ let root
+    /** @type {CanvasRow | null} */ let root = canvas
     try {
-      root = /** @type {CanvasRow | null} */ (await getCanvasForProject(this.app.userId, project.id))
+      root ??= /** @type {CanvasRow | null} */ (await getCanvasForProject(this.app.userId, project.id))
     } catch (e) {
       console.error(e)
       container.innerHTML = '<div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">Could not load canvas.</div>'
@@ -336,9 +341,9 @@ export class CanvasView {
       return
     }
 
-    // Stay on the nested board the user was on when this project re-renders.
+    // Stay on the nested board the user was on when this canvas re-renders.
     if (!this._embedded || this._embedded.projectId !== project.id || this._embedded.rootId !== root.id) {
-      this._embedded = { projectId: project.id, rootId: root.id, currentId: root.id }
+      this._embedded = { projectId: project.id, rootId: root.id, currentId: this._embeddedPos.get(root.id) ?? root.id }
     }
     await this._renderEmbeddedCanvas(container, project)
   }
@@ -368,6 +373,7 @@ export class CanvasView {
 
     this.canvas = canvas
     this.currentId = canvas.id
+    this._embeddedPos.set(state.rootId, canvas.id)
     const chain = this._chain(canvas.id)
     const nested = chain.length > 1
     container.innerHTML = `

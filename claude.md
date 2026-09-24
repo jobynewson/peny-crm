@@ -189,6 +189,9 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
   client-side on load via `spawnDueBoardRecurrences()` — an atomic
   `next_due` advance stops two browsers double-spawning. One of three
   separate kanban implementations — see "Kanban boards" below.
+- `planning-tabs.js` - A project's Planning tab: one tab strip holding ALL of
+  the project's kanban boards and canvases (any number of each). See
+  "Project planning tabs" below.
 - `canvas.js` + `canvas-surface.js` - Planning canvas, a Milanote-style
   infinite planning/storyboarding surface — standalone via the Planning nav
   item's Canvases tab AND embedded in each project's Planning tab. See
@@ -199,6 +202,33 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
   implementations — see "Kanban boards" below.
 - `password-manager.js` - Password management
 - `offload-log.js` - Offload Log (read-only table of backup reports from Fence)
+
+### Project planning tabs
+- A project's Planning tab (`PlanningTabsView`, `src/views/planning-tabs.js`)
+  shows one strip of tabs mixing its kanban boards (`boards.project_id`) and
+  root canvases (`canvases.project_id`, `parent_id IS NULL`). The active tab is
+  rendered by the existing embeds — `BoardsView.renderEmbedded(container,
+  project, board)` / `CanvasView.renderEmbedded(container, project, canvas)`;
+  called without the third argument they still fall back to the project's
+  first board/canvas.
+- Tab order is shared and stored on the project as
+  `projects.planning_tab_order` (`['board:<id>' | 'canvas:<id>', …]`,
+  `drizzle/0029_add_planning_tab_order.sql`). Unlisted boards/canvases append
+  oldest-first, and keys for deleted ones are skipped — so creating or deleting
+  from elsewhere (e.g. the Planning nav item) needs no order bookkeeping. The
+  ordering maths is pure and unit-tested in `src/utils/planning-tabs.js`.
+- The last tab used is remembered per browser in `localStorage`
+  (`slate-plan-tab-<projectId>`); each embedded canvas also remembers which
+  nested board it was showing, so switching tabs and back lands in the same
+  place.
+- Tabs: click or ←/→ to switch, double-click to rename inline, drag to reorder.
+  `+` creates a kanban board or canvas (named inline) or links an existing
+  standalone one (`getLinkablePlanning` — only boards/canvases with no project).
+  There is deliberately no unlink/delete in the strip: do that from the
+  item's full view.
+- Every tab switch renders into a fresh element, and the embeds bail out if
+  their container was detached while loading, so a slow tab can never paint
+  over the one the user switched to.
 
 ### Planning canvas
 - **Split.** `src/views/canvas.js` owns navigation: the Canvases list (root
