@@ -86,6 +86,15 @@ function imgSrc(url) {
   return esc(url)
 }
 
+// Only web URLs (or our own blob proxy) are ever opened in a new tab — never
+// javascript:/data: URLs that could arrive via pasted canvas JSON.
+/** @param {string | null | undefined} url @returns {string | null} */
+function safeOpenUrl(url) {
+  if (!url) return null
+  if (url.includes('.private.blob.vercel-storage.com')) return `/api/blob?url=${encodeURIComponent(url)}`
+  return /^https?:\/\//i.test(url) ? url : null
+}
+
 /** @param {string | null | undefined} url */
 const displayUrl = url => String(url ?? '').replace(/^https?:\/\//i, '').replace(/\/$/, '')
 
@@ -206,6 +215,9 @@ export class CanvasSurface {
     /** @type {HTMLElement | null} */ this._dropHi = null
     /** @type {(() => Promise<void>) | null} */ this._popoverClose = null
     this._invZoom = ''
+    /** @type {number | null} */ this._zoomTarget = null
+    /** @type {{ x: number, y: number } | null} */ this._zoomAt = null
+    this._zoomRaf = 0
   }
 
   // ── Lifecycle ────────────────────────────────────────────────────────────────
@@ -253,6 +265,7 @@ export class CanvasSurface {
     this._vpDirty = true
     this._frame()
     this._applyInverseZoom()
+    this._world?.addEventListener('animationend', () => this._wrap?.classList.remove('cv-wrap--enter'), { once: true })
     this._bindEvents()
     this._startPolling()
   }
@@ -266,6 +279,8 @@ export class CanvasSurface {
     if (this._pollTimer) clearInterval(this._pollTimer)
     this._pollTimer = null
     if (this._raf) cancelAnimationFrame(this._raf)
+    if (this._zoomRaf) cancelAnimationFrame(this._zoomRaf)
+    cancelAnimationFrame(this._vpAnim || 0)
     for (const [target, type, fn, o] of this._docListeners) target.removeEventListener(type, fn, o)
     this._docListeners = []
     for (const t of Object.values(this._saveTimers)) clearTimeout(t)
@@ -395,7 +410,7 @@ export class CanvasSurface {
         </button>
       </div>`
     return `
-      <div class="cv-wrap${this.canEdit ? '' : ' cv-wrap--readonly'}" tabindex="-1" style="height:${height}">
+      <div class="cv-wrap cv-wrap--enter${this.canEdit ? '' : ' cv-wrap--readonly'}" tabindex="-1" style="height:${height}">
         <div class="cv-world">
           <svg class="cv-links" aria-hidden="true">
             <defs>
@@ -808,6 +823,7 @@ export class CanvasSurface {
   /** @param {{ panX: number, panY: number, zoom: number }} to */
   _animateViewport(to) {
     cancelAnimationFrame(this._vpAnim || 0)
+    this._zoomTarget = null
     const from = { ...this.viewport }
     const t0 = performance.now()
     const dur = 180
@@ -831,6 +847,7 @@ export class CanvasSurface {
     e.preventDefault()
     cancelAnimationFrame(this._vpAnim || 0)
     const now = performance.now()
+    if (this._zoomTarget != null && (e.ctrlKey || wheelIntent(e, now < this._trackpadUntil) === 'pan')) this._zoomTarget = null
     const intent = wheelIntent(e, now < this._trackpadUntil)
     const d = normalizeWheel(e)
     if (intent === 'pan') {
@@ -840,10 +857,33 @@ export class CanvasSurface {
       const dy = e.shiftKey && !d.x ? 0 : d.y
       this._setViewport(panBy(this.viewport, dx, dy))
     } else {
-      const pinch = e.ctrlKey && !Number.isInteger(e.deltaY)
-      const f = wheelZoomFactor(d.y, pinch || (e.ctrlKey && Math.abs(d.y) < 50))
-      this._setViewport(zoomAtPoint(this.viewport, this._toLocal(e.clientX, e.clientY), this.viewport.zoom * f))
+      const pinch = e.ctrlKey && (!Number.isInteger(e.deltaY) || Math.abs(d.y) < 50)
+      const f = wheelZoomFactor(d.y, pinch)
+      const at = this._toLocal(e.clientX, e.clientY)
+      if (pinch) {
+        // Pinch deltas already arrive as a smooth stream — apply directly.
+        this._zoomTarget = null
+        this._setViewport(zoomAtPoint(this.viewport, at, this.viewport.zoom * f))
+      } else {
+        // A mouse notch is a big discrete step: ease towards it (and keep
+        // accumulating notches) instead of jumping.
+        this._zoomAt = at
+        this._zoomTarget = clampZoom((this._zoomTarget ?? this.viewport.zoom) * f)
+        if (!this._zoomRaf) this._zoomRaf = requestAnimationFrame(() => this._zoomStep())
+      }
     }
+  }
+
+  _zoomStep() {
+    this._zoomRaf = 0
+    const target = this._zoomTarget
+    if (target == null || !this._zoomAt || this._destroyed) return
+    const cur = this.viewport.zoom
+    const ratio = target / cur
+    const next = Math.abs(Math.log(ratio)) < 0.003 ? target : cur * Math.pow(ratio, 0.38)
+    this._setViewport(zoomAtPoint(this.viewport, this._zoomAt, next))
+    if (next === target) this._zoomTarget = null
+    else this._zoomRaf = requestAnimationFrame(() => this._zoomStep())
   }
 
   // ── Event wiring ─────────────────────────────────────────────────────────────
@@ -953,15 +993,48 @@ export class CanvasSurface {
   // Run a pointer gesture: window-level move/up listeners that are always
   // cleaned up, including when the gesture is cancelled with Esc or the
   // surface is torn down mid-drag.
-  /** @param {string} name @param {(e: PointerEvent) => void} onMove @param {(e: PointerEvent | null) => void} onUp */
-  _track(name, onMove, onUp) {
+  /**
+   * @param {string} name
+   * @param {(e: PointerEvent) => void} onMove
+   * @param {(e: PointerEvent | null) => void} onUp
+   * @param {{ autoPan?: { x: number, y: number } }} [opts] autoPan: the gesture's
+   *   start point (client px). Once the pointer has left it, holding the pointer
+   *   near an edge of the canvas scrolls the view, re-running onMove each frame
+   *   so whatever is being dragged keeps up.
+   */
+  _track(name, onMove, onUp, opts = {}) {
     this._endGesture?.()
     this._gesture = name
-    const move = (/** @type {PointerEvent} */ e) => onMove(e)
+    /** @type {PointerEvent | null} */ let last = null
+    let armed = false
+    let edgeRaf = 0
+    const edge = () => {
+      edgeRaf = 0
+      if (this._gesture !== name || !last || !this._wrap) return
+      const o = this._origin()
+      const x = last.clientX - o.left, y = last.clientY - o.top
+      const M = 40, MAX = 16
+      // 0 inside the margin's inner edge → 1 at the canvas edge → 2 well outside
+      const push = (/** @type {number} */ d) => (d >= M ? 0 : Math.min(2, (M - d) / M))
+      const vx = (push(o.width - x) - push(x)) * MAX
+      const vy = (push(o.height - y) - push(y)) * MAX
+      if (vx || vy) {
+        this._setViewport(panBy(this.viewport, vx, vy))
+        onMove(last)
+        edgeRaf = requestAnimationFrame(edge)
+      }
+    }
+    const move = (/** @type {PointerEvent} */ e) => {
+      last = e
+      onMove(e)
+      if (opts.autoPan && !armed && Math.abs(e.clientX - opts.autoPan.x) + Math.abs(e.clientY - opts.autoPan.y) > DRAG_THRESHOLD) armed = true
+      if (armed && !edgeRaf) edgeRaf = requestAnimationFrame(edge)
+    }
     const end = (/** @type {PointerEvent | null} */ e) => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', cancel)
+      if (edgeRaf) cancelAnimationFrame(edgeRaf)
       this._endGesture = null
       this._gesture = ''
       this._shield(null)
@@ -992,7 +1065,14 @@ export class CanvasSurface {
 
     if (t.closest('.bd-chip')) return
     const itemEl = /** @type {HTMLElement | null} */ (t.closest('[data-item]'))
-    // Native controls inside a card keep working (and never start a drag).
+    // A checklist's text fields drag the card like any other surface of it; a
+    // click without movement then puts the caret in the field.
+    const field = /** @type {HTMLInputElement | null} */ (t.closest('input.cv-todo-title, input.cv-todo-text'))
+    if (itemEl && field && this.canEdit && this.tool === 'select' && document.activeElement !== field) {
+      this._startMove(e, itemEl.dataset.item || '', field)
+      return
+    }
+    // Other native controls inside a card keep working (and never start a drag).
     if (itemEl && t.closest('input, select, button, a, .cv-note-text--editing, .cv-inline-edit')) return
 
     const arrowEl = /** @type {HTMLElement | null} */ (t.closest('[data-arrow]'))
@@ -1028,6 +1108,8 @@ export class CanvasSurface {
 
   /** @param {PointerEvent} e */
   _startPan(e) {
+    this._zoomTarget = null
+    cancelAnimationFrame(this._vpAnim || 0)
     const start = { x: e.clientX, y: e.clientY }
     const orig = { ...this.viewport }
     let moved = false
@@ -1063,34 +1145,35 @@ export class CanvasSurface {
 
   /** @param {PointerEvent} e */
   _startMarquee(e) {
-    const r = this._origin()
     const additive = e.shiftKey || e.metaKey || e.ctrlKey
     const base = additive ? new Set(this.sel) : new Set()
     if (!additive) { this._setSelection([]); this._selectArrow(null) }
-    const start = { x: e.clientX - r.left, y: e.clientY - r.top }
+    const startClient = { x: e.clientX, y: e.clientY }
+    // Anchored in canvas space so the band stretches correctly while the view
+    // auto-pans under it.
+    const startC = this._clientToCanvas(e.clientX, e.clientY)
     let moved = false
     const box = /** @type {HTMLElement} */ (this._marquee)
     this._track('marquee', ev => {
-      const cur = { x: ev.clientX - r.left, y: ev.clientY - r.top }
-      if (!moved && Math.abs(cur.x - start.x) + Math.abs(cur.y - start.y) <= DRAG_THRESHOLD) return
+      if (!moved && Math.abs(ev.clientX - startClient.x) + Math.abs(ev.clientY - startClient.y) <= DRAG_THRESHOLD) return
       if (!moved) this._shield('crosshair')
       moved = true
-      const sr = rectFromPoints(start, cur)
+      const curC = this._clientToCanvas(ev.clientX, ev.clientY)
+      const sr = rectFromPoints(canvasToScreen(startC, this.viewport), canvasToScreen(curC, this.viewport))
       box.hidden = false
       box.style.transform = `translate(${sr.x}px, ${sr.y}px)`
       box.style.width = `${sr.w}px`
       box.style.height = `${sr.h}px`
-      const cr = rectFromPoints(screenToCanvas(start, this.viewport), screenToCanvas(cur, this.viewport))
-      const hits = marqueeHits(cr, this.items)
+      const hits = marqueeHits(rectFromPoints(startC, curC), this.items)
       this._setSelection([...new Set([...base, ...hits])])
     }, () => {
       box.hidden = true
       if (!moved) this._wrap?.focus({ preventScroll: true })
-    })
+    }, { autoPan: startClient })
   }
 
-  /** @param {PointerEvent} e @param {string} id */
-  _startMove(e, id) {
+  /** @param {PointerEvent} e @param {string} id @param {HTMLInputElement | null} [focusOnClick] */
+  _startMove(e, id, focusOnClick = null) {
     const item = this.byId.get(id)
     if (!item) return
     e.preventDefault()
@@ -1113,6 +1196,9 @@ export class CanvasSurface {
     /** @type {Map<string, Geo>} */ const before = new Map(movers.map(m => [m.id, this._geo(m)]))
     const box0 = boundsOf(movers)
     const start = { x: e.clientX, y: e.clientY }
+    // Deltas are measured in canvas space from where the drag began, so the
+    // cards stay under the cursor even if the view pans or zooms mid-drag.
+    const startC = this._clientToCanvas(e.clientX, e.clientY)
     let moved = false
     /** @type {Item[]} */ let others = []
     /** @type {Item | null} */ let dropTarget = null
@@ -1130,7 +1216,8 @@ export class CanvasSurface {
         this._shield('grabbing')
       }
       const z = this.viewport.zoom
-      let dx = (ev.clientX - start.x) / z, dy = (ev.clientY - start.y) / z
+      const pc = this._clientToCanvas(ev.clientX, ev.clientY)
+      let dx = pc.x - startC.x, dy = pc.y - startC.y
       if (!ev.altKey && others.length) {
         const s = computeSnap({ x: box0.x + dx, y: box0.y + dy, w: box0.w, h: box0.h }, others, SNAP_PX / z)
         dx += s.dx; dy += s.dy
@@ -1162,6 +1249,13 @@ export class CanvasSurface {
       this._requestFrame()
       this._hint('')
       if (!moved) {
+        if (focusOnClick && ev && !(ev.shiftKey || ev.metaKey || ev.ctrlKey)) {
+          if (this.sel.size > 1) this._setSelection([id])
+          focusOnClick.focus()
+          const end = focusOnClick.value.length
+          focusOnClick.setSelectionRange(end, end)
+          return
+        }
         // Plain click: collapse a multi-selection to this card; a second
         // click on an already-selected note starts editing it.
         if (ev && !(ev.shiftKey || ev.metaKey || ev.ctrlKey)) {
@@ -1176,7 +1270,7 @@ export class CanvasSurface {
         return
       }
       this._commitGeometry('Move', before, movers)
-    })
+    }, { autoPan: start })
   }
 
   /** @param {PointerEvent} e @param {string} id */
@@ -1190,14 +1284,15 @@ export class CanvasSurface {
     const aspect = o.w / Math.max(1, o.h)
     const keepAspect = item.kind === 'image' && !!item.image_url
     const start = { x: e.clientX, y: e.clientY }
+    const startC = this._clientToCanvas(e.clientX, e.clientY)
     let moved = false
     this._wrap?.classList.add('cv-wrap--resizing')
     this._shield('nwse-resize')
     this._track('resize', ev => {
       moved = true
-      const z = this.viewport.zoom
-      let w = Math.max(minW, o.w + (ev.clientX - start.x) / z)
-      let h = Math.max(minH, o.h + (ev.clientY - start.y) / z)
+      const pc = this._clientToCanvas(ev.clientX, ev.clientY)
+      let w = Math.max(minW, o.w + pc.x - startC.x)
+      let h = Math.max(minH, o.h + pc.y - startC.y)
       if (keepAspect !== ev.shiftKey) {
         h = w / aspect
         if (h < minH) { h = minH; w = h * aspect }
@@ -1207,7 +1302,7 @@ export class CanvasSurface {
     }, () => {
       this._wrap?.classList.remove('cv-wrap--resizing')
       if (moved) this._commitGeometry('Resize', before, [item])
-    })
+    }, { autoPan: start })
   }
 
   /** @param {PointerEvent} e @param {string} fromId */
@@ -1232,7 +1327,7 @@ export class CanvasSurface {
       this._shield('crosshair')
     }
     update(e)
-    this._hint('Release on a card to connect · Esc to cancel')
+    this._hint('Release on a card to connect — or on empty canvas for a new note · Esc to cancel')
     this._track('connect', update, async ev => {
       this._wrap?.classList.remove('cv-wrap--linking')
       this._els.get(fromId)?.classList.remove('cv-item--link-source')
@@ -1240,14 +1335,39 @@ export class CanvasSurface {
       this._draft = null; this._draftDirty = true
       this._requestFrame()
       this._hint(this.tool === 'connect' ? 'Drag from one card to another to connect them · Esc to finish' : '')
-      if (!ev || !target) return
+      if (!ev) return
+      if (!target) {
+        // Dropped on empty canvas far enough from the card: sprout a new
+        // note there, already connected — the quickest way to storyboard.
+        const p = this._clientToCanvas(ev.clientX, ev.clientY)
+        const far = !rectContains({ x: from.x - 40, y: from.y - 40, w: from.w + 80, h: from.h + 80 }, p)
+        if (far) await this._sproutNote(fromId, p)
+        return
+      }
       const toId = target.id
       if (this.arrows.some(a => (a.from_item_id === fromId && a.to_item_id === toId))) return
       /** @type {Arrow} */ const arrow = { id: crypto.randomUUID(), from_item_id: fromId, to_item_id: toId, label: null }
       await this._insertRecords([], [arrow])
       this._pushHistory(this._createEntry('Connect', [], [arrow]))
       this._selectArrow(arrow.id)
+    }, { autoPan: { x: e.clientX, y: e.clientY } })
+  }
+
+  // A new note at `p`, connected from `fromId`, in edit mode.
+  /** @param {string} fromId @param {{ x: number, y: number }} p */
+  async _sproutNote(fromId, p) {
+    const [w, h] = DEFAULT_SIZE.note
+    const from = this.byId.get(fromId)
+    /** @type {Item} */
+    const note = /** @type {Item} */ ({
+      id: crypto.randomUUID(), kind: 'note', content: '', color: from?.kind === 'note' ? from.color : NOTE_COLORS[0],
+      x: Math.round(p.x - w / 2), y: Math.round(p.y - h / 2), w, h, z: this._maxZ() + 1,
+      image_url: null, url: null, links: [], sub_tasks: [], child_canvas_id: null,
     })
+    /** @type {Arrow} */ const arrow = { id: crypto.randomUUID(), from_item_id: fromId, to_item_id: note.id, label: null }
+    if (!await this._insertRecords([note], [arrow])) return
+    this._pushHistory(this._createEntry('Add connected note', [note], [arrow]))
+    this._startEditing(note.id)
   }
 
   // Drag a tool out of the palette and drop it where it should go; a plain
@@ -1404,8 +1524,12 @@ export class CanvasSurface {
       return
     }
     if (act === 'upload') return this._pickFilesFor(one.id)
-    if (act === 'open-image' && one.image_url) { window.open(one.image_url.includes('.private.blob.vercel-storage.com') ? `/api/blob?url=${encodeURIComponent(one.image_url)}` : one.image_url, '_blank', 'noopener'); return }
-    if (act === 'open-link' && one.url) { window.open(one.url, '_blank', 'noopener'); return }
+    if (act === 'open-image' || act === 'open-link') {
+      const url = safeOpenUrl(act === 'open-image' ? one.image_url : one.url)
+      if (url) window.open(url, '_blank', 'noopener,noreferrer')
+      else this.app.toast('That link can’t be opened')
+      return
+    }
     if (act === 'links') return this._openLinksModal(one)
   }
 

@@ -1458,6 +1458,14 @@ body.cv-body-lock { overflow: hidden; }
   width: 0; height: 0;
   transform-origin: 0 0;
 }
+/* Opening a canvas / board eases its content in. */
+.cv-wrap--enter .cv-world { animation: cv-enter 0.2s ease-out; }
+@keyframes cv-enter { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .cv-wrap--enter .cv-world { animation: none; }
+  .cv-item--absorbed { transition: none; }
+}
+
 /* Promote only while the view is moving: a permanently-promoted layer would
    stay rasterised at its old scale and look soft after zooming. */
 .cv-wrap--moving .cv-world, .cv-wrap--dragging .cv-world { will-change: transform; }
