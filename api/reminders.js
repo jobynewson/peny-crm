@@ -66,7 +66,7 @@ export default async function handler(req, res) {
     if (isNaN(dateObj.getTime())) return 'Invalid date'
     return dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
   }
-  const baseUrl = process.env.VITE_APP_URL || 'https://slate.wearepeny.com'
+  const baseUrl = process.env.VITE_APP_URL || 'https://peny-slate.app'
 
   const emailWrap = (title, greeting, bodyHtml) => `
 <!DOCTYPE html>
@@ -546,7 +546,7 @@ async function handleLeaveNotify(req, res) {
 
   if (action === 'submitted') {
     const recipients = approver ? [approver] : superadmins
-    const baseUrl = process.env.VITE_APP_URL || 'https://slate.wearepeny.com'
+    const baseUrl = process.env.VITE_APP_URL || 'https://peny-slate.app'
     const body = `
       <p><strong>${requester.name || requester.email}</strong> has submitted a leave request:</p>
       <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px">

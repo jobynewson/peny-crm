@@ -116,7 +116,7 @@ export async function fetchLinkPreview(rawUrl) {
       signal: controller.signal,
       redirect: 'follow',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; SlateBot/1.0; +https://slate.wearepeny.com)',
+        'User-Agent': 'Mozilla/5.0 (compatible; SlateBot/1.0; +https://peny-slate.app)',
         'Accept': 'text/html,application/xhtml+xml',
       },
     })
