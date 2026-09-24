@@ -50,25 +50,25 @@ index.html                # App HTML shell
 - Client-side only (no server routes needed)
 - `vercel.json` rewrites all paths to `index.html` for SPA routing to work on refresh
 
-### Serverless Functions (Vercel) — HARD LIMIT OF 12
+### Serverless Functions (Vercel)
+- We're on the **Vercel Pro plan**, so the Hobby-plan cap of 12 Serverless
+  Functions no longer applies. It's fine to add a new `/api/*.js` file when a
+  feature is a distinct endpoint. There's no need to squeeze it into an existing
+  function.
 - Every non-underscore `*.js` file in `/api` becomes its own Vercel Serverless
-  Function. **The Hobby (free) plan deploys a maximum of 12 functions — at 13
-  the deployment fails.** We must ALWAYS stay at or below 12.
-- **Before adding any new `/api/*.js` file, count the existing ones**
-  (`ls api/*.js | grep -v '/_' | wc -l`). If we're already at 12, do NOT add a
-  new file — extend an existing function instead.
-- **How to add an endpoint without adding a function:**
-  - Files prefixed with `_` (e.g. `api/_ratelimit.js`, `api/_dashboard.js`) are
-    ignored by Vercel's function detection. Put shared logic / extra handlers in
-    a `_`-prefixed module and have an existing function delegate to it.
-  - Route within an existing function on a query param. Example: the public
-    office dashboard lives in `api/_dashboard.js` and is invoked by
-    `api/portal.js` when `?view=dashboard` — it is NOT a separate function.
-    Likewise the Offload Log ingest lives in `api/_offloads.js` and is invoked
-    by `api/portal.js` when `?view=offloads`. `POST /api/offloads` is a
-    `vercel.json` rewrite onto `/api/portal?view=offloads`, so Fence keeps a
-    clean URL without adding a function.
-- Current functions (12): `ai`, `blob`, `callsheet`, `generate-ra`, `google`,
+  Function. Files prefixed with `_` (e.g. `api/_ratelimit.js`,
+  `api/_dashboard.js`) are ignored by Vercel's function detection and hold
+  shared logic / helper modules.
+- Some endpoints still route within one function on a query param, a pattern
+  left over from the Hobby limit. These routes work as they are, so only split
+  them out if there's a real reason to:
+  - The public office dashboard lives in `api/_dashboard.js` and is invoked by
+    `api/portal.js` when `?view=dashboard`.
+  - The Offload Log ingest lives in `api/_offloads.js` and is invoked by
+    `api/portal.js` when `?view=offloads`. `POST /api/offloads` is a
+    `vercel.json` rewrite onto `/api/portal?view=offloads`, which gives Fence
+    a clean URL.
+- Current functions: `ai`, `blob`, `callsheet`, `generate-ra`, `google`,
   `invite`, `maps`, `packing`, `portal`, `quote`, `reminders`, `track`.
   All Google Calendar work lives behind the single `google` function: shared
   plumbing in `api/_gcal.js`, the Team Calendar entry push in
