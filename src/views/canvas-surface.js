@@ -218,6 +218,7 @@ export class CanvasSurface {
     /** @type {number | null} */ this._zoomTarget = null
     /** @type {{ x: number, y: number } | null} */ this._zoomAt = null
     this._zoomRaf = 0
+    this._suppressClick = false
   }
 
   // ── Lifecycle ────────────────────────────────────────────────────────────────
@@ -938,6 +939,9 @@ export class CanvasSurface {
     })
     this._listen(window, 'blur', () => { this._spaceDown = false; wrap.classList.remove('cv-wrap--space') })
     this._listen(window, 'pagehide', () => this._flushAllSaves())
+    const lift = (/** @type {PointerEvent} */ e) => { if (e.pointerType === 'touch') this._touches.delete(e.pointerId) }
+    this._listen(window, 'pointerup', lift, true)
+    this._listen(window, 'pointercancel', lift, true)
     this._listen(document, 'copy', (/** @type {ClipboardEvent} */ e) => this._onCopy(e, false))
     this._listen(document, 'cut', (/** @type {ClipboardEvent} */ e) => this._onCopy(e, true))
     this._listen(document, 'paste', (/** @type {ClipboardEvent} */ e) => this._onPaste(e))
@@ -1050,6 +1054,7 @@ export class CanvasSurface {
 
   /** @param {PointerEvent} e */
   _onPointerDown(e) {
+    this._suppressClick = false
     const t = asEl(e.target)
     if (!t || t.closest('.cv-ui')) return
 
@@ -1119,7 +1124,6 @@ export class CanvasSurface {
       this._setViewport({ zoom: orig.zoom, panX: orig.panX + ev.clientX - start.x, panY: orig.panY + ev.clientY - start.y })
     }, () => {
       this._wrap?.classList.remove('cv-wrap--panning')
-      if (e.pointerType === 'touch') this._touches.delete(e.pointerId)
       if (!moved && !this.canEdit) this._setSelection([])
     })
   }
@@ -1264,11 +1268,10 @@ export class CanvasSurface {
         }
         return
       }
-      if (dropTarget && ev) {
-        this._els.get(dropTarget.id)?.classList.remove('cv-item--drop-target')
-        this._moveIntoBoard(dropTarget, movers, before)
-        return
-      }
+      this._suppressClick = true
+      if (dropTarget) this._els.get(dropTarget.id)?.classList.remove('cv-item--drop-target')
+      if (!ev) { this._restoreGeometry(before); return }   // Esc / cancelled: snap back
+      if (dropTarget) { this._moveIntoBoard(dropTarget, movers, before); return }
       this._commitGeometry('Move', before, movers)
     }, { autoPan: start })
   }
@@ -1299,9 +1302,11 @@ export class CanvasSurface {
       }
       item.w = Math.round(w); item.h = Math.round(h)
       this._markItem(id)
-    }, () => {
+    }, ev => {
       this._wrap?.classList.remove('cv-wrap--resizing')
-      if (moved) this._commitGeometry('Resize', before, [item])
+      if (!moved) return
+      if (!ev) { this._restoreGeometry(before); return }
+      this._commitGeometry('Resize', before, [item])
     }, { autoPan: start })
   }
 
@@ -1537,6 +1542,8 @@ export class CanvasSurface {
 
   /** @param {MouseEvent} e */
   _onClick(e) {
+    // The click that ends a drag is not a click on whatever was under it.
+    if (this._suppressClick) { this._suppressClick = false; return }
     const t = asEl(e.target)
     if (!t) return
     const chip = /** @type {HTMLElement | null} */ (t.closest('.bd-chip'))
