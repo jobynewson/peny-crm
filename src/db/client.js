@@ -364,6 +364,9 @@ export async function runMigrations() {
   await sql`ALTER TABLE canvas_items ADD COLUMN IF NOT EXISTS child_canvas_id UUID REFERENCES canvases(id) ON DELETE SET NULL`
   await sql`ALTER TABLE canvas_arrows ADD COLUMN IF NOT EXISTS label TEXT`
   await sql`CREATE INDEX IF NOT EXISTS canvases_parent_idx ON canvases (parent_id)`
+  // Conflict detection on card content (drizzle/0030_add_canvas_item_versions.sql)
+  await sql`ALTER TABLE canvas_items ADD COLUMN IF NOT EXISTS content_version INTEGER NOT NULL DEFAULT 0`
+  await sql`ALTER TABLE canvas_items ADD COLUMN IF NOT EXISTS updated_by TEXT`
 
   // ── Projects kanban drag-reorder ───────────────────────────────────────────
   await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS kanban_position DOUBLE PRECISION NOT NULL DEFAULT 0`
@@ -1677,6 +1680,20 @@ export async function createCanvasItems(canvasId, rows) {
     .values(rows.map(r => ({ ...r, canvas_id: canvasId })))
     .returning()
 }
+// Save a card's content only if nobody else has since `expectedVersion`.
+// Returns { row } on success (content_version bumped), { conflict: row } with
+// the current row when someone got there first, or { gone: true } if the card
+// was deleted. Geometry is saved separately and never conflicts.
+export async function updateCanvasItemContent(id, patch, expectedVersion, userId) {
+  const rows = await db.update(canvas_items)
+    .set({ ...patch, content_version: dsql`${canvas_items.content_version} + 1`, updated_by: userId ?? null, updated_at: new Date() })
+    .where(and(eq(canvas_items.id, id), eq(canvas_items.content_version, expectedVersion)))
+    .returning()
+  if (rows[0]) return { row: rows[0] }
+  const [current] = await db.select().from(canvas_items).where(eq(canvas_items.id, id))
+  return current ? { conflict: current } : { gone: true }
+}
+
 export async function deleteCanvasItems(ids) {
   if (!ids.length) return
   await db.delete(canvas_items).where(inArray(canvas_items.id, ids))

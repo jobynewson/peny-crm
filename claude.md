@@ -69,7 +69,8 @@ index.html                # App HTML shell
     `vercel.json` rewrite onto `/api/portal?view=offloads`, which gives Fence
     a clean URL.
 - Current functions: `ai`, `blob`, `callsheet`, `generate-ra`, `google`,
-  `invite`, `maps`, `packing`, `portal`, `quote`, `reminders`, `track`.
+  `invite`, `maps`, `packing`, `portal`, `quote`, `realtime`, `reminders`,
+  `track`.
   All Google Calendar work lives behind the single `google` function: shared
   plumbing in `api/_gcal.js`, the Team Calendar entry push in
   `api/_gcal-entries.js` — see "External calendar sync" below.
@@ -129,6 +130,13 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
   Google Calendar connection (server-side, used by `api/google.js`).
 - `VITE_GOOGLE_CLIENT_ID` - the same client id, exposed to the browser so it
   can start the OAuth redirect. Unset = the Connect button just toasts.
+- `ABLY_API_KEY` - Ably API key (server-side only, never `VITE_`-prefixed) for
+  live collaboration on planning canvases, kanban boards and project Planning
+  tabs: instant updates, presence avatars, live cursors. `/api/realtime` turns
+  it into short-lived tokens for signed-in workspace members, scoped to
+  `slate:<workspace owner id>:*` channels. Unset = realtime is simply off and
+  everything falls back to polling (no errors, no presence). See
+  "Live collaboration" below.
 - `YOUTUBE_API_KEY` - Google API key with the YouTube Data API v3 enabled,
   used by the office dashboard's view-count ticker (`api/_youtube.js`). No
   OAuth, so it only reads public/unlisted videos. Unset = the ticker just
@@ -202,6 +210,54 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
   implementations — see "Kanban boards" below.
 - `password-manager.js` - Password management
 - `offload-log.js` - Offload Log (read-only table of backup reports from Fence)
+
+### Live collaboration (canvases, boards, planning tabs)
+- **Transport.** Ably, behind a tiny room API in `src/realtime/realtime.js`
+  (`joinRoom(app, 'canvas:<id>' | 'board:<id>' | 'project:<id>')` →
+  `on / send / setPresence / onPeers / onResync / close`). Only
+  `src/realtime/transport.js` imports Ably (lazily, its own chunk). Rooms are
+  best-effort: with no `ABLY_API_KEY`, no network, or before the socket is up
+  they do nothing and views keep polling. Never make a feature *depend* on a
+  message arriving — the database is the source of truth and polling (4s, or
+  20s while realtime is connected) always reconciles.
+- **Canvas messages** (`canvas-surface.js`, "Collaboration" sections), sent
+  after the database write succeeds: `items` (full rows), `arrows`, `del`,
+  `adel`, `geo` (final positions), `reload` (big or structural changes — a
+  paste over ~48 KB, move-into-board, and a poke to the destination board's
+  room). Ephemeral: `drag` (~12 Hz while dragging, capped at 60 cards) and
+  `cur` (cursor, canvas coordinates, ~12 Hz, only while moving). After a
+  reconnect, `onResync` re-reads the canvas.
+- **Merging** goes through `_absorb()`: a card with unsaved/in-flight local
+  edits, an open conflict, or the caret in it keeps its local content and
+  version (it still takes remote geometry). Everything else takes the server
+  row. Typing therefore no longer pauses sync.
+- **Conflicts.** Card *content* (text, colour, image, url, links, checklist
+  rows) is saved with `updateCanvasItemContent(id, patch, expectedVersion,
+  clerkId)` — an optimistic-concurrency UPDATE on `canvas_items.content_version`
+  (`drizzle/0030`). Geometry never bumps the version, so moving a card can't
+  conflict with typing in it. On a conflict the card gets a "<name> changed this
+  card while you were editing — Keep mine / Use theirs" prompt; nothing is
+  written until the user picks. Saves for one card are serialised
+  (`_saveChains`) so a user never conflicts with their own debounced saves.
+  System updates (link previews) use `{ quiet: true }` and simply yield.
+  Connector labels and positions are last-write-wins.
+- **Undo is teammate-safe.** Each history step checks the card still matches
+  what this user left it as (position, or the changed properties) and skips it
+  otherwise ("skipped 1 card a teammate changed since"). Undoing a create
+  doesn't delete a card a teammate has since written in.
+- **Presence.** Canvas: avatar stack (click → jump to what they're doing),
+  named live cursors, and an outline + name tag on cards others have selected
+  or are typing in. Planning tabs: small avatars on the tab each person is on;
+  tab create/rename/link/reorder refreshes everyone's strip (`tabs` message).
+  Kanban boards: every committed write (`_committed()` in `boards.js`) pokes
+  others on the board to re-read immediately.
+- **Message budget.** Cursors and drags dominate. Roughly: one person moving
+  their mouse over a canvas with 3 others watching ≈ 12 msg/s published +
+  36 delivered. Ably's free tier (6M/month) covers a small studio comfortably;
+  if usage grows, lower the throttle in `_bindCursorBroadcast` first.
+- **Testing locally.** The browser harness swaps `transport.js` for a
+  BroadcastChannel stand-in so two iframes act as two users (see the scratch
+  harness used when this was built; production code has no test hooks).
 
 ### Project planning tabs
 - A project's Planning tab (`PlanningTabsView`, `src/views/planning-tabs.js`)

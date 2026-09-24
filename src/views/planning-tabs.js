@@ -16,6 +16,8 @@ import {
   createBoard, updateBoard, createCanvas, updateCanvas,
 } from '../db/client.js'
 import { tabKey, orderTabs, moveTab, insertIndex, pickActive } from '../utils/planning-tabs.js'
+import { joinRoom } from '../realtime/realtime.js'
+import { peerColor, initials, distinctPeers } from '../realtime/peers.js'
 
 /** @param {any} s */
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -38,6 +40,8 @@ export class PlanningTabsView {
     /** @type {HTMLElement | null} */ this._container = null
     /** @type {(() => void) | null} */ this._closeMenu = null
     this._seq = 0
+    /** @type {import('../realtime/realtime.js').Room | null} */ this._room = null
+    /** @type {any[]} */ this._peers = []
   }
 
   get canEdit() { return this.app.permissions?.projects_edit !== false }
@@ -85,7 +89,81 @@ export class PlanningTabsView {
     container.querySelector('.pt-add')?.addEventListener('click', e => this._openAddMenu(/** @type {HTMLElement} */ (e.currentTarget)))
     this._renderStrip()
     this._showActive()
+    this._joinProjectRoom()
   }
+
+  // ── Live: who is on which tab, and tab changes made by others ────────────────
+
+  _joinProjectRoom() {
+    this._room?.close()
+    const container = this._container
+    const projectId = this.project.id
+    const room = joinRoom(this.app, `project:${projectId}`)
+    this._room = room
+    this._peers = []
+    const stale = () => !container || !document.contains(container) || this._room !== room
+    room.onPeers(members => {
+      if (stale()) { room.close(); if (this._room === room) this._room = null; return }
+      this._peers = distinctPeers(members, room.selfClientId)
+      this._renderTabPeers()
+    })
+    room.on('tabs', d => {
+      if (stale()) return
+      // A reorder carries the new order; keep the cached project in step.
+      if (Array.isArray(d?.order)) {
+        this.project.planning_tab_order = d.order
+        const cached = this.app.projects?.find((/** @type {any} */ p) => p.id === this.project.id)
+        if (cached) cached.planning_tab_order = d.order
+      }
+      this._refreshTabs()
+    })
+    room.onResync(() => { if (!stale()) this._refreshTabs() })
+    this._announce()
+  }
+
+  _announce() {
+    const me = (this.app.allUsers ?? []).find((/** @type {any} */ u) => u.clerk_id === this.app.clerkUserId)
+    this._room?.setPresence({ name: me?.name || this.app.appUser?.name || me?.email || 'Someone', tab: this.active })
+  }
+
+  // Someone else added, renamed, linked or reordered tabs: re-read the list
+  // and redraw the strip. The open board/canvas is only re-rendered if its
+  // tab disappeared.
+  async _refreshTabs() {
+    if (this._container?.querySelector('.pt-tab-input, .pt-tab--dragging')) return
+    try {
+      const data = await getProjectPlanning(this.app.userId, this.project.id)
+      this.tabs = orderTabs(data.boards, data.canvases, this.project.planning_tab_order)
+      const stillThere = this.tabs.some(t => t.key === this.active)
+      if (!stillThere) this.active = pickActive(this.tabs, null)
+      this._renderStrip()
+      this._renderTabPeers()
+      if (!stillThere) this._showActive()
+    } catch (e) { console.warn('Tab refresh failed', e) }
+  }
+
+  _renderTabPeers() {
+    const strip = this._container?.querySelector('.pt-tabs')
+    if (!strip) return
+    /** @type {Map<string, any[]>} */ const byTab = new Map()
+    for (const p of this._peers) {
+      const k = p.data?.tab
+      if (!k) continue
+      if (!byTab.has(k)) byTab.set(k, [])
+      byTab.get(k)?.push(p)
+    }
+    strip.querySelectorAll('.pt-tab').forEach(node => {
+      const el = /** @type {HTMLElement} */ (node)
+      const ps = byTab.get(el.dataset.key || '') ?? []
+      let holder = el.querySelector('.pt-tab-peers')
+      if (!ps.length) { holder?.remove(); return }
+      if (!holder) { holder = document.createElement('span'); holder.className = 'pt-tab-peers'; el.appendChild(holder) }
+      holder.innerHTML = ps.slice(0, 3).map(p => `<i style="--peer:${peerColor(p.clientId)}" title="${esc(p.data?.name)} is here">${esc(initials(p.data?.name))}</i>`).join('') + (ps.length > 3 ? `<i class="pt-tab-peers-more">+${ps.length - 3}</i>` : '')
+    })
+  }
+
+  /** @param {any[] | null} [order] */
+  _tellOthers(order = null) { this._room?.send('tabs', order ? { order } : {}) }
 
   _renderStrip() {
     const strip = this._container?.querySelector('.pt-tabs')
@@ -97,6 +175,7 @@ export class PlanningTabsView {
         <span class="pt-tab-icon">${ICON[t.kind]}</span><span class="pt-tab-name">${esc(t.name)}</span>
       </button>`).join('')
     strip.querySelectorAll('.pt-tab').forEach(el => this._bindTab(/** @type {HTMLElement} */ (el)))
+    if (this._peers.length) this._renderTabPeers()
     strip.querySelector('.pt-tab--active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }
 
@@ -105,6 +184,7 @@ export class PlanningTabsView {
     if (!key || key === this.active) return
     this.active = key
     this._remember(key)
+    this._announce()
     this._container?.querySelectorAll('.pt-tab').forEach(node => {
       const el = /** @type {HTMLElement} */ (node)
       const on = el.dataset.key === key
@@ -234,7 +314,7 @@ export class PlanningTabsView {
     this.project.planning_tab_order = order
     const cached = this.app.projects?.find((/** @type {any} */ p) => p.id === this.project.id)
     if (cached) cached.planning_tab_order = order
-    try { await setPlanningTabOrder(this.app.userId, this.project.id, order) }
+    try { await setPlanningTabOrder(this.app.userId, this.project.id, order); this._tellOthers(order) }
     catch (e) { console.error(e); this.app.toast('Could not save tab order') }
   }
 
@@ -265,6 +345,7 @@ export class PlanningTabsView {
         try {
           if (tab.kind === 'board') { await updateBoard(this.app.userId, tab.id, { name }); this.app.boardsView._boards = null }
           else { await updateCanvas(this.app.userId, tab.id, { name }); this.app.canvasView._canvases = null }
+          this._tellOthers()
         } catch (e) {
           console.error(e)
           tab.name = prev; tab.row.name = prev

@@ -18,7 +18,7 @@
 
 import {
   getCanvasData, createCanvas, updateCanvas, deleteCanvas,
-  createCanvasItems, updateCanvasItem, deleteCanvasItems, updateCanvasItemGeometry,
+  createCanvasItems, updateCanvasItem, updateCanvasItemContent, deleteCanvasItems, updateCanvasItemGeometry,
   createCanvasArrow, updateCanvasArrow, deleteCanvasArrow,
   moveCanvasItems, getCanvasPreviews, duplicateCanvasTree,
 } from '../db/client.js'
@@ -29,6 +29,8 @@ import {
   connectorBetween, connectorToPoint, connectorPath, bezierPoint, magnetTarget,
   computeSnap, normalizeHex, readableOn, hexToRgb,
 } from '../utils/canvas-math.js'
+import { joinRoom } from '../realtime/realtime.js'
+import { peerColor, initials, firstName, distinctPeers, throttle } from '../realtime/peers.js'
 
 /**
  * @typedef {{
@@ -36,14 +38,21 @@ import {
  *   x: number, y: number, w: number, h: number, z: number,
  *   content?: string | null, color?: string | null, image_url?: string | null, url?: string | null,
  *   links?: any[], sub_tasks?: any[], child_canvas_id?: string | null, created_at?: any,
+ *   content_version?: number, updated_by?: string | null,
  * }} Item
  * @typedef {{ id: string, canvas_id?: string, from_item_id: string, to_item_id: string, label?: string | null }} Arrow
  * @typedef {{ x: number, y: number, w: number, h: number, z: number }} Geo
- * @typedef {{ label: string, undo: () => Promise<void>, redo: () => Promise<void> }} HistoryEntry
+ * @typedef {{ label: string, undo: () => Promise<number | void>, redo: () => Promise<number | void> }} HistoryEntry
+ *   (undo/redo resolve to how many cards were skipped because a teammate changed them since)
  * @typedef {{ id: string, name: string, parent_id?: string | null, project_id?: string | null }} CanvasRow
  */
 
 const POLL_MS = 4000
+const POLL_LIVE_MS = 20000   // safety-net poll while the realtime connection is up
+// What a card SAYS, as opposed to where it is. Saved with a version check
+// (updateCanvasItemContent) so concurrent edits are detected, never lost.
+const CONTENT_FIELDS = ['content', 'color', 'image_url', 'url', 'links', 'sub_tasks']
+const MAX_MSG_BYTES = 48000 // stay well under Ably's 64 KB message limit
 const HISTORY_LIMIT = 100
 const DRAG_THRESHOLD = 3
 const SNAP_PX = 6          // alignment-snap distance, in screen px
@@ -184,7 +193,6 @@ export class CanvasSurface {
     // Sync
     this._writes = 0
     /** @type {string | null} */ this._snapshot = null
-    /** @type {ReturnType<typeof setInterval> | null} */ this._pollTimer = null
     this._pollCount = 0
     /** @type {Record<string, ReturnType<typeof setTimeout>>} */ this._saveTimers = {}
     /** @type {Array<[EventTarget, string, EventListener, any?]>} */ this._docListeners = []
@@ -216,6 +224,23 @@ export class CanvasSurface {
     /** @type {HTMLElement | null} */ this._dropHi = null
     /** @type {(() => Promise<void>) | null} */ this._popoverClose = null
     this._invZoom = ''
+
+    // Collaboration
+    /** @type {Map<string, { mine: Partial<Item>, theirs: Item }>} */ this._conflicts = new Map()
+    /** @type {Map<string, Partial<Item>>} */ this._pendingContent = new Map()
+    /** @type {Map<string, Promise<boolean>>} */ this._saveChains = new Map()
+    /** @type {import('../realtime/realtime.js').Room | null} */ this._room = null
+    /** @type {any[]} */ this._peers = []
+    /** @type {Map<string, { el: HTMLElement, x: number, y: number, seen: number }>} */ this._cursors = new Map()
+    /** @type {Set<string>} */ this._gestureIds = new Set()
+    /** @type {Map<string, ReturnType<typeof setTimeout>>} */ this._remoteDragTimers = new Map()
+    this._conflictsDirty = false
+    this._cursorsDirty = false
+    /** @type {ReturnType<typeof setTimeout> | null} */ this._pollTimeout = null
+    this._serverSnap = ''
+    /** @type {(ReturnType<typeof throttle> & ((p: { x: number, y: number } | null) => void)) | null} */ this._sendCursor = null
+    /** @type {(ReturnType<typeof throttle> & (() => void)) | null} */ this._announceThrottled = null
+    /** @type {(ReturnType<typeof throttle> & ((rows: any[]) => void)) | null} */ this._sendDrag = null
     /** @type {number | null} */ this._zoomTarget = null
     /** @type {{ x: number, y: number } | null} */ this._zoomAt = null
     this._zoomRaf = 0
@@ -228,6 +253,7 @@ export class CanvasSurface {
     const { items, arrows } = await getCanvasData(this.canvasId)
     this._setData(/** @type {Item[]} */ (items), /** @type {Arrow[]} */ (arrows))
     this._snapshot = this._serialize()
+    this._serverSnap = JSON.stringify([items.map(i => [i.id, i.x, i.y, i.w, i.h, i.z, i.content_version, i.child_canvas_id]), arrows.map(a => [a.id, a.from_item_id, a.to_item_id, a.label])])
     await this._loadPreviews()
     /** @type {any} */ let saved = null
     try { saved = JSON.parse(localStorage.getItem(`cv-vp-${this.canvasId}`) || 'null') } catch { saved = null }
@@ -270,6 +296,7 @@ export class CanvasSurface {
     this._world?.addEventListener('animationend', () => this._wrap?.classList.remove('cv-wrap--enter'), { once: true })
     this._bindEvents()
     this._startPolling()
+    this._joinRoom()
   }
 
   destroy() {
@@ -278,8 +305,13 @@ export class CanvasSurface {
     this._endGesture?.()
     // Anything still debounced (typing, a nudge burst) is written now, not dropped.
     this._flushAllSaves()
-    if (this._pollTimer) clearInterval(this._pollTimer)
-    this._pollTimer = null
+    if (this._pollTimeout) clearTimeout(this._pollTimeout)
+    this._pollTimeout = null
+    this._room?.close()
+    this._room = null
+    this._sendCursor?.cancel()
+    this._announceThrottled?.cancel()
+    for (const t of this._remoteDragTimers.values()) clearTimeout(t)
     if (this._raf) cancelAnimationFrame(this._raf)
     if (this._zoomRaf) cancelAnimationFrame(this._zoomRaf)
     cancelAnimationFrame(this._vpAnim || 0)
@@ -487,7 +519,9 @@ export class CanvasSurface {
       if (!seen.has(id)) { el.remove(); this._els.delete(id); this._sigs.delete(id) }
     }
     for (const id of [...this.sel]) if (!this.byId.has(id)) this.sel.delete(id)
+    if (this._peers.length) this._renderPeers()
     this._selbarContentDirty = true
+    this._conflictsDirty = true
     this._requestFrame()
   }
 
@@ -501,7 +535,7 @@ export class CanvasSurface {
 
   /** @param {HTMLElement} el @param {Item} it */
   _paintItem(el, it) {
-    el.className = `cv-item cv-item--${it.kind}${this.sel.has(it.id) ? ' cv-item--selected' : ''}${this._uploading.has(it.id) ? ' cv-item--uploading' : ''}`
+    el.className = `cv-item cv-item--${it.kind}${this.sel.has(it.id) ? ' cv-item--selected' : ''}${this._uploading.has(it.id) ? ' cv-item--uploading' : ''}${this._conflicts.has(it.id) ? ' cv-item--conflict' : ''}${el.dataset.peer ? ' cv-item--peer' : ''}`
     const chips = this._chipsHtml(it)
     const ports = this.canEdit ? '<span class="cv-port" data-port="top"></span><span class="cv-port" data-port="right"></span><span class="cv-port" data-port="bottom"></span><span class="cv-port" data-port="left"></span>' : ''
     const resize = this.canEdit ? '<span class="cv-resize" data-resize title="Resize"></span>' : ''
@@ -768,11 +802,26 @@ export class CanvasSurface {
         : `<line x1="${g.x1}" y1="${g.y}" x2="${g.x2}" y2="${g.y}"></line>`).join('')
     }
     if (this._selbarContentDirty) { this._selbarContentDirty = false; this._renderSelbar(); this._selbarDirty = true }
+    if (this._selbarDirty && this._conflicts.size) this._conflictsDirty = true
+    if (this._conflictsDirty) { this._conflictsDirty = false; this._renderConflicts() }
+    if (this._cursorsDirty || (this._selbarDirty && this._cursors.size)) { this._cursorsDirty = false; this._positionCursors() }
     if (this._selbarDirty) { this._selbarDirty = false; this._positionSelbar() }
   }
 
   /** @param {string} id */
   _markItem(id) { this._dirty.add(id); this._requestFrame() }
+
+  /** @param {Item} it */
+  _geoRow(it) { return [it.id, Math.round(it.x * 10) / 10, Math.round(it.y * 10) / 10, it.w, it.h, it.z || 0] }
+
+  // Teammates see a drag as it happens (~12 updates a second, capped at 60
+  // cards); the final position follows as a 'geo' message once it's saved.
+  /** @param {Item[]} movers */
+  _streamDrag(movers) {
+    if (!this._room?.live) return
+    this._sendDrag ??= throttle((/** @type {any[]} */ rows) => this._room?.send('drag', { rows }), 80)
+    this._sendDrag(movers.slice(0, 60).map(m => this._geoRow(m)))
+  }
 
   // ── Viewport ─────────────────────────────────────────────────────────────────
 
@@ -908,7 +957,8 @@ export class CanvasSurface {
     wrap.addEventListener('input', e => this._onInput(e))
     wrap.addEventListener('change', e => this._onChange(e))
     wrap.addEventListener('keydown', e => this._onCardKeyDown(e))
-    wrap.addEventListener('focusout', e => this._onFocusOut(e))
+    wrap.addEventListener('focusout', e => { this._onFocusOut(e); this._announce() })
+    wrap.addEventListener('focusin', () => this._announce())
     wrap.addEventListener('contextmenu', e => { if (this._gesture) e.preventDefault() })
     wrap.addEventListener('dragstart', e => { if (!asEl(e.target)?.closest('input, textarea')) e.preventDefault() })
 
@@ -1222,6 +1272,7 @@ export class CanvasSurface {
         for (const m of [...movers].sort((a, b) => (a.z || 0) - (b.z || 0))) { m.z = ++z; this._markItem(m.id) }
         const vis = this._visibleRect()
         others = movers.length > 80 ? [] : this.items.filter(i => !moverIds.has(i.id) && rectsIntersect(i, vis))
+        this._gestureIds = new Set(moverIds)
         this._wrap?.classList.add('cv-wrap--dragging')
         this._shield('grabbing')
       }
@@ -1239,6 +1290,7 @@ export class CanvasSurface {
         m.x = o.x + dx; m.y = o.y + dy
         this._markItem(m.id)
       }
+      this._streamDrag(movers)
       // Dropping onto a board moves the selection inside it.
       const p = this._clientToCanvas(ev.clientX, ev.clientY)
       /** @type {Item | null} */ let target = null
@@ -1254,6 +1306,8 @@ export class CanvasSurface {
         this._hint(dropTarget ? `Release to move ${movers.length === 1 ? 'this card' : `${movers.length} cards`} into “${this._boardName(dropTarget)}”` : '')
       }
     }, ev => {
+      this._gestureIds = new Set()
+      this._sendDrag?.cancel()
       this._wrap?.classList.remove('cv-wrap--dragging', 'cv-wrap--dropping')
       this._guides = []; this._guidesDirty = true
       this._requestFrame()
@@ -1276,7 +1330,7 @@ export class CanvasSurface {
       }
       this._suppressClick = true
       if (dropTarget) this._els.get(dropTarget.id)?.classList.remove('cv-item--drop-target')
-      if (!ev) { this._restoreGeometry(before); return }   // Esc / cancelled: snap back
+      if (!ev) { this._restoreGeometry(before); this._broadcast('geo', { rows: movers.map(m => this._geoRow(m)) }); return }   // Esc / cancelled: snap back
       if (dropTarget) { this._moveIntoBoard(dropTarget, movers, before); return }
       this._commitGeometry('Move', before, movers)
     }, { autoPan: start })
@@ -1297,6 +1351,7 @@ export class CanvasSurface {
     let moved = false
     this._wrap?.classList.add('cv-wrap--resizing')
     this._shield('nwse-resize')
+    this._gestureIds = new Set([id])
     this._track('resize', ev => {
       moved = true
       const pc = this._clientToCanvas(ev.clientX, ev.clientY)
@@ -1308,10 +1363,13 @@ export class CanvasSurface {
       }
       item.w = Math.round(w); item.h = Math.round(h)
       this._markItem(id)
+      this._streamDrag([item])
     }, ev => {
+      this._gestureIds = new Set()
+      this._sendDrag?.cancel()
       this._wrap?.classList.remove('cv-wrap--resizing')
       if (!moved) return
-      if (!ev) { this._restoreGeometry(before); return }
+      if (!ev) { this._restoreGeometry(before); this._broadcast('geo', { rows: [this._geoRow(item)] }); return }
       this._commitGeometry('Resize', before, [item])
     }, { autoPan: start })
   }
@@ -1373,7 +1431,7 @@ export class CanvasSurface {
     const note = /** @type {Item} */ ({
       id: crypto.randomUUID(), kind: 'note', content: '', color: from?.kind === 'note' ? from.color : NOTE_COLORS[0],
       x: Math.round(p.x - w / 2), y: Math.round(p.y - h / 2), w, h, z: this._maxZ() + 1,
-      image_url: null, url: null, links: [], sub_tasks: [], child_canvas_id: null,
+      image_url: null, url: null, links: [], sub_tasks: [], child_canvas_id: null, content_version: 0, updated_by: this.app.clerkUserId ?? null,
     })
     /** @type {Arrow} */ const arrow = { id: crypto.randomUUID(), from_item_id: fromId, to_item_id: note.id, label: null }
     if (!await this._insertRecords([note], [arrow])) return
@@ -1425,7 +1483,7 @@ export class CanvasSurface {
     for (const id of next) if (!this.sel.has(id)) { this._els.get(id)?.classList.add('cv-item--selected'); changed = true }
     this.sel = next
     if (next.size && this.selArrow) this._selectArrow(null)
-    if (changed) { this._selbarContentDirty = true; this._requestFrame() }
+    if (changed) { this._selbarContentDirty = true; this._requestFrame(); this._announce() }
   }
 
   /** @param {string | null} id */
@@ -1719,7 +1777,7 @@ export class CanvasSurface {
   _saveNote(id) {
     const it = this.byId.get(id)
     if (!it) return
-    this._write(() => updateCanvasItem(id, { content: it.content ?? '', h: it.h }))
+    this._saveContent(id, { content: it.content ?? '', h: it.h })
   }
 
   /** @param {Item} item @param {HTMLElement} scroller */
@@ -1746,6 +1804,7 @@ export class CanvasSurface {
     ta.setSelectionRange(ta.value.length, ta.value.length)
     this._selbarContentDirty = true
     this._requestFrame()
+    this._announce()
   }
 
   // ── Checklists ───────────────────────────────────────────────────────────────
@@ -1780,7 +1839,7 @@ export class CanvasSurface {
     if (count) count.textContent = rows.length ? `${done}/${rows.length}` : ''
     const bar = /** @type {HTMLElement | null} */ (el.querySelector('.cv-todo-bar span'))
     if (bar) bar.style.width = `${rows.length ? Math.round(done / rows.length * 100) : 0}%`
-    const write = () => this._write(() => updateCanvasItem(id, { sub_tasks: item.sub_tasks, content: item.content ?? '', h: item.h }))
+    const write = () => this._saveContent(id, { sub_tasks: item.sub_tasks, content: item.content ?? '', h: item.h })
     if (debounce) this._debounce(`todo-${id}`, 600, write)
     else { clearTimeout(this._saveTimers[`todo-${id}`]); delete this._pendingSaves?.[`todo-${id}`]; write() }
   }
@@ -1854,7 +1913,8 @@ export class CanvasSurface {
     /** @type {Item} */
     const item = /** @type {Item} */ ({
       id: crypto.randomUUID(), content: null, color: null, image_url: null, url: null,
-      links: [], sub_tasks: [], child_canvas_id: null, ...data, z: this._maxZ() + 1,
+      links: [], sub_tasks: [], child_canvas_id: null, content_version: 0, updated_by: this.app.clerkUserId ?? null,
+      ...data, z: this._maxZ() + 1,
     })
     const ok = await this._insertRecords([item], [])
     if (!ok) return null
@@ -1876,10 +1936,15 @@ export class CanvasSurface {
         id: it.id, kind: it.kind, x: it.x, y: it.y, w: it.w, h: it.h, z: Math.round(it.z || 0),
         content: it.content ?? null, color: it.color ?? null, image_url: it.image_url ?? null, url: it.url ?? null,
         links: it.links ?? [], sub_tasks: it.sub_tasks ?? [], child_canvas_id: it.child_canvas_id ?? null,
+        content_version: it.content_version ?? 0, updated_by: it.updated_by ?? this.app.clerkUserId ?? null,
       })))
       await Promise.all(arrows.map(a => createCanvasArrow(this.canvasId, a.from_item_id, a.to_item_id, { id: a.id, label: a.label ?? null })))
       return true
     }, 'Could not save to the canvas')
+    if (ok) {
+      if (items.length) this._broadcast('items', { rows: items.map(i => ({ ...i, canvas_id: this.canvasId })) })
+      if (arrows.length) this._broadcast('arrows', { rows: arrows })
+    }
     if (!ok) {
       const ids = new Set(items.map(i => i.id)), aids = new Set(arrows.map(a => a.id))
       this._removeLocal(ids, aids)
@@ -1913,7 +1978,7 @@ export class CanvasSurface {
       live.image_url = preview.image || null
       if (live.image_url && live.h < 220) { live.h = 240; this._markItem(live.id) }
       this._repaint(live.id)
-      await this._write(() => updateCanvasItem(live.id, { content: live.content, image_url: live.image_url, h: live.h }))
+      await this._saveContent(live.id, { content: live.content, image_url: live.image_url, h: live.h }, { quiet: true })
     } catch (e) { console.warn('Link preview failed:', e) }
   }
 
@@ -1955,6 +2020,7 @@ export class CanvasSurface {
       this.getCanvases().push(child)
       it.child_canvas_id = childId
       await this._write(() => updateCanvasItem(it.id, { child_canvas_id: childId }))
+      this._broadcast('items', { rows: [it] })
     }
     if (childId) this.onOpenBoard(childId)
   }
@@ -1983,10 +2049,8 @@ export class CanvasSurface {
       const c = this.getCanvases().find(x => x.id === it.child_canvas_id)
       if (c) c.name = name
       this.onCanvasesChanged()
-      await this._write(async () => {
-        await updateCanvasItem(it.id, { content: name })
-        if (it.child_canvas_id) await updateCanvas(this.app.userId, it.child_canvas_id, { name })
-      }, 'Could not rename board')
+      await this._saveContent(it.id, { content: name })
+      if (it.child_canvas_id) await this._write(() => updateCanvas(this.app.userId, /** @type {string} */ (it.child_canvas_id), { name }), 'Could not rename board')
     }
     input.addEventListener('keydown', e => {
       e.stopPropagation()
@@ -2006,6 +2070,7 @@ export class CanvasSurface {
       this.getCanvases().push(child)
       board.child_canvas_id = childId
       await this._write(() => updateCanvasItem(board.id, { child_canvas_id: childId }))
+      this._broadcast('items', { rows: [board] })
     }
     const dest = /** @type {string} */ (childId)
     // Keep the group's own layout; land it to the right of whatever the board
@@ -2034,6 +2099,8 @@ export class CanvasSurface {
       this._restoreGeometry(before)
       return
     }
+    this._broadcast('del', { ids: [...ids], arrowIds: dangling.map(a => a.id) })
+    this._pokeCanvas(dest)
     await new Promise(r => setTimeout(r, 160))
     this._removeLocal(ids, new Set(dangling.map(a => a.id)))
     this._previews.set(dest, [...existing, ...moves.map((m, i) => ({ kind: movers[i].kind, x: m.x, y: m.y, w: movers[i].w, h: movers[i].h, color: movers[i].color ?? null }))])
@@ -2046,11 +2113,15 @@ export class CanvasSurface {
         await this._write(() => moveCanvasItems(dest, this.canvasId, snapshot.map(s => ({ id: s.id, x: s.x, y: s.y, child_canvas_id: s.child_canvas_id ?? null }))))
         await Promise.all(dangling.map(a => this._write(() => createCanvasArrow(this.canvasId, a.from_item_id, a.to_item_id, { id: a.id, label: a.label ?? null }))))
         await this._reload()
+        this._broadcast('reload', {})
+        this._pokeCanvas(dest)
         this._setSelection(snapshot.map(s => s.id))
       },
       redo: async () => {
         await this._write(() => moveCanvasItems(this.canvasId, dest, moves))
         await this._reload()
+        this._broadcast('reload', {})
+        this._pokeCanvas(dest)
       },
     })
   }
@@ -2079,14 +2150,24 @@ export class CanvasSurface {
   }
 
   /** @param {Map<string, Partial<Item>>} patches */
-  async _applyProps(patches) {
+  // `expect` (undo/redo): only touch cards still showing what this user left
+  // them as — a card a teammate has changed since is skipped, not reverted.
+  // Returns how many were skipped.
+  /** @param {Map<string, Partial<Item>>} patches @param {Map<string, Partial<Item>>} [expect] */
+  async _applyProps(patches, expect) {
+    let skipped = 0
+    /** @type {Promise<boolean>[]} */ const saves = []
     for (const [id, p] of patches) {
       const it = this.byId.get(id)
       if (!it) continue
+      const want = expect?.get(id)
+      if (want && Object.keys(want).some(k => JSON.stringify(/** @type {any} */ (it)[k] ?? null) !== JSON.stringify(/** @type {any} */ (want)[k] ?? null))) { skipped++; continue }
       Object.assign(it, p)
       this._repaint(id)
+      saves.push(this._saveContent(id, p))
     }
-    await this._write(() => Promise.all([...patches].filter(([id]) => this.byId.has(id)).map(([id, p]) => updateCanvasItem(id, p))), 'Could not save change')
+    await Promise.all(saves)
+    return skipped
   }
 
   /** @param {'front' | 'back'} dir */
@@ -2148,6 +2229,10 @@ export class CanvasSurface {
       await deleteCanvasItems([...ids])
       return true
     }, 'Could not delete')
+    if (ok) {
+      if (ids.size) this._broadcast('del', { ids: [...ids], arrowIds: [...aids] })
+      else if (aids.size) this._broadcast('adel', { ids: [...aids] })
+    }
     if (!ok) {
       for (const it of snapItems) { this.items.push(it); this.byId.set(it.id, it) }
       this.arrows.push(...snapArrows)
@@ -2187,7 +2272,7 @@ export class CanvasSurface {
         const copy = await this._write(() => duplicateCanvasTree(this.app.userId, /** @type {string} */ (src.child_canvas_id), this.canvasId))
         if (copy) { child = copy.id; this.getCanvases().push(copy) }
       }
-      items.push({ ...src, id, canvas_id: this.canvasId, x: src.x + dx, y: src.y + dy, z: ++z, child_canvas_id: child, created_at: undefined })
+      items.push({ ...src, id, canvas_id: this.canvasId, x: src.x + dx, y: src.y + dy, z: ++z, child_canvas_id: child, created_at: undefined, content_version: 0, updated_by: this.app.clerkUserId ?? null })
     }
     const arrows = snap.arrows
       .filter(a => idMap.has(a.from_item_id) && idMap.has(a.to_item_id))
@@ -2236,23 +2321,33 @@ export class CanvasSurface {
     if (!changed) return
     this._pushHistory({
       label,
-      undo: () => this._applyGeometry(before),
-      redo: () => this._applyGeometry(after),
+      undo: () => this._applyGeometry(before, after),
+      redo: () => this._applyGeometry(after, before),
     })
+    this._broadcast('geo', { rows: items.map(i => this._geoRow(i)) })
     await this._write(() => updateCanvasItemGeometry(items.map(i => ({ id: i.id, ...this._geo(i) }))), 'Could not save move')
   }
 
-  /** @param {Map<string, Geo>} geo */
-  async _applyGeometry(geo) {
+  // `expect`: skip cards that are no longer where this user left them (a
+  // teammate moved them since). Returns how many were skipped.
+  /** @param {Map<string, Geo>} geo @param {Map<string, Geo>} [expect] */
+  async _applyGeometry(geo, expect) {
     /** @type {Item[]} */ const touched = []
+    let skipped = 0
     for (const [id, g] of geo) {
       const it = this.byId.get(id)
       if (!it) continue
+      const want = expect?.get(id)
+      if (want && (Math.abs(it.x - want.x) > 0.5 || Math.abs(it.y - want.y) > 0.5 || Math.abs(it.w - want.w) > 0.5 || Math.abs(it.h - want.h) > 0.5)) { skipped++; continue }
       Object.assign(it, g)
       this._markItem(id)
       touched.push(it)
     }
-    if (touched.length) await this._write(() => updateCanvasItemGeometry(touched.map(i => ({ id: i.id, ...this._geo(i) }))))
+    if (touched.length) {
+      this._broadcast('geo', { rows: touched.map(i => this._geoRow(i)) })
+      await this._write(() => updateCanvasItemGeometry(touched.map(i => ({ id: i.id, ...this._geo(i) }))))
+    }
+    return skipped
   }
 
   /** @param {Map<string, Geo>} geo */
@@ -2276,10 +2371,10 @@ export class CanvasSurface {
     if (!entry) { this._hint(which === 'undo' ? 'Nothing to undo' : 'Nothing to redo'); setTimeout(() => this._hint(''), 900); return }
     this._historyBusy = true
     try {
-      await entry[which]()
+      const skipped = (await entry[which]()) || 0
       to.push(entry)
-      this._hint(`${which === 'undo' ? 'Undid' : 'Redid'}: ${entry.label}`)
-      setTimeout(() => this._hint(''), 1100)
+      this._hint(`${which === 'undo' ? 'Undid' : 'Redid'}: ${entry.label}${skipped ? ` — skipped ${skipped === 1 ? '1 card' : `${skipped} cards`} a teammate changed since` : ''}`)
+      setTimeout(() => this._hint(''), skipped ? 2600 : 1100)
     } catch (e) {
       console.error(e)
       this.app.toast(`Could not ${which}`)
@@ -2298,11 +2393,16 @@ export class CanvasSurface {
       undo: async () => {
         // Re-snapshot what is live now, so a redo brings back later edits
         // (typed text, moves) and not the card as it was first created.
-        const live = /** @type {Item[]} */ (snapI.map(s => this.byId.get(s.id)).filter(Boolean))
-        const liveA = this.arrows.filter(a => snapA.some(s => s.id === a.id))
+        const all = /** @type {Item[]} */ (snapI.map(s => this.byId.get(s.id)).filter(Boolean))
+        // Never delete a card a teammate has since written in.
+        const me = this.app.clerkUserId ?? null
+        const live = all.filter(i => !(i.updated_by && i.updated_by !== me && (i.content_version ?? 0) > (snapI.find(s => s.id === i.id)?.content_version ?? 0)))
+        const kept = new Set(all.filter(i => !live.includes(i)).map(i => i.id))
+        const liveA = this.arrows.filter(a => snapA.some(s => s.id === a.id) && !kept.has(a.from_item_id) && !kept.has(a.to_item_id))
         snapI = live.map(i => ({ ...i }))
         snapA = liveA.map(a => ({ ...a }))
         await this._deleteRecords(live, liveA)
+        return all.length - live.length
       },
       redo: async () => { await this._insertRecords(snapI.map(s => ({ ...s })), snapA.map(s => ({ ...s }))) },
     }
@@ -2316,7 +2416,7 @@ export class CanvasSurface {
 
   /** @param {string} label @param {Map<string, Partial<Item>>} before @param {Map<string, Partial<Item>>} after @returns {HistoryEntry} */
   _propsEntry(label, before, after) {
-    return { label, undo: () => this._applyProps(before), redo: () => this._applyProps(after) }
+    return { label, undo: () => this._applyProps(before, after), redo: () => this._applyProps(after, before) }
   }
 
   // ── Connectors: label / reverse ──────────────────────────────────────────────
@@ -2335,6 +2435,7 @@ export class CanvasSurface {
       if (!live) return
       live.label = v
       this._syncArrows()
+      this._broadcast('arrows', { rows: [live] })
       await this._write(() => updateCanvasArrow(a.id, { label: v }))
     }
     await apply(after)
@@ -2352,6 +2453,7 @@ export class CanvasSurface {
       live.from_item_id = live.to_item_id
       live.to_item_id = f
       this._syncArrows()
+      this._broadcast('arrows', { rows: [live] })
       await this._write(() => updateCanvasArrow(live.id, { from_item_id: live.from_item_id, to_item_id: live.to_item_id }))
     }
     await flip()
@@ -2413,7 +2515,7 @@ export class CanvasSurface {
       it.content = after.content
       this._repaint(it.id)
       if (after.color === start.color && after.content === start.content) return
-      await this._write(() => updateCanvasItem(it.id, after), 'Could not save colour')
+      await this._saveContent(it.id, after)
       this._pushHistory(this._propsEntry('Swatch', new Map([[it.id, start]]), new Map([[it.id, after]])))
     }
     this._popoverClose = close
@@ -2509,7 +2611,7 @@ export class CanvasSurface {
     this._repaint(it.id)
     this._markItem(it.id)
     const after = new Map([[it.id, { image_url: url, w: it.w, h: it.h }]])
-    await this._write(() => updateCanvasItem(it.id, { image_url: url, w: it.w, h: it.h }), 'Could not save image')
+    await this._saveContent(it.id, { image_url: url, w: it.w, h: it.h })
     this._pushHistory(this._propsEntry('Image', before, after))
   }
 
@@ -2886,7 +2988,7 @@ export class CanvasSurface {
     render()
   }
 
-  // ── Polling sync ─────────────────────────────────────────────────────────────
+  // ── Sync: polling safety net ─────────────────────────────────────────────────
 
   _flushAllSaves() {
     for (const key of Object.keys(this._pendingSaves ?? {})) this._flushDebounce(key)
@@ -2895,48 +2997,427 @@ export class CanvasSurface {
 
   async _reload() {
     const { items, arrows } = await getCanvasData(this.canvasId)
-    this._setData(/** @type {Item[]} */ (items), /** @type {Arrow[]} */ (arrows))
+    this._absorb(/** @type {Item[]} */ (items), /** @type {Arrow[]} */ (arrows), true)
     this._snapshot = this._serialize()
     await this._loadPreviews()
     this._reconcile()
     this._syncArrows()
   }
 
+  // Polling pauses only while something is mid-flight on THIS client (a drag,
+  // a write, an undo). Typing no longer blocks it: _absorb never touches a card
+  // with unsaved local changes, so everyone else's edits keep arriving.
   _busy() {
-    if (this._gesture || this._editingId || this._writes > 0 || this._nudging || this._historyBusy || this._uploading.size) return true
-    if (this._pendingSaves && Object.keys(this._pendingSaves).length) return true
-    if (document.querySelector(`[data-cv-owner="${this.uid}"]`) || document.getElementById('cv-item-modal')) return true
-    const ae = document.activeElement
-    return !!(ae && this._wrap?.contains(ae) && isTypingTarget(ae))
+    if (this._gesture || this._writes > 0 || this._nudging || this._historyBusy) return true
+    return !!(document.querySelector(`.cv-modal[data-cv-owner="${this.uid}"]`) || document.getElementById('cv-item-modal'))
   }
 
   _startPolling() {
-    if (this._pollTimer) clearInterval(this._pollTimer)
-    this._pollTimer = setInterval(async () => {
+    const tick = async () => {
+      this._pollTimeout = null
       if (!this._mounted) { this.destroy(); return }
-      if (document.hidden || this._busy()) return
-      try {
-        const { items, arrows } = await getCanvasData(this.canvasId)
-        if (this._busy() || this._destroyed) return
-        const prev = this._snapshot
-        const prevItems = this.items, prevArrows = this.arrows
-        this._setData(/** @type {Item[]} */ (items), /** @type {Arrow[]} */ (arrows))
-        const snap = this._serialize()
-        if (snap !== prev) {
-          this._snapshot = snap
-          this._reconcile()
-          this._syncArrows()
-        } else {
-          // Keep object identity stable when nothing changed.
-          this._setData(prevItems, prevArrows)
-        }
-        if (++this._pollCount % 3 === 0 && this.items.some(i => i.kind === 'board')) {
-          const before = JSON.stringify([...this._previews])
-          await this._loadPreviews()
-          if (JSON.stringify([...this._previews]) !== before) this._reconcile()
-        }
-      } catch (e) { console.warn('Canvas sync failed:', e) }
-    }, POLL_MS)
+      if (!document.hidden && !this._busy()) await this._pollNow()
+      if (!this._destroyed) this._pollTimeout = setTimeout(tick, this._room?.live ? POLL_LIVE_MS : POLL_MS)
+    }
+    if (this._pollTimeout) clearTimeout(this._pollTimeout)
+    this._pollTimeout = setTimeout(tick, POLL_MS)
+  }
+
+  async _pollNow() {
+    try {
+      const { items, arrows } = await getCanvasData(this.canvasId)
+      if (this._busy() || this._destroyed) return
+      const snap = JSON.stringify([items.map(i => [i.id, i.x, i.y, i.w, i.h, i.z, i.content_version, i.child_canvas_id]), arrows.map(a => [a.id, a.from_item_id, a.to_item_id, a.label])])
+      if (snap !== this._serverSnap) {
+        this._serverSnap = snap
+        this._absorb(/** @type {Item[]} */ (items), /** @type {Arrow[]} */ (arrows), true)
+        this._reconcile()
+        this._syncArrows()
+      }
+      if (++this._pollCount % 3 === 0 && this.items.some(i => i.kind === 'board')) {
+        const before = JSON.stringify([...this._previews])
+        await this._loadPreviews()
+        if (JSON.stringify([...this._previews]) !== before) this._reconcile()
+      }
+    } catch (e) { console.warn('Canvas sync failed:', e) }
+  }
+
+  // ── Collaboration: merging other people's changes ────────────────────────────
+
+  // Local content that must not be overwritten: unsaved or in-flight edits, an
+  // open conflict, or a card the user is typing in right now.
+  /** @param {string} id */
+  _isDirty(id) {
+    if (this._conflicts.has(id) || this._pendingContent.has(id) || this._saveChains.has(id)) return true
+    if (this._pendingSaves?.[`note-${id}`] || this._pendingSaves?.[`todo-${id}`]) return true
+    const el = this._els.get(id)
+    const ae = document.activeElement
+    return !!(el && ae && el.contains(ae) && isTypingTarget(ae))
+  }
+
+  /**
+   * Merge rows from the server (a poll, or a teammate's realtime message).
+   * `full` means this is the whole canvas, so anything missing was deleted.
+   * @param {Item[]} rows @param {Arrow[] | null} arrows @param {boolean} full
+   */
+  _absorb(rows, arrows, full) {
+    const seen = new Set()
+    let lostEdit = false
+    for (const s of rows) {
+      if (s.canvas_id && s.canvas_id !== this.canvasId) continue
+      seen.add(s.id)
+      const l = this.byId.get(s.id)
+      if (!l) { this.items.push(s); this.byId.set(s.id, s); continue }
+      const geo = this._gestureIds.has(s.id) ? {} : { x: s.x, y: s.y, w: s.w, h: s.h, z: s.z }
+      if (this._isDirty(s.id)) {
+        // Keep our text and our version: the next save then meets the newer
+        // version on the server and asks the user what to do.
+        const c = this._conflicts.get(s.id)
+        if (c && (s.content_version ?? 0) > (c.theirs.content_version ?? 0)) { c.theirs = s; this._conflictsDirty = true }
+        Object.assign(l, geo, { child_canvas_id: s.child_canvas_id })
+      } else {
+        Object.assign(l, s, geo)
+      }
+    }
+    if (full) {
+      const gone = this.items.filter(i => !seen.has(i.id))
+      if (gone.length) {
+        lostEdit = gone.some(i => this._isDirty(i.id))
+        const ids = new Set(gone.map(i => i.id))
+        for (const id of ids) { this.byId.delete(id); this._conflicts.delete(id); this._pendingContent.delete(id) }
+        this.items = this.items.filter(i => !ids.has(i.id))
+        if (this._editingId && ids.has(this._editingId)) this._editingId = null
+      }
+    }
+    if (arrows) {
+      if (full) this.arrows = arrows
+      else for (const a of arrows) {
+        const i = this.arrows.findIndex(x => x.id === a.id)
+        if (i === -1) this.arrows.push(a); else this.arrows[i] = a
+      }
+    }
+    if (lostEdit) this.app.toast('A card you were editing was deleted by a teammate')
+    this._conflictsDirty = true
+  }
+
+  // ── Collaboration: versioned content saves + conflicts ───────────────────────
+
+  /**
+   * Save content fields of a card. Saves for one card run one after another,
+   * and each names the version it was based on; if a teammate saved in the
+   * meantime, the user is asked whether to keep theirs or take the teammate's.
+   * `quiet` (system updates such as a fetched link preview) never prompts —
+   * the teammate's version simply wins. Resolves true once saved.
+   * @param {string} id @param {Partial<Item>} patch @param {{ quiet?: boolean }} [opts]
+   * @returns {Promise<boolean>}
+   */
+  _saveContent(id, patch, opts = {}) {
+    const conflict = this._conflicts.get(id)
+    if (conflict) { Object.assign(conflict.mine, patch); return Promise.resolve(false) }
+    this._pendingContent.set(id, { ...(this._pendingContent.get(id) ?? {}), ...patch })
+    const prev = this._saveChains.get(id) ?? Promise.resolve(true)
+    const run = prev.then(() => this._flushContent(id, !!opts.quiet))
+    this._saveChains.set(id, run)
+    run.finally(() => { if (this._saveChains.get(id) === run) this._saveChains.delete(id) })
+    return run
+  }
+
+  /** @param {string} id @param {boolean} quiet */
+  async _flushContent(id, quiet) {
+    const patch = this._pendingContent.get(id)
+    this._pendingContent.delete(id)
+    const it = this.byId.get(id)
+    if (!patch || !it) return false
+    if (this._conflicts.has(id)) { Object.assign(/** @type {any} */ (this._conflicts.get(id)).mine, patch); return false }
+    const res = await this._write(() => updateCanvasItemContent(id, patch, it.content_version ?? 0, this.app.clerkUserId ?? null), 'Could not save change')
+    if (!res) return false
+    const live = this.byId.get(id)
+    if (res.row) {
+      if (live) { live.content_version = res.row.content_version; live.updated_by = res.row.updated_by }
+      this._broadcast('items', { rows: [res.row] })
+      return true
+    }
+    if (res.gone) {
+      this._removeLocal(new Set([id]))
+      this.app.toast('That card was deleted by a teammate')
+      return false
+    }
+    if (quiet) { if (live) this._takeTheirs(live, res.conflict); return false }
+    this._openConflict(id, patch, res.conflict)
+    return false
+  }
+
+  /** @param {string} id @param {Partial<Item>} mine @param {Item} theirs */
+  _openConflict(id, mine, theirs) {
+    this._conflicts.set(id, { mine: { ...mine }, theirs })
+    this._els.get(id)?.classList.add('cv-item--conflict')
+    this._conflictsDirty = true
+    this._requestFrame()
+  }
+
+  /** @param {string} id @param {'mine' | 'theirs'} choice */
+  async _resolveConflict(id, choice) {
+    const c = this._conflicts.get(id)
+    const it = this.byId.get(id)
+    this._conflicts.delete(id)
+    this._els.get(id)?.classList.remove('cv-item--conflict')
+    this._conflictsDirty = true
+    this._requestFrame()
+    if (!c || !it) return
+    if (choice === 'theirs') { this._takeTheirs(it, c.theirs); return }
+    // Keep mine: re-save against the version the user was shown.
+    it.content_version = c.theirs.content_version ?? 0
+    await this._saveContent(id, c.mine)
+  }
+
+  /** @param {Item} it @param {Item} theirs */
+  _takeTheirs(it, theirs) {
+    const el = this._els.get(it.id)
+    const ae = /** @type {HTMLElement | null} */ (document.activeElement)
+    if (el && ae && el.contains(ae)) ae.blur()
+    for (const k of CONTENT_FIELDS) /** @type {any} */ (it)[k] = /** @type {any} */ (theirs)[k]
+    it.content_version = theirs.content_version
+    it.updated_by = theirs.updated_by
+    this._pendingContent.delete(it.id)
+    this._repaint(it.id)
+  }
+
+  /** @param {string | null | undefined} clerkId */
+  _personName(clerkId) {
+    if (!clerkId) return 'A teammate'
+    const u = (this.app.allUsers ?? []).find((/** @type {any} */ x) => x.clerk_id === clerkId)
+    return u?.name || u?.email || 'A teammate'
+  }
+
+  // One small prompt per conflicted card, pinned just above it.
+  _renderConflicts() {
+    const wrap = this._wrap
+    if (!wrap) return
+    const live = new Set()
+    for (const [id, c] of this._conflicts) {
+      const it = this.byId.get(id)
+      if (!it) continue
+      live.add(id)
+      let el = /** @type {HTMLElement | null} */ (wrap.querySelector(`.cv-conflict[data-conflict="${CSS.escape(id)}"]`))
+      if (!el) {
+        el = document.createElement('div')
+        el.className = 'cv-conflict cv-ui'
+        el.dataset.conflict = id
+        el.setAttribute('role', 'alertdialog')
+        el.addEventListener('pointerdown', e => e.stopPropagation())
+        el.addEventListener('click', e => {
+          const b = /** @type {HTMLElement | null} */ (asEl(e.target)?.closest('[data-choice]'))
+          if (b) this._resolveConflict(id, /** @type {'mine' | 'theirs'} */ (b.dataset.choice))
+        })
+        wrap.appendChild(el)
+      }
+      const who = esc(firstName(this._personName(c.theirs.updated_by)))
+      const html = `<span class="cv-conflict-msg"><b>${who}</b> changed this card while you were editing.</span>
+        <button data-choice="mine">Keep mine</button><button data-choice="theirs">Use theirs</button>`
+      if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html }
+      const p = canvasToScreen({ x: it.x + it.w / 2, y: it.y }, this.viewport)
+      el.style.transform = `translate(${Math.round(p.x - el.offsetWidth / 2)}px, ${Math.round(Math.max(8, p.y - el.offsetHeight - 10))}px)`
+    }
+    wrap.querySelectorAll('.cv-conflict').forEach(el => { if (!live.has(/** @type {HTMLElement} */ (el).dataset.conflict)) el.remove() })
+  }
+
+  // ── Collaboration: realtime room ─────────────────────────────────────────────
+
+  _joinRoom() {
+    const room = joinRoom(this.app, `canvas:${this.canvasId}`)
+    this._room = room
+    room.on('items', d => { this._absorb(d.rows ?? [], null, false); this._reconcile() })
+    room.on('arrows', d => { this._absorb([], d.rows ?? [], false); this._syncArrows() })
+    room.on('del', d => {
+      const ids = new Set(/** @type {string[]} */ (d.ids ?? []))
+      if ([...ids].some(id => this._isDirty(id))) this.app.toast('A card you were editing was deleted by a teammate')
+      for (const id of ids) { this._conflicts.delete(id); this._pendingContent.delete(id) }
+      this._removeLocal(ids, new Set(d.arrowIds ?? []))
+    })
+    room.on('adel', d => { this._removeLocal(new Set(), new Set(d.ids ?? [])) })
+    room.on('geo', d => this._applyRemoteGeo(d.rows ?? [], false))
+    room.on('drag', d => this._applyRemoteGeo(d.rows ?? [], true))
+    room.on('reload', () => { this._pollNow() })
+    room.on('cur', (d, meta) => this._moveCursor(meta.connectionId, d))
+    room.onPeers(members => this._setPeers(members))
+    room.onResync(() => this._pollNow())
+    room.onLive(live => { if (live) this._announce() })
+    this._announce()
+    this._bindCursorBroadcast()
+  }
+
+  // Ask anyone viewing another canvas (e.g. the board cards were just moved
+  // into) to re-read it. Uses a short-lived room of its own.
+  /** @param {string} canvasId */
+  _pokeCanvas(canvasId) {
+    if (!this._room?.live) return
+    const room = joinRoom(this.app, `canvas:${canvasId}`)
+    const stop = room.onLive(live => { if (!live) return; room.send('reload', {}); stop(); setTimeout(() => room.close(), 1000) })
+    setTimeout(() => room.close(), 10000)
+  }
+
+  /** @param {string} type @param {any} data */
+  _broadcast(type, data) {
+    const room = this._room
+    if (!room?.live) return
+    // Big payloads (a large paste) go as "re-read" instead.
+    if (JSON.stringify(data).length > MAX_MSG_BYTES) { room.send('reload', {}); return }
+    room.send(type, data)
+  }
+
+  // Positions from a teammate. `live` = mid-drag stream: those cards glide
+  // (short CSS transition) so a 12 Hz stream looks smooth.
+  /** @param {any[]} rows @param {boolean} live */
+  _applyRemoteGeo(rows, live) {
+    for (const r of rows) {
+      const [id, x, y, w, h, z] = Array.isArray(r) ? r : [r.id, r.x, r.y, r.w, r.h, r.z]
+      if (this._gestureIds.has(id)) continue
+      const it = this.byId.get(id)
+      if (!it) continue
+      it.x = x; it.y = y
+      if (w != null) it.w = w
+      if (h != null) it.h = h
+      if (z != null) it.z = z
+      this._markItem(id)
+      const el = this._els.get(id)
+      if (el) {
+        el.classList.add('cv-item--remote-move')
+        clearTimeout(this._remoteDragTimers.get(id))
+        this._remoteDragTimers.set(id, setTimeout(() => { el.classList.remove('cv-item--remote-move'); this._remoteDragTimers.delete(id) }, live ? 300 : 200))
+      }
+    }
+  }
+
+  // ── Presence: who's here, what they have selected, where their cursor is ─────
+
+  _presenceData() {
+    const me = (this.app.allUsers ?? []).find((/** @type {any} */ u) => u.clerk_id === this.app.clerkUserId)
+    const name = me?.name || this.app.appUser?.name || this.app.user?.fullName || me?.email || 'Someone'
+    return { name, sel: [...this.sel].slice(0, 60), edit: this._editingId || this._focusedCardId() }
+  }
+
+  _focusedCardId() {
+    const ae = document.activeElement
+    if (!ae || !isTypingTarget(ae) || !this._wrap?.contains(ae)) return null
+    return /** @type {HTMLElement | null} */ (ae.closest('[data-item]'))?.dataset.item ?? null
+  }
+
+  _announce() {
+    if (!this._room) return
+    this._announceThrottled ??= throttle(() => this._room?.setPresence(this._presenceData()), 150)
+    this._announceThrottled()
+  }
+
+  /** @param {any[]} members */
+  _setPeers(members) {
+    this._peers = distinctPeers(members, this._room?.selfClientId)
+    // Cursors of people who left
+    const conns = new Set(members.map(m => m.connectionId))
+    for (const [cid, c] of this._cursors) if (!conns.has(cid)) { c.el.remove(); this._cursors.delete(cid) }
+    this._renderPeers()
+  }
+
+  _renderPeers() {
+    const wrap = this._wrap
+    if (!wrap) return
+    // Avatar stack
+    let stack = /** @type {HTMLElement | null} */ (wrap.querySelector('.cv-peers'))
+    if (!stack) {
+      stack = document.createElement('div')
+      stack.className = 'cv-peers cv-ui'
+      stack.addEventListener('click', e => {
+        const b = /** @type {HTMLElement | null} */ (asEl(e.target)?.closest('[data-peer]'))
+        if (b) this._goToPeer(b.dataset.peer || '')
+      })
+      wrap.appendChild(stack)
+    }
+    stack.hidden = !this._peers.length
+    stack.innerHTML = this._peers.slice(0, 6).map(p => {
+      const c = peerColor(p.clientId)
+      const doing = p.data?.edit ? ' — typing' : p.data?.sel?.length ? ` — ${p.data.sel.length} selected` : ''
+      return `<button class="cv-peer" data-peer="${esc(p.connectionId)}" style="--peer:${c}" title="${esc(p.data?.name)}${doing}. Click to go to them.">${esc(initials(p.data?.name))}</button>`
+    }).join('') + (this._peers.length > 6 ? `<span class="cv-peer cv-peer--more">+${this._peers.length - 6}</span>` : '')
+
+    // Outlines on cards other people have selected / are typing in
+    /** @type {Map<string, { color: string, label: string }>} */ const marks = new Map()
+    for (const p of this._peers) {
+      const color = peerColor(p.clientId)
+      const nm = firstName(p.data?.name)
+      for (const id of p.data?.sel ?? []) if (!marks.has(id)) marks.set(id, { color, label: nm })
+      if (p.data?.edit) marks.set(p.data.edit, { color, label: `${nm} is typing…` })
+    }
+    for (const [id, el] of this._els) {
+      const m = marks.get(id)
+      if (m) {
+        el.classList.add('cv-item--peer')
+        el.style.setProperty('--peer', m.color)
+        el.dataset.peer = m.label
+      } else if (el.classList.contains('cv-item--peer')) {
+        el.classList.remove('cv-item--peer')
+        el.style.removeProperty('--peer')
+        delete el.dataset.peer
+      }
+    }
+  }
+
+  /** @param {string} connectionId */
+  _goToPeer(connectionId) {
+    const p = this._peers.find(x => x.connectionId === connectionId)
+    const cur = this._cursors.get(connectionId)
+    const sel = /** @type {Item[]} */ ((p?.data?.sel ?? []).map((/** @type {string} */ id) => this.byId.get(id)).filter(Boolean))
+    if (sel.length) { this._animateViewport(this._fitViewport(sel)); return }
+    if (cur && performance.now() - cur.seen < 10000) {
+      const o = this._origin()
+      this._animateViewport({ zoom: this.viewport.zoom, panX: o.width / 2 - cur.x * this.viewport.zoom, panY: o.height / 2 - cur.y * this.viewport.zoom })
+    }
+  }
+
+  // Cursors travel in canvas coordinates so they land on the same card for
+  // everyone, whatever each person's zoom or scroll.
+  _bindCursorBroadcast() {
+    const send = throttle((/** @type {{ x: number, y: number } | null} */ p) => this._room?.send('cur', p), 80)
+    this._sendCursor = send
+    this._wrap?.addEventListener('pointermove', e => {
+      if (!this._room?.live || e.pointerType === 'touch') return
+      const p = this._clientToCanvas(e.clientX, e.clientY)
+      send({ x: Math.round(p.x), y: Math.round(p.y) })
+    })
+    this._wrap?.addEventListener('pointerleave', () => send(null))
+  }
+
+  /** @param {string} connectionId @param {{ x: number, y: number } | null} p */
+  _moveCursor(connectionId, p) {
+    let c = this._cursors.get(connectionId)
+    if (!p) { if (c) { c.el.remove(); this._cursors.delete(connectionId) } return }
+    const peer = this._peers.find(x => x.connectionId === connectionId)
+    if (!c) {
+      const el = document.createElement('div')
+      el.className = 'cv-cursor'
+      el.setAttribute('aria-hidden', 'true')
+      this._wrap?.appendChild(el)
+      c = { el, x: p.x, y: p.y, seen: 0 }
+      this._cursors.set(connectionId, c)
+    }
+    const color = peerColor(peer?.clientId ?? connectionId)
+    const label = firstName(peer?.data?.name)
+    if (c.el.dataset.label !== label || c.el.dataset.color !== color) {
+      c.el.dataset.label = label
+      c.el.dataset.color = color
+      c.el.style.setProperty('--peer', color)
+      c.el.innerHTML = `<svg width="16" height="18" viewBox="0 0 16 18"><path d="M1 1 L1 15 L5 11 L8 17 L10.5 16 L7.5 10 L13 10 Z" fill="var(--peer)" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg><span>${esc(label)}</span>`
+    }
+    c.x = p.x; c.y = p.y; c.seen = performance.now()
+    this._cursorsDirty = true
+    this._requestFrame()
+  }
+
+  _positionCursors() {
+    const now = performance.now()
+    for (const [cid, c] of this._cursors) {
+      if (now - c.seen > 15000) { c.el.remove(); this._cursors.delete(cid); continue }
+      const s = canvasToScreen({ x: c.x, y: c.y }, this.viewport)
+      c.el.style.transform = `translate(${Math.round(s.x)}px, ${Math.round(s.y)}px)`
+      c.el.classList.toggle('cv-cursor--idle', now - c.seen > 5000)
+    }
   }
 }
-

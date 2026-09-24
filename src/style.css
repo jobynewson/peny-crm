@@ -1439,6 +1439,19 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   outline: none;
   min-width: 0;
 }
+.pt-tab-peers { display: inline-flex; margin-left: 2px; }
+.pt-tab-peers i {
+  width: 18px; height: 18px;
+  margin-left: -4px;
+  border-radius: 50%;
+  border: 1.5px solid var(--bg-primary);
+  background: var(--peer, var(--text-tertiary));
+  color: #fff;
+  font-style: normal; font-size: 8px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.pt-tab-peers i:first-child { margin-left: 0; }
+.pt-tab-peers-more { background: var(--bg-tertiary) !important; color: var(--text-secondary) !important; }
 .pt-add {
   flex-shrink: 0;
   width: 28px; height: 28px;
@@ -2052,6 +2065,101 @@ body.cv-body-lock { overflow: hidden; }
   padding: 1px 6px;
   text-align: right;
 }
+
+/* ── Collaboration: presence, cursors, conflicts ────────────────────────── */
+/* Someone else has this card selected / is typing in it. Own selection wins. */
+.cv-item--peer { outline: 2px solid var(--peer); outline-offset: 3px; }
+.cv-item--peer::before {
+  content: attr(data-peer);
+  position: absolute;
+  left: -3px;
+  bottom: calc(100% + 5px);
+  transform-origin: 0 100%;
+  transform: scale(var(--cv-inv-zoom));
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--peer);
+  color: #fff;
+  font-size: 11px; font-weight: 600; line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 6;
+}
+.cv-item--selected.cv-item--peer { outline-color: var(--accent); }
+.cv-item--conflict { outline: 2px dashed var(--warning); outline-offset: 3px; }
+/* A teammate's drag streams in at ~12 Hz; a short glide makes it look live. */
+.cv-item--remote-move { transition: transform 0.09s linear, width 0.09s linear, height 0.09s linear; }
+
+.cv-peers {
+  position: absolute;
+  top: 12px; right: 12px;
+  display: flex;
+  align-items: center;
+  padding-left: 6px;
+  z-index: 30;
+}
+.cv-peers[hidden] { display: none; }
+.cv-peer {
+  width: 30px; height: 30px;
+  margin-left: -6px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-primary);
+  background: var(--peer, var(--text-tertiary));
+  color: #fff;
+  font-family: var(--font); font-size: 11px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: transform 0.12s;
+}
+.cv-peer:hover { transform: translateY(-2px); z-index: 1; }
+.cv-peer--more { background: var(--bg-tertiary); color: var(--text-secondary); cursor: default; }
+
+.cv-cursor {
+  position: absolute; top: 0; left: 0;
+  z-index: 44;
+  pointer-events: none;
+  transition: transform 0.09s linear, opacity 0.3s;
+  will-change: transform;
+}
+.cv-cursor svg { display: block; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.25)); }
+.cv-cursor span {
+  position: absolute;
+  left: 13px; top: 15px;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--peer);
+  color: #fff;
+  font-family: var(--font); font-size: 11px; font-weight: 600;
+  white-space: nowrap;
+}
+.cv-cursor--idle { opacity: 0.35; }
+
+.cv-conflict {
+  position: absolute; top: 0; left: 0;
+  z-index: 42;
+  display: flex; align-items: center; gap: 6px;
+  max-width: 360px;
+  padding: 6px 6px 6px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  font-size: 12px; color: var(--text-primary);
+}
+.cv-conflict-msg { line-height: 1.35; }
+.cv-conflict button {
+  flex-shrink: 0;
+  font-family: var(--font); font-size: 12px; font-weight: 550;
+  padding: 5px 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-med);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.cv-conflict button[data-choice="mine"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.cv-conflict button:hover { filter: brightness(1.06); }
 
 @media (max-width: 640px) {
   .cv-palette { flex-direction: row; top: auto; bottom: 12px; left: 12px; right: auto; max-width: calc(100% - 24px); overflow-x: auto; }

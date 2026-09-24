@@ -11,6 +11,7 @@ import {
   getBoardRecurrences, createBoardRecurrence, updateBoardRecurrence, deleteBoardRecurrence,
   spawnDueBoardRecurrences,
 } from '../db/client.js'
+import { joinRoom } from '../realtime/realtime.js'
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
 const fmtDate = d => d ? new Date(String(d).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''
@@ -37,6 +38,7 @@ export class BoardsView {
     this._dragCardId = null
     this._dragColId = null
     this._writes = 0             // in-flight write count — polling pauses while > 0
+    this._room = null            // realtime room for the open board (change pokes)
   }
 
   get canEdit() { return this.app.permissions?.projects_edit !== false }
@@ -524,7 +526,7 @@ export class BoardsView {
       try {
         await updateBoardCard(card.id, { column_id: destColId, position: card.position })
         await renumberBoardColumn(destColId, ids)
-        this._snapshot = this._serialize(this.columns, this.cards)
+        this._committed()
       } catch (e) { console.error(e); this.app.toast('Error moving card') }
       finally { this._writes-- }
       return
@@ -537,7 +539,7 @@ export class BoardsView {
     this._writes++
     try {
       await updateBoardCard(card.id, { column_id: destColId, position })
-      this._snapshot = this._serialize(this.columns, this.cards)
+      this._committed()
     } catch (e) { console.error(e); this.app.toast('Error moving card') }
     finally { this._writes-- }
   }
@@ -554,7 +556,7 @@ export class BoardsView {
     this._writes++
     try {
       for (let i = 0; i < ordered.length; i++) await updateBoardColumn(ordered[i].id, { sort_order: i })
-      this._snapshot = this._serialize(this.columns, this.cards)
+      this._committed()
     } catch (e) { console.error(e); this.app.toast('Error reordering columns') }
     finally { this._writes-- }
   }
@@ -593,7 +595,7 @@ export class BoardsView {
       try {
         const created = await createBoardCard(this.board.id, { title, column_id: colId, position })
         this.cards.push(created)
-        this._snapshot = this._serialize(this.columns, this.cards)
+        this._committed()
         this._renderBoardBody(wrap)
         this._openCardComposer(wrap, colId)   // keep composing
       } catch (e) { console.error(e); this.app.toast('Error adding card') }
@@ -676,7 +678,7 @@ export class BoardsView {
       try {
         await deleteBoardCard(card.id)
         this.cards = this.cards.filter(c => c.id !== card.id)
-        this._snapshot = this._serialize(this.columns, this.cards)
+        this._committed()
         overlay.remove()
         this._renderBoardBody(wrap)
         this.app.toast('Card deleted')
@@ -698,7 +700,7 @@ export class BoardsView {
         const updated = await updateBoardCard(card.id, data)
         const idx = this.cards.findIndex(c => c.id === card.id)
         if (idx !== -1) this.cards[idx] = updated
-        this._snapshot = this._serialize(this.columns, this.cards)
+        this._committed()
         overlay.remove()
         this._renderBoardBody(wrap)
         this.app.toast('Card saved')
@@ -759,7 +761,7 @@ export class BoardsView {
           await deleteBoardColumn(col.id)
           this.columns = this.columns.filter(c => c.id !== col.id)
           this.cards = this.cards.filter(c => c.column_id !== col.id)
-          this._snapshot = this._serialize(this.columns, this.cards)
+          this._committed()
           overlay.remove()
           this._renderBoardBody(wrap)
           this.app.toast('Column deleted')
@@ -777,7 +779,7 @@ export class BoardsView {
             const idx = this.columns.findIndex(c => c.id === col.id)
             if (idx !== -1) this.columns[idx] = updated
           }
-          this._snapshot = this._serialize(this.columns, this.cards)
+          this._committed()
           overlay.remove()
           this._renderBoardBody(wrap)
         } catch (e) { console.error(e); this.app.toast('Error saving column') }
@@ -921,16 +923,29 @@ export class BoardsView {
   }
 
   _stopPolling() {
+    this._room?.close()
+    this._room = null
     clearInterval(this._pollTimer)
     this._pollTimer = null
+  }
+
+  // A local write has landed: remember the state we now agree with the
+  // server on, and tell anyone else on this board to re-read it right away
+  // (realtime "poke"; polling remains the fallback when realtime is off).
+  _committed() {
+    this._snapshot = this._serialize(this.columns, this.cards)
+    this._room?.send('changed', {})
   }
 
   _startPolling(wrap) {
     this._stopPolling()
     const boardId = this.currentId
-    this._pollTimer = setInterval(async () => {
+    let tick = 0
+    const poll = async (force = false) => {
       // Board no longer on screen → stop for good
       if (!wrap || !document.contains(wrap) || this.currentId !== boardId) { this._stopPolling(); return }
+      // With a live connection, changes arrive as pokes; poll rarely as a net.
+      if (!force && this._room?.live && ++tick % 5 !== 0) return
       // Don't merge under the user's feet (or race an in-flight write)
       if (document.hidden || this._dragCardId || this._dragColId || this._writes > 0) return
       if (document.getElementById('bd-card-modal') || document.getElementById('bd-col-modal') || document.getElementById('bd-rec-modal') || document.getElementById('bd-new-modal')) return
@@ -948,7 +963,12 @@ export class BoardsView {
           this._renderBoardBody(wrap)
         }
       } catch (e) { console.warn('Board sync failed:', e) }
-    }, POLL_MS)
+    }
+    this._pollTimer = setInterval(() => poll(), POLL_MS)
+    this._room = joinRoom(this.app, `board:${boardId}`)
+    this._room.on('changed', () => poll(true))
+    this._room.onResync(() => poll(true))
   }
+
 
 }
