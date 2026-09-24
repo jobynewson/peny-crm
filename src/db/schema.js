@@ -634,6 +634,12 @@ export const canvas_items = pgTable('canvas_items', {
   links:     jsonb('links').notNull().default([]),     // same entity chips as board cards
   sub_tasks: jsonb('sub_tasks').notNull().default([]), // 'todo' kind: checklist rows
   child_canvas_id: uuid('child_canvas_id').references(() => canvases.id, { onDelete: 'set null' }), // 'board' kind
+  // Optimistic concurrency for what a card SAYS (content, colour, image, url,
+  // links, checklist rows) — geometry deliberately doesn't bump it, so moving a
+  // card never conflicts with someone typing in it. updated_by is the Clerk id
+  // of the last person to change the content.
+  content_version: integer('content_version').notNull().default(0),
+  updated_by:      text('updated_by'),
   ...timestamps,
 })
 
