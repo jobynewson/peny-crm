@@ -1698,6 +1698,18 @@ export async function deleteCanvasArrow(id) {
 export async function moveCanvasItems(fromCanvasId, toCanvasId, moves) {
   const ids = moves.map(m => m.id)
   if (!ids.length) return
+  // A board must never end up inside its own sub-tree: that would make a
+  // parent_id cycle cut off from its root (and from its cascade delete).
+  const childIds = moves.map(m => m.child_canvas_id).filter(Boolean)
+  if (childIds.length) {
+    const up = await db.execute(dsql`
+      WITH RECURSIVE up(id, parent_id) AS (
+        SELECT id, parent_id FROM canvases WHERE id = ${toCanvasId}
+        UNION SELECT c.id, c.parent_id FROM canvases c JOIN up ON c.id = up.parent_id
+      ) SELECT id FROM up`)
+    const ancestors = new Set((up.rows ?? up).map(r => r.id))
+    if (childIds.some(id => ancestors.has(id))) throw new Error('A board cannot be moved inside itself')
+  }
   await Promise.all(moves.map(m => db.update(canvas_items)
     .set({ canvas_id: toCanvasId, x: m.x, y: m.y, updated_at: new Date() })
     .where(and(eq(canvas_items.id, m.id), eq(canvas_items.canvas_id, fromCanvasId)))))
@@ -1708,7 +1720,6 @@ export async function moveCanvasItems(fromCanvasId, toCanvasId, moves) {
   if (inside.length) await db.update(canvas_arrows).set({ canvas_id: toCanvasId }).where(inArray(canvas_arrows.id, inside))
   if (dangling.length) await db.delete(canvas_arrows).where(inArray(canvas_arrows.id, dangling))
   // Boards carried along re-parent their nested canvas so breadcrumbs follow.
-  const childIds = moves.map(m => m.child_canvas_id).filter(Boolean)
   if (childIds.length) await db.update(canvases).set({ parent_id: toCanvasId }).where(inArray(canvases.id, childIds))
 }
 
