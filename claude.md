@@ -189,18 +189,76 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
   client-side on load via `spawnDueBoardRecurrences()` — an atomic
   `next_due` advance stops two browsers double-spawning. One of three
   separate kanban implementations — see "Kanban boards" below.
-- `canvas.js` - Planning canvas (sticky notes, images, arrows) — standalone via
-  the Planning nav item's Canvases tab AND embedded in each project's Planning
-  tab. Item positions are stored in canvas space; the viewport applies a single
-  CSS transform. Coordinate maths is pure and unit-tested in
-  `src/utils/canvas-math.js` (+ `canvas-math.test.js`, run with `npm test` /
-  vitest). Same 4s polling sync pattern as boards.
+- `canvas.js` + `canvas-surface.js` - Planning canvas, a Milanote-style
+  infinite planning/storyboarding surface — standalone via the Planning nav
+  item's Canvases tab AND embedded in each project's Planning tab. See
+  "Planning canvas" below.
 - `post-production.js` - Post-production workflow
 - `marketing.js` - Marketing. Its kanban (by status: Ideas → Planning → In
   Progress → Scheduled/Sent → Done) is one of three separate kanban
   implementations — see "Kanban boards" below.
 - `password-manager.js` - Password management
 - `offload-log.js` - Offload Log (read-only table of backup reports from Fence)
+
+### Planning canvas
+- **Split.** `src/views/canvas.js` owns navigation: the Canvases list (root
+  canvases only), the standalone page with breadcrumbs, the project-embedded
+  view, and moving in/out of nested boards. `src/views/canvas-surface.js`
+  (`CanvasSurface`) is the canvas itself: rendering, gestures, persistence,
+  undo, polling. All geometry (zoom/pan maths, wheel intent, connector
+  routing, magnet, alignment snapping, marquee hit-testing, colour helpers) is
+  pure and unit-tested in `src/utils/canvas-math.js` — extend it, don't do
+  maths in the view.
+- **Rendering.** Items are stored in canvas space; one CSS transform on
+  `.cv-world` maps them to the screen, so pan/zoom never touches cards.
+  Rendering is keyed (`_els`, one element per item, repainted only when its
+  content signature changes) and every event is delegated from the wrapper.
+  All DOM writes during a gesture are batched into one rAF (`_frame`), and a
+  card and its connectors are updated in the same frame — that is what keeps
+  lines attached during fast drags. Keep new per-frame work inside `_frame`.
+- **Performance rules learned the hard way:** don't write CSS variables on the
+  wrapper per zoom frame (`--cv-inv-zoom` is applied only when the view
+  settles — writing it per frame restyled ~2,400 port elements, ~100ms/frame
+  at 400 cards); don't use `.cv-wrap--x *` selectors (toggling them restyles
+  every node — gesture cursors live on the single `.cv-shield` element);
+  `will-change` on `.cv-world` only while moving, or zoomed text stays blurry.
+- **Gesture model (Milanote):** drag empty canvas = marquee select (Shift adds);
+  trackpad two-finger scroll = pan; pinch / Ctrl-or-Cmd+wheel / mouse-wheel
+  notch = zoom at the cursor (notches ease, pinch is direct); Space-drag,
+  middle-drag and the Pan tool = grab-to-pan; touch = one-finger pan, two-finger
+  pinch. Read-only users: any drag pans. Gestures measure in canvas space and
+  auto-pan near the edges, so dragged cards stay under the cursor. Esc cancels
+  a drag. Keyboard shortcuts apply while the pointer is over the canvas or it
+  was the last thing clicked (`_engaged`); `?` in the zoom cluster lists them.
+- **Card kinds** (`canvas_items.kind`): `note`, `todo` (checklist), `image`
+  (empty = dropzone; drop/paste/upload; aspect-locked resize), `link`,
+  `swatch` (colour; `color` + name in `content`), `board`
+  (`child_canvas_id` → nested canvas; `content` caches its name for the face).
+  Tools can be clicked (centre of view) or dragged out of the palette.
+- **Connectors** (`canvas_arrows`, optional `label`): drag from a card's edge
+  port (or use the Line tool); the end snaps magnetically to the nearest card
+  within 28px; release on empty canvas sprouts a connected note. Routes are
+  Béziers between facing side midpoints, re-picked every frame.
+- **Nesting.** `canvases.parent_id` nests a canvas under another; only roots are
+  listed or linked to a project, and deleting a canvas cascades through its
+  sub-tree. Dropping cards onto a board moves them inside (`moveCanvasItems`:
+  arrows between moved cards go too, dangling ones are removed, carried boards
+  re-parent, and moving a board into its own sub-tree is refused). Duplicating
+  or pasting a board deep-copies its sub-tree (`duplicateCanvasTree`); renaming
+  a nested canvas from inside updates its card (`syncBoardCardName`).
+- **Persistence.** Optimistic local change → write; `_write()` pauses polling
+  while writes are in flight. Group moves/resizes/z-order go through
+  `updateCanvasItemGeometry` (one `UPDATE … FROM (VALUES …)` for any number of
+  cards); paste/undo insert with `createCanvasItems` using client-generated ids
+  so undo/redo can recreate records under their original ids. Debounced text
+  saves flush on teardown and `pagehide`. Near-realtime sync is the same 4s
+  polling as boards; it pauses during gestures, typing, uploads and popovers.
+- **Undo/redo** (⌘Z / ⇧⌘Z, per canvas, 100 steps): moves, resizes, nudges,
+  z-order, colour, create/delete/paste, connectors and labels, image changes,
+  move-into-board. Deleting a board is confirmed and is NOT undoable (its
+  nested canvases are gone).
+- Schema: `drizzle/0028_add_canvas_nesting.sql` (also applied idempotently by
+  `runMigrations`).
 
 ### External calendar sync (Team Calendar → Google)
 Each user can connect their own Google account in Settings → Users, and Slate

@@ -2693,6 +2693,7 @@ export class CanvasSurface {
     if (mod && k === '0') { e.preventDefault(); this._zoomBy(1 / this.viewport.zoom); return }
     if (e.shiftKey && (k === '!' || e.code === 'Digit1')) { e.preventDefault(); this._fit(); return }
     if (mod && (k === 'a' || k === 'A')) { e.preventDefault(); this._setSelection(this.items.map(i => i.id)); return }
+    if (k === '?') { e.preventDefault(); this._toggleHelp(); return }
 
     if (!this.canEdit) return
 
@@ -2764,7 +2765,8 @@ export class CanvasSurface {
       ${row('[ · ]', 'Send back · Bring forward')}
       ${row('Arrows · ⇧ + Arrows', 'Nudge')}
       ${row('⇧1 · ⌘0', 'Fit · 100%')}
-      ${row('Alt while dragging', 'Disable snapping')}`
+      ${row('Alt while dragging · Esc', 'Disable snapping · Cancel drag')}
+      ${row('?', 'Show / hide this list')}`
     help.addEventListener('pointerdown', e => e.stopPropagation())
     help.addEventListener('click', () => help.remove())
     this._wrap?.appendChild(help)

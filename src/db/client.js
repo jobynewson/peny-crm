@@ -417,9 +417,9 @@ export async function seedDemoCanvas(workspaceId) {
   `
   const items = await sql`
     INSERT INTO canvas_items (canvas_id, kind, x, y, w, h, z, content, color) VALUES
-      (${canvas.id}, 'note', 80,  80,  240, 150, 1, ${'Welcome to the canvas!\n\nDrag me around, grab my corner to resize, and double-click to edit this text.'}, '#FFF8C5'),
-      (${canvas.id}, 'note', 460, 120, 220, 130, 2, ${'Add sticky notes and images from the toolbar — arrows stay attached when things move.'}, '#DCEBFE'),
-      (${canvas.id}, 'note', 280, 340, 220, 120, 3, ${'Scroll to zoom, drag the background to pan.'}, '#DCFCE7')
+      (${canvas.id}, 'note', 80,  80,  240, 150, 1, ${'Welcome to the canvas!\n\nDrag me around, select me to resize from the corner, and double-click to edit this text.'}, '#FFF8C5'),
+      (${canvas.id}, 'note', 460, 120, 240, 150, 2, ${'Drag cards, checklists, images, colours and boards out of the toolbar. Drag the dot on a card’s edge to connect it to another.'}, '#DCEBFE'),
+      (${canvas.id}, 'note', 280, 360, 240, 150, 3, ${'Pinch or ⌘-scroll to zoom, two-finger scroll or hold Space to pan, and drag empty space to select. Press ? for all shortcuts.'}, '#DCFCE7')
     RETURNING id, z
   `
   const byZ = [...items].sort((a, b) => a.z - b.z)
