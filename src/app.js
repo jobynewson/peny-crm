@@ -15,7 +15,8 @@ import { OffloadLogView } from './views/offload-log.js'
 import { BoardsView } from './views/boards.js'
 import { CanvasView } from './views/canvas.js'
 import { PlanningTabsView } from './views/planning-tabs.js'
-import { effectiveTheme, setThemeChoice } from './theme.js'
+import { HeaderView } from './views/header.js'
+import { closeFloating } from './views/popover.js'
 
 export class App {
   constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, leaveRequests, publicHolidays, onSignOut }) {
@@ -51,6 +52,7 @@ export class App {
     this.boardsView           = new BoardsView(this)
     this.canvasView           = new CanvasView(this)
     this.planningTabs         = new PlanningTabsView(this)
+    this.header               = new HeaderView(this)
     window.app = this
   }
 
@@ -59,6 +61,7 @@ export class App {
     this._restoreFromHash()   // parse URL before first render
     this.render()
     this._bindKeyboard()
+    this._bindNavLinks()
     this._bindDateRangeLinks()
     // Handle browser back/forward
     window.addEventListener('popstate', (e) => this._handlePopState(e))
@@ -456,9 +459,12 @@ export class App {
   }
 
   render() {
+    closeFloating({ restoreFocus: false })
     const showDetail = this.currentView === 'contacts'
     const collapsed = this._sidebarCollapsed()
     this.container.innerHTML = `
+      ${this.header.html()}
+      <div class="app-body">
       <div class="sidebar-overlay" id="sidebar-overlay"></div>
       <div class="sidebar${collapsed ? ' collapsed' : ''}" id="app-sidebar">
         <div class="logo">
@@ -493,15 +499,14 @@ export class App {
         <div class="topbar">
           <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Toggle navigation">${this.iconHamburger()}</button>
           <div class="topbar-title" id="view-title">${this.viewTitle()}</div>
-          <div id="topbar-actions" style="display:flex;gap:8px;align-items:center;flex-shrink:0">${this.topbarSearch()}${this.topbarButton()}
-            <button class="theme-toggle" id="theme-toggle-btn" title="Toggle dark mode">${this.iconTheme()}</button>
-            <button id="shortcut-hint" class="theme-toggle" title="Keyboard shortcuts">?</button>
-          </div>
+          <div id="topbar-actions" style="display:flex;gap:8px;align-items:center;flex-shrink:0">${this.topbarSearch()}${this.topbarButton()}</div>
         </div>
         <div class="content" id="main-content"></div>
       </div>
       ${showDetail ? `<div class="detail-panel" id="detail-panel"><div class="detail-empty">Select a contact<br>to view details</div></div>` : ''}
+      </div>
     `
+    this.header.bind(this.container)
     this.bindNav()
     this.renderCurrentView()
     if (this._notesLoaded) this._renderNotesList()
@@ -585,15 +590,6 @@ export class App {
     this.container.querySelector('#sign-out-btn')?.addEventListener('click', () => { this._closeMobileSidebar(); this.onSignOut() })
     this.container.querySelector('#dev-request-btn')?.addEventListener('click', () => { this._closeMobileSidebar(); this._openDevRequest() })
 
-    // Dark mode toggle
-    const toggleBtn = this.container.querySelector('#theme-toggle-btn')
-    if (toggleBtn) {
-      toggleBtn.addEventListener('click', () => {
-        setThemeChoice(effectiveTheme() === 'dark' ? 'light' : 'dark')
-        toggleBtn.innerHTML = this.iconTheme()
-      })
-    }
-
     this.bindTopbarBtn()
     this._bindSidebarTT()
     const search = this.container.querySelector('#contact-search')
@@ -604,32 +600,54 @@ export class App {
 
     // Notes new button
     this.container.querySelector('#notes-new-btn')?.addEventListener('click', () => this._newNote())
+  }
 
-    // Keyboard shortcut hint
-    this.container.querySelector('#shortcut-hint')?.addEventListener('click', () => {
-      let overlay = document.getElementById('shortcut-overlay')
-      if (overlay) { overlay.remove(); return }
-      overlay = document.createElement('div')
-      overlay.id = 'shortcut-overlay'
-      overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);display:flex;align-items:center;justify-content:center;z-index:9999;cursor:pointer'
-      overlay.innerHTML = `
-        <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);padding:28px 32px;width:320px;cursor:default" onclick="event.stopPropagation()">
-          <div style="font-size:13px;font-weight:600;margin-bottom:16px">Keyboard shortcuts</div>
-          ${[
-            ['⌘K', 'Search everything'],
-            ['N', 'New project / budget / contact'],
-            ['Esc', 'Close modal / exit edit / go back'],
-            ['⌘S', 'Save & close current editor'],
-          ].map(([key,desc]) => `
-            <div style="display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid var(--border-light)">
-              <kbd style="font-size:11px;font-family:monospace;background:var(--bg-secondary);border:1px solid var(--border-med);border-radius:5px;padding:3px 8px;color:var(--text-secondary);white-space:nowrap">${key}</kbd>
-              <span style="font-size:13px;color:var(--text-secondary)">${desc}</span>
-            </div>`).join('')}
-          <div style="margin-top:14px;font-size:11px;color:var(--text-tertiary);text-align:center">Click anywhere to close</div>
-        </div>`
-      overlay.addEventListener('click', () => overlay.remove())
-      document.body.appendChild(overlay)
+  // Links carrying data-nav (header tabs, account menu, view switchers) are
+  // real <a href>s, so they open in a new tab with a modifier key; a plain
+  // click navigates in place.
+  _bindNavLinks() {
+    document.addEventListener('click', e => {
+      const a = e.target.closest?.('a[data-nav]')
+      if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+      e.preventDefault()
+      closeFloating({ restoreFocus: false })
+      if (a.dataset.settingsTab) this._settingsTab = a.dataset.settingsTab
+      this.navigate(a.dataset.nav)
     })
+  }
+
+  // Header "New" menu → go to the page and open its existing create dialog.
+  createNew(kind) {
+    const mc = () => document.getElementById('main-content')
+    if (kind === 'project')      { this.navigate('projects'); this.projectsView.openNewModal(null, null, mc()) }
+    else if (kind === 'contact') { this.navigate('contacts'); this.contactsView.openAdd(mc()) }
+    else if (kind === 'budget')  { this.navigate('budgets');  this.budgetsView.openNewModal() }
+    else if (kind === 'note')    { this._newNote() }
+  }
+
+  _openShortcuts() {
+    let overlay = document.getElementById('shortcut-overlay')
+    if (overlay) { overlay.remove(); return }
+    overlay = document.createElement('div')
+    overlay.id = 'shortcut-overlay'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);display:flex;align-items:center;justify-content:center;z-index:9999;cursor:pointer'
+    overlay.innerHTML = `
+      <div role="dialog" aria-label="Keyboard shortcuts" style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-popover);box-shadow:var(--shadow-popover);padding:28px 32px;width:320px;max-width:calc(100vw - 32px);cursor:default" onclick="event.stopPropagation()">
+        <div style="font-size:13px;font-weight:600;margin-bottom:16px">Keyboard shortcuts</div>
+        ${[
+          ['⌘K', 'Search everything'],
+          ['N', 'New project / budget / contact'],
+          ['Esc', 'Close modal / exit edit / go back'],
+          ['⌘S', 'Save & close current editor'],
+        ].map(([key,desc]) => `
+          <div style="display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid var(--border-light)">
+            <kbd style="font-size:11px;background:var(--bg-secondary);border:1px solid var(--border-med);border-radius:5px;padding:3px 8px;color:var(--text-secondary);white-space:nowrap">${key}</kbd>
+            <span style="font-size:13px;color:var(--text-secondary)">${desc}</span>
+          </div>`).join('')}
+        <div style="margin-top:14px;font-size:11px;color:var(--text-tertiary);text-align:center">Click anywhere to close</div>
+      </div>`
+    overlay.addEventListener('click', () => overlay.remove())
+    document.body.appendChild(overlay)
   }
 
   bindTopbarBtn() {
@@ -3691,6 +3709,7 @@ export class App {
     return n ? `<span class="leave-nav-badge">${n}</span>` : ''
   }
   updateLeaveBadge() {
+    this.header.refreshLeaveBadge()
     const item = document.querySelector('.nav-item[data-view="leave"]')
     if (!item) return
     item.querySelector('.leave-nav-badge')?.remove()
@@ -3699,10 +3718,4 @@ export class App {
   }
   iconSignOut()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M10 11l4-4-4-4M14 8H6"/></svg>` }
   iconCollapse() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 4.5L6 8l3.5 3.5M13 4.5L9.5 8l3.5 3.5"/></svg>` }
-  iconTheme() {
-    const isDark = effectiveTheme() === 'dark'
-    return isDark
-      ? `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M11.4 4.6l-1.4 1.4M4.6 11.4l-1.4 1.4"/></svg>`
-      : `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M13.5 10A5.5 5.5 0 0 1 6 2.5a5.5 5.5 0 1 0 7.5 7.5z"/></svg>`
-  }
 }
