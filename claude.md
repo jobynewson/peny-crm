@@ -86,8 +86,8 @@ index.html                # App HTML shell
 - Client-side only (no server routes needed)
 - `vercel.json` rewrites all paths to `index.html` for SPA routing to work on refresh
 - Routes are hashes: `#view`, `#view/<id>`, `#projects/<id>/<tab>`. `/` (no
-  hash, or `#tasks`) is the task board and `#dashboard` the dashboard; an
-  unknown hash lands on the board. `VIEWS` in `src/app.js` lists every route
+  hash, or `#dashboard`) is the dashboard, the home page, and `#tasks` the
+  task board; an unknown hash lands on the dashboard. `VIEWS` in `src/app.js` lists every route
   the app has used; keep old ones there so bookmarks never break.
   `_parseHash()` reads a URL and `navigate(view)` moves between views.
 - An unknown project tab (e.g. an old `#projects/<id>/files` link) falls back
@@ -95,12 +95,21 @@ index.html                # App HTML shell
 
 ### App shell
 There is no sidebar. The shell is a header over the page:
-- **Header** (`src/views/header.js`, 64px): the Slate wordmark, four top tabs
-  and, on the right, search (⌘K / Ctrl K), Log time, New, Notes, the
-  notification bell and the avatar. The tabs are real links. `TABS` sets
-  which routes light each one: Tasks = `tasks` and `dashboard`; Calendar =
-  `calendar`; Projects = `projects`, `budgets` and `planning`; Contacts =
-  `contacts`. Pages opened from the account menu light no tab.
+- **Header** (`src/views/header.js`, 64px): the Slate logo (links home),
+  five top tabs and, on the right, search (⌘K / Ctrl K), Log time, New,
+  Notes, the notification bell and the avatar. The tabs are real links.
+  `TABS` sets which routes light each one: Dashboard = `dashboard`; Tasks =
+  `tasks`; Calendar = `calendar`; Projects = `projects`, `budgets` and
+  `planning`; Contacts = `contacts`. Pages opened from the account menu light
+  no tab.
+- **Logo**: `public/slate-logo.png`, a black lockup on a transparent ground,
+  turned white in Darkroom by `--logo-filter` (the sign-in screen does the
+  same). 28px tall, smaller on narrow screens.
+- **Narrower screens** (769–1360px) fold the header so the tabs keep their
+  room: at 1360px and below the search box becomes an icon, at 1140px and
+  below Log time and New lose their labels, and at 900px and below the logo,
+  tabs and gaps tighten. The labels stay as each button's accessible name
+  and tooltip. If you add to the header, re-check it at 769px.
 - **Account menu** (avatar): Tools (Marketing, Offload Log, Story Planner),
   Workspace (Team & roles, Leave with the approvals badge, Expenses,
   Passwords for vault users, Dev request), Theme (System | Light | Dark), then
@@ -115,9 +124,8 @@ There is no sidebar. The shell is a header over the page:
   with arrow keys; Log time is a `role="dialog"`. On phones the same call
   opens a bottom sheet instead (see "Phones" below).
 - **Page toolbar**: the first row of each list page (`toolbarHtml()` in
-  `src/app.js`): the view switcher (Board · Dashboard under the Tasks tab,
-  All projects · Budgets · Planning under the Projects tab), then filters,
-  then primary actions on the right. Pages
+  `src/app.js`): the view switcher (All projects · Budgets · Planning under
+  the Projects tab), then filters, then primary actions on the right. Pages
   don't repeat their title. Detail pages (a project, budget, board, plan)
   hide it and use their own header row. A project's row starts with a
   "Projects / <name>" breadcrumb.
@@ -125,10 +133,20 @@ There is no sidebar. The shell is a header over the page:
   page on desktop and remembers being open (`slate-notes-open`). On phones
   it's a full-screen sheet that closes when you navigate.
 - Icons are inline SVGs from `icon(name, size)` in `src/views/icons.js`.
+- **Search** (⌘K, or the header's search box; `_openSearch()` in
+  `src/app.js`) finds records (contacts, projects, budgets, marketing cards,
+  shoots, notes) and Slate's own pages and actions: "expenses" goes to
+  Expenses, "holiday" to Leave, "new project" opens the new project form,
+  "dark" switches the theme. Pages and actions are listed in
+  `src/views/search-commands.js` with the words people might use for them,
+  filtered by the same permissions as the menus; `src/utils/command-search.js`
+  matches them (every word must start a word in the label or keywords) and is
+  unit-tested. Add a new page or action to that list, with keywords. Arrow
+  keys move through the results and Enter opens the highlighted one.
 
 ### Phones (≤768px)
-- 56px header (wordmark, Log time, search, Notes, bell, avatar; no hamburger) and
-  a bottom tab bar with the same four tabs. `--header-h`, `--tabbar-h` and
+- 56px header (logo, Log time, search, Notes, bell, avatar; no hamburger) and
+  a bottom tab bar with the same five tabs. `--header-h`, `--tabbar-h` and
   `--chrome-h` in `tokens.css` hold the chrome's height for views that fill
   the screen (e.g. the canvas).
 - The account menu and Log time open as bottom sheets: a dimmed backdrop, a
@@ -233,9 +251,9 @@ There is no sidebar. The shell is a header over the page:
   types, post-production phases), realtime cursor colours, and the
   print/PDF templates, which always print on white.
 - **Type.** IBM Plex Sans (400/500/600) for UI, IBM Plex Mono (400/500) for
-  numbers, dates and section labels (11px, uppercase, 0.08em tracking),
-  Bricolage Grotesque 700 for the wordmark only. All are self-hosted through
-  `@fontsource` packages, imported at the top of `style.css`.
+  numbers, dates and section labels (11px, uppercase, 0.08em tracking). Both
+  are self-hosted through `@fontsource` packages, imported at the top of
+  `style.css`. The header uses the logo image, not a typeset wordmark.
 - Radii: 10px cards and controls, 8px segmented controls, 12px popovers,
   18px sheet tops. Cards have no shadow; popovers use `--shadow-popover`.
 
@@ -292,7 +310,7 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
     shown without `?debug=1`, so an office screen stays clean, and it never
     contains the API key.
   - The ticker appears on BOTH the office dashboard and the in-app Dashboard
-    (Tasks › Dashboard),
+    (the Dashboard tab),
     sharing the `settings.youtube_ticker` row. They reach the count by
     different routes: the office display via `/api/portal?view=dashboard`
     (gated by DASHBOARD_TOKEN), the app via `GET /api/blob?action=youtube&id=`
@@ -312,7 +330,8 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 2. Import and map in `src/app.js` router, and add the route to `VIEWS`
 3. Give it a way in: a top tab (`TABS` in `src/views/header.js`), the
    Projects view switcher (`_viewSwitcherHtml()` in `src/app.js`), or the
-   account menu's Tools / Workspace groups (`header.js`)
+   account menu's Tools / Workspace groups (`header.js`). Also list it in
+   search (`src/views/search-commands.js`) with a few keywords
 4. Call `this.app.navigate('myview')` to navigate, or link with
    `<a href="#myview" data-nav="myview">`
 
@@ -560,7 +579,7 @@ always the source of truth and nothing is ever read back from Google.
 - Retainer periods are anchored on `retainer_start`'s day-of-month, so they are
   usually NOT calendar months. Both dashboards therefore state the period's
   actual dates ("15 Aug – 14 Sep") rather than a vague label:
-  - App Dashboard (Tasks › Dashboard) retainer cards (`src/app.js`, `_retainerPeriodLabel()`) show
+  - App Dashboard retainer cards (`src/app.js`, `_retainerPeriodLabel()`) show
     the range under the client name.
   - Office dashboard cards (`public/dashboard.html`) show it in place of the
     old "This period"; `api/_dashboard.js` sends `periodStart` + `periodEnd`.
@@ -674,10 +693,10 @@ render; give each column element the attribute you pass as `colAttr`
 - Desktop and mobile are separate shells over a shared API and shared card
   detail component (`src/views/tasks.js`). Do not attempt to make the column
   board responsive.
-- Where it sits in the app: the board is the Tasks tab's home page (`/`,
-  also `#tasks`); the dashboard is `#dashboard`, one click away on the Board ·
-  Dashboard switcher, and carries its own compact Tasks section. The
-  desktop board's filters and + New task live in the page toolbar
+- Where it sits in the app: the board is the Tasks tab (`#tasks`). The
+  Dashboard tab (`/`) carries its own compact Tasks section, whose "View
+  board" goes to the board. The desktop board's filters and + New task live
+  in the page toolbar
   (`toolbarFiltersHtml()` / `bindToolbarFilters()`; + New task, the header's
   New › Task and the N key all call `openQuickAdd()`).
 - The notification bell is in the app header on every page. TasksView owns
