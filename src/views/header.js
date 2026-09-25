@@ -1,4 +1,4 @@
-// App header: the Slate wordmark, the four top-level tabs, search, Log time,
+// App header: the Slate logo, the five top-level tabs, search, Log time,
 // New, Notes, the notification bell and the account menu. The tabs are real links styled as tabs; the active one
 // takes the page background so it joins the content below.
 
@@ -13,7 +13,8 @@ const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').re
 // `views` are the routes that light each tab up. Pages reached from the
 // account menu (Marketing, Leave, Settings, ...) light up none.
 export const TABS = [
-  { id: 'tasks',    label: 'Tasks',    href: '/',         view: 'tasks',     icon: 'tasks',    views: ['tasks', 'dashboard'] },
+  { id: 'dashboard', label: 'Dashboard', href: '/',       view: 'dashboard', icon: 'dashboard', views: ['dashboard'] },
+  { id: 'tasks',    label: 'Tasks',    href: '#tasks',    view: 'tasks',     icon: 'tasks',    views: ['tasks'] },
   { id: 'calendar', label: 'Calendar', href: '#calendar', view: 'calendar',  icon: 'calendar', views: ['calendar'] },
   { id: 'projects', label: 'Projects', href: '#projects', view: 'projects',  icon: 'folder',   views: ['projects', 'budgets', 'planning'] },
   { id: 'contacts', label: 'Contacts', href: '#contacts', view: 'contacts',  icon: 'person',   views: ['contacts'] },
@@ -55,16 +56,16 @@ export class HeaderView {
     const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
     return `
       <header class="app-header">
-        <a class="app-wordmark" href="/" data-nav="tasks">Slate</a>
+        <a class="app-wordmark" href="/" data-nav="dashboard"><img class="app-logo" src="/slate-logo.png" alt="Slate" width="2057" height="454"></a>
         <nav class="app-tabs" aria-label="Main">
           ${TABS.map(t => `<a class="app-tab" href="${t.href}" data-nav="${t.view}"${t.id === active ? ' aria-current="page"' : ''}>${t.label}</a>`).join('')}
         </nav>
         <div class="app-header-actions">
-          <button type="button" class="hdr-search" id="hdr-search" aria-keyshortcuts="${mac ? 'Meta+K' : 'Control+K'}">
+          <button type="button" class="hdr-search" id="hdr-search" title="Search or jump to (${mac ? '⌘K' : 'Ctrl K'})" aria-keyshortcuts="${mac ? 'Meta+K' : 'Control+K'}">
             ${icon('search', 16)}<span class="hdr-search-text">Search or jump to…</span><kbd>${mac ? '⌘K' : 'Ctrl K'}</kbd>
           </button>
-          <button type="button" class="hdr-btn hdr-btn--outline" id="hdr-logtime" aria-haspopup="dialog" aria-expanded="false">${icon('stopwatch', 16)}<span>Log time</span></button>
-          <button type="button" class="hdr-btn hdr-btn--accent" id="hdr-new" aria-haspopup="menu" aria-expanded="false">${icon('plus', 16)}<span>New</span></button>
+          <button type="button" class="hdr-btn hdr-btn--outline" id="hdr-logtime" title="Log time" aria-haspopup="dialog" aria-expanded="false">${icon('stopwatch', 16)}<span>Log time</span></button>
+          <button type="button" class="hdr-btn hdr-btn--accent" id="hdr-new" title="New" aria-haspopup="menu" aria-expanded="false">${icon('plus', 16)}<span>New</span></button>
           <button type="button" class="hdr-icon-btn" id="hdr-notes" title="Notes" aria-label="Notes" aria-controls="notes-panel" aria-expanded="${this.app._notesOpen ? 'true' : 'false'}">${icon('notes', 20)}</button>
           <button type="button" class="hdr-icon-btn hdr-bell" id="hdr-bell" title="Notifications" aria-haspopup="dialog" aria-expanded="false" aria-label="${esc(this.bellLabel())}">${icon('bell', 20)}${this.bellCountHtml()}</button>
           <button type="button" class="hdr-account" id="hdr-account" aria-haspopup="menu" aria-expanded="false" aria-label="${esc(this.accountLabel())}">
@@ -75,8 +76,8 @@ export class HeaderView {
       </header>`
   }
 
-  // Phones: the same four tabs as a bottom bar (icon over label). The header
-  // keeps the wordmark, Log time, search, Notes, the bell and the avatar.
+  // Phones: the same five tabs as a bottom bar (icon over label). The header
+  // keeps the logo, Log time, search, Notes, the bell and the avatar.
   tabBarHtml() {
     const active = tabForView(this.app.currentView)?.id
     return `

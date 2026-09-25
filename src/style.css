@@ -1,12 +1,11 @@
 /* Fonts are self-hosted (@fontsource) and the same in both themes: IBM Plex
-   Sans for the UI, IBM Plex Mono for counts, dates, labels and keyboard hints,
-   Bricolage Grotesque for the wordmark only. */
+   Sans for the UI, IBM Plex Mono for counts, dates, labels and keyboard hints.
+   The header uses the Slate logo image rather than a typeset wordmark. */
 @import '@fontsource/ibm-plex-sans/400.css';
 @import '@fontsource/ibm-plex-sans/500.css';
 @import '@fontsource/ibm-plex-sans/600.css';
 @import '@fontsource/ibm-plex-mono/400.css';
 @import '@fontsource/ibm-plex-mono/500.css';
-@import '@fontsource/bricolage-grotesque/700.css';
 
 /* Design tokens — every colour, radius, shadow and font lives here. */
 @import './tokens.css';
@@ -239,7 +238,7 @@ kbd { font-family: var(--font-mono); }
 #app { height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
 .app-body { flex: 1; min-height: 0; display: flex; }
 
-/* ── Header: wordmark, literal tabs, actions ── */
+/* ── Header: logo, literal tabs, actions ── */
 .app-header {
   height: var(--header-h);
   flex-shrink: 0;
@@ -250,19 +249,17 @@ kbd { font-family: var(--font-mono); }
   background: var(--header-bg);
   color: var(--header-text);
 }
+/* The Slate logo: a black PNG on a transparent ground, turned white in
+   Darkroom by --logo-filter (as on the sign-in screen). */
 .app-wordmark {
   align-self: center;
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
   min-height: 44px;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 22px;
-  letter-spacing: -0.02em;
-  line-height: 1;
-  color: var(--header-text-strong);
-  text-decoration: none;
+  border-radius: var(--radius-sm);
 }
+.app-logo { display: block; width: auto; height: 28px; filter: var(--logo-filter); }
 /* Tabs sit on the header's bottom edge; the active one takes the page
    background so it joins the content below. */
 .app-tabs { display: flex; align-items: flex-end; gap: 2px; }
@@ -321,6 +318,28 @@ kbd { font-family: var(--font-mono); }
 .hdr-btn--outline:hover { background: var(--search-bg); }
 .hdr-btn--accent { background: var(--accent); border: 1px solid var(--accent); color: var(--on-accent); }
 .hdr-btn--accent:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+/* Narrower screens: the search box, then the Log time and New labels, fold
+   to icons so the tabs keep their room. The text stays as each button's
+   accessible name (and tooltip). */
+@media (min-width: 769px) and (max-width: 1360px) {
+  .hdr-search { width: 36px; padding: 0; justify-content: center; }
+  .hdr-search kbd { display: none; }
+  .hdr-search-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
+@media (min-width: 769px) and (max-width: 1140px) {
+  .app-header { gap: 16px; padding: 0 16px 0 20px; }
+  .app-tab { padding: 0 14px; }
+  .app-logo { height: 26px; }
+  #hdr-logtime, #hdr-new { width: 36px; padding: 0; justify-content: center; }
+  #hdr-logtime > span, #hdr-new > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
+@media (min-width: 769px) and (max-width: 900px) {
+  .app-header { gap: 12px; padding: 0 12px 0 16px; }
+  .app-logo { height: 22px; }
+  .app-tab { padding: 0 9px; font-size: 14px; }
+  .app-header-actions { gap: 4px; }
+  .hdr-account .icon { display: none; }
+}
 .hdr-account {
   position: relative;
   display: inline-flex;
@@ -2339,7 +2358,7 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 @media (max-width: 768px) {
   :root { --header-h: 56px; --tabbar-h: calc(80px + env(safe-area-inset-bottom)); }
 
-  /* Header: wordmark, then Log time, search, Notes and the avatar. */
+  /* Header: logo, then Log time, search, Notes, the bell and the avatar. */
   .app-header {
     height: calc(var(--header-h) + env(safe-area-inset-top));
     padding: env(safe-area-inset-top) max(8px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
@@ -2378,10 +2397,11 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
   .hdr-avatar { width: 32px; height: 32px; }
   .hdr-account-dot { left: 29px; top: 4px; }
 
-  /* Bottom tab bar: four equal columns, icon over label, active pill. */
+  /* Bottom tab bar: one equal column per tab, icon over label, active pill. */
   .app-tabbar {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
     gap: 4px;
     flex-shrink: 0;
     height: var(--tabbar-h);
@@ -2401,7 +2421,10 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
     font-weight: 600;
     text-decoration: none;
   }
+  .app-tabbar a > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .app-tabbar a[aria-current="page"] { background: var(--bg); color: var(--text); }
+  .app-wordmark { flex: 0 1 auto; min-width: 0; }
+  .app-logo { width: 91px; max-width: 100%; height: auto; }
   .app-tabbar a:focus-visible { outline-offset: -2px; }
 
   /* Notes: a full-screen sheet over everything. */
@@ -2787,7 +2810,7 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
   .tk-chip, .tk-got-it, .tk-qa-btn, .tk-qa-select, .tk-dash-act, .tk-dash-more,
   .tk-dash-all, .tk-m-disclosure, .tk-m-shell-toggle, .tk-mention-opt, .tk-notif { min-height: 44px; }
   .tk-x { min-width: 44px; min-height: 44px; }
-  .tk-title-input { min-height: 44px; }
+  .tk-title-input, .tk-dash-input { min-height: 44px; }
   .tk-activity summary { padding: 15px 0; }
   .tk-qa-input, .tk-qa-select, .tk-dash-input, .tk-title-input, .tk-body-input, .tk-composer textarea { font-size: 16px; }
 }

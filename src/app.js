@@ -44,7 +44,7 @@ export class App {
     this.leaveRequests  = leaveRequests ?? []
     this.publicHolidays = publicHolidays ?? []
     this.onSignOut      = onSignOut
-    this.currentView    = 'tasks'
+    this.currentView    = 'dashboard'
     this.contactsView    = new ContactsView(this)
     this.projectsView    = new ProjectsView(this)
     this.budgetsView     = new BudgetsView(this)
@@ -529,11 +529,9 @@ export class App {
     return `${switcher}${filters ? `<div class="page-toolbar-filters">${filters}</div>` : ''}<div class="page-toolbar-actions">${actions}</div>`
   }
 
-  // View switchers: Board · Dashboard under the Tasks tab, All projects ·
-  // Budgets · Planning under the Projects tab.
+  // View switcher under the Projects tab: All projects · Budgets · Planning.
   _viewSwitcherHtml() {
     const groups = [
-      { label: 'Task views',    views: [['tasks', 'Board', '/'], ['dashboard', 'Dashboard']] },
       { label: 'Project views', views: [['projects', 'All projects'], ['budgets', 'Budgets'], ['planning', 'Planning']] },
     ]
     const group = groups.find(g => g.views.some(([v]) => v === this.currentView))
@@ -680,9 +678,9 @@ export class App {
     this.boardsView.board = null
     this.canvasView.currentId = null
     this.canvasView.canvas = null
-    // The task board is the home page, "/". Every other view keeps its #hash
-    // (the dashboard is #dashboard), so bookmarks still resolve.
-    history.pushState({ view }, '', view === 'tasks' ? '/' : `#${view}`)
+    // The dashboard is the home page, "/". Every other view keeps its #hash
+    // (the task board is #tasks), so bookmarks still resolve.
+    history.pushState({ view }, '', view === 'dashboard' ? '/' : `#${view}`)
     this.render()
   }
 
@@ -692,11 +690,11 @@ export class App {
   }
 
   // #view[/id[/tab]] — the same routes the app has always used. "/" (and
-  // #tasks) is the task board and #dashboard the dashboard, both under the
-  // Tasks tab; #projects, #budgets and #planning sit under the Projects tab;
-  // the rest are reached from the account menu.
+  // #dashboard) is the dashboard and #tasks the task board, each its own tab;
+  // #projects, #budgets and #planning sit under the Projects tab; the rest
+  // are reached from the account menu.
   _parseHash() {
-    const [view = 'tasks', id, tab] = (location.hash.slice(1) || 'tasks').split('/')
+    const [view = 'dashboard', id, tab] = (location.hash.slice(1) || 'dashboard').split('/')
     return VIEWS.includes(view) ? { view, id, tab } : null
   }
 
@@ -727,7 +725,7 @@ export class App {
 
     // An unknown hash lands on the home page, as a fresh load does, with any
     // open project, budget or board cleared.
-    const { view, id, tab } = this._parseHash() ?? { view: 'tasks' }
+    const { view, id, tab } = this._parseHash() ?? { view: 'dashboard' }
 
     this.currentView = view
     this.projectsView.currentId = (view === 'projects' && id) ? id : null

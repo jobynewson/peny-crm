@@ -48,7 +48,6 @@
   /* Same fonts in both themes (self-hosted via @fontsource, see style.css) */
   --font: 'IBM Plex Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --font-display: 'Bricolage Grotesque', var(--font);
 
   /* Cards have no shadow in either theme; only menus, popovers and modals
      lift off the page (--shadow-lg / --shadow-popover, per theme below). */
