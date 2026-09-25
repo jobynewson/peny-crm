@@ -380,7 +380,7 @@ export class TeamCalendarView {
           </thead>
           <tbody>${tbody}</tbody>
         </table>
-        <div id="tc-overlay" style="position:absolute;inset:0;pointer-events:none;overflow:hidden"></div>
+        <div id="tc-overlay" style="position:absolute;top:0;left:0;bottom:0;pointer-events:none;overflow:hidden"></div>
       </div>
       <div style="margin-top:6px;font-size:11px;color:var(--text-tertiary);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <button id="tc-help" class="legend-help-btn" title="How the calendar works" aria-label="How the calendar works">?</button>
@@ -660,6 +660,28 @@ export class TeamCalendarView {
     })
   }
 
+  // Chips are placed in pixels, so they drift off their cells when the grid
+  // changes size without a re-render (window resized, fonts arriving late).
+  // Re-place them when the table or any of its columns changes size. One
+  // observer at a time; it lets go once its grid has been replaced or removed.
+  _watchTableSize(gridWrap, section, table) {
+    if (!table || typeof ResizeObserver === 'undefined') return
+    if (this._tableObserver?.table === table) return
+    this._tableObserver?.observer.disconnect()
+    const watched = [table, ...table.querySelectorAll('thead th')]
+    const sizes = () => watched.map(el => `${el.offsetWidth}x${el.offsetHeight}`).join()
+    let last = sizes()
+    const observer = new ResizeObserver(() => {
+      if (!table.isConnected) { observer.disconnect(); return }
+      const now = sizes()
+      if (now === last) return
+      last = now
+      this._positionOverlay(gridWrap, section)
+    })
+    watched.forEach(el => observer.observe(el))
+    this._tableObserver = { observer, table }
+  }
+
   _positionOverlay(gridWrap, section) {
     const overlay = gridWrap.querySelector('#tc-overlay')
     const wrap    = gridWrap.querySelector('#tc-table-wrap')
@@ -683,6 +705,13 @@ export class TeamCalendarView {
       }
       return { firstCell, lastCell }
     }
+
+    // The overlay sits inside the horizontally scrolling wrap, where inset:0
+    // would make it only as wide as the visible part, clipping every chip past
+    // the first screenful once you scroll. Stretch it over the whole table.
+    const table = wrap.querySelector('#tc-table')
+    if (table) overlay.style.width = `${table.getBoundingClientRect().width}px`
+    this._watchTableSize(gridWrap, section, table)
 
     // Phase 1: measure all overlay blocks before any DOM writes
     const wrapRect   = wrap.getBoundingClientRect()
