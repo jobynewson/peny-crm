@@ -13,15 +13,16 @@ describe('matchRoute', () => {
   it('extracts the task id as a named param', () => {
     expect(matchRoute('GET',   `tasks/${ID}`).params).toEqual({ id: ID })
     expect(matchRoute('PATCH', `tasks/${ID}`).params).toEqual({ id: ID })
+    expect(matchRoute('DELETE', `tasks/${ID}`).params).toEqual({ id: ID })
     expect(matchRoute('POST',  `tasks/${ID}/acknowledge`).params).toEqual({ id: ID })
     expect(matchRoute('POST',  `tasks/${ID}/comments`).params).toEqual({ id: ID })
   })
 
   it('405s a known path with the wrong method, and says what is allowed', () => {
-    const r = matchRoute('DELETE', `tasks/${ID}`)
+    const r = matchRoute('PUT', `tasks/${ID}`)
     expect(r.status).toBe(405)
     expect(r.code).toBe('method_not_allowed')
-    expect(r.allow.sort()).toEqual(['GET', 'PATCH'])
+    expect(r.allow.sort()).toEqual(['DELETE', 'GET', 'PATCH'])
   })
 
   it('405 on the collection lists both verbs', () => {

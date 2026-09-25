@@ -76,6 +76,14 @@ index.html                # App HTML shell
   (`src/main.js`). Anything added there must be safe to re-run every time.
 - Use `uuid_generate_v4()`, not `gen_random_uuid()` — it is what every existing
   table uses.
+- `main.js` awaits `runMigrations()` without a catch, so a statement that
+  throws stops the app loading for everyone.
+- Changing an existing column or constraint (not just adding one) needs a
+  guarded `DO $$` block that checks the catalog first and only alters what
+  still needs it, so later boots don't take a table lock and several browsers
+  booting at once can't trip over each other. Catch failures inside the block
+  and `RAISE WARNING` instead. The 0031 block (making `tasks.created_by`
+  nullable) is the pattern.
 
 ### Database
 - Neon PostgreSQL with `@neondatabase/serverless` driver (supports edge runtimes)
@@ -728,6 +736,31 @@ render; give each column element the attribute you pass as `colAttr`
   so keep that if you change how it renders.
 - Due dates and project links are always optional. Nothing may block task
   creation except a non-empty title.
+- Deleting: only whoever raised the task (`canDeleteTask()` in
+  `api/_task-rules.js`; `DELETE /api/tasks/:id` answers 403 to anyone else,
+  and the detail only shows them the button). It is a hard delete: comments,
+  events and notifications cascade. It is the one mutation that writes no
+  event, because the event would be deleted with the task. Other boards find
+  out through `live_ids`, which every `updated_since` poll carries (the ids of
+  all unarchived tasks): the client drops any card that isn't listed, and
+  treats a 404 from any task call the same way (`_goneIfMissing()`).
+- Archiving: the daily `task-nudge` cron (`api/reminders.js`) first runs
+  `archiveDoneTasks()`, which sets `archived_at` on tasks that have sat
+  untouched (`updated_at`) in Done for `ARCHIVE_AFTER_DAYS` (30), and writes an
+  actor-less `archived` event for each. Archived tasks drop out of every list
+  and the unread count but stay readable by id. There is no unarchive UI yet.
+- Removing a user (Settings › Users) keeps their work. `tasks.created_by` and
+  `task_comments.author_id` are nullable with `ON DELETE SET NULL` (0031), as
+  the assignee and event actor already were. The UI calls a missing person "a
+  former member", while events Slate made itself (the nudge, the auto-archive)
+  read as "Slate". Nobody can delete a task whose creator has gone; it leaves
+  the board by being finished and archived. `deleteAppUser()` touches the
+  affected tasks' `updated_at`, since a foreign key's SET NULL doesn't, so
+  polling boards pick the change up.
+- A poll drops its result if any write started while it was in flight
+  (`_writeSeq`) and the next one retries from the same `updated_since`.
+  Otherwise a stale snapshot could undo that write on screen, or prune a task
+  that was created mid-poll.
 - `tasks.parent_type` / `parent_id` are reserved for Phase 3 (absorbing canvas
   checklist items). Columns only — no logic reads them.
 - Behaviour rules (ordering, mentions, notification fan-out, acknowledgement,
@@ -735,4 +768,6 @@ render; give each column element the attribute you pass as `colAttr`
   Put new rules in that file rather than inline in a handler.
 - `api/_tasks.integration.test.js` exercises the handlers against a real
   Postgres. It skips unless `TASKS_TEST_DATABASE_URL` is set and needs
-  `npm i -D pg` (the app's Neon HTTP driver cannot reach localhost).
+  `npm i -D pg` (the app's Neon HTTP driver cannot reach localhost). Build the
+  test database from `drizzle/0025_add_tasks.sql` then
+  `0031_keep_tasks_when_user_removed.sql`.

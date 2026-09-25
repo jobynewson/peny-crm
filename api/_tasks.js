@@ -22,7 +22,7 @@ import { sendImmediateTaskEmails } from './_task-mail.js'
 import {
   positionBetween, needsRebalance, rebalancedPositions,
   parseMentions, notificationsFor, acknowledgementPatch,
-  validateTaskInput, toTimestamp, isUuid, POSITION_GAP,
+  validateTaskInput, toTimestamp, isUuid, canDeleteTask, POSITION_GAP,
 } from './_task-rules.js'
 
 // ── Response helpers ─────────────────────────────────────────────────────────
@@ -48,6 +48,7 @@ export const ROUTES = [
   { method: 'POST',  pattern: /^tasks$/,                                        handler: createTask },
   { method: 'GET',   pattern: new RegExp(`^tasks/(?<id>${UUID})$`),             handler: getTask },
   { method: 'PATCH', pattern: new RegExp(`^tasks/(?<id>${UUID})$`),             handler: patchTask },
+  { method: 'DELETE', pattern: new RegExp(`^tasks/(?<id>${UUID})$`),            handler: deleteTask },
   { method: 'POST',  pattern: new RegExp(`^tasks/(?<id>${UUID})/acknowledge$`), handler: acknowledgeTask },
   { method: 'POST',  pattern: new RegExp(`^tasks/(?<id>${UUID})/comments$`),    handler: createComment },
   { method: 'GET',   pattern: /^notifications$/,                                handler: listNotifications },
@@ -192,10 +193,14 @@ async function recordEvent(sql, { task, actorId, actorName, type, payload = {}, 
   return event
 }
 
+// Counts only what the inbox lists: notifications on an archived task are
+// hidden there, so they mustn't hold the bell's badge up either.
 async function unreadCount(sql, userId) {
   const [row] = await sql`
-    SELECT count(*)::int AS count FROM notifications
-    WHERE recipient_id = ${userId} AND read_at IS NULL
+    SELECT count(*)::int AS count
+    FROM notifications n
+    JOIN tasks t ON t.id = n.task_id
+    WHERE n.recipient_id = ${userId} AND n.read_at IS NULL AND t.archived_at IS NULL
   `
   return row.count
 }
@@ -259,8 +264,8 @@ async function listTasks(req, res, { sql, user }) {
   const projectId  = project_id  || null
   const assigneeId = assignee_id || null
 
-  // Every list query filters archived_at IS NULL, so Phase 2's auto-archive can
-  // be switched on without revisiting any of them.
+  // Every list query filters archived_at IS NULL. Done tasks get archived a
+  // month on by the daily job (archiveDoneTasks in reminders.js).
   const active = await sql`
     SELECT id, user_id, title, body, status, assignee_id, created_by, due_at,
            acknowledged_at, nudged_at, project_id, parent_type, parent_id,
@@ -311,6 +316,11 @@ async function listTasks(req, res, { sql, user }) {
       WHERE user_id = ${ws} AND archived_at IS NOT NULL AND updated_at > ${since}::timestamptz
     `
     payload.archived_ids = archived.map(r => r.id)
+    // A deleted task leaves no row to report at all, so also name every task
+    // still on the board; clients drop any card that isn't listed. Archiving
+    // keeps this short: only open work and the last month's Done.
+    const live = await sql`SELECT id FROM tasks WHERE user_id = ${ws} AND archived_at IS NULL`
+    payload.live_ids = live.map(r => r.id)
   }
 
   return res.status(200).json(payload)
@@ -447,6 +457,22 @@ async function patchTask(req, res, { sql, user, params }) {
   if (has('position')) await rebalanceColumn(sql, ws, updated.status)
 
   return res.status(200).json({ task: await loadTask(sql, ws, task.id) })
+}
+
+// ── DELETE /api/tasks/:id ────────────────────────────────────────────────────
+// Only whoever raised the task, and it's gone for good: comments, activity and
+// notifications go with it (ON DELETE CASCADE). The one mutation that writes
+// no event, since the event would be deleted along with the task. Other
+// people's boards drop the card on their next poll (live_ids in listTasks).
+async function deleteTask(req, res, { sql, user, params }) {
+  const ws = await workspaceId(sql)
+  const task = await loadTask(sql, ws, params.id)
+  if (!task) return fail(res, 404, 'not_found', 'Task not found')
+  if (!canDeleteTask(task, user.id)) {
+    return fail(res, 403, 'not_creator', 'Only the person who raised this task can delete it')
+  }
+  await sql`DELETE FROM tasks WHERE id = ${task.id} AND user_id = ${ws}`
+  return res.status(200).json({ ok: true, id: task.id })
 }
 
 // ── POST /api/tasks/:id/acknowledge ──────────────────────────────────────────

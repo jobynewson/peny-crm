@@ -3,7 +3,7 @@ import {
   positionBetween, needsRebalance, rebalancedPositions,
   parseMentions, userHandles,
   notificationsFor, acknowledgementPatch,
-  validateTaskInput, toTimestamp, isUuid,
+  validateTaskInput, toTimestamp, isUuid, canDeleteTask,
   POSITION_GAP, TITLE_MAX,
 } from './_task-rules.js'
 
@@ -276,5 +276,27 @@ describe('isUuid', () => {
                        "'; DROP TABLE tasks;--"]) {
       expect(isUuid(bad)).toBe(false)
     }
+  })
+})
+
+describe('canDeleteTask', () => {
+  const task = { id: 't1', created_by: ana.id, assignee_id: ben.id }
+
+  it('lets whoever raised it delete it', () => {
+    expect(canDeleteTask(task, ana.id)).toBe(true)
+  })
+  it('refuses everyone else, the assignee included', () => {
+    expect(canDeleteTask(task, ben.id)).toBe(false)
+    expect(canDeleteTask(task, 'u-someone-else')).toBe(false)
+  })
+  it('refuses everyone once the creator has been removed', () => {
+    const orphan = { ...task, created_by: null }
+    expect(canDeleteTask(orphan, ana.id)).toBe(false)
+    expect(canDeleteTask(orphan, null)).toBe(false)
+  })
+  it('refuses a missing user or task', () => {
+    expect(canDeleteTask(task, null)).toBe(false)
+    expect(canDeleteTask(task, undefined)).toBe(false)
+    expect(canDeleteTask(null, ana.id)).toBe(false)
   })
 })

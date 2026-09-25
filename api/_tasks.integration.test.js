@@ -9,8 +9,9 @@
 //   TASKS_TEST_DATABASE_URL=postgresql://postgres@localhost:5432/slate_test \
 //     npx vitest run api/_tasks.integration.test.js
 //
-// The target database needs the schema from drizzle/0025_add_tasks.sql plus
-// app_users rows for a@peny.com and b@peny.com and one workspace row.
+// The target database needs the schema from drizzle/0025_add_tasks.sql and
+// 0031_keep_tasks_when_user_removed.sql, plus app_users rows for a@peny.com and
+// b@peny.com and one workspace row.
 
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest'
 
@@ -404,5 +405,130 @@ describeDb('malformed input', () => {
   it('422s a body that is not valid JSON', async () => {
     const r = await call('POST', 'tasks', { body: '{not json' })
     expect(r.statusCode).toBe(422)
+  })
+})
+
+describeDb('deleting', () => {
+  let task
+  beforeEach(async () => {
+    task = (await call('POST', 'tasks', { body: { title: 'delete me', assignee_id: ben.id } })).body.task
+    await call('POST', `tasks/${task.id}/comments`, { body: { body: 'a comment for @ben' } })
+  })
+
+  it('lets whoever raised it delete it, with its comments, activity and notifications', async () => {
+    const r = await call('DELETE', `tasks/${task.id}`)
+    expect(r.statusCode).toBe(200)
+    expect(r.body).toEqual({ ok: true, id: task.id })
+    expect(await sql`SELECT id FROM tasks WHERE id=${task.id}`).toHaveLength(0)
+    expect(await sql`SELECT id FROM task_comments WHERE task_id=${task.id}`).toHaveLength(0)
+    expect(await sql`SELECT id FROM task_events WHERE task_id=${task.id}`).toHaveLength(0)
+    expect(await sql`SELECT id FROM notifications WHERE task_id=${task.id}`).toHaveLength(0)
+    expect((await call('GET', `tasks/${task.id}`)).statusCode).toBe(404)
+  })
+  it('refuses everyone else, the assignee included', async () => {
+    CURRENT = ben
+    const r = await call('DELETE', `tasks/${task.id}`)
+    expect(r.statusCode).toBe(403)
+    expect(r.body.error.code).toBe('not_creator')
+    expect(await sql`SELECT id FROM tasks WHERE id=${task.id}`).toHaveLength(1)
+  })
+  it('404s a task that is already gone', async () => {
+    await call('DELETE', `tasks/${task.id}`)
+    expect((await call('DELETE', `tasks/${task.id}`)).statusCode).toBe(404)
+  })
+  it('reaches other boards through live_ids on their next poll', async () => {
+    const keep = (await call('POST', 'tasks', { body: { title: 'keep' } })).body.task
+    const stamp = (await call('GET', 'tasks')).body.server_time
+    await call('DELETE', `tasks/${task.id}`)
+    CURRENT = ben
+    const poll = await call('GET', 'tasks', { query: { updated_since: stamp } })
+    expect(poll.body.live_ids).toContain(keep.id)
+    expect(poll.body.live_ids).not.toContain(task.id)
+    expect(poll.body.unread_notifications).toBe(0)
+  })
+})
+
+describeDb('auto-archive', () => {
+  let archiveDoneTasks
+  beforeAll(async () => {
+    ({ archiveDoneTasks } = await import('./reminders.js'))
+  })
+
+  const doneDaysAgo = async (title, days, body = {}) => {
+    const t = (await call('POST', 'tasks', { body: { title, ...body } })).body.task
+    await sql`UPDATE tasks SET status='done', updated_at = NOW() - (${days} || ' days')::interval WHERE id=${t.id}`
+    return t.id
+  }
+
+  it('archives tasks untouched in Done for over 30 days, once, and nothing else', async () => {
+    const old = await doneDaysAgo('long done', 31)
+    await doneDaysAgo('just done', 29)
+    const open = (await call('POST', 'tasks', { body: { title: 'still open' } })).body.task
+    await sql`UPDATE tasks SET updated_at = NOW() - INTERVAL '90 days' WHERE id=${open.id}`
+
+    expect(await archiveDoneTasks(sql)).toBe(1)
+    expect(await archiveDoneTasks(sql)).toBe(0)
+
+    const archived = await sql`SELECT id FROM tasks WHERE archived_at IS NOT NULL`
+    expect(archived.map(r => r.id)).toEqual([old])
+    const events = await sql`SELECT actor_id, payload FROM task_events WHERE task_id=${old} AND type='archived'`
+    expect(events).toEqual([{ actor_id: null, payload: { auto: true, after_days: 30 } }])
+    expect(await sql`SELECT id FROM notifications WHERE task_id=${old} AND event_id IN (SELECT id FROM task_events WHERE type='archived')`).toHaveLength(0)
+
+    // Off the board, still readable by id.
+    expect((await call('GET', 'tasks')).body.tasks.map(t => t.id)).not.toContain(old)
+    expect((await call('GET', `tasks/${old}`)).statusCode).toBe(200)
+  })
+  it('reaches polling boards through archived_ids', async () => {
+    const old = await doneDaysAgo('long done', 40)
+    const stamp = (await call('GET', 'tasks')).body.server_time
+    await new Promise(r => setTimeout(r, 20))
+    await archiveDoneTasks(sql)
+    const poll = await call('GET', 'tasks', { query: { updated_since: stamp } })
+    expect(poll.body.archived_ids).toEqual([old])
+    expect(poll.body.live_ids).not.toContain(old)
+  })
+  it('stops counting notifications on archived tasks as unread', async () => {
+    const id = await doneDaysAgo('for ben', 31, { assignee_id: ben.id })
+    CURRENT = ben
+    expect((await call('GET', 'tasks')).body.unread_notifications).toBe(1)
+    await archiveDoneTasks(sql)
+    expect((await call('GET', 'tasks')).body.unread_notifications).toBe(0)
+    expect((await call('GET', 'notifications')).body.notifications.map(n => n.task_id)).not.toContain(id)
+  })
+})
+
+// Needs 0031: created_by and author_id fall back to NULL instead of blocking
+// the removal.
+describeDb('removing a user', () => {
+  let cara
+  beforeEach(async () => {
+    [cara] = await sql`
+      INSERT INTO app_users (clerk_id, email, name) VALUES ('user_zz_cara', 'c@peny.com', 'Cara')
+      RETURNING id, name, email`
+  })
+
+  it('keeps the tasks and comments they wrote, and the board carries on', async () => {
+    CURRENT = cara
+    const raised = (await call('POST', 'tasks', { body: { title: 'from cara', assignee_id: ana.id } })).body.task
+    CURRENT = ana
+    const forCara = (await call('POST', 'tasks', { body: { title: 'for cara', assignee_id: cara.id } })).body.task
+    CURRENT = cara
+    await call('POST', `tasks/${forCara.id}/comments`, { body: { body: 'on it' } })
+
+    await sql`DELETE FROM app_users WHERE id=${cara.id}`
+
+    CURRENT = ana
+    const a = (await call('GET', `tasks/${raised.id}`)).body
+    expect(a.task).toMatchObject({ created_by: null, assignee_id: ana.id })
+    const b = (await call('GET', `tasks/${forCara.id}`)).body
+    expect(b.task.assignee_id).toBeNull()
+    expect(b.comments).toEqual([expect.objectContaining({ author_id: null, author_name: null, body: 'on it' })])
+
+    // Nobody can delete a task whose creator has gone...
+    expect((await call('DELETE', `tasks/${raised.id}`)).statusCode).toBe(403)
+    // ...but it can still be worked, finished and commented on.
+    expect((await call('POST', `tasks/${raised.id}/comments`, { body: { body: 'still here' } })).statusCode).toBe(201)
+    expect((await call('PATCH', `tasks/${raised.id}`, { body: { status: 'done' } })).statusCode).toBe(200)
   })
 })

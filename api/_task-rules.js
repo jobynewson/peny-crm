@@ -158,6 +158,19 @@ export function acknowledgementPatch({ task, patch, actorId }) {
   return { acknowledged_at, nudged_at }
 }
 
+// ── Deleting and archiving ───────────────────────────────────────────────────
+
+// Only whoever raised a task can delete it. Once its creator has been removed
+// from the workspace (created_by NULL) nobody can; it leaves the board the
+// usual way, by being finished and then archived.
+export function canDeleteTask(task, userId) {
+  return !!task?.created_by && !!userId && task.created_by === userId
+}
+
+// Done tasks are archived once they have sat untouched in Done this long.
+// The Done column's note says the same number (src/views/tasks.js).
+export const ARCHIVE_AFTER_DAYS = 30
+
 // ── Validation ───────────────────────────────────────────────────────────────
 
 // Returns { field, message } for the first problem, or null when input is fine.

@@ -723,9 +723,10 @@ export const tasks = pgTable('tasks', {
   body:            text('body'),                     // markdown
   status:          task_status('status').notNull().default('todo'),
   assignee_id:     uuid('assignee_id').references(() => app_users.id, { onDelete: 'set null' }),
-  // No onDelete: a task must always name its creator, so removing a user who
-  // has raised work is blocked rather than silently deleting the team's board.
-  created_by:      uuid('created_by').notNull().references(() => app_users.id),
+  // Nullable since 0031: removing a user keeps the tasks they raised, which
+  // then read as a former member's. Never cascade — that would delete the
+  // team's board along with the person.
+  created_by:      uuid('created_by').references(() => app_users.id, { onDelete: 'set null' }),
   due_at:          timestamp('due_at',          { withTimezone: true }),
   // Set when the assignee says "Got it" — the WhatsApp blue tick. Cleared on
   // reassignment, because the new person has not seen it.
@@ -745,7 +746,8 @@ export const tasks = pgTable('tasks', {
 export const task_comments = pgTable('task_comments', {
   id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
   task_id:    uuid('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
-  author_id:  uuid('author_id').notNull().references(() => app_users.id),
+  // Nullable since 0031, like tasks.created_by: a removed user's comments stay.
+  author_id:  uuid('author_id').references(() => app_users.id, { onDelete: 'set null' }),
   body:       text('body').notNull(),
   created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })

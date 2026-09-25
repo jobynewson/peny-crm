@@ -41,6 +41,7 @@ export const listTasks       = (params)   => request(`/api/tasks${qs(params)}`)
 export const getTask         = (id)       => request(`/api/tasks/${id}`)
 export const createTask      = (body)     => request('/api/tasks', { method: 'POST', body })
 export const patchTask       = (id, body) => request(`/api/tasks/${id}`, { method: 'PATCH', body })
+export const deleteTask      = (id)       => request(`/api/tasks/${id}`, { method: 'DELETE' })
 export const acknowledgeTask = (id)       => request(`/api/tasks/${id}/acknowledge`, { method: 'POST' })
 export const addComment      = (id, body) => request(`/api/tasks/${id}/comments`, { method: 'POST', body: { body } })
 

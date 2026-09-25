@@ -2603,6 +2603,7 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
   padding: 0 4px 8px; display: flex; align-items: center; gap: 8px;
 }
 .tk-col-body { display: flex; flex-direction: column; gap: 8px; min-height: 40px; border-radius: var(--radius-sm); }
+.tk-col-note { margin: 0 4px; font-size: 12px; color: var(--text-tertiary); }
 .tk-drop--over { outline: 2px dashed var(--accent); outline-offset: 3px; }
 
 .tk-card {
@@ -2750,6 +2751,7 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
   cursor: pointer; font-family: var(--font-mono); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary);
 }
 .tk-event { padding: 5px 0; border-bottom: 1px solid var(--border-light); overflow-wrap: anywhere; }
+.tk-d-foot { display: flex; justify-content: flex-end; padding-top: 12px; border-top: 1px solid var(--border-light); }
 
 /* ── Notification rows (the header bell's list) ─────────────────────────── */
 .tk-notif {

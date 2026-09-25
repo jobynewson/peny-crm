@@ -2882,7 +2882,7 @@ export class App {
         btn.addEventListener('click', async () => {
           const uid = btn.dataset.removeUser
           const name = btn.dataset.removeName
-          if (!await this.confirm({ title: 'Remove user?', message: `${name} will lose access to the workspace immediately.`, confirmLabel: 'Remove' })) return
+          if (!await this.confirm({ title: 'Remove user?', message: `${name} will lose access to the workspace immediately. Tasks and comments they wrote stay, and tasks assigned to them go back to Unassigned.`, confirmLabel: 'Remove' })) return
           try {
             await deleteAppUser(uid)
             this.allUsers = (this.allUsers ?? []).filter(x => x.id !== uid)

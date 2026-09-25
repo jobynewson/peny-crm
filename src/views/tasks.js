@@ -33,6 +33,9 @@ const COLUMNS = [
 ]
 
 const POSITION_GAP = 1024
+// Done tasks leave the board after this many days (ARCHIVE_AFTER_DAYS in
+// api/_task-rules.js, applied by the daily job in api/reminders.js).
+const ARCHIVE_AFTER_DAYS = 30
 
 // ── Small helpers ────────────────────────────────────────────────────────────
 
@@ -68,6 +71,12 @@ const timeAgo = (ts) => {
   return new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 }
 
+// Who did something, for rows whose actor may be missing. The nudge and the
+// auto-archive are Slate's own doing; anyone else missing has been removed from
+// the workspace since (their rows stay, with the person cleared).
+const actorLabel = (row, system) => row.actor_name || row.actor_email || (system ? 'Slate' : 'A former member')
+const bySlate = (e) => e.type === 'nudged' || (e.type === 'archived' && !!e.payload?.auto)
+
 const EVENT_TEXT = {
   created:        () => 'created this task',
   assigned:       (e, name) => `assigned this to ${name}`,
@@ -76,8 +85,8 @@ const EVENT_TEXT = {
   status_changed: (e) => `moved this to ${COLUMNS.find(c => c.id === e.payload?.to)?.label ?? e.payload?.to}`,
   commented:      () => 'commented',
   due_changed:    (e) => e.payload?.to ? 'changed the due date' : 'cleared the due date',
-  archived:       () => 'archived this',
-  nudged:         () => 'was reminded this is unacknowledged',
+  archived:       (e) => e.payload?.auto ? `archived this after ${e.payload.after_days ?? ARCHIVE_AFTER_DAYS} days in Done` : 'archived this',
+  nudged:         () => 'reminded the assignee to acknowledge this',
 }
 
 export class TasksView {
@@ -100,6 +109,7 @@ export class TasksView {
     this._dashHost  = null
     this._failures  = 0
     this._writes    = 0        // merges pause while a write is in flight
+    this._writeSeq  = 0        // bumped by every write, so a poll can tell one overlapped it
     this._dragId    = null
     this._mq        = null
 
@@ -164,6 +174,27 @@ export class TasksView {
     this.tasks = [...byId.values()]
   }
 
+  // Drop tasks that no longer exist because someone deleted them. Closes the
+  // detail if it was showing one of them, and says whether it did.
+  _forget(ids) {
+    const gone = new Set(ids)
+    if (!gone.size) return false
+    this.tasks = this.tasks.filter(t => !gone.has(t.id))
+    const wasOpen = !!this.detailId && gone.has(this.detailId)
+    if (wasOpen) this.closeDetail()
+    this._refreshBoard()
+    return wasOpen
+  }
+
+  // A 404 about a task means it was deleted from under us: drop the card rather
+  // than leave a ghost that errors on every touch. True when it handled err.
+  _goneIfMissing(err, id) {
+    if (err?.status !== 404) return false
+    this._forget([id])
+    this.app.toast('That task has been deleted')
+    return true
+  }
+
   // ── Polling ────────────────────────────────────────────────────────────────
 
   startPolling() {
@@ -218,16 +249,30 @@ export class TasksView {
     if (this._writes > 0) return
     if (!this.serverTime) return
 
+    const seq = this._writeSeq
     try {
       const data = await api.listTasks({ scope: 'board', updated_since: this.serverTime })
-      // The server's own clock, echoed back next time — the browser's may drift.
-      this.serverTime = data.server_time
       this.setUnread(data.unread_notifications)
 
-      const changed = data.tasks.length || (data.archived_ids || []).length
-      if (changed) {
-        this._merge(data.tasks, data.archived_ids)
-        this._refreshBoard()
+      // A write that started while this poll was in flight may be missing from
+      // its snapshot, and applying it would undo that write on screen. Drop the
+      // result instead; the next poll starts from the same point and covers it.
+      if (seq === this._writeSeq) {
+        // The server's own clock, echoed back next time — the browser's may drift.
+        this.serverTime = data.server_time
+
+        const changed = data.tasks.length || (data.archived_ids || []).length
+        if (changed) {
+          this._merge(data.tasks, data.archived_ids)
+          this._refreshBoard()
+        }
+        // A deleted task leaves no row to report, so the server lists every
+        // task still on the board and anything else here has gone.
+        if (data.live_ids) {
+          const live = new Set(data.live_ids)
+          const gone = this.tasks.filter(t => !live.has(t.id)).map(t => t.id)
+          if (this._forget(gone)) this.app.toast('That task has been deleted')
+        }
       }
 
       if (this._failures >= FAIL_THRESHOLD) { this._failures = 0; this.startPolling() }
@@ -243,6 +288,7 @@ export class TasksView {
   // Wrap a write so polling does not merge a stale snapshot over it mid-flight.
   async _write(fn) {
     this._writes++
+    this._writeSeq++
     try { return await fn() }
     finally { this._writes-- }
   }
@@ -415,6 +461,7 @@ export class TasksView {
                 <div class="tk-col-body" data-drop-col="${col.id}">
                   ${items.map(t => this._cardHtml(t)).join('')}
                 </div>
+                ${col.id === 'done' ? `<p class="tk-col-note">Finished tasks leave the board after ${ARCHIVE_AFTER_DAYS} days.</p>` : ''}
               </div>`
           }).join('')}
         </div>
@@ -571,6 +618,7 @@ export class TasksView {
       })
       this._refreshBoard()
     } catch (err) {
+      if (this._goneIfMissing(err, taskId)) return
       Object.assign(task, snapshot)      // roll back and say so
       this._refreshBoard()
       this.app.toast(err.message || 'Could not move that task')
@@ -626,7 +674,7 @@ export class TasksView {
             <button class="tk-m-disclosure" id="tk-m-done-toggle" aria-expanded="${this.doneOpen}">
               ${this.doneOpen ? '▾' : '▸'} Done <span class="kanban-count">${done.items.length}</span>
             </button>
-            ${this.doneOpen ? done.items.map(t => this._mobileRowHtml(t)).join('') : ''}
+            ${this.doneOpen ? done.items.map(t => this._mobileRowHtml(t)).join('') + `<p class="tk-col-note">Finished tasks leave the board after ${ARCHIVE_AFTER_DAYS} days.</p>` : ''}
           </div>` : ''}
         <button class="tk-m-shell-toggle" id="tk-shell-toggle">Desktop board</button>
       </div>`
@@ -717,6 +765,7 @@ export class TasksView {
       this._refreshBoard()
       this.app.toast('Got it — the requester has been told')
     } catch (err) {
+      if (this._goneIfMissing(err, id)) return
       Object.assign(task, snapshot)
       this._refreshBoard()
       this.app.toast(err.message || 'Could not acknowledge')
@@ -732,13 +781,18 @@ export class TasksView {
     this.detailId = id
     this.detail = null
     this._renderDetail()
+    let detail
     try {
-      this.detail = await api.getTask(id)
+      detail = await api.getTask(id)
     } catch (err) {
+      if (this.detailId !== id) return             // closed or switched meanwhile
+      if (this._goneIfMissing(err, id)) return
       this.app.toast(err.message || 'Could not open that task')
       this.closeDetail()
       return
     }
+    if (this.detailId !== id) return
+    this.detail = detail
     this._renderDetail()
   }
 
@@ -753,11 +807,17 @@ export class TasksView {
   }
 
   async _refreshDetailTask() {
-    if (!this.detailId) return
+    const id = this.detailId
+    if (!id) return
     try {
-      this.detail = await api.getTask(this.detailId)
+      const detail = await api.getTask(id)
+      if (this.detailId !== id) return             // closed or switched meanwhile
+      this.detail = detail
       this._renderDetail()
-    } catch { /* the poll will try again */ }
+    } catch (err) {
+      // Deleted → close it; anything else, the poll will try again.
+      if (this.detailId === id) this._goneIfMissing(err, id)
+    }
   }
 
   _renderDetail() {
@@ -800,11 +860,14 @@ export class TasksView {
     const projects = this.app.projects || []
     const canAck = this.isUnacknowledged(task) && task.assignee_id === this.me()
     const creator = this.userById(task.created_by)
+    // created_by is cleared when the person who raised it leaves the workspace.
+    const raisedBy = creator ? (creator.name || creator.email) : task.created_by ? 'someone' : 'a former member'
+    const canDelete = !!task.created_by && task.created_by === this.me()
 
     host.innerHTML = `
       <div class="tk-sheet ${mobile ? 'tk-sheet--full' : 'tk-sheet--modal'}" ${dialogAttrs}>
         <div class="tk-sheet-head">
-          <span class="tk-sheet-sub">Raised by ${esc(creator?.name || creator?.email || 'someone')} · ${esc(timeAgo(task.created_at))}</span>
+          <span class="tk-sheet-sub">Raised by ${esc(raisedBy)} · ${esc(timeAgo(task.created_at))}</span>
           <button class="tk-x" data-close="1" aria-label="Close">✕</button>
         </div>
 
@@ -843,7 +906,7 @@ export class TasksView {
               <div class="tk-comment">
                 <div class="tk-comment-head">
                   <span class="tk-avatar">${esc(initials({ name: c.author_name, email: c.author_email }))}</span>
-                  <strong>${esc(c.author_name || c.author_email || 'Someone')}</strong>
+                  <strong>${esc(c.author_name || c.author_email || (c.author_id ? 'Someone' : 'Former member'))}</strong>
                   <span class="tk-comment-time">${esc(timeAgo(c.created_at))}</span>
                 </div>
                 <div class="tk-comment-body">${this._renderMentions(c.body)}</div>
@@ -860,12 +923,14 @@ export class TasksView {
           <details class="tk-activity">
             <summary>Activity${events.length ? ` · ${events.length}` : ''}</summary>
             ${events.map(e => {
-              const who = e.actor_name || e.actor_email || 'Someone'
+              const who = actorLabel(e, bySlate(e))
               const target = this.userById(e.payload?.to || e.payload?.assignee_id)
               const text = (EVENT_TEXT[e.type] || (() => e.type))(e, target?.name || target?.email || 'someone')
               return `<div class="tk-event"><strong>${esc(who)}</strong> ${esc(text)} <span class="tk-comment-time">${esc(timeAgo(e.created_at))}</span></div>`
             }).join('')}
           </details>
+
+          ${canDelete ? `<div class="tk-d-foot"><button type="button" class="btn-danger" id="tk-d-delete">Delete task</button></div>` : ''}
         </div>
       </div>`
 
@@ -914,6 +979,7 @@ export class TasksView {
         this._refreshBoard()
         await this._refreshDetailTask()
       } catch (err) {
+        if (this._goneIfMissing(err, task.id)) return
         this.app.toast(err.message || 'Could not save')
         await this._refreshDetailTask()
       }
@@ -955,6 +1021,7 @@ export class TasksView {
         if (local) local.comment_count = (local.comment_count || 0) + 1
         this._refreshBoard()
       } catch (err) {
+        if (this._goneIfMissing(err, task.id)) return
         composer.value = text
         this.app.toast(err.message || 'Could not post that comment')
       }
@@ -964,6 +1031,24 @@ export class TasksView {
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send() }
     })
     this._bindMentionAutocomplete(host, composer)
+
+    // Only shown to whoever raised it; the server enforces the same rule.
+    host.querySelector('#tk-d-delete')?.addEventListener('click', async () => {
+      const ok = await this.app.confirm({
+        title: 'Delete this task?',
+        message: 'It goes for everyone, along with its comments and activity. This can’t be undone.',
+        confirmLabel: 'Delete',
+      })
+      if (!ok) return
+      try {
+        await this._write(() => api.deleteTask(task.id))
+      } catch (err) {
+        // Already gone is as good as deleted.
+        if (err.status !== 404) { this.app.toast(err.message || 'Could not delete that task'); return }
+      }
+      this._forget([task.id])
+      this.app.toast('Task deleted')
+    })
   }
 
   // Mention autocomplete is client-side against the user list already in memory
@@ -1043,7 +1128,7 @@ export class TasksView {
   async openNotifications(anchor) {
     const LABEL = {
       assigned: 'assigned you', mentioned: 'mentioned you', commented: 'commented on',
-      acknowledged: 'acknowledged', completed: 'completed', unacknowledged_nudge: 'still waiting on you',
+      acknowledged: 'acknowledged', completed: 'completed', unacknowledged_nudge: 'reminds you this is still waiting',
     }
     const head = () => `<div class="notif-head"><h2 class="notif-title">Notifications</h2>
       <button type="button" class="tk-chip" id="notif-readall"${this.unread ? '' : ' disabled'}>Mark all read</button></div>`
@@ -1053,7 +1138,7 @@ export class TasksView {
         ${this.notifications.length ? this.notifications.map(n => `
           <button type="button" class="tk-notif ${n.read_at ? '' : 'tk-notif--unread'}" data-notif-id="${esc(n.id)}" data-notif-task="${esc(n.task_id)}">
             <span class="tk-notif-text">
-              <strong>${esc(n.actor_name || n.actor_email || 'Someone')}</strong>
+              <strong>${esc(actorLabel(n, n.type === 'unacknowledged_nudge'))}</strong>
               ${esc(LABEL[n.type] || n.type)} — ${esc(n.task_title)}
             </span>
             <span class="tk-comment-time">${esc(timeAgo(n.created_at))}</span>
@@ -1296,6 +1381,7 @@ export class TasksView {
       this._refreshBoard()
       this.app.toastAction('Marked done', 'Undo', () => this._undoComplete(id, previous))
     } catch (err) {
+      if (this._goneIfMissing(err, id)) return
       Object.assign(task, previous)
       this._refreshBoard()
       this.app.toast(err.message || 'Could not mark that done')
@@ -1317,6 +1403,7 @@ export class TasksView {
       })
       this._refreshBoard()
     } catch (err) {
+      if (this._goneIfMissing(err, id)) return
       Object.assign(task, current)
       this._refreshBoard()
       this.app.toast(err.message || 'Could not undo that')
@@ -1351,6 +1438,7 @@ export class TasksView {
       this._refreshBoard()
       this.app.toast('Yours now')
     } catch (err) {
+      if (this._goneIfMissing(err, id)) return
       Object.assign(task, snapshot)
       this._refreshBoard()
       this.app.toast(err.message || 'Could not claim that task')

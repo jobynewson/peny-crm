@@ -3,6 +3,8 @@
 //   deliverables  — 09:00 UTC daily  — overdue / due ≤3 days
 //   notes         — 21:00 UTC daily  — note reminders due in ~36h
 //   expense-digest — 09:00 UTC daily  — monthly expense summary (2nd-to-last working day only)
+//   task-nudge    — 14:00 UTC daily  — unacknowledged task nudge, then archives
+//                                      tasks done for ARCHIVE_AFTER_DAYS
 // POST ?type=leave-notify — triggered by frontend on leave request/decision
 // POST ?type=expense-submit — triggered by frontend when a user submits their
 //   expenses early ("Submit expenses now"); emails the configured recipients
@@ -14,6 +16,7 @@ import { verifyToken } from '@clerk/backend'
 import { syncLeaveRequestGoogle } from './google.js'
 import { groupDueSubTasks } from './_sub-tasks.js'
 import { taskMailer, taskEmailWrap, taskCardHtml, escapeHtml, appBaseUrl } from './_task-mail.js'
+import { ARCHIVE_AFTER_DAYS } from './_task-rules.js'
 
 export default async function handler(req, res) {
   // ── Leave approval (GET, token-based) ──────────────────────────────────────
@@ -46,8 +49,18 @@ export default async function handler(req, res) {
   // the morning; the 09:00 digest carries anything still outstanding the next
   // day. Restoring true 4-hour behaviour needs the Pro plan, or a sweep
   // triggered from somewhere other than a cron.
+  //
+  // The same daily run archives finished tasks, rather than taking a cron of
+  // its own. A failure there is logged and never stops the nudges.
   if (req.query.type === 'task-nudge') {
-    return handleTaskNudge(req, res, neon(process.env.VITE_DATABASE_URL))
+    const sql = neon(process.env.VITE_DATABASE_URL)
+    try {
+      const archived = await archiveDoneTasks(sql)
+      if (archived) console.log(`[tasks] archived ${archived} done task(s)`)
+    } catch (err) {
+      console.error('[tasks] auto-archive failed:', err.message)
+    }
+    return handleTaskNudge(req, res, sql)
   }
 
   // No reminder emails on weekends (Saturday=6, Sunday=0, UTC)
@@ -1068,6 +1081,34 @@ export async function handleTaskNudge(req, res, sql) {
   }
 
   return res.status(200).json({ ok: true, nudged: results.length, results })
+}
+
+// ── Auto-archive ─────────────────────────────────────────────────────────────
+// A task that has sat untouched in Done for ARCHIVE_AFTER_DAYS leaves the
+// board. Archived, not deleted: the row, its comments and its activity stay
+// (GET /api/tasks/:id still reads it); it just drops out of every list, and
+// clients drop it via archived_ids because updated_at moves. "Untouched" is
+// updated_at, so editing a finished task restarts its month.
+//
+// Like the nudge, each archive writes an actor-less event (every mutation
+// writes one) and notifies nobody. Correct at any cadence and safe to overlap:
+// the UPDATE only claims rows that are not archived yet.
+export async function archiveDoneTasks(sql) {
+  const archived = await sql`
+    UPDATE tasks SET archived_at = NOW(), updated_at = NOW()
+    WHERE status = 'done'
+      AND archived_at IS NULL
+      AND updated_at < NOW() - make_interval(days => ${ARCHIVE_AFTER_DAYS})
+    RETURNING id
+  `
+  if (archived.length) {
+    await sql`
+      INSERT INTO task_events (task_id, actor_id, type, payload)
+      SELECT a.id, NULL, 'archived', ${JSON.stringify({ auto: true, after_days: ARCHIVE_AFTER_DAYS })}::jsonb
+      FROM unnest(${archived.map(r => r.id)}::uuid[]) AS a(id)
+    `
+  }
+  return archived.length
 }
 
 // Outstanding unacknowledged tasks per assignee, for the top of the daily
