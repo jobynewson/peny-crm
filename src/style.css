@@ -362,6 +362,36 @@ kbd { font-family: var(--font-mono); }
 }
 .hdr-account-dot[hidden] { display: none; }
 
+/* Notification bell (task notifications): unread count on its corner. */
+.hdr-bell { position: relative; }
+.hdr-bell-count {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--header-bg);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1;
+}
+.hdr-bell-count[hidden] { display: none; }
+
+/* The bell's list — views/tasks.js openNotifications(). */
+.notif-pop { width: 360px; max-width: calc(100vw - 16px); max-height: min(70vh, 520px); overflow-y: auto; }
+.notif-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px 10px 14px; border-bottom: 1px solid var(--border); }
+.notif-title { margin: 0; font-family: var(--font-mono); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); }
+.notif-empty { margin: 0; padding: 16px 14px; }
+.notif-list .tk-notif:last-child { border-bottom: none; }
+
 /* ── Dropdown menus (account, New) — see views/popover.js ── */
 .pop {
   position: fixed;
@@ -2299,6 +2329,9 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 .sheet .dd-item { min-height: 48px; font-size: 15px; }
 .sheet .seg-btn { min-height: 44px; }
 .sheet .lt-pop { width: auto; max-width: none; padding: 0 4px; }
+.sheet .notif-pop { width: auto; max-width: none; max-height: none; }
+.sheet .notif-head { min-height: 44px; padding: 0 52px 8px 4px; }
+.sheet .tk-notif { min-height: 56px; }
 .sheet .lt-head { min-height: 44px; padding-right: 48px; }
 .sheet .tl-field select, .sheet .tl-field input { height: 46px; font-size: 16px; }
 .sheet .tl-submit { height: 48px; font-size: 15px; }
@@ -2318,7 +2351,8 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
   #hdr-logtime { order: 1; }
   .hdr-search { order: 2; }
   #hdr-notes { order: 3; }
-  .hdr-account { order: 4; }
+  #hdr-bell { order: 4; }
+  .hdr-account { order: 5; }
   #hdr-logtime, .hdr-search {
     width: 44px;
     height: 44px;
@@ -2463,31 +2497,36 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 
 .tk-wrap { display: flex; flex-direction: column; gap: 14px; }
 
+/* Buttons and fields don't inherit the page font on their own. */
+.tk-chip, .tk-got-it, .tk-x, .tk-qa-input, .tk-qa-select, .tk-title-input,
+.tk-m-disclosure, .tk-m-shell-toggle, .tk-dash-act, .tk-dash-more, .tk-dash-all,
+.tk-dash-input, .tk-mention-opt, .tk-notif { font-family: var(--font); }
+
 /* Quick add — one text field is the primary path; everything else is optional
    and must never block it. */
 .tk-quickadd { display: flex; flex-direction: column; gap: 8px; }
 .tk-qa-input {
   width: 100%; padding: 11px 14px; font-size: 14.5px;
   background: var(--bg-primary); color: var(--text-primary);
-  border: 1px solid var(--border-med); border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-md);
 }
 .tk-qa-input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-subtle); }
 .tk-qa-opts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .tk-qa-select {
   padding: 6px 9px; font-size: 12.5px; background: var(--bg-primary);
-  color: var(--text-primary); border: 1px solid var(--border-med);
-  border-radius: var(--radius-sm); max-width: 100%;
+  color: var(--text-primary); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md); max-width: 100%;
 }
 .tk-qa-btn { padding: 6px 14px; font-size: 12.5px; }
 
-.tk-filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .tk-chip {
   padding: 5px 11px; font-size: 12px; font-weight: 550; cursor: pointer;
   background: var(--bg-primary); color: var(--text-secondary);
   border: 1px solid var(--border-med); border-radius: var(--radius-pill);
 }
 .tk-chip:hover { border-color: var(--border-strong); color: var(--text-primary); }
-.tk-chip--on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.tk-chip--on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.tk-chip:disabled { opacity: 0.5; cursor: default; }
 
 /* Unassigned tray — a thin strip above the columns, not a fourth column. */
 .tk-tray {
@@ -2496,7 +2535,7 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 }
 .tk-tray--empty { opacity: 0.7; }
 .tk-tray-label {
-  font-size: 10.5px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.6px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em;
   color: var(--text-tertiary); margin-bottom: 7px;
 }
 .tk-tray-body { display: flex; gap: 8px; overflow-x: auto; min-height: 20px; padding-bottom: 2px; }
@@ -2506,8 +2545,7 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 .tk-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; align-items: start; }
 .tk-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .tk-col-head {
-  font-size: 11px; font-weight: 600; color: var(--text-secondary);
-  text-transform: uppercase; letter-spacing: 0.6px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary);
   padding: 0 4px 8px; display: flex; align-items: center; gap: 8px;
 }
 .tk-col-body { display: flex; flex-direction: column; gap: 8px; min-height: 40px; border-radius: var(--radius-sm); }
@@ -2515,10 +2553,10 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 
 .tk-card {
   background: var(--bg-primary); border: 1px solid var(--border-light);
-  border-radius: var(--radius-md); padding: 10px 12px; cursor: pointer;
-  box-shadow: var(--shadow-sm); transition: box-shadow .12s, border-color .12s, transform .12s;
+  border-radius: var(--radius-lg); padding: 10px 12px; cursor: pointer;
+  transition: border-color .12s;
 }
-.tk-card:hover { box-shadow: var(--shadow-md); border-color: var(--border-med); transform: translateY(-1px); }
+.tk-card:hover { border-color: var(--border-strong); }
 .tk-card--dragging { opacity: 0.4; }
 .tk-card--over { box-shadow: 0 -3px 0 0 var(--accent); }
 
@@ -2544,14 +2582,14 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
   width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 9.5px; font-weight: 700; letter-spacing: 0.2px;
-  background: var(--accent-subtle); color: var(--accent);
+  background: var(--accent-soft); color: var(--accent-text);
 }
 
 /* ── Mobile shell — no columns, no horizontal scroll anywhere ─────────────── */
 .tk-m-wrap { display: flex; flex-direction: column; gap: 16px; max-width: 100%; overflow-x: hidden; }
 .tk-m-group { display: flex; flex-direction: column; gap: 7px; }
 .tk-m-group-head {
-  font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.6px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em;
   color: var(--text-secondary); display: flex; align-items: center; gap: 8px;
 }
 .tk-m-group-head--alert { color: var(--danger); }
@@ -2571,21 +2609,15 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 .tk-m-disclosure {
   display: flex; align-items: center; gap: 8px; width: 100%;
   background: none; border: none; cursor: pointer; padding: 4px 0;
-  font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.6px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em;
   color: var(--text-secondary);
 }
 .tk-got-it {
   flex-shrink: 0; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
-  background: var(--accent); color: var(--accent-text);
+  background: var(--accent); color: var(--on-accent);
   border: none; border-radius: var(--radius-md);
 }
 .tk-got-it--wide { width: 100%; margin-bottom: 14px; padding: 12px; font-size: 14.5px; }
-.tk-fab {
-  position: fixed; right: 18px; bottom: 22px; z-index: 60;
-  width: 54px; height: 54px; border-radius: 50%; border: none; cursor: pointer;
-  font-size: 28px; line-height: 1; background: var(--accent); color: var(--accent-text);
-  box-shadow: var(--shadow-lg);
-}
 .tk-m-shell-toggle {
   align-self: center; background: none; border: none; cursor: pointer;
   font-size: 12px; color: var(--text-tertiary); text-decoration: underline; padding: 4px;
@@ -2593,28 +2625,34 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 
 /* ── Shared: card detail (modal on desktop, full-screen sheet on mobile) ──── */
 .tk-sheet-backdrop {
-  position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,0.45);
+  position: fixed; inset: 0; z-index: 90; background: var(--scrim);
   display: flex; align-items: center; justify-content: center; padding: 20px;
 }
 .tk-sheet {
   background: var(--bg-primary); border: 1px solid var(--border-med);
-  border-radius: var(--radius-lg); display: flex; flex-direction: column;
-  max-height: 100%; width: 100%; overflow: hidden;
+  border-radius: var(--radius-xl); display: flex; flex-direction: column;
+  max-height: 100%; width: 100%; overflow: hidden; box-shadow: var(--shadow-popover);
 }
+.tk-sheet:focus { outline: none; }
+.tk-sheet-title { margin: 0; font-size: 15px; font-weight: 600; }
 .tk-sheet--modal { max-width: 620px; }
-.tk-sheet--full { max-width: 100%; height: 100%; border-radius: 0; }
+.tk-sheet--full {
+  max-width: 100%; height: 100%; border-radius: 0; border: none; box-shadow: none;
+  padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px);
+}
 .tk-sheet--add { max-width: 520px; }
 .tk-sheet-head {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   padding: 13px 16px; border-bottom: 1px solid var(--border-light); flex-shrink: 0;
 }
 .tk-sheet-sub { font-size: 12px; color: var(--text-tertiary); overflow-wrap: anywhere; }
-.tk-x { background: none; border: none; cursor: pointer; color: var(--text-tertiary); font-size: 15px; padding: 4px 6px; }
+.tk-x { background: none; border: none; cursor: pointer; color: var(--text-tertiary); font-size: 15px; padding: 4px 6px; border-radius: var(--radius-md); }
+.tk-x:hover { color: var(--text-primary); background: var(--bg-secondary); }
 .tk-sheet-body { padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
 .tk-title-input {
   width: 100%; font-size: 17px; font-weight: 600; padding: 6px 8px;
   background: transparent; color: var(--text-primary);
-  border: 1px solid transparent; border-radius: var(--radius-sm);
+  border: 1px solid transparent; border-radius: var(--radius-md);
 }
 .tk-title-input:hover { border-color: var(--border-light); }
 .tk-title-input:focus { border-color: var(--accent); outline: none; background: var(--bg-primary); }
@@ -2623,10 +2661,10 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 .tk-body-input {
   width: 100%; padding: 9px 11px; font-size: 13.5px; font-family: inherit; resize: vertical;
   background: var(--bg-secondary); color: var(--text-primary);
-  border: 1px solid var(--border-light); border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light); border-radius: var(--radius-md);
 }
 .tk-d-section {
-  font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.6px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em;
   color: var(--text-tertiary); margin-top: 4px;
 }
 .tk-comments { display: flex; flex-direction: column; gap: 10px; }
@@ -2634,17 +2672,17 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 .tk-comment-time { font-size: 11px; color: var(--text-tertiary); }
 .tk-comment-body { font-size: 13.5px; color: var(--text-primary); margin-top: 3px; padding-left: 29px; overflow-wrap: anywhere; white-space: pre-wrap; }
 .tk-comment-empty { font-size: 12.5px; color: var(--text-tertiary); }
-.tk-mention { color: var(--accent); font-weight: 600; }
+.tk-mention { color: var(--accent-text); font-weight: 600; }
 .tk-composer { position: relative; display: flex; gap: 8px; align-items: flex-end; }
 .tk-composer textarea {
   flex: 1; padding: 9px 11px; font-size: 13.5px; font-family: inherit; resize: vertical;
   background: var(--bg-secondary); color: var(--text-primary);
-  border: 1px solid var(--border-light); border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light); border-radius: var(--radius-md);
 }
 .tk-mention-menu {
   position: absolute; bottom: calc(100% + 4px); left: 0; z-index: 5;
   background: var(--bg-primary); border: 1px solid var(--border-med);
-  border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+  border-radius: var(--radius-popover); box-shadow: var(--shadow-popover);
   display: flex; flex-direction: column; min-width: 200px; overflow: hidden;
 }
 .tk-mention-opt {
@@ -2655,42 +2693,21 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 .tk-mention-opt:hover { background: var(--bg-secondary); }
 .tk-activity { font-size: 12.5px; color: var(--text-secondary); }
 .tk-activity summary {
-  cursor: pointer; font-size: 11px; font-weight: 650; text-transform: uppercase;
-  letter-spacing: 0.6px; color: var(--text-tertiary);
+  cursor: pointer; font-family: var(--font-mono); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary);
 }
 .tk-event { padding: 5px 0; border-bottom: 1px solid var(--border-light); overflow-wrap: anywhere; }
 
-/* ── Notifications ───────────────────────────────────────────────────────── */
-.tk-bell-row { display: flex; justify-content: flex-end; }
-.tk-bell-row--m { justify-content: flex-end; margin-bottom: -6px; }
-.tk-bell {
-  position: relative; background: none; border: none; cursor: pointer;
-  font-size: 17px; padding: 4px 6px; line-height: 1;
-}
-.tk-bell-dot {
-  position: absolute; top: -2px; right: -3px; min-width: 16px; height: 16px;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 9.5px; font-weight: 700; padding: 0 4px;
-  background: var(--danger); color: #fff; border-radius: var(--radius-pill);
-}
-.tk-notifs {
-  border: 1px solid var(--border-med); border-radius: var(--radius-md);
-  background: var(--bg-primary); overflow: hidden; max-height: 340px; overflow-y: auto;
-}
-.tk-notifs-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 9px 12px; border-bottom: 1px solid var(--border-light);
-  font-size: 11px; font-weight: 650; text-transform: uppercase;
-  letter-spacing: 0.6px; color: var(--text-tertiary);
-}
+/* ── Notification rows (the header bell's list) ─────────────────────────── */
 .tk-notif {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   width: 100%; padding: 10px 12px; background: none; cursor: pointer; text-align: left;
   border: none; border-bottom: 1px solid var(--border-light);
 }
 .tk-notif:hover { background: var(--bg-secondary); }
-.tk-notif--unread { background: var(--accent-subtle); }
+.tk-notif--unread { background: var(--accent-soft); }
 .tk-notif-text { font-size: 13px; color: var(--text-primary); overflow-wrap: anywhere; }
+.tk-notif .tk-comment-time { flex-shrink: 0; white-space: nowrap; }
+.tk-notif--unread .tk-comment-time { color: var(--text-secondary); }
 
 @media (max-width: 899px) {
   .tk-sheet-backdrop { padding: 0; }
@@ -2702,14 +2719,13 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
    set of sections. */
 .tk-dash-card {
   border: 1px solid var(--border-light); border-radius: var(--radius-lg);
-  background: var(--bg-primary); box-shadow: var(--shadow-sm); overflow: hidden;
+  background: var(--bg-primary); overflow: hidden;
 }
 .tk-dash-all {
   background: none; border: none; cursor: pointer; padding: 2px 4px;
-  font-size: 11px; font-weight: 600; letter-spacing: 0.4px;
-  text-transform: uppercase; color: var(--text-tertiary);
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary);
 }
-.tk-dash-all:hover { color: var(--accent); }
+.tk-dash-all:hover { color: var(--accent-text); }
 
 /* Capture first: raising a request is the top thing in the section. */
 .tk-dash-add {
@@ -2720,7 +2736,7 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 .tk-dash-input {
   flex: 1; min-width: 0; padding: 9px 12px; font-size: 14px;
   background: var(--bg-primary); color: var(--text-primary);
-  border: 1px solid var(--border-med); border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-md);
 }
 .tk-dash-input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-subtle); }
 
@@ -2728,8 +2744,7 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 .tk-dash-group:last-child { border-bottom: none; }
 .tk-dash-group-head {
   display: flex; align-items: center; gap: 7px; padding: 9px 14px 7px;
-  font-size: 10.5px; font-weight: 650; text-transform: uppercase;
-  letter-spacing: 0.6px; color: var(--text-tertiary);
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary);
 }
 .tk-dash-row {
   display: flex; align-items: center; gap: 10px;
@@ -2750,19 +2765,29 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
    one action the section is really asking for. */
 .tk-dash-act {
   flex-shrink: 0; padding: 5px 11px; font-size: 12px; font-weight: 600; cursor: pointer;
-  background: var(--bg-primary); color: var(--accent);
+  background: var(--bg-primary); color: var(--accent-text);
   border: 1px solid var(--accent); border-radius: var(--radius-md);
 }
-.tk-dash-act:hover { background: var(--accent); color: var(--accent-text); }
+.tk-dash-act:hover { background: var(--accent); color: var(--on-accent); }
 .tk-dash-more {
   display: block; width: 100%; text-align: left; cursor: pointer;
   padding: 8px 14px; background: none; border: none; border-top: 1px solid var(--border-light);
   font-size: 12px; color: var(--text-tertiary);
 }
-.tk-dash-more:hover { color: var(--accent); }
+.tk-dash-more:hover { color: var(--accent-text); }
 .tk-dash-empty { padding: 16px 14px; font-size: 13px; color: var(--text-tertiary); }
 
 @media (max-width: 599px) {
   .tk-dash-add { flex-wrap: wrap; }
   .tk-dash-input { flex-basis: 100%; }
+}
+
+/* Task board on phones: 44px targets, 16px fields so iOS doesn't zoom. */
+@media (max-width: 768px) {
+  .tk-chip, .tk-got-it, .tk-qa-btn, .tk-qa-select, .tk-dash-act, .tk-dash-more,
+  .tk-dash-all, .tk-m-disclosure, .tk-m-shell-toggle, .tk-mention-opt, .tk-notif { min-height: 44px; }
+  .tk-x { min-width: 44px; min-height: 44px; }
+  .tk-title-input { min-height: 44px; }
+  .tk-activity summary { padding: 15px 0; }
+  .tk-qa-input, .tk-qa-select, .tk-dash-input, .tk-title-input, .tk-body-input, .tk-composer textarea { font-size: 16px; }
 }

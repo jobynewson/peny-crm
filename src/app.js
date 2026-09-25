@@ -24,7 +24,7 @@ import { syncThemeColor } from './theme.js'
 const PHONE = '(max-width: 768px)'
 
 // Every route the app has used; old bookmarks keep working.
-const VIEWS = ['dashboard', 'calendar', 'projects', 'budgets', 'planning', 'contacts', 'marketing', 'story-planner', 'leave', 'expenses', 'password-manager', 'offload-log', 'settings', 'timetrack']
+const VIEWS = ['tasks', 'dashboard', 'calendar', 'projects', 'budgets', 'planning', 'contacts', 'marketing', 'story-planner', 'leave', 'expenses', 'password-manager', 'offload-log', 'settings', 'timetrack']
 
 export class App {
   constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, leaveRequests, publicHolidays, onSignOut }) {
@@ -44,7 +44,7 @@ export class App {
     this.leaveRequests  = leaveRequests ?? []
     this.publicHolidays = publicHolidays ?? []
     this.onSignOut      = onSignOut
-    this.currentView    = 'dashboard'
+    this.currentView    = 'tasks'
     this.contactsView    = new ContactsView(this)
     this.projectsView    = new ProjectsView(this)
     this.budgetsView     = new BudgetsView(this)
@@ -76,6 +76,7 @@ export class App {
     syncThemeColor()
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', syncThemeColor)
     this._loadNotes()         // notes are also indexed by ⌘K search
+    this.tasksView.watchUnread()  // the header bell's count
     this._bindKeyboard()
     this._bindNavLinks()
     this._bindDateRangeLinks()
@@ -481,7 +482,9 @@ export class App {
 
       // N — new item (only on list views, not when viewing a record)
       if (e.key === 'n' && !meta) {
-        if (this.currentView === 'contacts' && this.permissions?.contacts_edit) {
+        if (this.currentView === 'tasks') {
+          document.querySelector('#topbar-btn')?.click()
+        } else if (this.currentView === 'contacts' && this.permissions?.contacts_edit) {
           document.querySelector('#topbar-btn')?.click()
         } else if (this.currentView === 'projects' && !this.projectsView.currentId && this.permissions?.projects_edit) {
           document.querySelector('#topbar-btn')?.click()
@@ -526,22 +529,29 @@ export class App {
     return `${switcher}${filters ? `<div class="page-toolbar-filters">${filters}</div>` : ''}<div class="page-toolbar-actions">${actions}</div>`
   }
 
-  // Projects tab view switcher: All projects · Budgets · Planning.
+  // View switchers: Board · Dashboard under the Tasks tab, All projects ·
+  // Budgets · Planning under the Projects tab.
   _viewSwitcherHtml() {
-    const views = [['projects', 'All projects'], ['budgets', 'Budgets'], ['planning', 'Planning']]
-    if (!views.some(([v]) => v === this.currentView)) return ''
+    const groups = [
+      { label: 'Task views',    views: [['tasks', 'Board', '/'], ['dashboard', 'Dashboard']] },
+      { label: 'Project views', views: [['projects', 'All projects'], ['budgets', 'Budgets'], ['planning', 'Planning']] },
+    ]
+    const group = groups.find(g => g.views.some(([v]) => v === this.currentView))
+    if (!group) return ''
     if (this.projectsView.currentId || this.budgetsView.currentId || this.boardsView.currentId || this.canvasView.currentId) return ''
-    return `<nav class="seg view-switch" aria-label="Project views">${views.map(([v, label]) =>
-      `<a class="seg-btn" href="#${v}" data-nav="${v}"${v === this.currentView ? ' aria-current="page"' : ''}>${label}</a>`).join('')}</nav>`
+    return `<nav class="seg view-switch" aria-label="${group.label}">${group.views.map(([v, label, href = `#${v}`]) =>
+      `<a class="seg-btn" href="${href}" data-nav="${v}"${v === this.currentView ? ' aria-current="page"' : ''}>${label}</a>`).join('')}</nav>`
   }
 
   topbarSearch() {
+    if (this.currentView === 'tasks') return this.tasksView.toolbarFiltersHtml()
     if (this.currentView !== 'contacts') return ''
     return `<div class="search-wrap"><label for="contact-search" class="visually-hidden">Search contacts</label><span class="search-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg></span><input type="text" id="contact-search" placeholder="Search contacts…" /></div>`
   }
 
   topbarButton() {
     const p = this.permissions ?? {}
+    if (this.currentView === 'tasks') return `<button class="btn-primary" id="topbar-btn">+ New task</button>`
     if (this.currentView === 'contacts') {
       return p.contacts_edit ? `<button class="btn-primary" id="topbar-btn">+ New contact</button>` : ''
     }
@@ -571,6 +581,7 @@ export class App {
 
   bindToolbar() {
     this.bindTopbarBtn()
+    if (this.currentView === 'tasks') this.tasksView.bindToolbarFilters(this.container.querySelector('#page-toolbar'))
     const search = this.container.querySelector('#contact-search')
     if (search) {
       search.value = this.contactsView.search
@@ -595,7 +606,8 @@ export class App {
   // Header "New" menu → go to the page and open its existing create dialog.
   createNew(kind) {
     const mc = () => document.getElementById('main-content')
-    if (kind === 'project')      { this.navigate('projects'); this.projectsView.openNewModal(null, null, mc()) }
+    if (kind === 'task')         { this.navigate('tasks'); this.tasksView.openQuickAdd() }
+    else if (kind === 'project') { this.navigate('projects'); this.projectsView.openNewModal(null, null, mc()) }
     else if (kind === 'contact') { this.navigate('contacts'); this.contactsView.openAdd(mc()) }
     else if (kind === 'budget')  { this.navigate('budgets');  this.budgetsView.openNewModal() }
     else if (kind === 'note')    { if (!this._notesOpen) this.toggleNotes(true, { focus: false }); this._newNote() }
@@ -612,7 +624,7 @@ export class App {
         <div style="font-size:13px;font-weight:600;margin-bottom:16px">Keyboard shortcuts</div>
         ${[
           ['⌘K', 'Search everything'],
-          ['N', 'New project / budget / contact'],
+          ['N', 'New task / project / budget / contact'],
           ['Esc', 'Close modal / exit edit / go back'],
           ['⌘S', 'Save & close current editor'],
         ].map(([key,desc]) => `
@@ -631,7 +643,8 @@ export class App {
     if (!btn) return
     btn.addEventListener('click', () => {
       const mc = document.getElementById('main-content')
-      if (this.currentView === 'contacts') { this.contactsView.openAdd(mc) }
+      if (this.currentView === 'tasks') { this.tasksView.openQuickAdd() }
+      else if (this.currentView === 'contacts') { this.contactsView.openAdd(mc) }
       else if (this.currentView === 'budgets') {
         if (!this.budgetsView.currentId) this.budgetsView.openNewModal()
       }
@@ -667,9 +680,9 @@ export class App {
     this.boardsView.board = null
     this.canvasView.currentId = null
     this.canvasView.canvas = null
-    // Tasks (the Dashboard for now) is the home page, "/". Every other view
-    // keeps its old #hash, so bookmarks still resolve.
-    history.pushState({ view }, '', view === 'dashboard' ? '/' : `#${view}`)
+    // The task board is the home page, "/". Every other view keeps its #hash
+    // (the dashboard is #dashboard), so bookmarks still resolve.
+    history.pushState({ view }, '', view === 'tasks' ? '/' : `#${view}`)
     this.render()
   }
 
@@ -678,11 +691,12 @@ export class App {
     history.pushState(state, '', hash)
   }
 
-  // #view[/id[/tab]] — the same routes the app has always used. "/" and
-  // #dashboard are Tasks; #projects, #budgets and #planning sit under the
-  // Projects tab; the rest are reached from the account menu.
+  // #view[/id[/tab]] — the same routes the app has always used. "/" (and
+  // #tasks) is the task board and #dashboard the dashboard, both under the
+  // Tasks tab; #projects, #budgets and #planning sit under the Projects tab;
+  // the rest are reached from the account menu.
   _parseHash() {
-    const [view = 'dashboard', id, tab] = (location.hash.slice(1) || 'dashboard').split('/')
+    const [view = 'tasks', id, tab] = (location.hash.slice(1) || 'tasks').split('/')
     return VIEWS.includes(view) ? { view, id, tab } : null
   }
 
@@ -711,9 +725,9 @@ export class App {
     const modal = document.querySelector('.modal-overlay, #ra-copy-picker, #rig-lib-picker')
     if (modal) { modal.remove(); return }
 
-    const route = this._parseHash()
-    if (!route) { this.currentView = 'dashboard'; this.render(); return }
-    const { view, id, tab } = route
+    // An unknown hash lands on the home page, as a fresh load does, with any
+    // open project, budget or board cleared.
+    const { view, id, tab } = this._parseHash() ?? { view: 'tasks' }
 
     this.currentView = view
     this.projectsView.currentId = (view === 'projects' && id) ? id : null

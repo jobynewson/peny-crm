@@ -8,6 +8,7 @@ const PATHS = {
   close:     '<path d="M6 6l12 12M18 6L6 18"/>',
   stopwatch: '<circle cx="12" cy="13.5" r="7"/><path d="M12 10v3.5l2.5 1.5M10 2.5h4M12 2.5V6M18.3 6.7l1.3-1.3"/>',
   notes:     '<path d="M7 3.5h6.5L18 8v11.5a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1z"/><path d="M13.5 3.5V8H18M9 12.5h6M9 16h4"/>',
+  bell:      '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
   // Tabs
   tasks:     '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12.2l2.4 2.4 4.8-5"/>',
   calendar:  '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/>',

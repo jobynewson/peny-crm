@@ -1,5 +1,5 @@
 // App header: the Slate wordmark, the four top-level tabs, search, Log time,
-// New, Notes and the account menu. The tabs are real links styled as tabs; the active one
+// New, Notes, the notification bell and the account menu. The tabs are real links styled as tabs; the active one
 // takes the page background so it joins the content below.
 
 import { icon } from './icons.js'
@@ -13,7 +13,7 @@ const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').re
 // `views` are the routes that light each tab up. Pages reached from the
 // account menu (Marketing, Leave, Settings, ...) light up none.
 export const TABS = [
-  { id: 'tasks',    label: 'Tasks',    href: '/',         view: 'dashboard', icon: 'tasks',    views: ['dashboard'] },
+  { id: 'tasks',    label: 'Tasks',    href: '/',         view: 'tasks',     icon: 'tasks',    views: ['tasks', 'dashboard'] },
   { id: 'calendar', label: 'Calendar', href: '#calendar', view: 'calendar',  icon: 'calendar', views: ['calendar'] },
   { id: 'projects', label: 'Projects', href: '#projects', view: 'projects',  icon: 'folder',   views: ['projects', 'budgets', 'planning'] },
   { id: 'contacts', label: 'Contacts', href: '#contacts', view: 'contacts',  icon: 'person',   views: ['contacts'] },
@@ -55,7 +55,7 @@ export class HeaderView {
     const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
     return `
       <header class="app-header">
-        <a class="app-wordmark" href="/" data-nav="dashboard">Slate</a>
+        <a class="app-wordmark" href="/" data-nav="tasks">Slate</a>
         <nav class="app-tabs" aria-label="Main">
           ${TABS.map(t => `<a class="app-tab" href="${t.href}" data-nav="${t.view}"${t.id === active ? ' aria-current="page"' : ''}>${t.label}</a>`).join('')}
         </nav>
@@ -66,6 +66,7 @@ export class HeaderView {
           <button type="button" class="hdr-btn hdr-btn--outline" id="hdr-logtime" aria-haspopup="dialog" aria-expanded="false">${icon('stopwatch', 16)}<span>Log time</span></button>
           <button type="button" class="hdr-btn hdr-btn--accent" id="hdr-new" aria-haspopup="menu" aria-expanded="false">${icon('plus', 16)}<span>New</span></button>
           <button type="button" class="hdr-icon-btn" id="hdr-notes" title="Notes" aria-label="Notes" aria-controls="notes-panel" aria-expanded="${this.app._notesOpen ? 'true' : 'false'}">${icon('notes', 20)}</button>
+          <button type="button" class="hdr-icon-btn hdr-bell" id="hdr-bell" title="Notifications" aria-haspopup="dialog" aria-expanded="false" aria-label="${esc(this.bellLabel())}">${icon('bell', 20)}${this.bellCountHtml()}</button>
           <button type="button" class="hdr-account" id="hdr-account" aria-haspopup="menu" aria-expanded="false" aria-label="${esc(this.accountLabel())}">
             <span class="hdr-avatar" aria-hidden="true">${esc(this.initials)}</span>${icon('chevron', 14)}
             <span class="hdr-account-dot"${this.pendingLeave() ? '' : ' hidden'}></span>
@@ -75,7 +76,7 @@ export class HeaderView {
   }
 
   // Phones: the same four tabs as a bottom bar (icon over label). The header
-  // keeps the wordmark, Log time, search, Notes and the avatar.
+  // keeps the wordmark, Log time, search, Notes, the bell and the avatar.
   tabBarHtml() {
     const active = tabForView(this.app.currentView)?.id
     return `
@@ -89,7 +90,32 @@ export class HeaderView {
     root.querySelector('#hdr-logtime')?.addEventListener('click', e => this.openLogTime(e.currentTarget))
     root.querySelector('#hdr-new')?.addEventListener('click', e => this.openNewMenu(e.currentTarget))
     root.querySelector('#hdr-notes')?.addEventListener('click', () => this.app.toggleNotes())
+    root.querySelector('#hdr-bell')?.addEventListener('click', e => this.app.tasksView.openNotifications(e.currentTarget))
     root.querySelector('#hdr-account')?.addEventListener('click', e => this.openAccountMenu(e.currentTarget))
+  }
+
+  // Task notifications: the unread count comes from TasksView (see
+  // watchUnread in views/tasks.js).
+  get unread() {
+    return this.app.tasksView?.unread || 0
+  }
+
+  bellLabel() {
+    const n = this.unread
+    return `Notifications${n ? `, ${n} unread` : ''}`
+  }
+
+  bellCountHtml() {
+    const n = this.unread
+    return `<span class="hdr-bell-count" aria-hidden="true"${n ? '' : ' hidden'}>${n > 9 ? '9+' : n}</span>`
+  }
+
+  refreshBell() {
+    const btn = document.getElementById('hdr-bell')
+    if (!btn) return
+    btn.setAttribute('aria-label', this.bellLabel())
+    btn.querySelector('.hdr-bell-count')?.remove()
+    btn.insertAdjacentHTML('beforeend', this.bellCountHtml())
   }
 
   // Keep the approvals dot and label in step when leave requests change.
@@ -187,6 +213,7 @@ export class HeaderView {
   openNewMenu(anchor) {
     const p = this.app.permissions ?? {}
     const entries = [
+      ['tasks', 'Task', 'task'],
       p.projects_edit && ['project', 'Project', 'project'],
       p.contacts_edit && ['person', 'Contact', 'contact'],
       p.budgets_edit && ['budget', 'Budget', 'budget'],

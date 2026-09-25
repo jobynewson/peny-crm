@@ -11,6 +11,7 @@
 // acknowledgement, event writing and notification fan-out are server-owned.
 
 import * as api from '../api/tasks.js'
+import { openFloating, floatingOpen } from './popover.js'
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
 
@@ -18,6 +19,9 @@ const POLL_MS         = 20000
 const POLL_BACKOFF_MS = 60000
 const FAIL_THRESHOLD  = 3
 const DESKTOP_QUERY   = '(min-width: 900px)'
+// The header bell's unread count, polled on pages without the board.
+const UNREAD_POLL_MS    = 60000
+const UNREAD_BACKOFF_MS = 300000
 
 const LS_SHELL   = 'slate-tasks-shell'     // '', 'desktop' or 'mobile' (manual override)
 const LS_FILTERS = 'slate-tasks-filters'
@@ -87,7 +91,6 @@ export class TasksView {
     this.detail      = null
     this.unread      = 0
     this.notifications = []
-    this.notifOpen   = false
     this.doneOpen    = false
 
     this._pollTimer = null
@@ -107,15 +110,19 @@ export class TasksView {
   // matchMedia decides by default; a manual override is remembered so anyone can
   // force either view (a tablet user, or someone who wants the board on a phone).
   shell() {
-    const override = localStorage.getItem(LS_SHELL)
+    let override = null
+    try { override = localStorage.getItem(LS_SHELL) } catch {}
     if (override === 'desktop' || override === 'mobile') return override
     return window.matchMedia(DESKTOP_QUERY).matches ? 'desktop' : 'mobile'
   }
 
   setShell(value) {
-    if (value) localStorage.setItem(LS_SHELL, value)
-    else localStorage.removeItem(LS_SHELL)
+    try {
+      if (value) localStorage.setItem(LS_SHELL, value)
+      else localStorage.removeItem(LS_SHELL)
+    } catch {}
     this.render(this._mc)
+    this.app.updateTitle()          // the toolbar's filters belong to the desktop board
   }
 
   _loadFilters() {
@@ -126,7 +133,7 @@ export class TasksView {
   }
 
   _saveFilters() {
-    localStorage.setItem(LS_FILTERS, JSON.stringify(this.filters))
+    try { localStorage.setItem(LS_FILTERS, JSON.stringify(this.filters)) } catch {}
   }
 
   // ── Data ───────────────────────────────────────────────────────────────────
@@ -140,7 +147,7 @@ export class TasksView {
       const data = await api.listTasks({ scope: 'board' })
       this.tasks = data.tasks
       this.serverTime = data.server_time
-      this.unread = data.unread_notifications
+      this.setUnread(data.unread_notifications)
       this.error = null
     } catch (err) {
       console.error('Tasks load failed:', err)
@@ -215,14 +222,13 @@ export class TasksView {
       const data = await api.listTasks({ scope: 'board', updated_since: this.serverTime })
       // The server's own clock, echoed back next time — the browser's may drift.
       this.serverTime = data.server_time
-      this.unread = data.unread_notifications
+      this.setUnread(data.unread_notifications)
 
       const changed = data.tasks.length || (data.archived_ids || []).length
       if (changed) {
         this._merge(data.tasks, data.archived_ids)
         this._refreshBoard()
       }
-      this._updateBell()
 
       if (this._failures >= FAIL_THRESHOLD) { this._failures = 0; this.startPolling() }
       else this._failures = 0
@@ -287,7 +293,11 @@ export class TasksView {
     if (!this._mq) {
       this._mq = window.matchMedia(DESKTOP_QUERY)
       this._mq.addEventListener('change', () => {
-        if (!localStorage.getItem(LS_SHELL) && this._mc) this._renderShell(this._mc)
+        let forced = null
+        try { forced = localStorage.getItem(LS_SHELL) } catch {}
+        if (forced || !this._mc || !document.contains(this._mc)) return
+        this._renderShell(this._mc)
+        this.app.updateTitle()
       })
     }
   }
@@ -384,9 +394,7 @@ export class TasksView {
     const unassigned = this.unassignedTasks()
     mc.innerHTML = `
       <div class="tk-wrap">
-        ${this._bellHtml()}
         ${this._quickAddHtml()}
-        ${this._filterBarHtml()}
         <div class="tk-tray ${unassigned.length ? '' : 'tk-tray--empty'}" data-tray="1">
           <div class="tk-tray-label">Unassigned${unassigned.length ? ` · ${unassigned.length}` : ''}</div>
           <div class="tk-tray-body" data-drop-tray="1">
@@ -413,42 +421,47 @@ export class TasksView {
       </div>`
 
     this._bindQuickAdd(mc)
-    this._bindFilterBar(mc)
-    this._bindBell(mc)
     this._bindCards(mc)
     this._bindDnD(mc)
     if (this.detailId) this._renderDetail()
   }
 
-  _filterBarHtml() {
+  // The desktop board's filters sit in the page toolbar, between the view
+  // switcher and + New task (App.toolbarHtml). The mobile list only ever
+  // shows your own tasks, so it has none.
+  toolbarFiltersHtml() {
+    if (this.shell() !== 'desktop') return ''
     const users = this.app.allUsers || []
     const projects = this.app.projects || []
     return `
-      <div class="tk-filters">
-        <button class="tk-chip ${this.filters.mine ? 'tk-chip--on' : ''}" id="tk-f-mine">Just mine</button>
-        <select class="tk-qa-select" id="tk-f-person">
-          <option value="">Anyone</option>
-          ${users.map(u => `<option value="${esc(u.id)}" ${this.filters.person === u.id ? 'selected' : ''}>${esc(u.name || u.email)}</option>`).join('')}
-        </select>
-        <select class="tk-qa-select" id="tk-f-project">
-          <option value="">Any project</option>
-          ${projects.map(p => `<option value="${esc(p.id)}" ${this.filters.project === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
-        </select>
-        <div style="flex:1"></div>
-        <button class="tk-chip" id="tk-shell-toggle" title="Switch to the mobile list">Mobile view</button>
-      </div>`
+      <button type="button" class="tk-chip ${this.filters.mine ? 'tk-chip--on' : ''}" id="tk-f-mine" aria-pressed="${this.filters.mine}">Just mine</button>
+      <label class="visually-hidden" for="tk-f-person">Assignee</label>
+      <select class="tk-qa-select" id="tk-f-person">
+        <option value="">Anyone</option>
+        ${users.map(u => `<option value="${esc(u.id)}" ${this.filters.person === u.id ? 'selected' : ''}>${esc(u.name || u.email)}</option>`).join('')}
+      </select>
+      <label class="visually-hidden" for="tk-f-project">Project</label>
+      <select class="tk-qa-select" id="tk-f-project">
+        <option value="">Any project</option>
+        ${projects.map(p => `<option value="${esc(p.id)}" ${this.filters.project === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
+      </select>
+      <button type="button" class="tk-chip" id="tk-shell-toggle" title="Switch to the mobile list">Mobile view</button>`
   }
 
-  _bindFilterBar(mc) {
+  bindToolbarFilters(bar) {
+    if (!bar) return
     const update = (patch) => {
       Object.assign(this.filters, patch)
       this._saveFilters()
-      this._renderShell(mc)
+      const mine = bar.querySelector('#tk-f-mine')
+      mine?.classList.toggle('tk-chip--on', this.filters.mine)
+      mine?.setAttribute('aria-pressed', String(this.filters.mine))
+      if (this._mc && document.contains(this._mc)) this._renderShell(this._mc)
     }
-    mc.querySelector('#tk-f-mine')?.addEventListener('click', () => update({ mine: !this.filters.mine }))
-    mc.querySelector('#tk-f-person')?.addEventListener('change', e => update({ person: e.target.value }))
-    mc.querySelector('#tk-f-project')?.addEventListener('change', e => update({ project: e.target.value }))
-    mc.querySelector('#tk-shell-toggle')?.addEventListener('click', () => this.setShell('mobile'))
+    bar.querySelector('#tk-f-mine')?.addEventListener('click', () => update({ mine: !this.filters.mine }))
+    bar.querySelector('#tk-f-person')?.addEventListener('change', e => update({ person: e.target.value }))
+    bar.querySelector('#tk-f-project')?.addEventListener('change', e => update({ project: e.target.value }))
+    bar.querySelector('#tk-shell-toggle')?.addEventListener('click', () => this.setShell('mobile'))
   }
 
   // Card face: title, assignee initials, due date if set, comment count if > 0,
@@ -600,7 +613,6 @@ export class TasksView {
 
     mc.innerHTML = `
       <div class="tk-m-wrap">
-        ${this._bellHtml(true)}
         ${!anything ? `<div class="empty-state" style="padding:60px 20px">Nothing assigned to you.</div>` : ''}
         ${open.filter(g => g.items.length).map(g => `
           <div class="tk-m-group">
@@ -616,8 +628,6 @@ export class TasksView {
             </button>
             ${this.doneOpen ? done.items.map(t => this._mobileRowHtml(t)).join('') : ''}
           </div>` : ''}
-        <div style="height:88px"></div>
-        <button class="tk-fab" id="tk-fab" aria-label="Add a task">+</button>
         <button class="tk-m-shell-toggle" id="tk-shell-toggle">Desktop board</button>
       </div>`
 
@@ -625,8 +635,6 @@ export class TasksView {
       this.doneOpen = !this.doneOpen; this._renderShell(mc)
     })
     mc.querySelector('#tk-shell-toggle')?.addEventListener('click', () => this.setShell('desktop'))
-    mc.querySelector('#tk-fab')?.addEventListener('click', () => this._openQuickAddSheet())
-    this._bindBell(mc)
 
     mc.querySelectorAll('[data-task-id]').forEach(el => {
       el.addEventListener('click', e => {
@@ -663,20 +671,29 @@ export class TasksView {
       </div>`
   }
 
-  _openQuickAddSheet() {
+  // The quick-add form as a dialog: + New task in the toolbar, the header's
+  // New menu and the N shortcut all open it.
+  openQuickAdd() {
+    document.getElementById('tk-add-host')?.remove()
+    const opener = document.activeElement
     const host = document.createElement('div')
+    host.id = 'tk-add-host'
     host.className = 'tk-sheet-backdrop'
     host.innerHTML = `
-      <div class="tk-sheet tk-sheet--add">
+      <div class="tk-sheet tk-sheet--add" role="dialog" aria-modal="true" aria-labelledby="tk-add-title">
         <div class="tk-sheet-head">
-          <span>New task</span>
+          <h2 class="tk-sheet-title" id="tk-add-title">New task</h2>
           <button class="tk-x" data-close="1" aria-label="Close">✕</button>
         </div>
         <div class="tk-sheet-body">${this._quickAddHtml()}</div>
       </div>`
     document.body.appendChild(host)
-    const close = () => host.remove()
+    const close = () => {
+      host.remove()
+      if (opener && opener !== document.body && document.contains(opener)) opener.focus()
+    }
     host.addEventListener('click', e => { if (e.target === host || e.target.dataset.close) close() })
+    host.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); close() } })
     this._bindQuickAdd(host)
     // Enter submits and closes — the whole point of the fast path.
     host.querySelector('#tk-qa-title')?.addEventListener('keydown', e => {
@@ -711,6 +728,7 @@ export class TasksView {
   // mobile. Same markup and bindings either way.
 
   async openDetail(id) {
+    if (!this.detailId) this._detailOpener = document.activeElement
     this.detailId = id
     this.detail = null
     this._renderDetail()
@@ -725,9 +743,13 @@ export class TasksView {
   }
 
   closeDetail() {
+    const wasOpen = !!document.getElementById('tk-detail-host')
     this.detailId = null
     this.detail = null
     document.getElementById('tk-detail-host')?.remove()
+    const opener = this._detailOpener
+    this._detailOpener = null
+    if (wasOpen && opener && opener !== document.body && document.contains(opener)) opener.focus()
   }
 
   async _refreshDetailTask() {
@@ -757,11 +779,21 @@ export class TasksView {
     }
 
     const mobile = this.shell() === 'mobile'
+    const dialogAttrs = `role="dialog" aria-modal="true" aria-label="Task" tabindex="-1"`
     if (!this.detail) {
-      host.innerHTML = `<div class="tk-sheet ${mobile ? 'tk-sheet--full' : 'tk-sheet--modal'}">
+      host.innerHTML = `<div class="tk-sheet ${mobile ? 'tk-sheet--full' : 'tk-sheet--modal'}" ${dialogAttrs}>
         <div class="tk-sheet-body"><div class="empty-state" style="padding:40px">Loading…</div></div></div>`
+      host.querySelector('.tk-sheet').focus()
       return
     }
+
+    // The sheet is redrawn whenever the task changes (including on each poll),
+    // so carry over whatever is being typed and where the caret is.
+    const active = host.contains(document.activeElement) ? document.activeElement : null
+    const typing = active?.id && 'value' in active
+      ? { id: active.id, value: active.value, start: active.selectionStart, end: active.selectionEnd }
+      : null
+    const draft = host.querySelector('#tk-d-comment')?.value || ''
 
     const { task, comments, events } = this.detail
     const users = this.app.allUsers || []
@@ -770,7 +802,7 @@ export class TasksView {
     const creator = this.userById(task.created_by)
 
     host.innerHTML = `
-      <div class="tk-sheet ${mobile ? 'tk-sheet--full' : 'tk-sheet--modal'}">
+      <div class="tk-sheet ${mobile ? 'tk-sheet--full' : 'tk-sheet--modal'}" ${dialogAttrs}>
         <div class="tk-sheet-head">
           <span class="tk-sheet-sub">Raised by ${esc(creator?.name || creator?.email || 'someone')} · ${esc(timeAgo(task.created_at))}</span>
           <button class="tk-x" data-close="1" aria-label="Close">✕</button>
@@ -838,6 +870,17 @@ export class TasksView {
       </div>`
 
     this._bindDetail(host, task)
+
+    const composer = host.querySelector('#tk-d-comment')
+    if (composer && draft) composer.value = draft
+    const again = typing && host.querySelector(`#${typing.id}`)
+    if (again) {
+      again.value = typing.value
+      again.focus()
+      try { again.setSelectionRange(typing.start, typing.end) } catch { /* not a text field */ }
+    } else if (!active?.id) {
+      host.querySelector('.tk-sheet').focus()
+    }
   }
 
   // Highlight resolved @handles in a stored comment. Unresolved ones stay as
@@ -963,84 +1006,114 @@ export class TasksView {
     composer.addEventListener('blur', () => setTimeout(hide, 120))
   }
 
-  // ── Notification bell ──────────────────────────────────────────────────────
+  // ── Notifications (the header bell) ────────────────────────────────────────
+  // The bell sits in the app header on every page (HeaderView). While the board
+  // or the dashboard section is on screen their poll reports the unread count;
+  // elsewhere watchUnread() checks it once a minute.
 
-  _bellHtml(mobile = false) {
-    return `
-      <div class="tk-bell-row ${mobile ? 'tk-bell-row--m' : ''}">
-        <button class="tk-bell" id="tk-bell" aria-label="Notifications">
-          🔔${this.unread > 0 ? `<span class="tk-bell-dot">${this.unread > 9 ? '9+' : this.unread}</span>` : ''}
-        </button>
-      </div>
-      ${this.notifOpen ? this._notifListHtml() : ''}`
+  setUnread(n) {
+    this.unread = Number(n) || 0
+    this.app.header?.refreshBell()
   }
 
-  _notifListHtml() {
-    const items = this.notifications
+  watchUnread() {
+    if (this._unreadWatching) return
+    this._unreadWatching = true
+    this._unreadFailures = 0
+    const schedule = (ms) => { clearInterval(this._unreadTimer); this._unreadTimer = setInterval(tick, ms) }
+    const tick = async () => {
+      if (document.visibilityState === 'hidden') return
+      if (this._pollTimer) return                 // the board's own poll has it
+      try {
+        const data = await api.listNotifications(true)
+        this.setUnread(data.unread_notifications)
+        if (this._unreadFailures >= FAIL_THRESHOLD) schedule(UNREAD_POLL_MS)
+        this._unreadFailures = 0
+      } catch (err) {
+        // e.g. offline, or the tasks API isn't reachable: check less often.
+        if (++this._unreadFailures === FAIL_THRESHOLD) schedule(UNREAD_BACKOFF_MS)
+      }
+    }
+    schedule(UNREAD_POLL_MS)
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tick() })
+    tick()
+  }
+
+  // Opens under the header bell (a bottom sheet on phones).
+  async openNotifications(anchor) {
     const LABEL = {
       assigned: 'assigned you', mentioned: 'mentioned you', commented: 'commented on',
       acknowledged: 'acknowledged', completed: 'completed', unacknowledged_nudge: 'still waiting on you',
     }
-    return `
-      <div class="tk-notifs">
-        <div class="tk-notifs-head">
-          <span>Notifications</span>
-          <button class="tk-chip" id="tk-notif-readall">Mark all read</button>
-        </div>
-        ${items.length ? items.map(n => `
-          <button class="tk-notif ${n.read_at ? '' : 'tk-notif--unread'}" data-notif-id="${esc(n.id)}" data-notif-task="${esc(n.task_id)}">
+    const head = () => `<div class="notif-head"><h2 class="notif-title">Notifications</h2>
+      <button type="button" class="tk-chip" id="notif-readall"${this.unread ? '' : ' disabled'}>Mark all read</button></div>`
+    const listHtml = () => `
+      ${head()}
+      <div class="notif-list">
+        ${this.notifications.length ? this.notifications.map(n => `
+          <button type="button" class="tk-notif ${n.read_at ? '' : 'tk-notif--unread'}" data-notif-id="${esc(n.id)}" data-notif-task="${esc(n.task_id)}">
             <span class="tk-notif-text">
               <strong>${esc(n.actor_name || n.actor_email || 'Someone')}</strong>
               ${esc(LABEL[n.type] || n.type)} — ${esc(n.task_title)}
             </span>
             <span class="tk-comment-time">${esc(timeAgo(n.created_at))}</span>
           </button>`).join('')
-          : `<div class="tk-comment-empty">Nothing new.</div>`}
+          : `<p class="tk-comment-empty notif-empty">Nothing new.</p>`}
       </div>`
-  }
 
-  _updateBell() {
-    const bell = document.getElementById('tk-bell')
-    if (!bell) return
-    bell.innerHTML = `🔔${this.unread > 0 ? `<span class="tk-bell-dot">${this.unread > 9 ? '9+' : this.unread}</span>` : ''}`
-  }
-
-  _bindBell(mc) {
-    mc.querySelector('#tk-bell')?.addEventListener('click', async () => {
-      this.notifOpen = !this.notifOpen
-      if (this.notifOpen) {
-        try {
-          const data = await api.listNotifications(false)
-          this.notifications = data.notifications
-          this.unread = data.unread_notifications
-        } catch (err) { this.app.toast(err.message || 'Could not load notifications') }
-      }
-      this._renderShell(mc)
+    const panel = openFloating({
+      anchor, id: 'notif-panel', role: 'dialog', label: 'Notifications', className: 'notif-pop',
+      html: `${head()}<p class="tk-comment-empty notif-empty">Loading…</p>`,
     })
+    if (!panel) return                            // the click closed it
+    const root = () => panel.el.querySelector('.sheet-body') || panel.el
+    const stillOpen = () => floatingOpen('notif-panel') && document.contains(panel.el)
 
-    mc.querySelector('#tk-notif-readall')?.addEventListener('click', async () => {
-      try {
-        await api.markRead({ all: true })
-        this.notifications = this.notifications.map(n => ({ ...n, read_at: new Date().toISOString() }))
-        this.unread = 0
-        this._renderShell(mc)
-      } catch (err) { this.app.toast(err.message || 'Could not update notifications') }
-    })
-
-    // Clicking an item opens the card and marks that one read.
-    mc.querySelectorAll('[data-notif-id]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const { notifId, notifTask } = btn.dataset
-        this.notifOpen = false
-        this.openDetail(notifTask)
+    const draw = () => {
+      root().innerHTML = listHtml()
+      root().querySelector('#notif-readall')?.addEventListener('click', async () => {
         try {
-          await api.markRead({ ids: [notifId] })
-          const hit = this.notifications.find(n => n.id === notifId)
-          if (hit && !hit.read_at) { hit.read_at = new Date().toISOString(); this.unread = Math.max(0, this.unread - 1) }
-          this._updateBell()
-        } catch { /* not worth a toast */ }
+          await api.markRead({ all: true })
+          const now = new Date().toISOString()
+          this.notifications = this.notifications.map(n => ({ ...n, read_at: n.read_at || now }))
+          this.setUnread(0)
+          if (stillOpen()) { draw(); root().querySelector('[data-notif-id]')?.focus() }
+        } catch (err) { this.app.toast(err.message || 'Could not update notifications') }
       })
-    })
+      // Clicking one opens its task and marks it read.
+      root().querySelectorAll('[data-notif-id]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const { notifId, notifTask } = btn.dataset
+          panel.close({ restoreFocus: false })
+          this.showTask(notifTask)
+          try {
+            await api.markRead({ ids: [notifId] })
+            const hit = this.notifications.find(n => n.id === notifId)
+            if (hit && !hit.read_at) { hit.read_at = new Date().toISOString(); this.setUnread(Math.max(0, this.unread - 1)) }
+          } catch { /* not worth a toast */ }
+        })
+      })
+    }
+
+    try {
+      const data = await api.listNotifications(false)
+      this.notifications = data.notifications
+      this.setUnread(data.unread_notifications)
+    } catch (err) {
+      if (stillOpen()) root().innerHTML = `${head()}<p class="tk-comment-empty notif-empty">Couldn't load notifications. ${esc(err.message || '')}</p>`
+      return
+    }
+    if (!stillOpen()) return
+    draw()
+    ;(root().querySelector('[data-notif-id]') || root().querySelector('#notif-readall:not([disabled])'))?.focus()
+  }
+
+  // Open a task from anywhere (a notification). The detail keeps itself in
+  // step through the board or the dashboard section, so other pages go to the
+  // board first.
+  showTask(id) {
+    if (!['tasks', 'dashboard'].includes(this.app.currentView)) this.app.navigate('tasks')
+    this.openDetail(id)
   }
 
   // ── Dashboard section ──────────────────────────────────────────────────────
@@ -1090,11 +1163,11 @@ export class TasksView {
     return [
       { id: 'needs', label: 'Needs a reply', dot: 'var(--danger)',
         items: mine.filter(t => this.isUnacknowledged(t)).sort(byDue) },
-      { id: 'doing', label: 'Doing', dot: '#6ec96e',
+      { id: 'doing', label: 'Doing', dot: 'var(--cat-green)',
         items: mine.filter(t => !this.isUnacknowledged(t) && t.status === 'doing').sort(byDue) },
       { id: 'todo', label: 'To do', dot: 'var(--accent)',
         items: mine.filter(t => !this.isUnacknowledged(t) && t.status === 'todo').sort(byDue) },
-      { id: 'free', label: 'Up for grabs', dot: '#f59e0b',
+      { id: 'free', label: 'Up for grabs', dot: 'var(--cat-amber)',
         items: this.tasks.filter(t => !t.archived_at && !t.assignee_id && t.status !== 'done').sort(byDue) },
     ]
   }
