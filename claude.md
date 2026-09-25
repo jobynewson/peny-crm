@@ -86,35 +86,38 @@ index.html                # App HTML shell
 - Client-side only (no server routes needed)
 - `vercel.json` rewrites all paths to `index.html` for SPA routing to work on refresh
 - Routes are hashes: `#view`, `#view/<id>`, `#projects/<id>/<tab>`. `/` (no
-  hash) is Tasks, which is the `dashboard` view until a Tasks board exists;
-  `#dashboard` still works. `VIEWS` in `src/app.js` lists every route the app
-  has used; keep old ones there so bookmarks never break. `_parseHash()`
-  reads a URL and `navigate(view)` moves between views.
+  hash, or `#tasks`) is the task board and `#dashboard` the dashboard; an
+  unknown hash lands on the board. `VIEWS` in `src/app.js` lists every route
+  the app has used; keep old ones there so bookmarks never break.
+  `_parseHash()` reads a URL and `navigate(view)` moves between views.
 - An unknown project tab (e.g. an old `#projects/<id>/files` link) falls back
   to Overview.
 
 ### App shell
 There is no sidebar. The shell is a header over the page:
 - **Header** (`src/views/header.js`, 64px): the Slate wordmark, four top tabs
-  and, on the right, search (⌘K / Ctrl K), Log time, New, Notes and the
-  avatar. The tabs are real links. `TABS` sets which routes light each one:
-  Tasks = `dashboard`; Calendar = `calendar`; Projects = `projects`,
-  `budgets` and `planning`; Contacts = `contacts`. Pages opened from the
-  account menu light no tab.
+  and, on the right, search (⌘K / Ctrl K), Log time, New, Notes, the
+  notification bell and the avatar. The tabs are real links. `TABS` sets
+  which routes light each one: Tasks = `tasks` and `dashboard`; Calendar =
+  `calendar`; Projects = `projects`, `budgets` and `planning`; Contacts =
+  `contacts`. Pages opened from the account menu light no tab.
 - **Account menu** (avatar): Tools (Marketing, Offload Log, Story Planner),
   Workspace (Team & roles, Leave with the approvals badge, Expenses,
   Passwords for vault users, Dev request), Theme (System | Light | Dark), then
   Settings, Keyboard shortcuts and Sign out. Tools is where new productivity
-  tools go if they don't fit the tabs. **New** opens a small menu (Project,
-  Contact, Budget, Note).
+  tools go if they don't fit the tabs. **New** opens a small menu (Task,
+  Project, Contact, Budget, Note).
+- **Bell**: task notifications, with the unread count. It opens the list
+  under the button (a bottom sheet on phones). See "Tasks system".
 - **Floating panels** go through `openFloating()` in `src/views/popover.js`.
   One open at a time; each closes on Escape, an outside click or
   navigation, and hands focus back to its button. Menus use `role="menu"`
   with arrow keys; Log time is a `role="dialog"`. On phones the same call
   opens a bottom sheet instead (see "Phones" below).
 - **Page toolbar**: the first row of each list page (`toolbarHtml()` in
-  `src/app.js`): the view switcher (All projects · Budgets · Planning under
-  the Projects tab), then filters, then primary actions on the right. Pages
+  `src/app.js`): the view switcher (Board · Dashboard under the Tasks tab,
+  All projects · Budgets · Planning under the Projects tab), then filters,
+  then primary actions on the right. Pages
   don't repeat their title. Detail pages (a project, budget, board, plan)
   hide it and use their own header row. A project's row starts with a
   "Projects / <name>" breadcrumb.
@@ -124,7 +127,7 @@ There is no sidebar. The shell is a header over the page:
 - Icons are inline SVGs from `icon(name, size)` in `src/views/icons.js`.
 
 ### Phones (≤768px)
-- 56px header (wordmark, Log time, search, Notes, avatar; no hamburger) and
+- 56px header (wordmark, Log time, search, Notes, bell, avatar; no hamburger) and
   a bottom tab bar with the same four tabs. `--header-h`, `--tabbar-h` and
   `--chrome-h` in `tokens.css` hold the chrome's height for views that fill
   the screen (e.g. the canvas).
@@ -289,7 +292,7 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
     shown without `?debug=1`, so an office screen stays clean, and it never
     contains the API key.
   - The ticker appears on BOTH the office dashboard and the in-app Dashboard
-    (the Tasks page),
+    (Tasks › Dashboard),
     sharing the `settings.youtube_ticker` row. They reach the count by
     different routes: the office display via `/api/portal?view=dashboard`
     (gated by DASHBOARD_TOKEN), the app via `GET /api/blob?action=youtube&id=`
@@ -557,7 +560,7 @@ always the source of truth and nothing is ever read back from Google.
 - Retainer periods are anchored on `retainer_start`'s day-of-month, so they are
   usually NOT calendar months. Both dashboards therefore state the period's
   actual dates ("15 Aug – 14 Sep") rather than a vague label:
-  - App Dashboard (Tasks page) retainer cards (`src/app.js`, `_retainerPeriodLabel()`) show
+  - App Dashboard (Tasks › Dashboard) retainer cards (`src/app.js`, `_retainerPeriodLabel()`) show
     the range under the client name.
   - Office dashboard cards (`public/dashboard.html`) show it in place of the
     old "This period"; `api/_dashboard.js` sends `periodStart` + `periodEnd`.
@@ -671,6 +674,22 @@ render; give each column element the attribute you pass as `colAttr`
 - Desktop and mobile are separate shells over a shared API and shared card
   detail component (`src/views/tasks.js`). Do not attempt to make the column
   board responsive.
+- Where it sits in the app: the board is the Tasks tab's home page (`/`,
+  also `#tasks`); the dashboard is `#dashboard`, one click away on the Board ·
+  Dashboard switcher, and carries its own compact Tasks section. The
+  desktop board's filters and + New task live in the page toolbar
+  (`toolbarFiltersHtml()` / `bindToolbarFilters()`; + New task, the header's
+  New › Task and the N key all call `openQuickAdd()`).
+- The notification bell is in the app header on every page. TasksView owns
+  the count (`setUnread()` refreshes the header). The board's poll reports it
+  while the board or the dashboard section is on screen; elsewhere
+  `watchUnread()` checks `/api/notifications?unread=true` once a minute (every
+  5 minutes after repeated failures). `openNotifications()` shows the list,
+  and clicking one calls `showTask()`, which goes to the board first when
+  needed because the detail stays in step through the board's poll.
+- The task detail is redrawn on every poll that changes something.
+  `_renderDetail()` carries over focus, the caret and a half-written comment,
+  so keep that if you change how it renders.
 - Due dates and project links are always optional. Nothing may block task
   creation except a non-empty title.
 - `tasks.parent_type` / `parent_id` are reserved for Phase 3 (absorbing canvas
