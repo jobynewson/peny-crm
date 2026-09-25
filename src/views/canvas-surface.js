@@ -78,9 +78,9 @@ const TOOLS = [
 ]
 
 const LINK_TYPES = [
-  { id: 'client',  label: 'Client',  icon: '👤', color: '#a78bfa' },
-  { id: 'project', label: 'Project', icon: '🎬', color: '#4a90d9' },
-  { id: 'budget',  label: 'Budget',  icon: '£',  color: '#6ec96e' },
+  { id: 'client',  label: 'Client',  icon: '👤', tone: 'purple' },
+  { id: 'project', label: 'Project', icon: '🎬', tone: 'blue' },
+  { id: 'budget',  label: 'Budget',  icon: '£',  tone: 'green' },
 ]
 
 const inputStyle = 'font-size:13px;padding:6px 9px;border:1px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);outline:none'
@@ -626,8 +626,11 @@ export class CanvasSurface {
     const rx = span * 0.012
     return `<svg class="cv-board-preview" viewBox="${b.x - pad} ${b.y - pad} ${b.w + pad * 2} ${b.h + pad * 2}" preserveAspectRatio="xMidYMid meet">
       ${shown.map(r => {
-        const fill = (r.kind === 'note' || r.kind === 'swatch') ? safeColor(r.color, '#FFFFFF') : r.kind === 'board' ? 'rgba(255,255,255,0.55)' : '#FFFFFF'
-        return `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="${rx}" fill="${fill}" opacity="0.92"></rect>`
+        // Notes and swatches keep their own colour; everything else is a light
+        // block on the board's (saturated) colour, fainter for nested boards.
+        const own = r.kind === 'note' || r.kind === 'swatch'
+        const fill = own ? safeColor(r.color, '#FFFFFF') : 'var(--on-data)'
+        return `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="${rx}" fill="${fill}" opacity="${r.kind === 'board' ? 0.5 : 0.92}"></rect>`
       }).join('')}
     </svg>`
   }
@@ -663,7 +666,7 @@ export class CanvasSurface {
       const t = LINK_TYPES.find(x => x.id === l.type)
       const name = this._entityName(l.type, l.id)
       if (!t || !name) return ''
-      return `<span class="bd-chip" data-chip-type="${esc(l.type)}" data-chip-id="${esc(l.id)}" style="color:${t.color};background:${t.color}26">${t.icon} ${esc(name)}</span>`
+      return `<span class="bd-chip" data-chip-type="${esc(l.type)}" data-chip-id="${esc(l.id)}" style="color:var(--cat-${t.tone});background:var(--cat-${t.tone}-soft)">${t.icon} ${esc(name)}</span>`
     }).join('')
   }
 
@@ -2899,7 +2902,7 @@ export class CanvasSurface {
       const overlay = document.createElement('div')
       overlay.className = 'cv-modal'
       overlay.dataset.cvOwner = this.uid
-      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
+      overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
       overlay.innerHTML = `
         <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:400px;padding:20px;box-shadow:var(--shadow-lg)">
           <div style="font-size:14px;font-weight:600;margin-bottom:12px">${esc(o.title)}</div>
@@ -2931,7 +2934,7 @@ export class CanvasSurface {
     const overlay = document.createElement('div')
     overlay.id = 'cv-item-modal'
     overlay.dataset.cvOwner = this.uid
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
     const linkOptions = (/** @type {string} */ type) => {
       if (type === 'client') return (this.app.contacts ?? []).map((/** @type {any} */ c) => `<option value="${esc(c.id)}">${esc(`${c.first_name} ${c.last_name}`.trim())}</option>`).join('')
       if (type === 'project') return (this.app.projects ?? []).map((/** @type {any} */ p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')
@@ -2945,7 +2948,7 @@ export class CanvasSurface {
           ${links.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
             ${links.map((l, i) => {
               const t = LINK_TYPES.find(x => x.id === l.type)
-              return `<span class="bd-chip" style="color:${t?.color};background:${t?.color}1a">${t?.icon} ${esc(this._entityName(l.type, l.id) || 'Missing record')}
+              return `<span class="bd-chip" style="color:var(--cat-${t?.tone ?? 'grey'});background:var(--cat-${t?.tone ?? 'grey'}-soft)">${t?.icon} ${esc(this._entityName(l.type, l.id) || 'Missing record')}
                 <button class="cvm-link-del" data-idx="${i}" style="background:none;border:none;cursor:pointer;color:inherit;font-size:12px;padding:0 0 0 4px;line-height:1">×</button></span>`
             }).join('')}
           </div>` : '<div style="font-size:12px;color:var(--text-tertiary);margin-bottom:12px">No links yet — link this card to a client, project or budget.</div>'}
@@ -3404,7 +3407,7 @@ export class CanvasSurface {
       c.el.dataset.label = label
       c.el.dataset.color = color
       c.el.style.setProperty('--peer', color)
-      c.el.innerHTML = `<svg width="16" height="18" viewBox="0 0 16 18"><path d="M1 1 L1 15 L5 11 L8 17 L10.5 16 L7.5 10 L13 10 Z" fill="var(--peer)" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg><span>${esc(label)}</span>`
+      c.el.innerHTML = `<svg width="16" height="18" viewBox="0 0 16 18"><path d="M1 1 L1 15 L5 11 L8 17 L10.5 16 L7.5 10 L13 10 Z" fill="var(--peer)" stroke="var(--on-data)" stroke-width="1.2" stroke-linejoin="round"/></svg><span>${esc(label)}</span>`
     }
     c.x = p.x; c.y = p.y; c.seen = performance.now()
     this._cursorsDirty = true

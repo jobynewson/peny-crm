@@ -14,7 +14,20 @@ import { ExpensesView } from './views/expenses.js'
 import { OffloadLogView } from './views/offload-log.js'
 import { BoardsView } from './views/boards.js'
 import { CanvasView } from './views/canvas.js'
+import { TasksView } from './views/tasks.js'
 import { PlanningTabsView } from './views/planning-tabs.js'
+import { HeaderView, tabForView } from './views/header.js'
+import { icon } from './views/icons.js'
+import { closeFloating } from './views/popover.js'
+import { searchCommands } from './views/search-commands.js'
+import { matchCommands } from './utils/command-search.js'
+import { segTabs, bindSegTabs } from './views/toolbar.js'
+import { syncThemeColor } from './theme.js'
+
+const PHONE = '(max-width: 768px)'
+
+// Every route the app has used; old bookmarks keep working.
+const VIEWS = ['dashboard', 'tasks', 'calendar', 'projects', 'budgets', 'planning', 'contacts', 'marketing', 'story-planner', 'leave', 'expenses', 'password-manager', 'offload-log', 'settings', 'timetrack']
 
 export class App {
   constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, leaveRequests, publicHolidays, onSignOut }) {
@@ -49,17 +62,26 @@ export class App {
     this.offloadLogView       = new OffloadLogView(this)
     this.boardsView           = new BoardsView(this)
     this.canvasView           = new CanvasView(this)
+    this.tasksView            = new TasksView(this)
     this.planningTabs         = new PlanningTabsView(this)
+    this.header               = new HeaderView(this)
     window.app = this
   }
 
   mount(container) {
     this.container = container
-    const saved = localStorage.getItem('slate-theme') || 'dark'
-    document.documentElement.setAttribute('data-theme', saved)
+    // The Notes panel docks beside the page on desktop and remembers being
+    // open, the way the sidebar notes were always there. On phones it's a
+    // sheet you open when needed.
+    try { this._notesOpen = localStorage.getItem('slate-notes-open') === '1' && !window.matchMedia(PHONE).matches } catch { this._notesOpen = false }
     this._restoreFromHash()   // parse URL before first render
     this.render()
+    syncThemeColor()
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', syncThemeColor)
+    this._loadNotes()         // notes are also indexed by ⌘K search
+    this.tasksView.watchUnread()  // the header bell's count
     this._bindKeyboard()
+    this._bindNavLinks()
     this._bindDateRangeLinks()
     // Handle browser back/forward
     window.addEventListener('popstate', (e) => this._handlePopState(e))
@@ -104,7 +126,7 @@ export class App {
 
     const overlay = document.createElement('div')
     overlay.id = 'dev-req-overlay'
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
 
     const { getDevRequests, addDevRequest, toggleDevRequest, deleteDevRequest } = await import('./db/client.js')
     const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -187,10 +209,10 @@ export class App {
           const name = this.appUser?.name || this.user?.primaryEmailAddress?.emailAddress || this.clerkUserId
           await addDevRequest(this.clerkUserId, name, msg)
           overlay.querySelector('#dev-req-text').value = ''
-          if (msgEl) { msgEl.style.display='block'; msgEl.style.color='#6ec96e'; msgEl.textContent='✓ Request submitted' }
+          if (msgEl) { msgEl.style.display='block'; msgEl.style.color='var(--success)'; msgEl.textContent='✓ Request submitted' }
           setTimeout(() => { if (msgEl) msgEl.style.display='none' }, 2500)
           if (isAdmin) renderModal()
-        } catch(e) { console.error(e); if (msgEl) { msgEl.style.display='block'; msgEl.style.color='#e07070'; msgEl.textContent='Error submitting' } }
+        } catch(e) { console.error(e); if (msgEl) { msgEl.style.display='block'; msgEl.style.color='var(--danger)'; msgEl.textContent='Error submitting' } }
       })
 
       // Submit only via the button — Enter inserts a newline as normal.
@@ -236,120 +258,167 @@ export class App {
 
     const overlay = document.createElement('div')
     overlay.id = 'search-overlay'
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:flex-start;justify-content:center;padding-top:15vh;z-index:9999;cursor:pointer'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);display:flex;align-items:flex-start;justify-content:center;padding-top:15vh;z-index:9999;cursor:pointer'
 
     const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 
-    const render = (query = '') => {
-      const q = query.toLowerCase().trim()
+    const find = q => {
       const results = []
-
-      if (q.length > 0) {
-        // Contacts
-        this.contacts.forEach(c => {
-          const text = `${c.first_name} ${c.last_name} ${c.company||''} ${c.email||''}`.toLowerCase()
-          if (text.includes(q)) results.push({ type:'contact', label:`${c.first_name} ${c.last_name}`, sub: c.company||c.email||'', id: c.id })
-        })
-        // Projects
-        this.projects.forEach(p => {
-          const cl = this.contacts.find(c => c.id === p.client_id)
-          const text = `${p.name} ${cl?.company||''} ${cl?.first_name||''} ${cl?.last_name||''}`.toLowerCase()
-          if (text.includes(q)) results.push({ type:'project', label: p.name, sub: cl ? `${cl.first_name} ${cl.last_name}` : p.status, id: p.id })
-        })
-        // Budgets
-        this.budgets.forEach(b => {
-          const cl = this.contacts.find(c => c.id === b.client_id)
-          const text = `${b.name} ${cl?.company||''} ${cl?.first_name||''} ${cl?.last_name||''}`.toLowerCase()
-          if (text.includes(q)) results.push({ type:'budget', label: b.name, sub: cl ? `${cl.first_name} ${cl.last_name}` : '', id: b.id })
-        })
-        // Marketing cards
-        ;(this.marketingCards || []).forEach(card => {
-          const text = `${card.title||''} ${card.notes||''} ${card.card_type||''}`.toLowerCase()
-          if (text.includes(q)) results.push({ type:'marketing', label: card.title || 'Untitled card', sub: (card.card_type||'').replace(/-/g,' '), card })
-        })
-        // Shoots (lazily loaded — see below)
-        ;(this._searchShootsCache || []).forEach(sh => {
-          const text = `${sh.name||''} ${sh.project_name||''}`.toLowerCase()
-          if (text.includes(q)) results.push({ type:'shoot', label: sh.name || 'Untitled shoot', sub: sh.project_name || '', projectId: sh.project_id })
-        })
-        // Notes
-        ;(this._notes || []).forEach(n => {
-          const title = (n.title||'').trim(), content = (n.content||'').trim()
-          if (!title && !content) return
-          const text = `${title} ${content}`.toLowerCase()
-          if (text.includes(q)) results.push({ type:'note', label: title || 'Untitled note', sub: content ? content.replace(/\s+/g,' ').slice(0,60) : '', id: n.id })
-        })
-      }
-
-      const typeIcon   = { contact:'👤', project:'🎬', budget:'£', marketing:'📣', shoot:'🎥', note:'📝' }
-      const typeColour = { contact:'#a78bfa', project:'#4a90d9', budget:'#6ec96e', marketing:'#f59e0b', shoot:'#ef4444', note:'#8590A2' }
-      const typeLabel  = { contact:'Contact', project:'Project', budget:'Budget', marketing:'Card', shoot:'Shoot', note:'Note' }
-
-      overlay.innerHTML = `
-        <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:520px;overflow:hidden;cursor:default;box-shadow:0 20px 60px rgba(0,0,0,0.4)" onclick="event.stopPropagation()">
-          <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border-light)">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--text-tertiary)" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
-            <input id="search-input" placeholder="Search contacts, projects, budgets, cards, shoots, notes…" value="${esc(query)}"
-              style="flex:1;background:transparent;border:none;outline:none;font-size:15px;color:var(--text-primary);font-family:var(--font)" autofocus />
-            <kbd style="font-size:11px;color:var(--text-tertiary);background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:2px 6px">Esc</kbd>
-          </div>
-          <div id="search-results" style="max-height:360px;overflow-y:auto">
-            ${q.length === 0 ? `<div style="padding:24px;text-align:center;font-size:13px;color:var(--text-tertiary)">Start typing to search across all records</div>`
-            : results.length === 0 ? `<div style="padding:24px;text-align:center;font-size:13px;color:var(--text-tertiary)">No results for "${esc(query)}"</div>`
-            : results.map((r,i) => `
-              <div data-result="${i}" style="display:flex;align-items:center;gap:12px;padding:11px 16px;cursor:pointer;border-bottom:1px solid var(--border-light);transition:background 0.1s"
-                onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''">
-                <span style="font-size:16px;flex-shrink:0">${typeIcon[r.type]}</span>
-                <div style="flex:1;min-width:0">
-                  <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.label)}</div>
-                  ${r.sub ? `<div style="font-size:11px;color:var(--text-tertiary)">${esc(r.sub)}</div>` : ''}
-                </div>
-                <span style="font-size:10px;color:${typeColour[r.type]};background:${typeColour[r.type]}22;border-radius:var(--radius-md);padding:2px 7px;flex-shrink:0">${typeLabel[r.type] ?? r.type}</span>
-              </div>`).join('')}
-          </div>
-          ${q.length > 0 && results.length > 0 ? `<div style="padding:8px 16px;font-size:11px;color:var(--text-tertiary);border-top:1px solid var(--border-light)">${results.length} result${results.length!==1?'s':''}</div>` : ''}
-        </div>`
-
-      // Input handler
-      const input = overlay.querySelector('#search-input')
-      input?.addEventListener('input', e => render(e.target.value))
-      input?.addEventListener('keydown', e => {
-        if (e.key === 'Escape') { overlay.remove() }
-        if (e.key === 'Enter' && results.length > 0) {
-          overlay.querySelector('[data-result="0"]')?.click()
-        }
+      if (!q) return results
+      // Contacts
+      this.contacts.forEach(c => {
+        const text = `${c.first_name} ${c.last_name} ${c.company||''} ${c.email||''}`.toLowerCase()
+        if (text.includes(q)) results.push({ type:'contact', label:`${c.first_name} ${c.last_name}`, sub: c.company||c.email||'', id: c.id })
       })
-      setTimeout(() => input?.focus(), 10)
-
-      // Click result
-      overlay.querySelectorAll('[data-result]').forEach(el => {
-        el.addEventListener('click', () => {
-          const r = results[+el.dataset.result]
-          overlay.remove()
-          if (r.type === 'contact') { this.navigate('contacts'); setTimeout(() => this.contactsView.selectContact(r.id), 50) }
-          else if (r.type === 'project') { this.openProject(r.id) }
-          else if (r.type === 'budget') { this.openBudget(r.id) }
-          else if (r.type === 'marketing') { this.navigate('marketing'); setTimeout(() => this.marketingView.openCardModal(r.card, r.card.status), 60) }
-          else if (r.type === 'shoot') {
-            // The Shoots tab is hidden on post-production projects — land on a
-            // visible tab in that case so the project view isn't left blank.
-            const proj = this.projects.find(p => p.id === r.projectId)
-            const tab = (proj?.project_type === 'post_production') ? 'overview' : 'shoots'
-            this.currentView = 'projects'
-            this.projectsView.currentId = r.projectId
-            this.projectsView._pvTab = tab
-            this.projectsView.editingId = null
-            history.pushState({ view:'projects' }, '', `#projects/${r.projectId}/${tab}`)
-            this.render()
-          }
-          else if (r.type === 'note') { this._openNoteFromSearch(r.id) }
-        })
+      // Projects
+      this.projects.forEach(p => {
+        const cl = this.contacts.find(c => c.id === p.client_id)
+        const text = `${p.name} ${cl?.company||''} ${cl?.first_name||''} ${cl?.last_name||''}`.toLowerCase()
+        if (text.includes(q)) results.push({ type:'project', label: p.name, sub: cl ? `${cl.first_name} ${cl.last_name}` : p.status, id: p.id })
       })
+      // Budgets
+      this.budgets.forEach(b => {
+        const cl = this.contacts.find(c => c.id === b.client_id)
+        const text = `${b.name} ${cl?.company||''} ${cl?.first_name||''} ${cl?.last_name||''}`.toLowerCase()
+        if (text.includes(q)) results.push({ type:'budget', label: b.name, sub: cl ? `${cl.first_name} ${cl.last_name}` : '', id: b.id })
+      })
+      // Marketing cards
+      ;(this.marketingCards || []).forEach(card => {
+        const text = `${card.title||''} ${card.notes||''} ${card.card_type||''}`.toLowerCase()
+        if (text.includes(q)) results.push({ type:'marketing', label: card.title || 'Untitled card', sub: (card.card_type||'').replace(/-/g,' '), card })
+      })
+      // Shoots (lazily loaded — see below)
+      ;(this._searchShootsCache || []).forEach(sh => {
+        const text = `${sh.name||''} ${sh.project_name||''}`.toLowerCase()
+        if (text.includes(q)) results.push({ type:'shoot', label: sh.name || 'Untitled shoot', sub: sh.project_name || '', projectId: sh.project_id })
+      })
+      // Notes
+      ;(this._notes || []).forEach(n => {
+        const title = (n.title||'').trim(), content = (n.content||'').trim()
+        if (!title && !content) return
+        const text = `${title} ${content}`.toLowerCase()
+        if (text.includes(q)) results.push({ type:'note', label: title || 'Untitled note', sub: content ? content.replace(/\s+/g,' ').slice(0,60) : '', id: n.id })
+      })
+      return results
     }
 
-    overlay.addEventListener('click', () => overlay.remove())
+    const typeIcon   = { contact:'👤', project:'🎬', budget:'£', marketing:'📣', shoot:'🎥', note:'📝' }
+    const typeTone   = { contact:'purple', project:'blue', budget:'green', marketing:'amber', shoot:'red', note:'grey', page:'cyan', action:'grey' }
+    const typeLabel  = { contact:'Contact', project:'Project', budget:'Budget', marketing:'Card', shoot:'Shoot', note:'Note', page:'Page', action:'Action' }
+    // Slate's own pages and actions ("expenses", "new project"), listed above
+    // the records — see views/search-commands.js.
+    const commands = searchCommands(this)
+
+    // The input is built once; typing only redraws the results under it.
+    // (Rebuilding the input on every keystroke put the caret back at the
+    // start, so text came out backwards.)
+    overlay.innerHTML = `
+      <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:520px;overflow:hidden;cursor:default;box-shadow:var(--shadow-popover)" onclick="event.stopPropagation()">
+        <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border-light)">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--text-tertiary)" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+          <input id="search-input" type="text" aria-label="Search or jump to" autocomplete="off" placeholder="Search or jump to…"
+            role="combobox" aria-expanded="false" aria-controls="search-results" aria-autocomplete="list"
+            style="flex:1;background:transparent;border:none;outline:none;font-size:15px;color:var(--text-primary);font-family:var(--font)" />
+          <kbd style="font-size:11px;color:var(--text-tertiary);background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:2px 6px">Esc</kbd>
+        </div>
+        <div id="search-results" aria-label="Results" style="max-height:360px;overflow-y:auto"></div>
+        <div id="search-count" style="padding:8px 16px;font-size:11px;color:var(--text-tertiary);border-top:1px solid var(--border-light)" hidden></div>
+      </div>`
+
+    const input = overlay.querySelector('#search-input')
+    const list  = overlay.querySelector('#search-results')
+    const count = overlay.querySelector('#search-count')
+    let results = []
+    let active = 0          // the highlighted row: arrow keys move it, Enter opens it
+
+    const syncActive = () => {
+      list.querySelectorAll('[data-result]').forEach(row => row.setAttribute('aria-selected', String(+row.dataset.result === active)))
+      if (results.length) input.setAttribute('aria-activedescendant', `sr-${active}`)
+      else input.removeAttribute('aria-activedescendant')
+    }
+
+    const render = () => {
+      const query = input.value
+      const q = query.toLowerCase().trim()
+      results = [
+        ...matchCommands(commands, query).map(c => ({ type: c.kind, label: c.label, sub: c.hint, icon: c.icon, run: c.run })),
+        ...find(q),
+      ]
+      active = 0
+      if (results.length) list.setAttribute('role', 'listbox')
+      else list.removeAttribute('role')
+      input.setAttribute('aria-expanded', String(results.length > 0))
+      list.innerHTML = q.length === 0 ? `<div style="padding:24px;text-align:center;font-size:13px;color:var(--text-tertiary)">Search records, pages and actions. Try “expenses” or “new project”.</div>`
+        : results.length === 0 ? `<div style="padding:24px;text-align:center;font-size:13px;color:var(--text-tertiary)">No results for "${esc(query)}"</div>`
+        : results.map((r,i) => `
+          <div class="search-row" role="option" id="sr-${i}" data-result="${i}" aria-selected="${i === active}">
+            <span class="search-row-icon" aria-hidden="true">${r.icon ? icon(r.icon, 18) : typeIcon[r.type]}</span>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.label)}</div>
+              ${r.sub ? `<div style="font-size:11px;color:var(--text-tertiary)">${esc(r.sub)}</div>` : ''}
+            </div>
+            <span style="font-size:10px;color:var(--cat-${typeTone[r.type] ?? 'grey'});background:var(--cat-${typeTone[r.type] ?? 'grey'}-soft);border-radius:var(--radius-md);padding:2px 7px;flex-shrink:0">${typeLabel[r.type] ?? r.type}</span>
+          </div>`).join('')
+      count.hidden = !(q && results.length)
+      count.textContent = `${results.length} result${results.length !== 1 ? 's' : ''}`
+      syncActive()
+    }
+
+    // Closing hands focus back to whatever opened the search (e.g. the
+    // header's search box); opening a result moves on instead.
+    const returnTo = document.activeElement
+    const close = () => {
+      overlay.remove()
+      if (returnTo && returnTo !== document.body && document.contains(returnTo)) returnTo.focus()
+    }
+
+    const open = r => {
+      if (r.run) { close(); r.run(); return }      // a page or action
+      overlay.remove()
+      if (r.type === 'contact') { this.navigate('contacts'); setTimeout(() => this.contactsView.selectContact(r.id), 50) }
+      else if (r.type === 'project') { this.openProject(r.id) }
+      else if (r.type === 'budget') { this.openBudget(r.id) }
+      else if (r.type === 'marketing') { this.navigate('marketing'); setTimeout(() => this.marketingView.openCardModal(r.card, r.card.status), 60) }
+      else if (r.type === 'shoot') {
+        // The Shoots tab is hidden on post-production projects — land on a
+        // visible tab in that case so the project view isn't left blank.
+        const proj = this.projects.find(p => p.id === r.projectId)
+        const tab = (proj?.project_type === 'post_production') ? 'overview' : 'shoots'
+        this.currentView = 'projects'
+        this.projectsView.currentId = r.projectId
+        this.projectsView._pvTab = tab
+        this.projectsView.editingId = null
+        history.pushState({ view:'projects' }, '', `#projects/${r.projectId}/${tab}`)
+        this.render()
+      }
+      else if (r.type === 'note') { this._openNoteFromSearch(r.id) }
+    }
+
+    input.addEventListener('input', render)
+    input.addEventListener('keydown', e => {
+      // Handled here, so the app's own Escape (e.g. leave a project) doesn't also run.
+      if (e.key === 'Escape') { e.stopPropagation(); close() }
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && results.length) {
+        e.preventDefault()
+        active = (active + (e.key === 'ArrowDown' ? 1 : -1) + results.length) % results.length
+        syncActive()
+        list.querySelector(`#sr-${active}`)?.scrollIntoView({ block: 'nearest' })
+      }
+      if (e.key === 'Enter' && results.length > 0) { e.preventDefault(); open(results[active]) }
+    })
+    list.addEventListener('click', e => {
+      const row = e.target.closest('[data-result]')
+      if (row) open(results[+row.dataset.result])
+    })
+    list.addEventListener('mousemove', e => {
+      const row = e.target.closest('[data-result]')
+      if (row && +row.dataset.result !== active) { active = +row.dataset.result; syncActive() }
+    })
+
+    overlay.addEventListener('click', close)
     document.body.appendChild(overlay)
     render()
+    input.focus()
 
     // Shoots aren't held in memory globally — lazily load them once, then
     // re-render so they join the index without blocking the palette opening.
@@ -360,18 +429,18 @@ export class App {
         .then(rows => {
           this._searchShootsCache = rows || []
           this._searchShootsLoading = false
-          const input = document.querySelector('#search-overlay #search-input')
-          if (input && input.value.trim()) render(input.value)
+          if (document.contains(overlay) && input.value.trim()) render()
         })
         .catch(e => { console.error('Search shoots load failed:', e); this._searchShootsCache = []; this._searchShootsLoading = false })
     }
   }
 
-  // Open and focus a note from a global-search result (notes live in the sidebar).
+  // Open and focus a note from a global-search result (notes live in the Notes panel).
   _openNoteFromSearch(id) {
     if (!this._openNoteIds) this._openNoteIds = new Set()
     this._openNoteIds.add(id)
-    this._renderNotesList()
+    if (!this._notesOpen) this.toggleNotes(true, { focus: false })
+    else this._renderNotesList()
     const card = document.querySelector(`.notes-card[data-note-id="${id}"]`)
     if (card) {
       card.scrollIntoView({ block: 'center', behavior: 'smooth' })
@@ -445,7 +514,9 @@ export class App {
 
       // N — new item (only on list views, not when viewing a record)
       if (e.key === 'n' && !meta) {
-        if (this.currentView === 'contacts' && this.permissions?.contacts_edit) {
+        if (this.currentView === 'tasks') {
+          document.querySelector('#topbar-btn')?.click()
+        } else if (this.currentView === 'contacts' && this.permissions?.contacts_edit) {
           document.querySelector('#topbar-btn')?.click()
         } else if (this.currentView === 'projects' && !this.projectsView.currentId && this.permissions?.projects_edit) {
           document.querySelector('#topbar-btn')?.click()
@@ -457,76 +528,85 @@ export class App {
   }
 
   render() {
+    closeFloating({ restoreFocus: false })
     const showDetail = this.currentView === 'contacts'
-    const collapsed = this._sidebarCollapsed()
+    const toolbar = this.toolbarHtml()
     this.container.innerHTML = `
-      <div class="sidebar-overlay" id="sidebar-overlay"></div>
-      <div class="sidebar${collapsed ? ' collapsed' : ''}" id="app-sidebar">
-        <div class="logo">
-          <img src="/slate-logo.png" alt="Slate" />
-          <button class="sidebar-collapse-btn" id="sidebar-collapse-btn" aria-label="Toggle sidebar" title="${collapsed ? 'Expand sidebar' : 'Collapse sidebar'}">${this.iconCollapse()}</button>
-        </div>
-        <div class="nav-label">Main</div>
-        ${[['dashboard','Dashboard',this.iconPipeline()],['calendar','Calendar',this.iconCalendar()],['contacts','Contacts',this.iconContacts()],['projects','Projects',this.iconProjects()],['budgets','Budgets',this.iconBudgets()],['planning','Planning',this.iconPlanning()],['marketing','Marketing',this.iconMarketing()],['story-planner','Story Planner',this.iconStoryPlanner()]].map(([id,label,icon])=>`
-          <div class="nav-item ${this.currentView===id?'active':''}" data-view="${id}" title="${label}">${icon}<span class="nav-text">${label}</span></div>`).join('')}
-        <div class="sidebar-notes">
-          <div class="sidebar-notes-header">
-            <span class="sidebar-notes-title">Notes</span>
-            <button id="notes-new-btn" class="sidebar-notes-new-btn">+ New</button>
-          </div>
-          <div class="notes-list" id="notes-list"><div class="notes-empty">No notes yet.<br>Hit + New to get started.</div></div>
-        </div>
-        <div class="nav-bottom">
-          <div class="sidebar-tt" id="sidebar-tt">${this._renderSidebarTT()}</div>
-          <div class="nav-item ${this.currentView==='leave'?'active':''}" data-view="leave" title="Leave">${this.iconLeave()}<span class="nav-text">Leave</span>${this._leaveBadgeHtml()}</div>
-          <div class="nav-item ${this.currentView==='expenses'?'active':''}" data-view="expenses" title="Expenses">${this.iconExpenses()}<span class="nav-text">Expenses</span></div>
-          ${(this.permissions?.vault || this.appUser?.role === 'superadmin') ? `<div class="nav-item ${this.currentView==='password-manager'?'active':''}" data-view="password-manager" title="Passwords">${this.iconPasswordManager()}<span class="nav-text">Passwords</span></div>` : ''}
-          <div class="nav-item nav-item--dim ${this.currentView==='offload-log'?'active':''}" data-view="offload-log" title="Offload Log">${this.iconOffloads()}<span class="nav-text">Offload Log</span></div>
-          ${this.permissions.settings ? `<div class="nav-item" data-view="settings" title="Settings">${this.iconSettings()}<span class="nav-text">Settings</span></div>` : ''}
-          <div class="nav-item nav-item--dim" id="dev-request-btn" title="Dev request">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v4M8 11v.5"/></svg>
-            <span class="nav-text">Dev request</span>
-          </div>
-          <div class="nav-item nav-item--dim" id="sign-out-btn" title="Sign out">${this.iconSignOut()}<span class="nav-text">Sign out</span></div>
-        </div>
+      ${this.header.html()}
+      <div class="app-body">
+        <main class="page" id="page">
+          <div class="page-toolbar" id="page-toolbar"${toolbar ? '' : ' hidden'}>${toolbar}</div>
+          <div class="content" id="main-content"></div>
+        </main>
+        ${showDetail ? `<div class="detail-panel" id="detail-panel"><div class="detail-empty">Select a contact<br>to view details</div></div>` : ''}
+        ${this._notesOpen ? this._notesPanelHtml() : ''}
       </div>
-      <div class="main">
-        <div class="topbar">
-          <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Toggle navigation">${this.iconHamburger()}</button>
-          <div class="topbar-title" id="view-title">${this.viewTitle()}</div>
-          <div id="topbar-actions" style="display:flex;gap:8px;align-items:center;flex-shrink:0">${this.topbarSearch()}${this.topbarButton()}
-            <button class="theme-toggle" id="theme-toggle-btn" title="Toggle dark mode">${this.iconTheme()}</button>
-            <button id="shortcut-hint" class="theme-toggle" title="Keyboard shortcuts">?</button>
-          </div>
-        </div>
-        <div class="content" id="main-content"></div>
-      </div>
-      ${showDetail ? `<div class="detail-panel" id="detail-panel"><div class="detail-empty">Select a contact<br>to view details</div></div>` : ''}
+      ${this.header.tabBarHtml()}
     `
-    this.bindNav()
+    this.header.bind(this.container)
+    this.bindToolbar()
     this.renderCurrentView()
-    if (this._notesLoaded) this._renderNotesList()
-    else this._loadNotes()
+    if (this._notesOpen) this._bindNotesPanel()
+    this._syncNotesModal()
+  }
+
+  // The first row of each list page: view switcher, filters, then primary
+  // actions on the right. Detail pages (a project, budget, board, plan) have
+  // their own header row instead, so the toolbar is empty there.
+  toolbarHtml() {
+    // Pages can supply their own tabs, filters and main action; see
+    // views/toolbar.js.
+    const own = this._toolbarOwner()?.toolbar?.() ?? {}
+    const switcher = this._viewSwitcherHtml() || own.tabs || ''
+    const filters  = own.filters ?? this.topbarSearch()
+    const actions  = own.actions ?? this.topbarButton()
+    if (!switcher && !filters && !actions) return ''
+    return `${switcher}${filters ? `<div class="page-toolbar-filters">${filters}</div>` : ''}<div class="page-toolbar-actions">${actions}</div>`
+  }
+
+  // The object that fills in the toolbar for the current page, if any.
+  _toolbarOwner() {
+    return {
+      leave: this.leaveView,
+      expenses: this.expensesView,
+      'password-manager': this.passwordManagerView,
+      'offload-log': this.offloadLogView,
+      marketing: this.marketingView,
+      planning: this.boardsView,
+      settings: { toolbar: () => this._settingsToolbar(), bindToolbar: bar => this._bindSettingsToolbar(bar) },
+    }[this.currentView]
+  }
+
+  // View switcher under the Projects tab: All projects · Budgets · Planning.
+  _viewSwitcherHtml() {
+    const groups = [
+      { label: 'Project views', views: [['projects', 'All projects'], ['budgets', 'Budgets'], ['planning', 'Planning']] },
+    ]
+    const group = groups.find(g => g.views.some(([v]) => v === this.currentView))
+    if (!group) return ''
+    if (this.projectsView.currentId || this.budgetsView.currentId || this.boardsView.currentId || this.canvasView.currentId) return ''
+    return `<nav class="seg view-switch" aria-label="${group.label}">${group.views.map(([v, label, href = `#${v}`]) =>
+      `<a class="seg-btn" href="${href}" data-nav="${v}"${v === this.currentView ? ' aria-current="page"' : ''}>${label}</a>`).join('')}</nav>`
   }
 
   topbarSearch() {
+    if (this.currentView === 'tasks') return this.tasksView.toolbarFiltersHtml()
     if (this.currentView !== 'contacts') return ''
-    return `<div class="search-wrap"><span class="search-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg></span><input type="text" id="contact-search" placeholder="Search contacts…" /></div>`
+    return `<div class="search-wrap"><label for="contact-search" class="visually-hidden">Search contacts</label><span class="search-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg></span><input type="text" id="contact-search" placeholder="Search contacts…" /></div>`
   }
 
   topbarButton() {
     const p = this.permissions ?? {}
+    if (this.currentView === 'tasks') return `<button class="btn-primary" id="topbar-btn">+ New task</button>`
     if (this.currentView === 'contacts') {
       return p.contacts_edit ? `<button class="btn-primary" id="topbar-btn">+ New contact</button>` : ''
     }
     if (this.currentView === 'budgets') {
       if (!this.budgetsView.currentId) return p.budgets_edit ? `<button class="btn-primary" id="topbar-btn">+ New budget</button>` : ''
-      if (this.budgetsView.editingId) return `<button class="btn-secondary" id="topbar-btn">← All budgets</button>`
       return ''
     }
     if (this.currentView === 'projects') {
       if (!this.projectsView.currentId) return p.projects_edit ? `<button class="btn-primary" id="topbar-btn">+ New project</button>` : ''
-      if (this.projectsView.editingId) return `<button class="btn-secondary" id="topbar-btn">← All projects</button>`
       return ''
     }
     if (this.currentView === 'marketing') {
@@ -545,95 +625,65 @@ export class App {
   }
 
 
-  _closeMobileSidebar() {
-    document.getElementById('app-sidebar')?.classList.remove('open')
-    document.getElementById('sidebar-overlay')?.classList.remove('open')
-  }
-
-  // Whether the desktop sidebar is collapsed to an icon-only rail (persisted).
-  _sidebarCollapsed() {
-    return localStorage.getItem('slate-sidebar-collapsed') === '1'
-  }
-
-  _toggleSidebarCollapsed() {
-    const sidebar = document.getElementById('app-sidebar')
-    if (!sidebar) return
-    const collapsed = sidebar.classList.toggle('collapsed')
-    localStorage.setItem('slate-sidebar-collapsed', collapsed ? '1' : '0')
-    const btn = document.getElementById('sidebar-collapse-btn')
-    if (btn) btn.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar'
-  }
-
-  bindNav() {
-    // Mobile sidebar toggle
-    const menuBtn  = this.container.querySelector('#mobile-menu-btn')
-    const sidebar  = this.container.querySelector('#app-sidebar')
-    const overlay  = this.container.querySelector('#sidebar-overlay')
-    if (menuBtn && sidebar && overlay) {
-      menuBtn.addEventListener('click', () => {
-        sidebar.classList.toggle('open')
-        overlay.classList.toggle('open')
-      })
-      overlay.addEventListener('click', () => this._closeMobileSidebar())
-    }
-
-    // Desktop sidebar collapse/expand toggle
-    this.container.querySelector('#sidebar-collapse-btn')?.addEventListener('click', () => this._toggleSidebarCollapsed())
-
-    this.container.querySelectorAll('.nav-item[data-view]').forEach(el => {
-      el.addEventListener('click', () => { this._closeMobileSidebar(); this.navigate(el.dataset.view) })
-    })
-    this.container.querySelector('#sign-out-btn')?.addEventListener('click', () => { this._closeMobileSidebar(); this.onSignOut() })
-    this.container.querySelector('#dev-request-btn')?.addEventListener('click', () => { this._closeMobileSidebar(); this._openDevRequest() })
-
-    // Dark mode toggle
-    const toggleBtn = this.container.querySelector('#theme-toggle-btn')
-    if (toggleBtn) {
-      toggleBtn.addEventListener('click', () => {
-        const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
-        const next = isDark ? 'light' : 'dark'
-        document.documentElement.setAttribute('data-theme', next)
-        localStorage.setItem('slate-theme', next)
-        toggleBtn.innerHTML = this.iconTheme()
-      })
-    }
-
+  bindToolbar() {
     this.bindTopbarBtn()
-    this._bindSidebarTT()
+    const bar = this.container.querySelector('#page-toolbar')
+    if (this.currentView === 'tasks') this.tasksView.bindToolbarFilters(bar)
+    this._toolbarOwner()?.bindToolbar?.(bar)
     const search = this.container.querySelector('#contact-search')
     if (search) {
       search.value = this.contactsView.search
       search.addEventListener('input', e => { this.contactsView.search = e.target.value; this.contactsView.refreshList() })
     }
+  }
 
-    // Notes new button
-    this.container.querySelector('#notes-new-btn')?.addEventListener('click', () => this._newNote())
-
-    // Keyboard shortcut hint
-    this.container.querySelector('#shortcut-hint')?.addEventListener('click', () => {
-      let overlay = document.getElementById('shortcut-overlay')
-      if (overlay) { overlay.remove(); return }
-      overlay = document.createElement('div')
-      overlay.id = 'shortcut-overlay'
-      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;cursor:pointer'
-      overlay.innerHTML = `
-        <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);padding:28px 32px;width:320px;cursor:default" onclick="event.stopPropagation()">
-          <div style="font-size:13px;font-weight:600;margin-bottom:16px">Keyboard shortcuts</div>
-          ${[
-            ['⌘K', 'Search everything'],
-            ['N', 'New project / budget / contact'],
-            ['Esc', 'Close modal / exit edit / go back'],
-            ['⌘S', 'Save & close current editor'],
-          ].map(([key,desc]) => `
-            <div style="display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid var(--border-light)">
-              <kbd style="font-size:11px;font-family:monospace;background:var(--bg-secondary);border:1px solid var(--border-med);border-radius:5px;padding:3px 8px;color:var(--text-secondary);white-space:nowrap">${key}</kbd>
-              <span style="font-size:13px;color:var(--text-secondary)">${desc}</span>
-            </div>`).join('')}
-          <div style="margin-top:14px;font-size:11px;color:var(--text-tertiary);text-align:center">Click anywhere to close</div>
-        </div>`
-      overlay.addEventListener('click', () => overlay.remove())
-      document.body.appendChild(overlay)
+  // Links carrying data-nav (header tabs, account menu, view switchers) are
+  // real <a href>s, so they open in a new tab with a modifier key; a plain
+  // click navigates in place.
+  _bindNavLinks() {
+    document.addEventListener('click', e => {
+      const a = e.target.closest?.('a[data-nav]')
+      if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+      e.preventDefault()
+      closeFloating({ restoreFocus: false })
+      if (a.dataset.settingsTab) this._settingsTab = a.dataset.settingsTab
+      this.navigate(a.dataset.nav)
     })
+  }
+
+  // Header "New" menu → go to the page and open its existing create dialog.
+  createNew(kind) {
+    const mc = () => document.getElementById('main-content')
+    if (kind === 'task')         { this.navigate('tasks'); this.tasksView.openQuickAdd() }
+    else if (kind === 'project') { this.navigate('projects'); this.projectsView.openNewModal(null, null, mc()) }
+    else if (kind === 'contact') { this.navigate('contacts'); this.contactsView.openAdd(mc()) }
+    else if (kind === 'budget')  { this.navigate('budgets');  this.budgetsView.openNewModal() }
+    else if (kind === 'note')    { if (!this._notesOpen) this.toggleNotes(true, { focus: false }); this._newNote() }
+  }
+
+  _openShortcuts() {
+    let overlay = document.getElementById('shortcut-overlay')
+    if (overlay) { overlay.remove(); return }
+    overlay = document.createElement('div')
+    overlay.id = 'shortcut-overlay'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);display:flex;align-items:center;justify-content:center;z-index:9999;cursor:pointer'
+    overlay.innerHTML = `
+      <div role="dialog" aria-label="Keyboard shortcuts" style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-popover);box-shadow:var(--shadow-popover);padding:28px 32px;width:320px;max-width:calc(100vw - 32px);cursor:default" onclick="event.stopPropagation()">
+        <div style="font-size:13px;font-weight:600;margin-bottom:16px">Keyboard shortcuts</div>
+        ${[
+          ['⌘K', 'Search everything'],
+          ['N', 'New task / project / budget / contact'],
+          ['Esc', 'Close modal / exit edit / go back'],
+          ['⌘S', 'Save & close current editor'],
+        ].map(([key,desc]) => `
+          <div style="display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid var(--border-light)">
+            <kbd style="font-size:11px;background:var(--bg-secondary);border:1px solid var(--border-med);border-radius:5px;padding:3px 8px;color:var(--text-secondary);white-space:nowrap">${key}</kbd>
+            <span style="font-size:13px;color:var(--text-secondary)">${desc}</span>
+          </div>`).join('')}
+        <div style="margin-top:14px;font-size:11px;color:var(--text-tertiary);text-align:center">Click anywhere to close</div>
+      </div>`
+    overlay.addEventListener('click', () => overlay.remove())
+    document.body.appendChild(overlay)
   }
 
   bindTopbarBtn() {
@@ -641,14 +691,13 @@ export class App {
     if (!btn) return
     btn.addEventListener('click', () => {
       const mc = document.getElementById('main-content')
-      if (this.currentView === 'contacts') { this.contactsView.openAdd(mc) }
+      if (this.currentView === 'tasks') { this.tasksView.openQuickAdd() }
+      else if (this.currentView === 'contacts') { this.contactsView.openAdd(mc) }
       else if (this.currentView === 'budgets') {
-        if (this.budgetsView.editingId) { this.budgetsView.editingId = null; this.render() }
-        else if (!this.budgetsView.currentId) this.budgetsView.openNewModal()
+        if (!this.budgetsView.currentId) this.budgetsView.openNewModal()
       }
       else if (this.currentView === 'projects') {
-        if (this.projectsView.editingId) { this.projectsView.editingId = null; this.render() }
-        else if (!this.projectsView.currentId) this.projectsView.openNewModal(null, null, mc)
+        if (!this.projectsView.currentId) this.projectsView.openNewModal(null, null, mc)
       }
       else if (this.currentView === 'marketing') {
         this.marketingView.openCardModal(null, this.marketingView.activeTab === 'kanban' ? 'ideas' : 'ideas')
@@ -665,6 +714,8 @@ export class App {
   }
 
   navigate(view) {
+    // On phones the Notes panel is a full-screen sheet; moving on closes it.
+    if (this._notesOpen && window.matchMedia(PHONE).matches) this._notesOpen = false
     if (view !== 'dashboard') { clearInterval(this._cdInterval); this._cdInterval = null; document.getElementById('cd-confetti-layer')?.remove() }
     this.currentView = view
     this.projectsView.currentId = null
@@ -677,7 +728,9 @@ export class App {
     this.boardsView.board = null
     this.canvasView.currentId = null
     this.canvasView.canvas = null
-    history.pushState({ view }, '', `#${view}`)
+    // The dashboard is the home page, "/". Every other view keeps its #hash
+    // (the task board is #tasks), so bookmarks still resolve.
+    history.pushState({ view }, '', view === 'dashboard' ? '/' : `#${view}`)
     this.render()
   }
 
@@ -686,14 +739,20 @@ export class App {
     history.pushState(state, '', hash)
   }
 
+  // #view[/id[/tab]] — the same routes the app has always used. "/" (and
+  // #dashboard) is the dashboard and #tasks the task board, each its own tab;
+  // #projects, #budgets and #planning sit under the Projects tab; the rest
+  // are reached from the account menu.
+  _parseHash() {
+    const [view = 'dashboard', id, tab] = (location.hash.slice(1) || 'dashboard').split('/')
+    return VIEWS.includes(view) ? { view, id, tab } : null
+  }
+
   // Parse the URL hash and restore view state before first render
   _restoreFromHash() {
-    const hash = location.hash.slice(1)
-    if (!hash) return
-    const parts = hash.split('/')
-    const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses','leave','offload-log','planning']
-    if (!validViews.includes(view)) return
+    const route = this._parseHash()
+    if (!route) return
+    const { view, id, tab } = route
     this.currentView = view
     if (view === 'projects' && id) {
       this.projectsView.currentId = id
@@ -714,11 +773,9 @@ export class App {
     const modal = document.querySelector('.modal-overlay, #ra-copy-picker, #rig-lib-picker')
     if (modal) { modal.remove(); return }
 
-    const hash = location.hash.slice(1)
-    const parts = (hash || 'dashboard').split('/')
-    const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses','leave','offload-log','planning']
-    if (!validViews.includes(view)) { this.currentView = 'dashboard'; this.render(); return }
+    // An unknown hash lands on the home page, as a fresh load does, with any
+    // open project, budget or board cleared.
+    const { view, id, tab } = this._parseHash() ?? { view: 'dashboard' }
 
     this.currentView = view
     this.projectsView.currentId = (view === 'projects' && id) ? id : null
@@ -768,6 +825,8 @@ export class App {
       this.leaveView.render(mc)
     } else if (this.currentView === 'calendar') {
       this.teamCalendarView.renderFullPage(mc)
+    } else if (this.currentView === 'tasks') {
+      this.tasksView.render(mc)
     } else if (this.currentView === 'dashboard') {
       this.renderDashboard(mc)
     } else {
@@ -775,34 +834,32 @@ export class App {
     }
   }
 
-  viewTitle() {
-    if (this.currentView === 'projects' && this.projectsView?.currentId) return this.projects.find(p=>p.id===this.projectsView.currentId)?.name ?? 'Project'
-    if (this.currentView === 'budgets'  && this.budgetsView?.currentId)  return this.budgets.find(b=>b.id===this.budgetsView.currentId)?.name  ?? 'Budget'
-    if (this.currentView === 'planning' && this.canvasView?.currentId)   return this.canvasView.canvas?.name ?? 'Planning'
-    if (this.currentView === 'planning' && this.boardsView?.currentId)   return this.boardsView.board?.name ?? 'Planning'
-    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',calendar:'Team Calendar',settings:'Settings',marketing:'Marketing',planning:'Planning',timetrack:'Time tracker','story-planner':'Story Planner','password-manager':'Passwords',expenses:'Expenses',leave:'Leave','offload-log':'Offload Log'}[this.currentView] ?? ''
-  }
-
+  // Views call this after changing sub-state (list ↔ detail, a tab that
+  // changes the primary action); it refreshes the page toolbar.
   updateTitle() {
-    const el = document.getElementById('view-title')
-    if (el) el.textContent = this.viewTitle()
-    const actions = document.getElementById('topbar-actions')
-    if (actions) actions.innerHTML = this.topbarSearch() + this.topbarButton()
-    const search = document.getElementById('contact-search')
-    if (search) search.addEventListener('input', e => { this.contactsView.search = e.target.value; this.contactsView.refreshList() })
-    this.bindTopbarBtn()
+    const bar = document.getElementById('page-toolbar')
+    if (!bar) return
+    const html = this.toolbarHtml()
+    bar.innerHTML = html
+    bar.hidden = !html
+    this.bindToolbar()
   }
 
-  openProject(id, tab) {
+  // Both update the URL, as opening from the kanban or budgets list does, so
+  // refresh and Back land on what's showing.
+  openProject(id, tab = 'overview') {
     this.currentView = 'projects'
     this.projectsView.currentId = id
-    if (tab) {
-      this.projectsView._pvTab = tab
-      this._pushAppState(`#projects/${id}/${tab}`, { view: 'projects', id, tab })
-    }
+    this.projectsView._pvTab = tab
+    this._pushAppState(`#projects/${id}/${tab}`, { view: 'projects', id, tab })
     this.render()
   }
-  openBudget(id)  { this.currentView = 'budgets';  this.budgetsView.currentId  = id; this.render() }
+  openBudget(id) {
+    this.currentView = 'budgets'
+    this.budgetsView.currentId = id
+    this._pushAppState(`#budgets/${id}`, { view: 'budgets', id })
+    this.render()
+  }
 
   // Returns [periodStart, periodEnd] Date objects for the current retainer period
   // A retainer item's unit is 'hours', 'days' or 'unit'. A per-unit item counts
@@ -844,164 +901,19 @@ export class App {
     return [prevStart, currentStart]
   }
 
-  // ── Sidebar quick-log widget ─────────────────────────────────────────────────
-
-  _sttTrackableLines(project) {
-    if (!project) return []
-    const lines = []
-    if (project.is_retainer && (project.retainer_items || []).length) {
-      for (const item of project.retainer_items) {
-        if (item.label) lines.push({ label: item.label, budgetId: null })
-      }
-    } else {
-      for (const bid of (project.budget_ids || [])) {
-        const b = this.budgets.find(x => x.id === bid)
-        if (!b) continue
-        for (const s of (b.sections || [])) {
-          if (!s.enabled) continue
-          for (const l of (s.lines || [])) {
-            if (!l.track_time || !l.item) continue
-            lines.push({ label: l.item, budgetId: b.id })
-          }
-        }
-      }
+  // After time is logged (Log time popover, a project's Time tab), refresh
+  // whatever on screen shows that project's hours.
+  refreshTimeViews(projectId) {
+    const mc = document.getElementById('main-content')
+    const project = this.projects.find(p => p.id === projectId)
+    if (!mc || !project) return
+    if (mc.querySelector(`#db-time-${projectId}`)) this._loadDbTimeSection(mc, project)
+    if (this.currentView === 'projects' && this.projectsView.currentId === projectId && mc.querySelector('#pv-timetrack')) {
+      this.projectsView._loadTimeTracking(mc, project)
     }
-    return lines
-  }
-
-  _renderSidebarTT() {
-    const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
-    const savedPid  = localStorage.getItem('tt-project-id') || ''
-    const savedTask = localStorage.getItem('tt-task-label') || ''
-    const projects  = (this.projects || []).filter(p => p.status !== 'Delivered')
-    const project   = projects.find(p => p.id === savedPid) || null
-    const lines     = this._sttTrackableLines(project)
-
-    return `
-      <div class="stt-label">
-        ${this.iconTimeTrack()} Time
-      </div>
-      <select id="stt-project" class="stt-select">
-        <option value="">Project…</option>
-        ${projects.map(p => `<option value="${p.id}"${p.id === savedPid ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}
-      </select>
-      <select id="stt-task" class="stt-select" ${!lines.length ? 'disabled' : ''}>
-        ${!project
-          ? '<option value="">Task…</option>'
-          : lines.length
-            ? lines.map(l => `<option value="${esc(l.label)}"${l.label === savedTask ? ' selected' : ''}>${esc(l.label)}</option>`).join('')
-            : '<option value="">No tracked lines</option>'
-        }
-      </select>
-      <input id="stt-date" type="date" class="stt-select" style="margin-top:5px;color-scheme:dark"
-        value="${new Date().toISOString().slice(0, 10)}" max="${new Date().toISOString().slice(0, 10)}" title="Date" />
-      <div style="display:flex;gap:5px;margin-top:5px">
-        <input id="stt-hours" type="number" min="0.5" max="24" step="0.5" placeholder="hrs"
-          class="stt-hours" />
-        <button id="stt-log" class="stt-btn">Log</button>
-      </div>
-      <input id="stt-note" type="text" placeholder="Notes (optional)" maxlength="300"
-        class="stt-select" style="margin-top:5px" />
-      <div id="stt-msg" style="font-size:10px;min-height:14px;margin-top:4px;color:#596773"></div>`
-  }
-
-  _bindSidebarTT() {
-    const wrap = document.getElementById('sidebar-tt')
-    if (!wrap) return
-
-    const projectSel = wrap.querySelector('#stt-project')
-    const taskSel    = wrap.querySelector('#stt-task')
-    const hoursInput = wrap.querySelector('#stt-hours')
-    const logBtn     = wrap.querySelector('#stt-log')
-    const msgEl      = wrap.querySelector('#stt-msg')
-
-    const showMsg = (text, color = '#596773', ms = 2500) => {
-      if (!msgEl) return
-      msgEl.style.color = color
-      msgEl.textContent = text
-      clearTimeout(this._sttMsgTimer)
-      this._sttMsgTimer = setTimeout(() => { if (msgEl) msgEl.textContent = '' }, ms)
+    if (this.currentView === 'timetrack' && mc.querySelector('#tt-project')?.value === projectId) {
+      this.timeTrackView._loadLog(mc, project)
     }
-
-    const updateTasks = (project) => {
-      if (!taskSel) return
-      const lines = this._sttTrackableLines(project)
-      const saved = localStorage.getItem('tt-task-label') || ''
-      if (!project) {
-        taskSel.innerHTML = '<option value="">Task…</option>'
-        taskSel.disabled = true
-      } else if (!lines.length) {
-        taskSel.innerHTML = '<option value="">No tracked lines</option>'
-        taskSel.disabled = true
-      } else {
-        taskSel.innerHTML = lines.map(l => {
-          const v = String(l.label ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')
-          return `<option value="${v}"${l.label === saved ? ' selected' : ''}>${v}</option>`
-        }).join('')
-        taskSel.disabled = false
-      }
-    }
-
-    projectSel?.addEventListener('change', () => {
-      const pid = projectSel.value
-      localStorage.setItem('tt-project-id', pid)
-      if (!pid) localStorage.removeItem('tt-task-label')
-      const proj = this.projects.find(p => p.id === pid) || null
-      updateTasks(proj)
-    })
-
-    taskSel?.addEventListener('change', () => {
-      localStorage.setItem('tt-task-label', taskSel.value)
-    })
-
-    logBtn?.addEventListener('click', async () => {
-      const pid   = projectSel?.value
-      const task  = taskSel?.value
-      const hours = parseFloat(hoursInput?.value)
-      const note  = wrap.querySelector('#stt-note')?.value?.trim() || null
-
-      if (!pid)               return showMsg('Select a project', '#f59e0b')
-      if (!task)              return showMsg('Select a task', '#f59e0b')
-      if (!hours || hours <= 0 || hours > 24) return showMsg('Enter valid hours', '#f59e0b')
-
-      const project  = this.projects.find(p => p.id === pid)
-      const budgetId = project ? (this._sttTrackableLines(project).find(l => l.label === task)?.budgetId ?? null) : null
-      const name     = this.appUser?.name || this.user?.primaryEmailAddress?.emailAddress || 'Unknown'
-      const date     = wrap.querySelector('#stt-date')?.value || new Date().toISOString().slice(0, 10)
-
-      logBtn.disabled = true
-      logBtn.textContent = '…'
-      try {
-        const { addTimeEntry } = await import('./db/client.js')
-        await addTimeEntry({ project_id: pid, budget_id: budgetId, line_label: task, crew_name: name, hours, entry_date: date, note })
-        hoursInput.value = ''
-        const noteInput = wrap.querySelector('#stt-note')
-        if (noteInput) noteInput.value = ''
-        logBtn.textContent = '✓'
-        showMsg(`${hours}h logged`, '#6ec96e')
-        setTimeout(() => { if (logBtn) logBtn.textContent = 'Log' }, 1200)
-        this.toast(`${hours}h logged`)
-
-        // Refresh the dashboard time section if it's visible
-        const timeEl = document.getElementById(`db-time-${pid}`)
-        if (timeEl && project) {
-          const mc = document.getElementById('main-content')
-          if (mc) this._loadDbTimeSection(mc, project)
-        }
-      } catch(e) {
-        console.error(e)
-        logBtn.textContent = 'Log'
-        showMsg('Error logging', '#ef4444')
-      } finally {
-        logBtn.disabled = false
-        if (logBtn.textContent === '…') logBtn.textContent = 'Log'
-      }
-    })
-
-    // Enter on hours → log
-    hoursInput?.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); logBtn?.click() }
-    })
   }
 
   // Fetch shoots / planning / story-plan counts for the Live Projects tab-nav
@@ -1059,7 +971,7 @@ export class App {
       const totalLogged = entries.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
       const totalAlloc  = trackableLines.reduce((s, l) => s + l.allocHours, 0)
       const pct = totalAlloc > 0 ? Math.min(100, Math.round(totalLogged / totalAlloc * 100)) : 0
-      const barColour = pct >= 100 ? '#6ec96e' : pct >= 80 ? '#f59e0b' : '#4a90d9'
+      const barColour = pct >= 100 ? 'var(--success)' : pct >= 80 ? 'var(--warning)' : 'var(--cat-blue)'
 
       const byLine = {}
       entries.forEach(e => { byLine[e.line_label] = (byLine[e.line_label] || 0) + parseFloat(e.hours || 0) })
@@ -1080,7 +992,7 @@ export class App {
           return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
             <span style="font-size:11px;color:var(--text-secondary);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.label)}</span>
             <div style="width:80px;height:3px;background:var(--bg-tertiary);border-radius:2px;flex-shrink:0">
-              <div style="height:100%;width:${lPct}%;background:${lPct>=100?'#6ec96e':'#4a90d9'};border-radius:2px"></div>
+              <div style="height:100%;width:${lPct}%;background:${lPct>=100?'var(--success)':'var(--cat-blue)'};border-radius:2px"></div>
             </div>
             <span style="font-size:10px;color:var(--text-tertiary);flex-shrink:0;width:52px;text-align:right">${logged.toFixed(1)}/${l.allocHours}h</span>
           </div>`
@@ -1114,6 +1026,7 @@ export class App {
         setTimeout(() => document.querySelector('#topbar-btn')?.click(), 50)
       })
       this.teamCalendarView.renderDashboardSection(mc)
+      this.tasksView.renderDashboardSection(mc)
       this._mountCountdownWidget(mc)
       this._mountDaysSinceWidget(mc)
       this._mountYoutubeWidget(mc)
@@ -1201,14 +1114,14 @@ export class App {
       return new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
     }
     const initials = name => (name||'?').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
-    const avatarColors = ['#4a90d9','#6ec96e','#f59e0b','#a78bfa','#ef4444','#06b6d4','#ec4899']
+    const avatarColors = ['blue','green','amber','purple','red','cyan','pink'].map(t => `var(--cat-${t})`)
     const avatarColor = id => {
       if (!id) return avatarColors[0]
       let h = 0
       for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) & 0x7fffffff
       return avatarColors[h % avatarColors.length]
     }
-    const statusColor = s => ({ 'Pre-production': '#4a90d9', 'In Production': '#6ec96e', 'Post': '#f59e0b' }[s] || '#8590A2')
+    const statusTone = s => ({ 'Pre-production': 'blue', 'In Production': 'green', 'Post': 'amber' }[s] || 'grey')
 
     // --- Init persisted open/pin state ---
     if (!this._dbPinned) {
@@ -1311,7 +1224,7 @@ export class App {
       const clientName = cl ? `${cl.first_name} ${cl.last_name}` : ''
       const comments = (p.dashboard_comments || [])
       const isOpen = this._dbPinned.has(p.id)
-      const col = statusColor(p.status)
+      const tone = statusTone(p.status)
       const delivs = (p.deliverables||[]).filter(d => d.text)
       const doneCount = delivs.filter(d => d.done).length
       const unresolvedCount = comments.filter(c => !c.resolved).length
@@ -1323,10 +1236,11 @@ export class App {
         { id: 'overview',        label: 'Overview' },
         { id: 'shoots',          label: 'Shoots', key: 'shoots', hide: (p.project_type||'full_service') === 'post_production' },
         { id: 'post-production', label: 'Post Production', count: ppsCountByProject[p.id] || 0 },
-        { id: 'budget',          label: 'Budgets', count: (p.budget_ids||[]).length },
+        { id: 'budget',          label: 'Budget', count: (p.budget_ids||[]).length },
         { id: 'planning',        label: 'Planning', key: 'planning' },
+        { id: 'story-plans',     label: 'Story', key: 'story_plans' },
+        { id: 'time',            label: 'Time' },
         { id: 'notes',           label: 'Notes', count: comments.length },
-        { id: 'story-plans',     label: 'Story Plans', key: 'story_plans' },
       ].filter(t => !t.hide)
       const navRow = `<div class="db-proj-nav">${navTabs.map((t, i) => {
         const n = t.key ? (cached?.[t.key] ?? 0) : t.count
@@ -1337,12 +1251,12 @@ export class App {
       return `<div class="db-proj-row" data-pid="${p.id}">
         <div class="db-proj-header" data-toggle-pid="${p.id}">
           <span class="db-chevron${isOpen ? ' db-chevron--open' : ''}" data-chevron="${p.id}">▶</span>
-          <span class="db-status-dot" style="background:${col}"></span>
+          <span class="db-status-dot" style="background:var(--cat-${tone})"></span>
           <span class="db-proj-name-label">${esc(p.name)}</span>
           ${clientName ? `<span class="db-proj-client-label">${esc(clientName)}</span>` : ''}
-          ${delivs.length ? `<span class="db-badge" style="color:${doneCount===delivs.length?'#6ec96e':'var(--text-tertiary)'}">${doneCount}/${delivs.length} done</span>` : ''}
-          ${unresolvedCount ? `<span class="db-badge" style="color:#f59e0b">${unresolvedCount} open</span>` : ''}
-          <span class="db-status-pill" style="color:${col};background:${col}18;border-color:${col}30">${p.status}</span>
+          ${delivs.length ? `<span class="db-badge" style="color:${doneCount===delivs.length?'var(--success)':'var(--text-tertiary)'}">${doneCount}/${delivs.length} done</span>` : ''}
+          ${unresolvedCount ? `<span class="db-badge" style="color:var(--warning)">${unresolvedCount} open</span>` : ''}
+          <span class="db-status-pill" style="color:var(--cat-${tone});background:var(--cat-${tone}-soft);border-color:var(--cat-${tone}-soft)">${p.status}</span>
           <button class="db-pin-btn${this._dbPinned.has(p.id) ? ' db-pin-btn--on' : ''}" data-pin-pid="${p.id}" title="${this._dbPinned.has(p.id) ? 'Unpin (panel stays open)' : 'Pin open'}">⊙</button>
           <button class="db-action-link" style="font-size:11px;padding:3px 8px" data-open-pid="${p.id}">Open ↗</button>
         </div>
@@ -1396,17 +1310,17 @@ export class App {
 
     const statCards = `
       <div class="stat-card stat-card--sm stat-card--link" data-db-nav="projects" role="button" tabindex="0" title="View projects"><div class="stat-label">Pipeline</div><div class="stat-value stat-value--sm">${gbp(pipelineValue + retainerPipelineVal)}</div><div class="stat-sub">${regularProjects.length} project${regularProjects.length!==1?'s':''}${retainerPipelineVal>0?' + '+retainers.filter(p=>p.status==='Enquiry').length+' retainer enquir'+(retainers.filter(p=>p.status==='Enquiry').length===1?'y':'ies'):''}</div></div>
-      <div class="stat-card stat-card--sm stat-card--link" data-db-nav="budgets" role="button" tabindex="0" title="View budgets"><div class="stat-label">Awaiting invoice</div><div class="stat-value stat-value--sm" style="color:#6ec96e">${gbp(awaitingVal)}</div><div class="stat-sub">${awaitingInvoice.length} budget${awaitingInvoice.length!==1?'s':''}</div></div>
+      <div class="stat-card stat-card--sm stat-card--link" data-db-nav="budgets" role="button" tabindex="0" title="View budgets"><div class="stat-label">Awaiting invoice</div><div class="stat-value stat-value--sm" style="color:var(--success)">${gbp(awaitingVal)}</div><div class="stat-sub">${awaitingInvoice.length} budget${awaitingInvoice.length!==1?'s':''}</div></div>
       <div class="stat-card stat-card--sm stat-card--link" data-db-nav="budgets" role="button" tabindex="0" title="View budgets"><div class="stat-label">Invoiced this month</div><div class="stat-value stat-value--sm" style="color:var(--accent)">${gbp(invoicedMonthVal)}</div><div class="stat-sub">${invoicedThisMonth.length} budget${invoicedThisMonth.length!==1?'s':''}</div></div>
       <div class="stat-card stat-card--sm stat-card--link" data-db-nav="budgets" role="button" tabindex="0" title="View budgets"><div class="stat-label">Invoiced this quarter</div><div class="stat-value stat-value--sm" style="color:var(--accent)">${gbp(invoicedQtrVal)}</div><div class="stat-sub">${invoicedThisQtr.length} budget${invoicedThisQtr.length!==1?'s':''}</div></div>
       <div class="stat-card stat-card--sm stat-card--link" data-db-nav="budgets" role="button" tabindex="0" title="View budgets"><div class="stat-label">Invoiced this FY</div><div class="stat-value stat-value--sm" style="color:var(--accent)">${gbp(invoicedFYVal)}</div><div class="stat-sub">${fyLabel}</div></div>
-      <div class="stat-card stat-card--sm stat-card--link" data-db-nav="projects" role="button" tabindex="0" title="View projects"><div class="stat-label">Retainer MRR</div><div class="stat-value stat-value--sm" style="color:#a78bfa">${gbp(retainerMRR)}</div><div class="stat-sub">per month</div></div>`
+      <div class="stat-card stat-card--sm stat-card--link" data-db-nav="projects" role="button" tabindex="0" title="View projects"><div class="stat-label">Retainer MRR</div><div class="stat-value stat-value--sm" style="color:var(--cat-purple)">${gbp(retainerMRR)}</div><div class="stat-sub">per month</div></div>`
 
     mc.innerHTML = `
       <!-- Live Projects -->
       <div style="margin-bottom:28px">
         <div class="db-section-head">
-          <span class="db-section-dot" style="background:#6ec96e"></span>
+          <span class="db-section-dot" style="background:var(--cat-green)"></span>
           Live Projects
           <span class="db-section-count">${liveProjects.length}</span>
         </div>
@@ -1418,7 +1332,7 @@ export class App {
       <!-- Enquiries -->
       <div style="margin-bottom:28px">
         <div class="db-section-head db-enq-toggle" id="db-enq-toggle" style="cursor:pointer;user-select:none">
-          <span class="db-section-dot" style="background:#f59e0b"></span>
+          <span class="db-section-dot" style="background:var(--cat-amber)"></span>
           Enquiries
           <span class="db-section-count">${enquiryProjects.length}</span>
           <span class="db-chevron${this._dbEnqOpen ? ' db-chevron--open' : ''}" style="margin-left:auto" id="db-enq-chevron">▶</span>
@@ -1488,10 +1402,10 @@ export class App {
           const calcFee = (p.retainer_items||[]).reduce((s,i) => { const mult = periodMult[i.period||'month']||1; return s + (parseFloat(i.rate)||0)*(parseFloat(i.qty)||0)*mult }, 0)
           const fee = p.retainer_fee_mode==='calculated' ? calcFee : (parseFloat(p.retainer_fee)||0)
           const retPeriod = this._retainerPeriodLabel(p.retainer_start)
-          return `<div class="kanban-card" style="border-left:3px solid #a78bfa;cursor:default" data-retainer="${p.id}">
+          return `<div class="kanban-card" style="border-left:3px solid var(--cat-purple);cursor:default" data-retainer="${p.id}">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
               <div class="kanban-card-title" style="cursor:pointer" data-open-pid="${p.id}">${esc(p.name)}</div>
-              ${fee ? `<div style="font-size:12px;font-weight:600;color:#a78bfa;white-space:nowrap;margin-left:8px">£${fee.toLocaleString('en-GB')}/mo</div>` : ''}
+              ${fee ? `<div style="font-size:12px;font-weight:600;color:var(--cat-purple);white-space:nowrap;margin-left:8px">£${fee.toLocaleString('en-GB')}/mo</div>` : ''}
             </div>
             <div class="kanban-card-client">${cl ? esc(cl.first_name+' '+cl.last_name) : 'No client'}</div>
             ${retPeriod ? `<div style="font-size:10px;color:var(--text-tertiary);margin-top:3px">${retPeriod}</div>` : ''}
@@ -1538,7 +1452,7 @@ export class App {
           <div>
             <div class="db-section-head" style="justify-content:space-between">
               <div style="display:flex;align-items:center;gap:6px">
-                <span class="db-section-dot" style="background:#a78bfa"></span>
+                <span class="db-section-dot" style="background:var(--cat-purple)"></span>
                 Marketing Tasks
                 ${myTasks.length ? `<span class="db-section-count">${myTasks.length}</span>` : ''}
               </div>
@@ -1558,7 +1472,7 @@ export class App {
           <!-- Upcoming Deliverables -->
           <div>
             <div class="db-section-head">
-              <span class="db-section-dot" style="background:#ef4444"></span>
+              <span class="db-section-dot" style="background:var(--cat-red)"></span>
               Deliverables
               ${upcomingDeliverables.length ? `<span class="db-section-count">${upcomingDeliverables.length}</span>` : ''}
             </div>
@@ -1579,7 +1493,7 @@ export class App {
           <!-- Edit Deadlines Coming Due -->
           <div>
             <div class="db-section-head">
-              <span class="db-section-dot" style="background:#f59e0b"></span>
+              <span class="db-section-dot" style="background:var(--cat-amber)"></span>
               Edit Deadlines
               ${editDeadlines.length ? `<span class="db-section-count">${editDeadlines.length}</span>` : ''}
             </div>
@@ -1588,7 +1502,7 @@ export class App {
               ${editDeadlines.map(e => {
                 const assignee = this.allUsers.find(u => u.id === e.assignee_id)
                 return `<div class="db-proj-row db-deadline-row" style="display:flex;align-items:center;gap:8px;padding:8px 12px;min-height:unset;${e.is_complete ? 'opacity:0.45;' : ''}">
-                  ${e.phase_id ? `<input type="checkbox" class="db-deadline-check" data-phase-id="${e.phase_id}" data-block-id="${e.block_id}" ${e.is_complete ? 'checked' : ''} style="cursor:pointer;flex-shrink:0;width:13px;height:13px;accent-color:#6ec96e" />` : ''}
+                  ${e.phase_id ? `<input type="checkbox" class="db-deadline-check" data-phase-id="${e.phase_id}" data-block-id="${e.block_id}" ${e.is_complete ? 'checked' : ''} style="cursor:pointer;flex-shrink:0;width:13px;height:13px;accent-color:var(--success)" />` : ''}
                   ${deadlineDuePill(e)}
                   <span class="db-proj-name-label" style="flex:1;font-size:12px;${e.is_complete ? 'text-decoration:line-through;' : ''}">${esc(e.label)}</span>
                   ${assignee ? `<span style="font-size:10px;color:var(--text-tertiary);flex-shrink:0">${esc(assignee.name || assignee.email.split('@')[0])}</span>` : ''}
@@ -1600,7 +1514,7 @@ export class App {
           <!-- Retainers -->
           <div>
             <div class="db-section-head">
-              <span class="db-section-dot" style="background:#a78bfa"></span>
+              <span class="db-section-dot" style="background:var(--cat-purple)"></span>
               Retainers
               ${retainers.length ? `<span class="db-section-count">${retainers.length}</span>` : ''}
             </div>
@@ -1619,6 +1533,8 @@ export class App {
       </div>`
 
     this.teamCalendarView.renderDashboardSection(mc)
+    // Tasks sits between the calendar and Live Projects.
+    this.tasksView.renderDashboardSection(mc)
     this._mountCountdownWidget(mc)
     this._mountDaysSinceWidget(mc)
     this._mountYoutubeWidget(mc)
@@ -2030,7 +1946,7 @@ export class App {
               totalEffective += aH
               const iL = entries.filter(e => e.line_label === item.label).reduce((s,e) => s + parseFloat(e.hours), 0)
               const iPct = aH > 0 ? Math.min(100, Math.round(iL / aH * 100)) : 100
-              const iCol = iPct >= 100 ? '#ef4444' : iPct >= alertPctVal ? '#f59e0b' : '#a78bfa'
+              const iCol = iPct >= 100 ? 'var(--danger)' : iPct >= alertPctVal ? 'var(--warning)' : 'var(--cat-purple)'
               const bar = mc.querySelector(`[data-ret-item-bar="${p.id}-${ii}"]`)
               const lbl = mc.querySelector(`[data-ret-item-label="${p.id}-${ii}"]`)
               if (bar) { bar.style.width = iPct + '%'; bar.style.background = iCol }
@@ -2039,7 +1955,7 @@ export class App {
             })
             const hours = totalEffective || allocH
             const pct = hours > 0 ? Math.min(100, Math.round(logged / hours * 100)) : 0
-            const colour = pct >= 100 ? '#ef4444' : pct >= alertPctVal ? '#f59e0b' : '#a78bfa'
+            const colour = pct >= 100 ? 'var(--danger)' : pct >= alertPctVal ? 'var(--warning)' : 'var(--cat-purple)'
             if (alertEl && pct >= alertPctVal && pct < 100) { alertEl.style.display='block'; alertEl.style.color=colour; alertEl.textContent=`⚠ ${pct}% used overall` }
             if (alertEl && pct >= 100) { alertEl.style.display='block'; alertEl.style.color=colour; alertEl.textContent=`⚠ Over allocation by ${(logged-hours).toFixed(1)}h` }
           } else {
@@ -2056,7 +1972,7 @@ export class App {
             const pct = Math.min(100, Math.round(logged / hours * 100))
             const bar = mc.querySelector(`[data-ret-bar="${p.id}"]`)
             const label = mc.querySelector(`[data-ret-label="${p.id}"]`)
-            const colour = pct >= 100 ? '#ef4444' : pct >= alertPctVal ? '#f59e0b' : '#a78bfa'
+            const colour = pct >= 100 ? 'var(--danger)' : pct >= alertPctVal ? 'var(--warning)' : 'var(--cat-purple)'
             if (bar) { bar.style.width = pct + '%'; bar.style.background = colour }
             if (label) { label.textContent = `${logged.toFixed(1)} / ${hours}h`; label.style.color = pct >= alertPctVal ? colour : '' }
             if (alertEl && pct >= alertPctVal && pct < 100) { alertEl.style.display='block'; alertEl.style.color=colour; alertEl.textContent=`⚠ ${pct}% used — ${(hours-logged).toFixed(1)}h remaining` }
@@ -2067,7 +1983,69 @@ export class App {
     }
   }
 
-  // ── Notes sidebar ────────────────────────────────────────────────────────────
+  // ── Notes panel ──────────────────────────────────────────────────────────────
+  // Opened from the header's Notes button. Docked beside the page on desktop
+  // (and remembered), a full-height sheet on phones. Same notes and behaviour
+  // as the old sidebar list.
+
+  _notesPanelHtml() {
+    return `
+      <aside class="notes-panel" id="notes-panel" aria-labelledby="notes-panel-title">
+        <div class="notes-panel-head">
+          <h2 class="notes-panel-title section-label" id="notes-panel-title">Notes</h2>
+          <button type="button" class="btn-secondary notes-panel-new" id="notes-new-btn">${icon('plus', 14)}New note</button>
+          <button type="button" class="icon-btn" id="notes-close" aria-label="Close notes">${icon('close', 18)}</button>
+        </div>
+        <div class="notes-list" id="notes-list"><div class="notes-empty">Loading…</div></div>
+      </aside>`
+  }
+
+  _bindNotesPanel() {
+    const panel = document.getElementById('notes-panel')
+    if (!panel) return
+    panel.querySelector('#notes-new-btn')?.addEventListener('click', () => this._newNote())
+    panel.querySelector('#notes-close')?.addEventListener('click', () => this.toggleNotes(false))
+    // Escape outside a field closes the panel (inside one it just leaves the field).
+    panel.addEventListener('keydown', e => {
+      if (e.key !== 'Escape' || ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return
+      e.stopPropagation()
+      this.toggleNotes(false)
+    })
+    if (this._notesLoaded) this._renderNotesList()
+  }
+
+  // On phones the open panel covers the screen, so it's a modal dialog and
+  // everything behind it is inert.
+  _syncNotesModal() {
+    const modal = !!this._notesOpen && window.matchMedia(PHONE).matches
+    this.container.querySelectorAll('.app-header, .page, .app-tabbar, .detail-panel').forEach(n => n.toggleAttribute('inert', modal))
+    const panel = document.getElementById('notes-panel')
+    if (!panel) return
+    if (modal) { panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true') }
+    else { panel.removeAttribute('role'); panel.removeAttribute('aria-modal') }
+  }
+
+  toggleNotes(open = !this._notesOpen, { focus = true } = {}) {
+    this._notesOpen = open
+    try { localStorage.setItem('slate-notes-open', open ? '1' : '0') } catch {}
+    document.getElementById('notes-panel')?.remove()
+    const btn = document.getElementById('hdr-notes')
+    btn?.setAttribute('aria-expanded', String(open))
+    if (open) {
+      this.container.querySelector('.app-body')?.insertAdjacentHTML('beforeend', this._notesPanelHtml())
+      this._bindNotesPanel()
+      if (!this._notesLoaded) this._loadNotes()
+      if (focus) document.getElementById('notes-new-btn')?.focus()
+    } else if (focus) btn?.focus()
+    this._syncNotesModal()
+    // The page just changed width. The Team Calendar positions its entry chips
+    // in pixels, so lay it out again.
+    requestAnimationFrame(() => {
+      const section = document.querySelector('#tc-section')
+      if (section) this.teamCalendarView._refreshGrid(section)
+    })
+  }
+
 
   async _loadNotes() {
     const list = document.getElementById('notes-list')
@@ -2114,16 +2092,16 @@ export class App {
       return `
       <div class="notes-card${isOpen?' open':''}" data-note-id="${n.id}">
         <div class="notes-card-header" data-toggle-id="${n.id}">
-          <input class="notes-title-input" data-note-id="${n.id}" value="${(n.title||'').replace(/"/g,'&quot;')}" placeholder="Untitled" />
+          <input class="notes-title-input" data-note-id="${n.id}" value="${(n.title||'').replace(/"/g,'&quot;')}" placeholder="Untitled" aria-label="Note title" />
           <button class="notes-delete-hover" data-delete-id="${n.id}" aria-label="Delete note" title="Delete note">${trashIcon}</button>
           <button class="notes-card-toggle" data-toggle-id="${n.id}" aria-label="Toggle note" aria-expanded="${isOpen}">${chevron}</button>
         </div>
         <div class="notes-card-body">
-          <textarea class="notes-body-input" data-note-id="${n.id}" placeholder="Write something…" rows="4">${n.content||''}</textarea>
-          <div class="notes-card-meta" style="display:flex;align-items:center;gap:6px;padding:4px 10px 2px;flex-wrap:wrap">
-            <input type="date" class="notes-due-input" data-note-id="${n.id}" value="${n.due_date||''}" title="Due date" />
-            <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#596773;cursor:pointer;user-select:none">
-              <input type="checkbox" class="notes-reminder-input" data-note-id="${n.id}" ${n.reminder?'checked':''} style="width:12px;height:12px;cursor:pointer" />
+          <textarea class="notes-body-input" data-note-id="${n.id}" placeholder="Write something…" rows="4" aria-label="Note">${n.content||''}</textarea>
+          <div class="notes-card-meta">
+            <input type="date" class="notes-due-input" data-note-id="${n.id}" value="${n.due_date||''}" title="Due date" aria-label="Due date" />
+            <label class="notes-reminder">
+              <input type="checkbox" class="notes-reminder-input" data-note-id="${n.id}" ${n.reminder?'checked':''} />
               Remind 36h before
             </label>
           </div>
@@ -2300,12 +2278,11 @@ export class App {
     } catch(e) { console.error('Failed to delete note:', e); this.toast('Error deleting note') }
   }
 
-  renderSettings(mc) {
-    const s = this.settings ?? {}
+  // Settings sections, shown as tabs in the page toolbar. Workspace is split
+  // into sections for admins; non-admins only have the (non-admin) leave
+  // settings, so they keep a single Workspace section.
+  _settingsSections() {
     const isAdmin = this.appUser?.role === 'superadmin'
-
-    // Workspace is split into sub-tabs for admins; non-admins only have the
-    // (non-admin) leave settings, so they keep a single Workspace tab.
     const tabs = isAdmin
       ? [
           { id: 'account',   label: 'My account' },
@@ -2318,9 +2295,30 @@ export class App {
           { id: 'account',   label: 'My account' },
           { id: 'workspace', label: 'Workspace' },
         ]
-    // Fall back to the first tab if the remembered one isn't valid for this role.
+    // Fall back to the first section if the remembered one isn't valid for this role.
     let tab = this._settingsTab ?? 'account'
     if (!tabs.some(t => t.id === tab)) tab = 'account'
+    return { tabs, tab }
+  }
+
+  _settingsToolbar() {
+    const { tabs, tab } = this._settingsSections()
+    return { tabs: segTabs('Settings sections', tabs, tab) }
+  }
+
+  _bindSettingsToolbar(bar) {
+    bindSegTabs(bar, id => {
+      this._settingsTab = id
+      const mc = document.getElementById('main-content')
+      if (mc) this.renderSettings(mc)
+      this.updateTitle()
+    })
+  }
+
+  renderSettings(mc) {
+    const s = this.settings ?? {}
+    const isAdmin = this.appUser?.role === 'superadmin'
+    const { tab } = this._settingsSections()
 
     // ── User-level panels ───────────────────────────────────────────────
     const accountPanel = `
@@ -2425,7 +2423,7 @@ export class App {
               <input type="email" id="invite-email" placeholder="colleague@email.com" style="flex:1;padding:8px 11px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
               <button class="btn-primary" id="invite-btn">Send invite</button>
             </div>
-            <div id="users-list"><div style="font-size:12px;color:var(--text-tertiary)">Loading users…</div></div>
+            <div id="users-list" class="users-grid"><div style="font-size:12px;color:var(--text-tertiary)">Loading users…</div></div>
           </div>
         </div>` : ''
 
@@ -2568,35 +2566,25 @@ export class App {
           </div>
         </div>` : '<div></div>'
 
-    // ── Assemble tabs ───────────────────────────────────────────────────
-    const tabBar = `<div style="display:flex;gap:0;border-bottom:1px solid var(--border-light);margin-bottom:20px">
-      ${tabs.map(t => `
-        <button class="settings-tab" data-tab="${t.id}"
-          style="padding:8px 16px;font-size:13px;font-family:var(--font);cursor:pointer;background:none;border:none;border-bottom:2px solid ${tab===t.id?'var(--accent)':'transparent'};color:${tab===t.id?'var(--accent)':'var(--text-secondary)'};font-weight:${tab===t.id?'600':'400'};transition:all 0.15s;margin-bottom:-1px">
-          ${t.label}
-        </button>`).join('')}
-    </div>`
-
-    const wrap = inner => `<div style="display:flex;flex-direction:column;gap:16px;max-width:760px">${inner}</div>`
+    // ── Assemble the section ────────────────────────────────────────────
+    // Panels sit side by side as the window allows (the section tabs are in
+    // the page toolbar).
+    const grid = inner => `<div class="panel-grid">${inner}</div>`
+    const wide = inner => `<div class="panel-grid-wide">${inner}</div>`
     if (tab === 'account') {
-      mc.innerHTML = tabBar + wrap(`${accountPanel}${roundupPanel}`)
+      mc.innerHTML = grid(`${accountPanel}${roundupPanel}`)
     } else if (tab === 'company') {
-      mc.innerHTML = tabBar + wrap(`${companyDetailsPanel}${timersPanel}`)
+      mc.innerHTML = grid(`${companyDetailsPanel}${timersPanel}`)
     } else if (tab === 'invoicing') {
-      mc.innerHTML = tabBar + wrap(`${invoicingDefaultsPanel}${expenseFxPanels}`)
+      mc.innerHTML = grid(`${invoicingDefaultsPanel}${expenseFxPanels}`)
     } else if (tab === 'budget') {
-      mc.innerHTML = tabBar + wrap(budgetPanel)
+      mc.innerHTML = grid(wide(budgetPanel))
     } else if (tab === 'users') {
-      mc.innerHTML = tabBar + wrap(`${usersPanel}${holidaysPanel}${leavePanel}`)
+      mc.innerHTML = grid(`${wide(usersPanel)}${holidaysPanel}${leavePanel}`)
     } else {
-      // Non-admin "Workspace" tab — leave settings only.
-      mc.innerHTML = tabBar + wrap(leavePanel)
+      // Non-admin "Workspace" section — leave settings only.
+      mc.innerHTML = grid(leavePanel)
     }
-
-    mc.querySelectorAll('.settings-tab').forEach(btn => btn.addEventListener('click', () => {
-      this._settingsTab = btn.dataset.tab
-      this.renderSettings(mc)
-    }))
 
     mc.querySelector('#settings-save-btn')?.addEventListener('click', () => this.saveSettings(mc))
     mc.querySelector('#settings-save-btn-2')?.addEventListener('click', () => this.saveSettings(mc))
@@ -2651,7 +2639,7 @@ export class App {
                 <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-tertiary);cursor:pointer;white-space:nowrap">
                   <input type="checkbox" ${s.crew?'checked':''} data-tpl-crew="${si}" style="cursor:pointer" /> Crew section
                 </label>
-                <button class="row-btn" data-tpl-del-sec="${si}" style="color:#b03020;flex-shrink:0">× Remove section</button>
+                <button class="row-btn" data-tpl-del-sec="${si}" style="color:var(--danger);flex-shrink:0">× Remove section</button>
               </div>
               <table style="width:100%;border-collapse:collapse">
                 <thead>
@@ -2682,7 +2670,7 @@ export class App {
                         <input type="checkbox" ${l.track_time?'checked':''} data-tpl-track="${si},${li}" style="cursor:pointer" ${!l.useDays?'disabled title="Enable daily rate first"':''} />
                       </td>
                       <td style="padding:5px 4px;text-align:center">
-                        <button class="row-btn" data-tpl-del-line="${si},${li}" style="color:#b03020;font-size:11px;padding:2px 6px">×</button>
+                        <button class="row-btn" data-tpl-del-line="${si},${li}" style="color:var(--danger);font-size:11px;padding:2px 6px">×</button>
                       </td>
                     </tr>`).join('')}
                 </tbody>
@@ -2803,7 +2791,7 @@ export class App {
 
       el.innerHTML = users.map(u => {
         const isSelf = u.clerk_id === this.clerkUserId
-        return `<div style="border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px;margin-bottom:10px" data-uid="${u.id}">
+        return `<div style="border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px" data-uid="${u.id}">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
             <div style="font-size:13px;font-weight:500;flex:1">${esc(u.name)||'—'} ${isSelf?'<span style="font-size:10px;color:var(--text-tertiary)">(you)</span>':''}</div>
             <select class="status-select" data-role-uid="${u.id}" ${isSelf?'disabled':''} style="width:130px" title="${isSelf?'You cannot change your own role':''}">
@@ -2841,12 +2829,12 @@ export class App {
             <div style="font-size:12px;color:var(--text-secondary);white-space:nowrap">Google Calendar:</div>
             ${isSelf
               ? u.google_calendar_connected
-                ? `<span style="font-size:12px;color:#16a34a;font-weight:500">✓ Connected</span>
-                   <button class="row-btn" data-gcal-disconnect="${u.id}" style="font-size:11px;color:var(--red,#e05252);border-color:var(--red,#e05252)">Disconnect</button>`
+                ? `<span style="font-size:12px;color:var(--success);font-weight:500">✓ Connected</span>
+                   <button class="row-btn" data-gcal-disconnect="${u.id}" style="font-size:11px;color:var(--danger);border-color:var(--danger-border)">Disconnect</button>`
                 : `<button class="row-btn" data-gcal-connect="${u.id}" style="font-size:11px">Connect Google Calendar</button>
                    <span style="font-size:11px;color:var(--text-tertiary)">Approved leave and your calendar entries appear on your own calendar</span>`
               : u.google_calendar_connected
-                ? `<span style="font-size:12px;color:#16a34a">✓ Connected</span>`
+                ? `<span style="font-size:12px;color:var(--success)">✓ Connected</span>`
                 : `<span style="font-size:12px;color:var(--text-tertiary)">Not connected</span>`}
           </div>
           ${isSelf && u.google_calendar_connected ? `
@@ -2859,7 +2847,7 @@ export class App {
             <span style="font-size:11px;color:var(--text-tertiary)">One-way, into a separate “Slate” calendar — your own events are never touched</span>
           </div>` : ''}
           <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
-            ${!isSelf ? `<button class="row-btn" data-remove-user="${u.id}" data-remove-name="${esc(u.name)||esc(u.email)}" style="font-size:11px;color:var(--red,#e05252);border-color:var(--red,#e05252)">Remove user</button>` : '<span></span>'}
+            ${!isSelf ? `<button class="row-btn" data-remove-user="${u.id}" data-remove-name="${esc(u.name)||esc(u.email)}" style="font-size:11px;color:var(--danger);border-color:var(--danger-border)">Remove user</button>` : '<span></span>'}
             <button class="row-btn" data-save-user="${u.id}" style="font-size:11px">Save changes</button>
           </div>
         </div>`
@@ -2894,7 +2882,7 @@ export class App {
         btn.addEventListener('click', async () => {
           const uid = btn.dataset.removeUser
           const name = btn.dataset.removeName
-          if (!await this.confirm({ title: 'Remove user?', message: `${name} will lose access to the workspace immediately.`, confirmLabel: 'Remove' })) return
+          if (!await this.confirm({ title: 'Remove user?', message: `${name} will lose access to the workspace immediately. Tasks and comments they wrote stay, and tasks assigned to them go back to Unassigned.`, confirmLabel: 'Remove' })) return
           try {
             await deleteAppUser(uid)
             this.allUsers = (this.allUsers ?? []).filter(x => x.id !== uid)
@@ -3020,7 +3008,7 @@ export class App {
       <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border-light)">
         <div style="font-size:13px;color:var(--text-primary);width:120px">${new Date(h.holiday_date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
         <div style="flex:1;font-size:13px;color:var(--text-secondary)">${esc(h.name)}</div>
-        <button class="row-btn" data-del-hol="${h.id}" style="font-size:11px;color:var(--red,#e05252);border-color:var(--red,#e05252)">Remove</button>
+        <button class="row-btn" data-del-hol="${h.id}" style="font-size:11px;color:var(--danger);border-color:var(--danger-border)">Remove</button>
       </div>`).join('')
     el.querySelectorAll('[data-del-hol]').forEach(btn => btn.addEventListener('click', async () => {
       try {
@@ -3432,7 +3420,7 @@ export class App {
     layer.className = 'cd-confetti-layer'
     document.body.appendChild(layer)
 
-    const COLORS = ['#f59e0b','#ef4444','#10b981','#3b82f6','#8b5cf6','#ec4899','#f97316','#06b6d4','#fbbf24','#a3e635']
+    const COLORS = Array.from({ length: 10 }, (_, i) => `var(--confetti-${i + 1})`)
     const spawn = () => {
       if (!document.contains(layer)) { clearInterval(confettiTimer); return }
       for (let i = 0; i < 8; i++) {
@@ -3675,38 +3663,7 @@ export class App {
     }
   }
 
-  iconHamburger() { return `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 4.5h14M2 9h14M2 13.5h14"/></svg>` }
-  iconContacts() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="6" cy="5" r="2.5"/><path d="M1 14c0-2.8 2.2-4.5 5-4.5s5 1.7 5 4.5"/><path d="M11 3.5a2 2 0 0 1 0 4M15 14c0-2.4-1.5-3.8-4-4"/></svg>` }
-  iconMarketing()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1 8c0 0 2-5 7-5s7 5 7 5-2 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>` }
-  iconTimeTrack()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="9" r="5.5"/><path d="M8 6v3.5l2 1.5"/><path d="M6 1h4M8 1v2.5"/></svg>` }
-  iconProjects() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 6h6M5 9h4"/></svg>` }
-  iconBudgets()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 3h12v2H2zM2 7h9M2 11h7"/><circle cx="13" cy="11" r="2.2"/><path d="M13 9.8v1l.7.7"/></svg>` }
-  iconPlanning() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="2" width="3.6" height="12" rx="0.8"/><rect x="6.2" y="2" width="3.6" height="8.5" rx="0.8"/><rect x="10.9" y="2" width="3.6" height="5.5" rx="0.8"/></svg>` }
-  iconPipeline() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1" y="4" width="4" height="9" rx="1"/><rect x="6" y="6" width="4" height="7" rx="1"/><rect x="11" y="8" width="4" height="5" rx="1"/></svg>` }
-  iconCalendar() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="3" width="13" height="11.5" rx="1.5"/><path d="M1.5 6.5h13M5 1.5v3M11 1.5v3"/></svg>` }
-  iconStoryPlanner() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="2" width="13" height="3.5" rx="0.8"/><rect x="1.5" y="6.5" width="13" height="3.5" rx="0.8"/><rect x="1.5" y="11" width="8" height="3.5" rx="0.8"/></svg>` }
-  iconSettings() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M11.4 4.6l-1.4 1.4M4.6 11.4l-1.4 1.4"/></svg>` }
-  iconPasswordManager() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/><circle cx="8" cy="11" r="1" fill="currentColor" stroke="none"/></svg>` }
-  iconExpenses()        { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="4" width="12" height="9" rx="1.5"/><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M8 7.5v3M6.5 9h3"/></svg>` }
-  iconOffloads()        { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="4" rx="1"/><rect x="2" y="9" width="12" height="4" rx="1"/><circle cx="4.5" cy="5" r="0.6" fill="currentColor" stroke="none"/><circle cx="4.5" cy="11" r="0.6" fill="currentColor" stroke="none"/></svg>` }
-  iconLeave()           { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 2c2.5 1.5 3.5 4 2.5 7-.8 2.4-2.5 4-2.5 4s-1.7-1.6-2.5-4C4.5 6 5.5 3.5 8 2z"/><path d="M8 6v7"/></svg>` }
-  _leaveBadgeHtml() {
-    const n = pendingApprovalsFor(this.appUser, this.leaveRequests).length
-    return n ? `<span class="leave-nav-badge">${n}</span>` : ''
-  }
   updateLeaveBadge() {
-    const item = document.querySelector('.nav-item[data-view="leave"]')
-    if (!item) return
-    item.querySelector('.leave-nav-badge')?.remove()
-    const html = this._leaveBadgeHtml()
-    if (html) item.insertAdjacentHTML('beforeend', html)
-  }
-  iconSignOut()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M10 11l4-4-4-4M14 8H6"/></svg>` }
-  iconCollapse() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 4.5L6 8l3.5 3.5M13 4.5L9.5 8l3.5 3.5"/></svg>` }
-  iconTheme() {
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
-    return isDark
-      ? `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M11.4 4.6l-1.4 1.4M4.6 11.4l-1.4 1.4"/></svg>`
-      : `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M13.5 10A5.5 5.5 0 0 1 6 2.5a5.5 5.5 0 1 0 7.5 7.5z"/></svg>`
+    this.header.refreshLeaveBadge()
   }
 }

@@ -102,7 +102,7 @@ export class CanvasView {
     }
 
     mc.innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:8px;max-width:680px">
+      <div class="card-grid">
         ${list.map(c => {
           const proj = c.project_id ? (this.app.projects ?? []).find((/** @type {any} */ p) => p.id === c.project_id) : null
           const nested = this._descendantCount(c.id)
@@ -135,7 +135,7 @@ export class CanvasView {
     document.getElementById('cv-new-modal')?.remove()
     const overlay = document.createElement('div')
     overlay.id = 'cv-new-modal'
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
     overlay.innerHTML = `
       <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:380px;padding:20px" onclick="event.stopPropagation()">
         <div style="font-size:14px;font-weight:600;margin-bottom:14px">New canvas</div>
@@ -274,7 +274,10 @@ export class CanvasView {
     })
 
     this.surface = surface
-    surface.mount(/** @type {HTMLElement} */ (mc.querySelector('#cv-host')), 'calc(100vh - 170px)')
+    // Fill the page below the header (and, on phones, above the tab bar).
+    // dvh follows mobile browsers' collapsing toolbars; older ones get vh.
+    const vh = CSS.supports?.('height', '100dvh') ? '100dvh' : '100vh'
+    surface.mount(/** @type {HTMLElement} */ (mc.querySelector('#cv-host')), `calc(${vh} - var(--chrome-h) - 108px)`)
   }
 
   /** @param {HTMLInputElement | null} input @param {CanvasRow} canvas */

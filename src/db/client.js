@@ -383,6 +383,128 @@ export async function runMigrations() {
   await sql`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS invoiced BOOLEAN NOT NULL DEFAULT false`
   await sql`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS invoiced_at TIMESTAMPTZ`
   await sql`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS invoiced_by TEXT`
+
+  // ── Tasks (Slate task board) ───────────────────────────────────────────────
+  // One table behind the desktop board and the mobile list. See claude.md.
+  // The only enum type in the schema — CREATE TYPE has no IF NOT EXISTS, so it
+  // needs the DO block to stay idempotent across every app boot.
+  await sql`
+    DO $$ BEGIN
+      CREATE TYPE task_status AS ENUM ('todo', 'doing', 'done');
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS tasks (
+      id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id         TEXT NOT NULL,
+      title           TEXT NOT NULL,
+      body            TEXT,
+      status          task_status NOT NULL DEFAULT 'todo',
+      assignee_id     UUID REFERENCES app_users(id) ON DELETE SET NULL,
+      created_by      UUID REFERENCES app_users(id) ON DELETE SET NULL,
+      due_at          TIMESTAMPTZ,
+      acknowledged_at TIMESTAMPTZ,
+      nudged_at       TIMESTAMPTZ,
+      project_id      UUID REFERENCES projects(id) ON DELETE SET NULL,
+      parent_type     TEXT,
+      parent_id       UUID,
+      position        DOUBLE PRECISION NOT NULL DEFAULT 0,
+      archived_at     TIMESTAMPTZ,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS task_comments (
+      id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      task_id    UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      author_id  UUID REFERENCES app_users(id) ON DELETE SET NULL,
+      body       TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  // Removing a user must not be blocked by the tasks they raised or the
+  // comments they wrote: those stay on the board and read as a former
+  // member's. Databases created before 0031 have both columns NOT NULL with a
+  // plain foreign key, so relax them once. The guards make every later boot a
+  // read-only no-op (no ALTER, so no table lock), several browsers booting at
+  // once can't trip over each other, and a failure only logs a warning: this
+  // must never stop the app loading.
+  await sql`
+    DO $$
+    DECLARE
+      col RECORD;
+      fk  RECORD;
+    BEGIN
+      FOR col IN SELECT * FROM (VALUES ('tasks', 'created_by'), ('task_comments', 'author_id')) AS v(tbl, name) LOOP
+        BEGIN
+          FOR fk IN
+            SELECT c.conname FROM pg_constraint c
+              JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+             WHERE c.conrelid = col.tbl::regclass AND c.contype = 'f'
+               AND a.attname = col.name AND c.confdeltype <> 'n'
+          LOOP
+            EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I', col.tbl, fk.conname);
+          END LOOP;
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+              JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+             WHERE c.conrelid = col.tbl::regclass AND c.contype = 'f'
+               AND a.attname = col.name AND c.confdeltype = 'n'
+          ) THEN
+            EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I FOREIGN KEY (%I) REFERENCES app_users(id) ON DELETE SET NULL',
+                           col.tbl, col.tbl || '_' || col.name || '_fkey', col.name);
+          END IF;
+          IF EXISTS (SELECT 1 FROM pg_attribute
+                      WHERE attrelid = col.tbl::regclass AND attname = col.name AND attnotnull) THEN
+            EXECUTE format('ALTER TABLE %I ALTER COLUMN %I DROP NOT NULL', col.tbl, col.name);
+          END IF;
+        EXCEPTION WHEN OTHERS THEN
+          -- This column is left exactly as it was (removing that user is
+          -- refused, as before) and the next boot tries again.
+          RAISE WARNING 'relaxing %.% failed: %', col.tbl, col.name, SQLERRM;
+        END;
+      END LOOP;
+    END $$
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS task_events (
+      id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      task_id    UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      actor_id   UUID REFERENCES app_users(id) ON DELETE SET NULL,
+      type       TEXT NOT NULL,
+      payload    JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      recipient_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+      task_id      UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      event_id     UUID NOT NULL REFERENCES task_events(id) ON DELETE CASCADE,
+      type         TEXT NOT NULL,
+      read_at      TIMESTAMPTZ,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS tasks_status_archived_idx ON tasks (status, archived_at)`
+  await sql`CREATE INDEX IF NOT EXISTS tasks_assignee_status_idx ON tasks (assignee_id, status)`
+  await sql`CREATE INDEX IF NOT EXISTS tasks_project_idx         ON tasks (project_id)`
+  // Drives the polling loop's ?updated_since= filter.
+  await sql`CREATE INDEX IF NOT EXISTS tasks_updated_idx         ON tasks (updated_at)`
+  // Drives the unacknowledged-nudge cron — partial, so it stays tiny.
+  await sql`
+    CREATE INDEX IF NOT EXISTS tasks_unacknowledged_idx ON tasks (assignee_id)
+    WHERE acknowledged_at IS NULL AND assignee_id IS NOT NULL
+  `
+  await sql`CREATE INDEX IF NOT EXISTS task_comments_task_idx ON task_comments (task_id, created_at)`
+  await sql`CREATE INDEX IF NOT EXISTS task_events_task_idx    ON task_events (task_id, created_at DESC)`
+  await sql`CREATE INDEX IF NOT EXISTS notifications_inbox_idx ON notifications (recipient_id, read_at, created_at DESC)`
+  // One notification per recipient per event — makes the dedupe rule a DB
+  // guarantee, so a retried write cannot double-notify.
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS notifications_dedupe_uidx ON notifications (recipient_id, event_id)`
 }
 
 // One-time demo data so the first visit to Planning isn't an empty screen.
@@ -672,7 +794,15 @@ export async function updateAppUser(id, data) {
 }
 
 export async function deleteAppUser(id) {
-  return db.delete(app_users).where(eq(app_users.id, id))
+  // Their tasks outlive them (assignee and creator fall back to NULL), but a
+  // foreign key's SET NULL leaves updated_at alone, so the task board's
+  // updated_since polls would never see the change. Touch those tasks after.
+  const touched = await sql`SELECT id FROM tasks WHERE assignee_id = ${id} OR created_by = ${id}`
+  const result = await db.delete(app_users).where(eq(app_users.id, id))
+  if (touched.length) {
+    await sql`UPDATE tasks SET updated_at = NOW() WHERE id = ANY(${touched.map(t => t.id)}::uuid[])`
+  }
+  return result
 }
 
 // ── Time tracking ─────────────────────────────────────────────────────────────

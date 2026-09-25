@@ -1,0 +1,294 @@
+/* ════════════════════════════════════════════════════════════════════════
+   SLATE DESIGN TOKENS
+
+   The only file in the app that defines colours. Stylesheets and inline
+   styles in the views refer to these custom properties, never to literal
+   colours, so both themes work everywhere.
+
+   Themes: Warm Paper (light) and Darkroom (dark).
+   • html[data-theme="light"] / html[data-theme="dark"] force a theme. The
+     account menu's System / Light / Dark control stores the choice in
+     localStorage ('slate-theme') and the inline script in index.html applies
+     it before first paint.
+   • With no attribute (System), the prefers-color-scheme media query at the
+     bottom of the Darkroom section follows the device.
+
+   The Darkroom values therefore appear twice: once for the forced theme and
+   once inside the media query. src/tokens.test.js fails if the two copies
+   drift apart or a token is missing from either theme, so edit both.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── Theme-independent: shape, type ── */
+:root {
+  --radius-sm: 6px;
+  --radius-md: 10px;       /* controls: buttons, inputs, selects */
+  --radius-lg: 10px;       /* cards and panels */
+  --radius-xl: 12px;       /* modals */
+  --radius-seg: 8px;       /* segmented-control buttons */
+  --radius-popover: 12px;  /* menus and popovers */
+  --radius-sheet: 18px;    /* mobile bottom sheets (top corners) */
+  --radius-pill: 999px;
+
+  /* App chrome: header height plus, on phones, the bottom tab bar. */
+  --header-h: 64px;
+  --tabbar-h: 0px;
+  --chrome-h: calc(var(--header-h) + var(--tabbar-h) + env(safe-area-inset-top, 0px));
+
+  /* Type scale */
+  --fs-2xs: 9px;
+  --fs-xs: 10px;
+  --fs-sm: 11px;
+  --fs-md: 12px;
+  --fs-base: 13px;
+  --fs-lg: 14px;
+  --fs-xl: 16px;
+  --fs-2xl: 18px;
+  --fs-3xl: 20px;
+
+  /* Same fonts in both themes (self-hosted via @fontsource, see style.css) */
+  --font: 'IBM Plex Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Cards have no shadow in either theme; only menus, popovers and modals
+     lift off the page (--shadow-lg / --shadow-popover, per theme below). */
+  --shadow-sm: 0 0 #0000;
+  --shadow-md: 0 0 #0000;
+
+  /* Text on colours people pick (canvas notes and boards, teammates' cursor
+     colours). Those colours are data and look the same in both themes, so
+     the text on them does too. */
+  --on-pastel: #1F2430;          /* canvas notes: always light pastels */
+  --on-pastel-subtle: #5E6472;
+  --pastel-border: rgba(0, 0, 0, 0.08);
+  --on-data: #FFFFFF;            /* saturated board and cursor colours */
+  --shadow-cursor: 0 1px 1px rgba(0, 0, 0, 0.25);
+
+  /* The office-dashboard YouTube ticker keeps a brand red, deliberately not
+     --danger so it can't be mistaken for the days-since banner. */
+  --brand-youtube: #E6002E;
+  --on-brand: #FFFFFF;
+
+  /* Dashboard countdown celebration: a dark party gradient with white text,
+     the same in both themes. */
+  --celebrate-text: #FFFFFF;
+  --celebrate-text-muted: rgba(255, 255, 255, 0.75);
+  --celebrate-glow: rgba(255, 220, 80, 0.7);
+  --celebrate-plum: #1A0533;
+  --celebrate-navy: #0A1A3D;
+  --celebrate-forest: #001A10;
+  --celebrate-olive: #1A2800;
+  --celebrate-rust: #3D1500;
+  --celebrate-wine: #3D0A1A;
+  --confetti-1: #F59E0B;
+  --confetti-2: #EF4444;
+  --confetti-3: #10B981;
+  --confetti-4: #3B82F6;
+  --confetti-5: #8B5CF6;
+  --confetti-6: #EC4899;
+  --confetti-7: #F97316;
+  --confetti-8: #06B6D4;
+  --confetti-9: #FBBF24;
+  --confetti-10: #A3E635;
+}
+
+/* ── Warm Paper (light) — the default ── */
+:root {
+  color-scheme: light;
+  --color-scheme: light;
+
+  --bg: #F4F3EF;               /* page, active tab */
+  --surface: #FFFFFF;          /* cards, inputs */
+  --surface-2: #FAF9F6;        /* subtle fills and hover states, between --bg and --surface */
+  --surface-sunken: #E6E4DD;   /* board columns, segmented-control track */
+  --border: #E2E0D8;
+  --border-strong: #D5D2C8;    /* outlined buttons, inputs */
+  --text: #17191C;
+  --text-muted: #4A4E55;
+  --text-subtle: #5B5F66;      /* done items */
+
+  --accent: #C2410C;
+  --accent-hover: #A8380A;
+  --accent-rgb: 194, 65, 12;   /* matches --accent, for rgba() tints */
+  --on-accent: #FFFFFF;
+  --accent-soft: #FBF1EA;      /* selected rows, pills */
+  --accent-text: #9A3412;      /* links, text on --accent-soft */
+
+  --header-bg: #E4E0D6;        /* header, mobile tab bar */
+  --header-text: #4A4E55;      /* inactive tabs, icons */
+  --header-text-strong: #17191C; /* wordmark, Log time */
+  --header-border: #BDB8AC;    /* outlined header buttons */
+  --search-bg: #F4F3EF;
+  --search-border: #CFCAC0;
+
+  --info-soft: #E3F1EF;        /* client request badge */
+  --info-text: #0F5F59;
+  --success: #1E7A35;
+  --success-soft: #E4F2E7;
+  --warning: #B45309;          /* due today */
+  --warning-soft: #FDF5E8;
+  --danger: #B42318;           /* overdue */
+  --danger-soft: #FBE9E7;
+  --danger-wash: #FDF4F3;       /* faint row highlight, e.g. an overdue deliverable */
+  --danger-border: rgba(180, 35, 24, 0.35);
+
+  /* Categorical colours: project stages, calendar and search types, avatars,
+     tags. Each works as text on the page, cards and its own -soft fill, and
+     --on-cat reads on each as a solid fill. */
+  --cat-blue: #1D5FB4;    --cat-blue-soft: #E7EEF9;
+  --cat-green: #1E7A35;   --cat-green-soft: #E4F2E7;
+  --cat-amber: #B45309;   --cat-amber-soft: #FDF5E8;
+  --cat-yellow: #856200;  --cat-yellow-soft: #FBF4DC;
+  --cat-purple: #6B3FD1;  --cat-purple-soft: #EFEAFB;
+  --cat-red: #B42318;     --cat-red-soft: #FBE9E7;
+  --cat-cyan: #0E7490;    --cat-cyan-soft: #E1F2F6;
+  --cat-pink: #B8175A;    --cat-pink-soft: #FBE8F0;
+  --cat-grey: #5B5F66;    --cat-grey-soft: #ECEBE6;
+  --on-cat: #FFFFFF;
+
+  --toast-bg: #17191C;
+  --toast-text: #F4F3EF;
+  --toast-action: #FDBA8C;
+  --scrim: rgba(23, 25, 28, 0.5);        /* sheet and modal backdrop */
+  --shadow-lg: 0 12px 32px rgba(23, 25, 28, 0.18);
+  --shadow-popover: 0 12px 32px rgba(23, 25, 28, 0.18);
+  --logo-filter: none;                   /* dark PNG logo on the auth screen */
+}
+
+/* ── Darkroom (dark) — forced ── */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --color-scheme: dark;
+
+  --bg: #1B1C22;
+  --surface: #25272E;
+  --surface-2: #212228;
+  --surface-sunken: #15161B;
+  --border: #33353E;
+  --border-strong: #3D404A;
+  --text: #EDEDF1;
+  --text-muted: #A3A6B1;
+  --text-subtle: #8E909A;
+
+  --accent: #8B8FF7;
+  --accent-hover: #A1A4F9;
+  --accent-rgb: 139, 143, 247;
+  --on-accent: #0E0F13;
+  --accent-soft: #2A2C48;
+  --accent-text: #B4B7FA;
+
+  --header-bg: #0E0F13;
+  --header-text: #A3A6B1;
+  --header-text-strong: #F2F2F5;
+  --header-border: #2C2E36;
+  --search-bg: #191A20;
+  --search-border: #2C2E36;
+
+  --info-soft: #173A36;
+  --info-text: #86DCCB;
+  --success: #7FD396;
+  --success-soft: #1C3526;
+  --warning: #F5B460;
+  --warning-soft: #3A2D18;
+  --danger: #FF8A80;
+  --danger-soft: #3D2124;
+  --danger-wash: #2A2226;
+  --danger-border: rgba(255, 138, 128, 0.4);
+
+  --cat-blue: #86B6F7;    --cat-blue-soft: #1E2D45;
+  --cat-green: #7FD396;   --cat-green-soft: #1C3526;
+  --cat-amber: #F5B460;   --cat-amber-soft: #3A2D18;
+  --cat-yellow: #EBD26A;  --cat-yellow-soft: #34301A;
+  --cat-purple: #B9A5FB;  --cat-purple-soft: #2D2747;
+  --cat-red: #FF8A80;     --cat-red-soft: #3D2124;
+  --cat-cyan: #6FD4E8;    --cat-cyan-soft: #163840;
+  --cat-pink: #F59AC5;    --cat-pink-soft: #3C2231;
+  --cat-grey: #A3A6B1;    --cat-grey-soft: #2C2E36;
+  --on-cat: #0E0F13;
+
+  --toast-bg: #EDEDF1;
+  --toast-text: #17191C;
+  --toast-action: #4B4FC9;
+  --scrim: rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --shadow-popover: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --logo-filter: brightness(0) invert(1);
+}
+
+/* ── Darkroom — following the device (System) ──
+   Keep identical to the forced block above. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --color-scheme: dark;
+
+    --bg: #1B1C22;
+    --surface: #25272E;
+    --surface-2: #212228;
+    --surface-sunken: #15161B;
+    --border: #33353E;
+    --border-strong: #3D404A;
+    --text: #EDEDF1;
+    --text-muted: #A3A6B1;
+    --text-subtle: #8E909A;
+
+    --accent: #8B8FF7;
+    --accent-hover: #A1A4F9;
+    --accent-rgb: 139, 143, 247;
+    --on-accent: #0E0F13;
+    --accent-soft: #2A2C48;
+    --accent-text: #B4B7FA;
+
+    --header-bg: #0E0F13;
+    --header-text: #A3A6B1;
+    --header-text-strong: #F2F2F5;
+    --header-border: #2C2E36;
+    --search-bg: #191A20;
+    --search-border: #2C2E36;
+
+    --info-soft: #173A36;
+    --info-text: #86DCCB;
+    --success: #7FD396;
+    --success-soft: #1C3526;
+    --warning: #F5B460;
+    --warning-soft: #3A2D18;
+    --danger: #FF8A80;
+    --danger-soft: #3D2124;
+    --danger-wash: #2A2226;
+    --danger-border: rgba(255, 138, 128, 0.4);
+
+    --cat-blue: #86B6F7;    --cat-blue-soft: #1E2D45;
+    --cat-green: #7FD396;   --cat-green-soft: #1C3526;
+    --cat-amber: #F5B460;   --cat-amber-soft: #3A2D18;
+    --cat-yellow: #EBD26A;  --cat-yellow-soft: #34301A;
+    --cat-purple: #B9A5FB;  --cat-purple-soft: #2D2747;
+    --cat-red: #FF8A80;     --cat-red-soft: #3D2124;
+    --cat-cyan: #6FD4E8;    --cat-cyan-soft: #163840;
+    --cat-pink: #F59AC5;    --cat-pink-soft: #3C2231;
+    --cat-grey: #A3A6B1;    --cat-grey-soft: #2C2E36;
+    --on-cat: #0E0F13;
+
+    --toast-bg: #EDEDF1;
+    --toast-text: #17191C;
+    --toast-action: #4B4FC9;
+    --scrim: rgba(0, 0, 0, 0.6);
+    --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
+    --shadow-popover: 0 12px 32px rgba(0, 0, 0, 0.5);
+    --logo-filter: brightness(0) invert(1);
+  }
+}
+
+/* ── Older names, kept as aliases so existing views pick up the palette ──
+   New code should use the names above. These resolve on the root element,
+   where the theme is set, so they follow the theme too. */
+:root {
+  --bg-primary: var(--surface);
+  --bg-secondary: var(--surface-2);
+  --bg-tertiary: var(--surface-sunken);
+  --text-primary: var(--text);
+  --text-secondary: var(--text-muted);
+  --text-tertiary: var(--text-subtle);
+  --border-light: var(--border);
+  --border-med: var(--border-strong);
+  --accent-subtle: var(--accent-soft);
+  --danger-subtle: var(--danger-soft);
+}

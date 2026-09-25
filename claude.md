@@ -5,7 +5,7 @@ Peny CRM is a web-based CRM system for managing contacts, projects, budgets, tim
 
 ## Tech Stack
 - **Frontend:** Vanilla JavaScript (ES modules) + Vite
-- **Auth:** Clerk (handles all auth, no user table in DB)
+- **Auth:** Clerk (identity provider; `app_users` is the DB-side user table)
 - **Database:** PostgreSQL (Neon) via Drizzle ORM
 - **File Storage:** Vercel Blob
 - **Email:** Nodemailer
@@ -20,14 +20,20 @@ src/
     client.js             # Database connection and query helpers
     schema.js             # Drizzle ORM schema definitions
   views/                  # Feature modules (contacts, projects, budgets, etc.)
-    app.js                # Main app shell and router
-    main.js               # Entry point — auth → data load → app mount
+                          # plus the shell's header, menus and shared forms
+  app.js                  # Main app shell and router
+  main.js                 # Entry point — auth → data load → app mount
+  tokens.css              # Theme tokens (Warm Paper / Darkroom)
+  theme.js                # System / Light / Dark choice
   style.css               # Global styles
 index.html                # App HTML shell
 ```
 
 ## Key Files
-- `src/app.js` - Router and main app component. Maps routes to view modules
+- `src/app.js` - Router and main app component. Maps routes to view modules,
+  renders the shell (header, page toolbar, Notes panel, phone tab bar)
+- `src/views/header.js` - The header: top tabs, search, Log time, New, Notes
+  and the account menu (see "App shell" below)
 - `src/main.js` - Bootstrap: initializes Clerk auth, loads data, mounts app
 - `src/db/client.js` - ALL database queries defined here as helper methods
 - `src/db/schema.js` - Drizzle ORM table definitions
@@ -37,9 +43,47 @@ index.html                # App HTML shell
 ## Important Architecture Details
 
 ### Authentication
-- Clerk handles 100% of auth (signup, signin, session management)
-- No user table in database — Clerk user IDs stored as `user_id TEXT` on every table
-- All queries are scoped by `user_id` to isolate multi-tenant data
+- Clerk handles signup, signin and session management.
+- There IS a user table: `app_users` (`id` UUID pk, `clerk_id TEXT` unique,
+  email, name, role). Clerk is the identity provider; `app_users` is the row
+  the rest of the schema points at.
+- **Two identity conventions exist — know which one a column uses:**
+  - `app_users.id` (UUID): `board_cards.assignee_id`, `tasks.assignee_id`,
+    `projects.deliverables[].assignee_id`, `leave_requests.*`, and all the
+    `task_*` tables.
+  - Clerk ID (TEXT): `marketing_cards.lead_owner_id`,
+    `canvas_items.sub_tasks[].owner_id`, `user_notes.user_id`.
+- `user_id TEXT` on a table means the **workspace owner's Clerk ID**, not the
+  row's author. There is one shared workspace (`getOrCreateWorkspace` returns
+  the first user's Clerk ID and every query scopes by it) — this is shared-team
+  scoping, not per-user multi-tenant isolation.
+
+### Database access
+- The browser talks to Neon **directly** via `import.meta.env.VITE_DATABASE_URL`
+  (`src/db/client.js`). Most features have no server component at all; `/api/*`
+  exists for work needing server-only secrets.
+- Because the connection string reaches the browser, server-side checks are a
+  convention rather than a security boundary. The tasks API is server-owned so
+  its rules live in one place, but it is not an access-control barrier while
+  direct DB access remains.
+
+### Migrations
+- **`drizzle/*.sql` files are a hand-written record, not a tool output.** There
+  is no `drizzle/meta/` and no `drizzle-kit generate` step in this repo.
+- The path that actually runs is `runMigrations()` in `src/db/client.js`:
+  idempotent `CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS` /
+  `CREATE INDEX IF NOT EXISTS`, executed **from the browser on every app boot**
+  (`src/main.js`). Anything added there must be safe to re-run every time.
+- Use `uuid_generate_v4()`, not `gen_random_uuid()` — it is what every existing
+  table uses.
+- `main.js` awaits `runMigrations()` without a catch, so a statement that
+  throws stops the app loading for everyone.
+- Changing an existing column or constraint (not just adding one) needs a
+  guarded `DO $$` block that checks the catalog first and only alters what
+  still needs it, so later boots don't take a table lock and several browsers
+  booting at once can't trip over each other. Catch failures inside the block
+  and `RAISE WARNING` instead. The 0031 block (making `tasks.created_by`
+  nullable) is the pattern.
 
 ### Database
 - Neon PostgreSQL with `@neondatabase/serverless` driver (supports edge runtimes)
@@ -49,6 +93,115 @@ index.html                # App HTML shell
 ### Routing
 - Client-side only (no server routes needed)
 - `vercel.json` rewrites all paths to `index.html` for SPA routing to work on refresh
+- Routes are hashes: `#view`, `#view/<id>`, `#projects/<id>/<tab>`. `/` (no
+  hash, or `#dashboard`) is the dashboard, the home page, and `#tasks` the
+  task board; an unknown hash lands on the dashboard. `VIEWS` in `src/app.js` lists every route
+  the app has used; keep old ones there so bookmarks never break.
+  `_parseHash()` reads a URL and `navigate(view)` moves between views.
+- An unknown project tab (e.g. an old `#projects/<id>/files` link) falls back
+  to Overview.
+
+### App shell
+There is no sidebar. The shell is a header over the page:
+- **Header** (`src/views/header.js`, 64px): the Slate logo (links home),
+  five top tabs and, on the right, search (⌘K / Ctrl K), Log time, New,
+  Notes, the notification bell and the avatar. The tabs are real links.
+  `TABS` sets which routes light each one: Dashboard = `dashboard`; Tasks =
+  `tasks`; Calendar = `calendar`; Projects = `projects`, `budgets` and
+  `planning`; Contacts = `contacts`. Pages opened from the account menu light
+  no tab.
+- **Logo**: `public/slate-logo.png`, a black lockup on a transparent ground,
+  turned white in Darkroom by `--logo-filter` (the sign-in screen does the
+  same). 28px tall, smaller on narrow screens.
+- **Narrower screens** (769–1360px) fold the header so the tabs keep their
+  room: at 1360px and below the search box becomes an icon, at 1140px and
+  below Log time and New lose their labels, and at 900px and below the logo,
+  tabs and gaps tighten. The labels stay as each button's accessible name
+  and tooltip. If you add to the header, re-check it at 769px.
+- **Account menu** (avatar): Tools (Marketing, Offload Log, Story Planner),
+  Workspace (Team & roles, Leave with the approvals badge, Expenses,
+  Passwords for vault users, Dev request), Theme (System | Light | Dark), then
+  Settings, Keyboard shortcuts and Sign out. Tools is where new productivity
+  tools go if they don't fit the tabs. **New** opens a small menu (Task,
+  Project, Contact, Budget, Note).
+- **Bell**: task notifications, with the unread count. It opens the list
+  under the button (a bottom sheet on phones). See "Tasks system".
+- **Floating panels** go through `openFloating()` in `src/views/popover.js`.
+  One open at a time; each closes on Escape, an outside click or
+  navigation, and hands focus back to its button. Menus use `role="menu"`
+  with arrow keys; Log time is a `role="dialog"`. On phones the same call
+  opens a bottom sheet instead (see "Phones" below).
+- **Page toolbar**: the first row of each list page (`toolbarHtml()` in
+  `src/app.js`): the view switcher (All projects · Budgets · Planning under
+  the Projects tab) or the page's own tabs, then filters, then primary
+  actions on the right. Pages don't repeat their title. Detail pages (a
+  project, budget, board, plan) hide it and use their own header row. A
+  project's row starts with a "Projects / <name>" breadcrumb.
+- **A page can fill in the toolbar itself**: implement `toolbar()` returning
+  `{ tabs, filters, actions }` (HTML, any of them optional) and
+  `bindToolbar(bar)`, and list the view in `_toolbarOwner()` in
+  `src/app.js`. `src/views/toolbar.js` has the pieces: `segTabs()` for tabs
+  within a page (Leave, Settings, Marketing, Planning's Boards · Canvases),
+  `toolbarSearch()` for a search box. When a page's own state changes what
+  the toolbar shows (a tab, a count), call `app.updateTitle()` to redraw it.
+  Keep search boxes in the toolbar, not in the page body: a page that
+  redraws its body on each keystroke would otherwise rebuild the box and
+  lose the cursor.
+- **Page layout**: every page starts at the same left edge as the header and
+  uses the full width. No `max-width` columns and no centring. Figures go in
+  `.stats-row` / `.stat-card`, content in `.panel`s. For a form next to what
+  it adds to, use `.page-split` (Expenses, the old time tracker). For panels
+  side by side as space allows, use `.panel-grid`, with `.panel-grid-wide`
+  for one that spans the row (Settings). For sets of cards, use `.card-grid`
+  (Story Planner, Planning). All of these stack on narrow screens.
+- **Notes** (the header's Notes button) docks as a panel on the right of the
+  page on desktop and remembers being open (`slate-notes-open`). On phones
+  it's a full-screen sheet that closes when you navigate.
+- Icons are inline SVGs from `icon(name, size)` in `src/views/icons.js`.
+- **Search** (⌘K, or the header's search box; `_openSearch()` in
+  `src/app.js`) finds records (contacts, projects, budgets, marketing cards,
+  shoots, notes) and Slate's own pages and actions: "expenses" goes to
+  Expenses, "holiday" to Leave, "new project" opens the new project form,
+  "dark" switches the theme. Pages and actions are listed in
+  `src/views/search-commands.js` with the words people might use for them,
+  filtered by the same permissions as the menus; `src/utils/command-search.js`
+  matches them (every word must start a word in the label or keywords) and is
+  unit-tested. Add a new page or action to that list, with keywords. Arrow
+  keys move through the results and Enter opens the highlighted one.
+
+### Phones (≤768px)
+- 56px header (logo, Log time, search, Notes, bell, avatar; no hamburger) and
+  a bottom tab bar with the same five tabs. `--header-h`, `--tabbar-h` and
+  `--chrome-h` in `tokens.css` hold the chrome's height for views that fill
+  the screen (e.g. the canvas).
+- The account menu and Log time open as bottom sheets: a dimmed backdrop, a
+  grab handle and a close button. Focus stays inside and the page behind is
+  `inert`. The New menu is desktop-only; on phones each page's toolbar has
+  its own "+ New …" button.
+- The Projects, Marketing and Planning kanbans show one column at a time,
+  picked with a segmented status control (`mountStatusSwitch()` in
+  `src/views/board-status.js`; the control is hidden on desktop).
+- Touch targets are at least 44px and fields 16px (so iOS doesn't zoom);
+  those rules live in the `max-width: 768px` block near the end of
+  `style.css`. `viewport-fit=cover` is set, so pad fixed chrome with
+  `env(safe-area-inset-*)`. Use `dvh` with a `vh` fallback for full heights.
+
+### Logging time
+- The header's **Log time** button opens a 340px popover (a sheet on phones)
+  with Project, Role, Date (today), Hours and optional Notes. On a project
+  page it starts on that project.
+- Each project has a **Time** tab with two panels. **Time tracking** shows
+  the totals, the by-role / by-person breakdown and a table of entries
+  (Date, Who, Role, Hours, Notes), read with `getTimeEntries(projectId)`. On a
+  retainer it also has the usage view (see "Retainer time tracking").
+  **Log time** is the log form without the project picker. It sits beside
+  the Time tracking panel on desktop and above it on phones.
+- Both use `src/views/time-log.js`: `trackableLines()` (budget lines ticked
+  ⏱, or a retainer's items), `timeLogFormHtml()` and `bindTimeLogForm()`,
+  which saves with `addTimeEntry()` and calls `app.refreshTimeViews(pid)`.
+  "Role" is stored as `time_entries.line_label`.
+- A timer (start/stop) mode would add a "Log hours | Timer" switch to the
+  popover. There's a comment marking the spot in `header.js`.
 
 ### Serverless Functions (Vercel)
 - We're on the **Vercel Pro plan**, so the Hobby-plan cap of 12 Serverless
@@ -96,16 +249,38 @@ index.html                # App HTML shell
   `draggable`) so you know the full set you're keeping in sync.
 
 ### Styling / design system
-- ALL global styles live in `src/style.css` — design tokens (CSS variables),
-  shell (sidebar/topbar), shared components (panels, modals, kanban, forms,
-  toasts), and PDF print styles. There is no injected stylesheet in JS.
-- Views style themselves with inline styles that reference the CSS variables
-  (`var(--bg-primary)`, `var(--accent)`, `var(--radius-md)`, …). Always use
-  the variables — never hardcode colours — so light/dark themes both work.
-- Light + dark themes are driven by `data-theme` on `<html>` (set before
-  first paint by an inline script in `index.html`; toggled in the topbar).
-- The sidebar is always dark in both themes; it uses the `--sb-*` tokens.
-- Typeface is Inter (loaded in `index.html`), falling back to system fonts.
+- Design tokens (CSS variables) live in `src/tokens.css`. Everything else
+  global is in `src/style.css`: the shell (header, tabs, toolbar, Notes panel,
+  popovers and sheets), shared components (panels, modals, kanban, forms,
+  toasts), the phone layout and PDF print styles. There is no injected
+  stylesheet in JS.
+- Views style themselves with inline styles that reference the variables
+  (`var(--surface)`, `var(--text-muted)`, `var(--accent)`, `var(--radius-md)`,
+  …). Always use the variables — never hardcode colours — so both themes
+  work. Older names (`--bg-primary`, `--text-secondary`, …) are aliases of the
+  new tokens and still work.
+- **Themes.** Warm Paper (light) and Darkroom (dark). With no choice saved,
+  Slate follows the device (`prefers-color-scheme`). System / Light / Dark in
+  the account menu is stored in `localStorage` under `slate-theme`. Light and
+  Dark set `data-theme` on `<html>` (applied before first paint by the inline
+  script in `index.html`); System removes it. `src/theme.js` handles the
+  choice and keeps `<meta name="theme-color">` matching the header.
+- The dark values appear twice in `tokens.css`: under `html[data-theme="dark"]`
+  and inside the `prefers-color-scheme: dark` media query. Change both.
+  `src/tokens.test.js` fails if they drift or if a theme is missing a token.
+- **Colour for categories** (statuses, tags, chart series): use
+  `var(--cat-<name>)` for text and dots and `var(--cat-<name>-soft)` for
+  fills. Don't build colours by appending alpha to a hex (`${colour}22`).
+- **Deliberate exceptions** keep literal colours: colours stored in the
+  database or picked by users (board columns, canvas notes, team calendar
+  types, post-production phases), realtime cursor colours, and the
+  print/PDF templates, which always print on white.
+- **Type.** IBM Plex Sans (400/500/600) for UI, IBM Plex Mono (400/500) for
+  numbers, dates and section labels (11px, uppercase, 0.08em tracking). Both
+  are self-hosted through `@fontsource` packages, imported at the top of
+  `style.css`. The header uses the logo image, not a typeset wordmark.
+- Radii: 10px cards and controls, 8px segmented controls, 12px popovers,
+  18px sheet tops. Cards have no shadow; popovers use `--shadow-popover`.
 
 ## Development Workflow
 
@@ -123,6 +298,16 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 - `DASHBOARD_TOKEN` - Fixed secret token gating the public office-display
   dashboard at `/dashboard/<token>` (served by `public/dashboard.html`, data
   from `/api/portal?view=dashboard`). Unset = the dashboard returns 503.
+- `CRON_SECRET` - Bearer token Vercel Cron sends to `/api/reminders`. Four
+  scheduled jobs run: deliverables (09:00), notes (21:00), expense-digest
+  (09:00) and task-nudge (14:00). The nudge dispatches BEFORE the weekday-only
+  guard, so it fires at weekends too — an unacknowledged request should not wait
+  until Monday.
+- The task nudge runs once a day, though its rule ("4 hours after
+  assignment") would suit an hourly run. It was capped at daily while the
+  project was on Vercel Hobby, which allows one run per day per job (a more
+  frequent expression fails the deployment). That cap doesn't apply on the
+  Pro plan (see "Serverless Functions"), so the schedule can be tightened.
 - `FENCE_API_KEY` - Shared secret for the Offload Log ingest endpoint
   (`POST /api/offloads`). Fence sends it as `Authorization: Bearer <key>`.
   Unset = the endpoint returns 500 (so it fails closed rather than open).
@@ -149,7 +334,8 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
     `timers.youtubeError`, so `curl`ing the endpoint works too. It is never
     shown without `?debug=1`, so an office screen stays clean, and it never
     contains the API key.
-  - The ticker appears on BOTH the office dashboard and the in-app Dashboard,
+  - The ticker appears on BOTH the office dashboard and the in-app Dashboard
+    (the Dashboard tab),
     sharing the `settings.youtube_ticker` row. They reach the count by
     different routes: the office display via `/api/portal?view=dashboard`
     (gated by DASHBOARD_TOKEN), the app via `GET /api/blob?action=youtube&id=`
@@ -166,8 +352,13 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 
 ### Adding a new view
 1. Create `src/views/myview.js` with a `render()` function
-2. Import and map in `src/app.js` router
-3. Call `this.app.goTo('myview')` to navigate
+2. Import and map in `src/app.js` router, and add the route to `VIEWS`
+3. Give it a way in: a top tab (`TABS` in `src/views/header.js`), the
+   Projects view switcher (`_viewSwitcherHtml()` in `src/app.js`), or the
+   account menu's Tools / Workspace groups (`header.js`). Also list it in
+   search (`src/views/search-commands.js`) with a few keywords
+4. Call `this.app.navigate('myview')` to navigate, or link with
+   `<a href="#myview" data-nav="myview">`
 
 ### Deploying
 - Push to GitHub
@@ -177,18 +368,29 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 - `contacts.js` - Contact management
 - `projects.js` - Project management. Its kanban (pipeline by stage, plus a
   Retainer lane) is one of three separate kanban implementations — see
-  "Kanban boards" below. A retainer project's Time tracking panel also
-  carries a long-term usage view (calendar-month blocks, a cumulative total
-  and an adjustable 12-month window) — see "Retainer time tracking" below.
+  "Kanban boards" below. Project tabs: Overview, Shoots, Post Production,
+  Budget, Planning, Story, Time, Notes. The Time tab holds the entries table
+  and a log form (see "Logging time"). On a retainer it also shows a
+  long-term usage view (calendar-month blocks, a cumulative total and an
+  adjustable 12-month window) — see "Retainer time tracking" below.
 - `budgets.js` - Budget tracking
 - `expenses.js` - Expense tracking
-- `timetrack.js` - Time tracking
+- `timetrack.js` - The older full-page time tracker. It's only reached by its
+  old `#timetrack` URL; logging now happens in the header's Log time popover
+  and on each project's Time tab.
+- Shell modules: `header.js` (header, tabs, account and New menus, Log time
+  popover), `popover.js` (popovers / bottom sheets), `icons.js`,
+  `time-log.js` (the shared log form), `board-status.js` (phone status
+  switch for kanbans)
 - `callsheets.js` / `callsheet.js` - Call sheet management
 - `team-calendar.js` - Team calendar. Entries also push one-way to each user's
   own Google Calendar — see "External calendar sync" below.
 - `leave.js` - Leave/absence management
 - `story-planner.js` - Story planning
-- `boards.js` - Planning boards (kanban) — standalone via the Planning nav item
+- `tasks.js` - Task board (Phase 1): the Tasks tab's home page (`/`). Desktop
+  column board + mobile list over the `/api/tasks` API — the only view that
+  does NOT query the DB directly. See "Tasks system" at the end of this file.
+- `boards.js` - Planning boards (kanban) — standalone under Projects › Planning
   AND embedded in each project's Planning tab. Granular rows (`boards`,
   `board_columns`, `board_cards`, `board_recurrences`); card order uses
   fractional `position` (DOUBLE PRECISION) so a move writes one row. Near-
@@ -201,8 +403,8 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
   the project's kanban boards and canvases (any number of each). See
   "Project planning tabs" below.
 - `canvas.js` + `canvas-surface.js` - Planning canvas, a Milanote-style
-  infinite planning/storyboarding surface — standalone via the Planning nav
-  item's Canvases tab AND embedded in each project's Planning tab. See
+  infinite planning/storyboarding surface — standalone under Projects ›
+  Planning (its Canvases tab) AND embedded in each project's Planning tab. See
   "Planning canvas" below.
 - `post-production.js` - Post-production workflow
 - `marketing.js` - Marketing. Its kanban (by status: Ideas → Planning → In
@@ -271,7 +473,7 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
   `projects.planning_tab_order` (`['board:<id>' | 'canvas:<id>', …]`,
   `drizzle/0029_add_planning_tab_order.sql`). Unlisted boards/canvases append
   oldest-first, and keys for deleted ones are skipped — so creating or deleting
-  from elsewhere (e.g. the Planning nav item) needs no order bookkeeping. The
+  from elsewhere (e.g. Projects › Planning) needs no order bookkeeping. The
   ordering maths is pure and unit-tested in `src/utils/planning-tabs.js`.
 - The last tab used is remembered per browser in `localStorage`
   (`slate-plan-tab-<projectId>`); each embedded canvas also remembers which
@@ -415,7 +617,7 @@ always the source of truth and nothing is ever read back from Google.
   `retainer_items` shows hours used but no target or bar there.
 
 ### Retainer time tracking
-- A retainer's Time tracking panel (project Overview tab, `#pv-timetrack` in
+- A retainer's Time tracking panel (project Time tab, `#pv-timetrack` in
   `projects.js`) shows a long-term usage view above the existing breakdown: one
   block per calendar month, an "Overall" cumulative figure, and a 12-month
   window. Below them the entry log concertinas away (state remembered in
@@ -493,3 +695,79 @@ above, a style or UX change to one should normally be ported to the other two:
 All three use the same "insert between neighbours, renumber the column when
 gaps run out" pattern for persisting drag order — see `_moveCard` /
 `_moveProjectCard` in the respective view files.
+
+On phones all three share one behaviour: `mountStatusSwitch()`
+(`src/views/board-status.js`) adds a segmented status control above the board
+and shows one column at a time. It's called at the end of each board's
+render; give each column element the attribute you pass as `colAttr`
+(`data-col` or `data-status-col`).
+
+## Tasks system
+- Tasks live in one `tasks` table. The board, the mobile list and (later)
+  canvas checklists are all views over it. Do not create a second task store.
+- Notifications are generated from `task_events` only. If you add a mutation,
+  write the event; do not create notifications directly from a handler. The
+  single choke point is `recordEvent()` in `api/_tasks.js` — immediate email
+  rides on it too.
+- Task API routes live in the `ROUTES` table in `api/_tasks.js`. The router is
+  reached via `vercel.json` rewrites onto `/api/portal?view=tasks` (the same
+  delegation pattern as `_dashboard.js` and `_offloads.js`), so `/api/tasks/*`
+  and `/api/notifications/*` are clean URLs without a function of their own.
+  It was built this way while the project was capped at 12 functions on
+  Vercel Hobby; see "Serverless Functions" for the current position.
+- Desktop and mobile are separate shells over a shared API and shared card
+  detail component (`src/views/tasks.js`). Do not attempt to make the column
+  board responsive.
+- Where it sits in the app: the board is the Tasks tab (`#tasks`). The
+  Dashboard tab (`/`) carries its own compact Tasks section, whose "View
+  board" goes to the board. The desktop board's filters and + New task live
+  in the page toolbar
+  (`toolbarFiltersHtml()` / `bindToolbarFilters()`; + New task, the header's
+  New › Task and the N key all call `openQuickAdd()`).
+- The notification bell is in the app header on every page. TasksView owns
+  the count (`setUnread()` refreshes the header). The board's poll reports it
+  while the board or the dashboard section is on screen; elsewhere
+  `watchUnread()` checks `/api/notifications?unread=true` once a minute (every
+  5 minutes after repeated failures). `openNotifications()` shows the list,
+  and clicking one calls `showTask()`, which goes to the board first when
+  needed because the detail stays in step through the board's poll.
+- The task detail is redrawn on every poll that changes something.
+  `_renderDetail()` carries over focus, the caret and a half-written comment,
+  so keep that if you change how it renders.
+- Due dates and project links are always optional. Nothing may block task
+  creation except a non-empty title.
+- Deleting: only whoever raised the task (`canDeleteTask()` in
+  `api/_task-rules.js`; `DELETE /api/tasks/:id` answers 403 to anyone else,
+  and the detail only shows them the button). It is a hard delete: comments,
+  events and notifications cascade. It is the one mutation that writes no
+  event, because the event would be deleted with the task. Other boards find
+  out through `live_ids`, which every `updated_since` poll carries (the ids of
+  all unarchived tasks): the client drops any card that isn't listed, and
+  treats a 404 from any task call the same way (`_goneIfMissing()`).
+- Archiving: the daily `task-nudge` cron (`api/reminders.js`) first runs
+  `archiveDoneTasks()`, which sets `archived_at` on tasks that have sat
+  untouched (`updated_at`) in Done for `ARCHIVE_AFTER_DAYS` (30), and writes an
+  actor-less `archived` event for each. Archived tasks drop out of every list
+  and the unread count but stay readable by id. There is no unarchive UI yet.
+- Removing a user (Settings › Users) keeps their work. `tasks.created_by` and
+  `task_comments.author_id` are nullable with `ON DELETE SET NULL` (0031), as
+  the assignee and event actor already were. The UI calls a missing person "a
+  former member", while events Slate made itself (the nudge, the auto-archive)
+  read as "Slate". Nobody can delete a task whose creator has gone; it leaves
+  the board by being finished and archived. `deleteAppUser()` touches the
+  affected tasks' `updated_at`, since a foreign key's SET NULL doesn't, so
+  polling boards pick the change up.
+- A poll drops its result if any write started while it was in flight
+  (`_writeSeq`) and the next one retries from the same `updated_since`.
+  Otherwise a stale snapshot could undo that write on screen, or prune a task
+  that was created mid-poll.
+- `tasks.parent_type` / `parent_id` are reserved for Phase 3 (absorbing canvas
+  checklist items). Columns only — no logic reads them.
+- Behaviour rules (ordering, mentions, notification fan-out, acknowledgement,
+  validation) are pure functions in `api/_task-rules.js` and unit-tested there.
+  Put new rules in that file rather than inline in a handler.
+- `api/_tasks.integration.test.js` exercises the handlers against a real
+  Postgres. It skips unless `TASKS_TEST_DATABASE_URL` is set and needs
+  `npm i -D pg` (the app's Neon HTTP driver cannot reach localhost). Build the
+  test database from `drizzle/0025_add_tasks.sql` then
+  `0031_keep_tasks_when_user_removed.sql`.

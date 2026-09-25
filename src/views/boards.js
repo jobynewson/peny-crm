@@ -12,6 +12,8 @@ import {
   spawnDueBoardRecurrences,
 } from '../db/client.js'
 import { joinRoom } from '../realtime/realtime.js'
+import { mountStatusSwitch } from './board-status.js'
+import { segTabs, bindSegTabs } from './toolbar.js'
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
 const fmtDate = d => d ? new Date(String(d).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''
@@ -51,30 +53,31 @@ export class BoardsView {
     else this._renderList(mc)
   }
 
-  // ── Planning hub: Boards | Canvases tabs ─────────────────────────────────────
+  // ── Planning hub: Boards | Canvases ───────────────────────────────────────────
+  // The two views are tabs in the page toolbar, beside the Projects switcher
+  // (views/toolbar.js). Board and canvas pages have their own header instead.
+
+  toolbar() {
+    if (this.currentId || this.app.canvasView.currentId) return {}
+    return {
+      filters: segTabs('Planning views', [
+        { id: 'boards', label: 'Boards' },
+        { id: 'canvases', label: 'Canvases' },
+      ], this.activeTab),
+    }
+  }
+
+  bindToolbar(bar) {
+    bindSegTabs(bar, id => {
+      this.activeTab = id
+      this.app.updateTitle()   // the toolbar's + New board / + New canvas follows the tab
+      const mc = document.getElementById('main-content')
+      if (mc) this._renderList(mc)
+    })
+  }
 
   _renderList(mc) {
-    const tabs = [
-      { id: 'boards',   label: '🗂 Boards' },
-      { id: 'canvases', label: '🖼 Canvases' },
-    ]
-    mc.innerHTML = `
-      <div style="display:flex;gap:0;border-bottom:1px solid var(--border-light);margin-bottom:20px">
-        ${tabs.map(t => `
-          <button class="plan-hub-tab" data-tab="${t.id}"
-            style="padding:8px 16px;font-size:13px;font-family:var(--font);cursor:pointer;background:none;border:none;border-bottom:2px solid ${this.activeTab === t.id ? 'var(--accent)' : 'transparent'};color:${this.activeTab === t.id ? 'var(--accent)' : 'var(--text-secondary)'};font-weight:${this.activeTab === t.id ? '600' : '400'};transition:all 0.15s;margin-bottom:-1px">
-            ${t.label}
-          </button>`).join('')}
-      </div>
-      <div id="plan-hub-content"></div>`
-
-    mc.querySelectorAll('.plan-hub-tab').forEach(btn => {
-      btn.addEventListener('click', () => {
-        this.activeTab = btn.dataset.tab
-        this.app.updateTitle()   // topbar button label depends on the tab
-        this._renderList(mc)
-      })
-    })
+    mc.innerHTML = `<div id="plan-hub-content"></div>`
 
     const content = mc.querySelector('#plan-hub-content')
     if (this.activeTab === 'canvases') this.app.canvasView.renderList(content)
@@ -109,7 +112,7 @@ export class BoardsView {
     }
 
     mc.innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:8px;max-width:680px">
+      <div class="card-grid">
         ${boards.map(b => {
           const proj = b.project_id ? this.app.projects.find(p => p.id === b.project_id) : null
           return `
@@ -142,7 +145,7 @@ export class BoardsView {
     document.getElementById('bd-new-modal')?.remove()
     const overlay = document.createElement('div')
     overlay.id = 'bd-new-modal'
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
     overlay.innerHTML = `
       <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:380px;padding:20px" onclick="event.stopPropagation()">
         <div style="font-size:14px;font-weight:600;margin-bottom:14px">New board</div>
@@ -218,7 +221,7 @@ export class BoardsView {
             ${this.app.projects.map(p => `<option value="${p.id}"${this.board.project_id === p.id ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}
           </select>
           <button class="btn-cancel" id="bd-recurring" style="font-size:12px">↻ Recurring</button>
-          <button class="btn-cancel" id="bd-delete-board" style="font-size:12px;color:#e07070">Delete</button>
+          <button class="btn-cancel" id="bd-delete-board" style="font-size:12px;color:var(--danger)">Delete</button>
         ` : (proj ? `<span style="font-size:11px;color:var(--text-tertiary)">Linked to ${esc(proj.name)}</span>` : '')}
       </div>
       <div id="bd-board-wrap"></div>`
@@ -361,6 +364,10 @@ export class BoardsView {
         }).join('')}
         ${this.canEdit ? '<button class="bd-add-col" id="bd-add-col">+ Column</button>' : ''}
       </div>`
+    mountStatusSwitch(wrap.querySelector('#bd-board'), {
+      key: `board:${this.board?.id ?? ''}`, colAttr: 'data-col',
+      columns: cols.map(c => ({ key: c.id, label: c.name, count: this._cardsFor(c.id).length })),
+    })
     this._bindBoardBody(wrap)
   }
 
@@ -372,7 +379,7 @@ export class BoardsView {
     let duePill = ''
     if (card.due_date) {
       const days = Math.round((new Date(dateKey(card.due_date) + 'T00:00:00') - new Date().setHours(0, 0, 0, 0)) / 86400000)
-      const color = days < 0 ? '#ef4444' : days === 0 ? '#f59e0b' : 'var(--text-tertiary)'
+      const color = days < 0 ? 'var(--danger)' : days === 0 ? 'var(--warning)' : 'var(--text-tertiary)'
       const label = days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? 'Today' : fmtDate(card.due_date)
       duePill = `<span style="font-size:10px;font-weight:500;color:${color}">${label}</span>`
     }
@@ -619,7 +626,7 @@ export class BoardsView {
 
     const overlay = document.createElement('div')
     overlay.id = 'bd-card-modal'
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(9,30,66,0.54);z-index:200;display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;overflow-y:auto'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);z-index:200;display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;overflow-y:auto'
 
     const cols = [...this.columns].sort((a, b) => a.sort_order - b.sort_order)
     const allUsers = this.app.allUsers || []
@@ -660,7 +667,7 @@ export class BoardsView {
         </div>
 
         <div style="display:flex;align-items:center;gap:8px;padding:14px 20px;border-top:1px solid var(--border-light)">
-          ${readonly ? '' : '<button id="bdm-delete" style="background:none;border:none;cursor:pointer;color:#e07070;font-size:12px;font-family:var(--font);padding:0">Delete card</button>'}
+          ${readonly ? '' : '<button id="bdm-delete" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:12px;font-family:var(--font);padding:0">Delete card</button>'}
           <div style="margin-left:auto;display:flex;gap:8px">
             <button class="btn-cancel" id="bdm-cancel">Close</button>
             ${readonly ? '' : '<button class="btn-primary" id="bdm-save">Save</button>'}
@@ -724,7 +731,7 @@ export class BoardsView {
 
     const overlay = document.createElement('div')
     overlay.id = 'bd-col-modal'
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
 
     const renderModal = () => {
       overlay.innerHTML = `
@@ -737,7 +744,7 @@ export class BoardsView {
                 style="width:22px;height:22px;border-radius:50%;cursor:pointer;background:${c};border:2px solid ${color === c ? 'var(--text-primary)' : 'transparent'}"></button>`).join('')}
           </div>
           <div style="display:flex;align-items:center;gap:8px">
-            ${!isNew ? '<button id="bdc-delete" style="background:none;border:none;cursor:pointer;color:#e07070;font-size:12px;font-family:var(--font);padding:0">Delete column</button>' : ''}
+            ${!isNew ? '<button id="bdc-delete" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:12px;font-family:var(--font);padding:0">Delete column</button>' : ''}
             <div style="margin-left:auto;display:flex;gap:8px">
               <button class="btn-cancel" id="bdc-cancel">Cancel</button>
               <button class="btn-primary" id="bdc-save">${isNew ? 'Add column' : 'Save'}</button>
@@ -799,7 +806,7 @@ export class BoardsView {
     document.getElementById('bd-rec-modal')?.remove()
     const overlay = document.createElement('div')
     overlay.id = 'bd-rec-modal'
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:flex-start;justify-content:center;z-index:9999;padding:32px 16px;overflow-y:auto'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);display:flex;align-items:flex-start;justify-content:center;z-index:9999;padding:32px 16px;overflow-y:auto'
     overlay.addEventListener('click', () => overlay.remove())
     document.body.appendChild(overlay)
 

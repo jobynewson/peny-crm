@@ -176,9 +176,10 @@ export class TeamCalendarView {
     const label = base.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
     const navBtn = 'background:var(--bg-secondary);border:1px solid var(--border-med);border-radius:var(--radius-md);padding:5px 11px;cursor:pointer;font-size:14px;color:var(--text-secondary);font-family:var(--font);line-height:1.2'
 
+    // Same edges as every other page: no extra padding, full width.
     section.innerHTML = `
-      <div style="padding:18px 22px;max-width:1500px;margin:0 auto">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+      <div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap">
           <div style="display:flex;align-items:center;gap:6px">
             <button id="tc-fp-prev"  style="${navBtn}" title="Previous month">‹</button>
             <button id="tc-fp-today" style="${navBtn};font-size:12px">Today</button>
@@ -341,7 +342,7 @@ export class TeamCalendarView {
         <th style="padding:8px 10px;text-align:left;font-weight:500;font-size:11px;color:var(--text-tertiary);width:130px;border-right:1px solid var(--border-light);white-space:nowrap">Team</th>
         ${dayMeta.map(m => `
           <th style="padding:8px 10px;text-align:left;font-weight:500;font-size:11px;min-width:100px;border-right:1px solid var(--border-light);white-space:nowrap;${m.isToday ? 'color:var(--accent)' : m.isWeekend ? 'color:var(--text-tertiary)' : 'color:var(--text-secondary)'}">
-            ${esc(m.shortStr)}${m.isToday ? ' <span style="font-size:9px;background:var(--accent);color:var(--accent-text);border-radius:var(--radius-sm);padding:1px 4px;vertical-align:middle">TODAY</span>' : ''}
+            ${esc(m.shortStr)}${m.isToday ? ' <span style="font-size:9px;background:var(--accent);color:var(--on-accent);border-radius:var(--radius-sm);padding:1px 4px;vertical-align:middle">TODAY</span>' : ''}
           </th>`).join('')}`
       tbody = users.map(u => `<tr style="border-top:1px solid var(--border-light)">
           <td style="padding:7px 10px;border-right:1px solid var(--border-light);vertical-align:middle;white-space:nowrap;font-weight:500;color:var(--text-secondary)">
@@ -363,7 +364,7 @@ export class TeamCalendarView {
         const rowBg = m.isToday ? 'rgba(var(--accent-rgb),0.06)' : m.isWeekend ? 'var(--bg-secondary)' : 'var(--bg-primary)'
         return `<tr style="background:${rowBg};border-top:1px solid var(--border-light)">
           <td style="padding:7px 10px;border-right:1px solid var(--border-light);vertical-align:middle;white-space:nowrap;${m.isToday ? 'font-weight:600;color:var(--accent)' : m.isWeekend ? 'color:var(--text-tertiary)' : 'color:var(--text-secondary)'}">
-            ${esc(m.shortStr)}${m.isToday ? ' <span style="font-size:9px;background:var(--accent);color:var(--accent-text);border-radius:var(--radius-sm);padding:1px 4px;vertical-align:middle">TODAY</span>' : ''}
+            ${esc(m.shortStr)}${m.isToday ? ' <span style="font-size:9px;background:var(--accent);color:var(--on-accent);border-radius:var(--radius-sm);padding:1px 4px;vertical-align:middle">TODAY</span>' : ''}
           </td>
           ${users.map(u => cellHtml(m.dateKey, u.id)).join('')}
         </tr>`
@@ -379,7 +380,7 @@ export class TeamCalendarView {
           </thead>
           <tbody>${tbody}</tbody>
         </table>
-        <div id="tc-overlay" style="position:absolute;inset:0;pointer-events:none;overflow:hidden"></div>
+        <div id="tc-overlay" style="position:absolute;top:0;left:0;bottom:0;pointer-events:none;overflow:hidden"></div>
       </div>
       <div style="margin-top:6px;font-size:11px;color:var(--text-tertiary);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <button id="tc-help" class="legend-help-btn" title="How the calendar works" aria-label="How the calendar works">?</button>
@@ -659,6 +660,28 @@ export class TeamCalendarView {
     })
   }
 
+  // Chips are placed in pixels, so they drift off their cells when the grid
+  // changes size without a re-render (window resized, fonts arriving late).
+  // Re-place them when the table or any of its columns changes size. One
+  // observer at a time; it lets go once its grid has been replaced or removed.
+  _watchTableSize(gridWrap, section, table) {
+    if (!table || typeof ResizeObserver === 'undefined') return
+    if (this._tableObserver?.table === table) return
+    this._tableObserver?.observer.disconnect()
+    const watched = [table, ...table.querySelectorAll('thead th')]
+    const sizes = () => watched.map(el => `${el.offsetWidth}x${el.offsetHeight}`).join()
+    let last = sizes()
+    const observer = new ResizeObserver(() => {
+      if (!table.isConnected) { observer.disconnect(); return }
+      const now = sizes()
+      if (now === last) return
+      last = now
+      this._positionOverlay(gridWrap, section)
+    })
+    watched.forEach(el => observer.observe(el))
+    this._tableObserver = { observer, table }
+  }
+
   _positionOverlay(gridWrap, section) {
     const overlay = gridWrap.querySelector('#tc-overlay')
     const wrap    = gridWrap.querySelector('#tc-table-wrap')
@@ -682,6 +705,13 @@ export class TeamCalendarView {
       }
       return { firstCell, lastCell }
     }
+
+    // The overlay sits inside the horizontally scrolling wrap, where inset:0
+    // would make it only as wide as the visible part, clipping every chip past
+    // the first screenful once you scroll. Stretch it over the whole table.
+    const table = wrap.querySelector('#tc-table')
+    if (table) overlay.style.width = `${table.getBoundingClientRect().width}px`
+    this._watchTableSize(gridWrap, section, table)
 
     // Phase 1: measure all overlay blocks before any DOM writes
     const wrapRect   = wrap.getBoundingClientRect()
@@ -1085,7 +1115,7 @@ export class TeamCalendarView {
     document.getElementById('tc-modal')?.remove()
     const overlay = document.createElement('div')
     overlay.id = 'tc-modal'
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(9,30,66,0.54);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px 16px'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px 16px'
 
     const users    = this.app.allUsers || []
     const projects = (this.app.projects || []).filter(p => !p.is_retainer)
@@ -1123,8 +1153,8 @@ export class TeamCalendarView {
       const projectShoots = selProject ? (selProject._shoots || []) : []
       const COLORS = ['', '#4CAF50', '#C47E3A', '#7B6EAB', '#4a90d9', '#ef4444', '#f59e0b', '#06b6d4', '#ec4899']
       const colorSwatches = COLORS.map(c => c
-        ? `<div class="tc-swatch${selColor === c ? ' tc-swatch--sel' : ''}" data-color="${c}" style="width:20px;height:20px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${selColor === c ? '#fff' : 'transparent'};flex-shrink:0"></div>`
-        : `<div class="tc-swatch tc-swatch--auto${selColor === '' ? ' tc-swatch--sel' : ''}" data-color="" style="width:20px;height:20px;border-radius:50%;background:var(--bg-tertiary,#333);border:2px solid ${selColor === '' ? 'var(--accent)' : 'var(--border-med)'};cursor:pointer;font-size:8px;display:flex;align-items:center;justify-content:center;color:var(--text-tertiary);flex-shrink:0">auto</div>`
+        ? `<div class="tc-swatch${selColor === c ? ' tc-swatch--sel' : ''}" data-color="${c}" style="width:20px;height:20px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${selColor === c ? 'var(--text)' : 'transparent'};flex-shrink:0"></div>`
+        : `<div class="tc-swatch tc-swatch--auto${selColor === '' ? ' tc-swatch--sel' : ''}" data-color="" style="width:20px;height:20px;border-radius:50%;background:var(--bg-tertiary);border:2px solid ${selColor === '' ? 'var(--accent)' : 'var(--border-med)'};cursor:pointer;font-size:8px;display:flex;align-items:center;justify-content:center;color:var(--text-tertiary);flex-shrink:0">auto</div>`
       ).join('')
 
       // Days span calculator

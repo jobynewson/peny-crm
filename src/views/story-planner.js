@@ -26,7 +26,7 @@ export class StoryPlannerView {
   // ── List view ─────────────────────────────────────────────────────────────
 
   async _renderList(mc) {
-    mc.innerHTML = `<div style="padding:20px;max-width:900px"><div style="color:var(--text-tertiary);font-size:13px">Loading plans…</div></div>`
+    mc.innerHTML = `<div class="empty-state">Loading plans…</div>`
     try {
       this.plans = await getStoryPlans(this.app.userId)
     } catch(e) {
@@ -39,7 +39,7 @@ export class StoryPlannerView {
   _renderListHTML(mc) {
     const plans = this.plans || []
     mc.innerHTML = `
-      <div style="max-width:900px;padding:24px 20px">
+      <div>
         ${plans.length === 0 ? `
           <div style="text-align:center;padding:80px 20px;color:var(--text-tertiary)">
             <div style="font-size:36px;margin-bottom:16px">🎬</div>
@@ -48,7 +48,7 @@ export class StoryPlannerView {
             <button class="btn-primary" id="sp-new-plan-empty">+ Create your first plan</button>
           </div>
         ` : `
-          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px">
+          <div class="card-grid">
             ${plans.map(p => this._planCardHTML(p)).join('')}
           </div>
         `}
@@ -89,7 +89,7 @@ export class StoryPlannerView {
         onmouseover="this.style.borderColor='var(--border-strong)'" onmouseout="this.style.borderColor='var(--border-light)'">
         <button data-sp-delete="${plan.id}" data-sp-title="${esc(plan.title)}" draggable="false"
           style="position:absolute;top:8px;right:8px;background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:16px;line-height:1;padding:3px 6px;border-radius:var(--radius-sm)"
-          onmouseover="this.style.color='#e07070'" onmouseout="this.style.color='var(--text-tertiary)'">×</button>
+          onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--text-tertiary)'">×</button>
         <div style="font-size:14px;font-weight:500;margin-bottom:5px;padding-right:22px">${esc(plan.title)}</div>
         <div style="font-size:12px;color:var(--text-tertiary)">
           ${blocks.length} block${blocks.length !== 1 ? 's' : ''}${totalMins > 0 ? ` · ${fmtDuration(totalMins)}` : ''}
@@ -127,7 +127,7 @@ export class StoryPlannerView {
       : null
 
     mc.innerHTML = `
-      <div style="max-width:700px;padding:24px 20px">
+      <div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
           <button class="btn-secondary" id="sp-back" style="flex-shrink:0">← Plans</button>
           <input id="sp-plan-title" value="${esc(plan.title)}"
@@ -154,7 +154,7 @@ export class StoryPlannerView {
               <button id="sp-attach-btn" style="background:none;border:none;cursor:pointer;color:var(--text-secondary);font-size:12px;font-family:var(--font);padding:0"
                 onmouseover="this.style.color='var(--text-primary)'" onmouseout="this.style.color='var(--text-secondary)'">${esc(attachedProject.name)}</button>
               <button id="sp-detach-btn" style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:14px;line-height:1;padding:0 1px"
-                title="Detach from project" onmouseover="this.style.color='#e07070'" onmouseout="this.style.color='var(--text-tertiary)'">×</button>
+                title="Detach from project" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--text-tertiary)'">×</button>
             </div>
           ` : `
             <button id="sp-attach-btn"
@@ -270,7 +270,7 @@ export class StoryPlannerView {
             onmouseover="this.style.color='var(--text-primary)'" onmouseout="this.style.color='var(--text-tertiary)'">Edit</button>
           <button data-sp-block-del="${block.id}" draggable="false"
             style="background:none;border:0.5px solid var(--border-light);border-radius:var(--radius-md);cursor:pointer;color:var(--text-tertiary);padding:3px 9px;font-size:11px;font-family:var(--font);line-height:1.5;transition:color 0.1s"
-            onmouseover="this.style.color='#e07070'" onmouseout="this.style.color='var(--text-tertiary)'">×</button>
+            onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--text-tertiary)'">×</button>
         </div>
       </div>
     `
@@ -367,7 +367,7 @@ export class StoryPlannerView {
     let imageUrl = block?.image_url || null
 
     const overlay = document.createElement('div')
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
 
     const setStatus = (msg, color = 'var(--text-tertiary)') => {
       const el = overlay.querySelector('#bm-img-status')
@@ -413,7 +413,7 @@ export class StoryPlannerView {
         renderModal()
       } catch(e) {
         console.error(e)
-        setStatus('Upload failed — ' + e.message, '#e07070')
+        setStatus('Upload failed — ' + e.message, 'var(--danger)')
       }
     }
 
@@ -513,7 +513,7 @@ export class StoryPlannerView {
               return
             }
           }
-          setStatus('No image in clipboard — copy a screenshot first', '#e07070')
+          setStatus('No image in clipboard — copy a screenshot first', 'var(--danger)')
         } catch(e) {
           setStatus('Clipboard access denied — use the upload button instead', 'var(--text-tertiary)')
         }
@@ -529,7 +529,7 @@ export class StoryPlannerView {
         const title = overlay.querySelector('#bm-title')?.value.trim()
         if (!title) {
           const inp = overlay.querySelector('#bm-title')
-          inp.style.borderColor = '#e07070'
+          inp.style.borderColor = 'var(--danger)'
           inp.focus()
           return
         }
@@ -560,7 +560,7 @@ export class StoryPlannerView {
         } catch(e) {
           console.error(e)
           btn.disabled = false; btn.textContent = isEdit ? 'Save changes' : 'Add block'
-          setStatus('Error saving — please try again', '#e07070')
+          setStatus('Error saving — please try again', 'var(--danger)')
         }
       })
 
@@ -612,12 +612,12 @@ export class StoryPlannerView {
 
     const picker = document.createElement('div')
     picker.id = 'sp-proj-picker'
-    picker.style.cssText = `position:fixed;top:${rect.bottom + 4}px;left:${rect.left}px;background:var(--bg-primary);border:0.5px solid var(--border-med);border-radius:var(--radius-md);z-index:9999;overflow:hidden;min-width:220px;max-width:300px;max-height:320px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,0.2)`
+    picker.style.cssText = `position:fixed;top:${rect.bottom + 4}px;left:${rect.left}px;background:var(--bg-primary);border:0.5px solid var(--border-med);border-radius:var(--radius-md);z-index:9999;overflow:hidden;min-width:220px;max-width:300px;max-height:320px;overflow-y:auto;box-shadow:var(--shadow-popover)`
 
     picker.innerHTML = `
       <div style="padding:8px 12px;border-bottom:0.5px solid var(--border-light);font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Attach to project</div>
       ${this.plan.project_id ? `
-        <div id="spp-detach" style="padding:9px 14px;cursor:pointer;font-size:13px;color:#e07070;display:flex;align-items:center;gap:8px;border-bottom:0.5px solid var(--border-light)"
+        <div id="spp-detach" style="padding:9px 14px;cursor:pointer;font-size:13px;color:var(--danger);display:flex;align-items:center;gap:8px;border-bottom:0.5px solid var(--border-light)"
           onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''">
           Remove attachment
         </div>
@@ -656,7 +656,7 @@ export class StoryPlannerView {
 
   _openNewPlanModal(mc, projectId = null) {
     const overlay = document.createElement('div')
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
     overlay.innerHTML = `
       <div style="background:var(--bg-primary);border:0.5px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:380px;overflow:hidden" onclick="event.stopPropagation()">
         <div style="padding:16px 18px;border-bottom:0.5px solid var(--border-light);font-size:14px;font-weight:600">New story plan</div>
@@ -676,7 +676,7 @@ export class StoryPlannerView {
 
     const create = async () => {
       const title = overlay.querySelector('#np-title')?.value.trim()
-      if (!title) { overlay.querySelector('#np-title').style.borderColor = '#e07070'; return }
+      if (!title) { overlay.querySelector('#np-title').style.borderColor = 'var(--danger)'; return }
       const btn = overlay.querySelector('#np-create')
       btn.disabled = true; btn.textContent = 'Creating…'
       try {
@@ -718,7 +718,7 @@ export class StoryPlannerView {
     const rect = triggerBtn.getBoundingClientRect()
     const menu = document.createElement('div')
     menu.id = 'sp-export-menu'
-    menu.style.cssText = `position:fixed;top:${rect.bottom + 4}px;right:${window.innerWidth - rect.right}px;background:var(--bg-primary);border:0.5px solid var(--border-med);border-radius:var(--radius-md);z-index:9999;overflow:hidden;min-width:220px;box-shadow:0 8px 24px rgba(0,0,0,0.2)`
+    menu.style.cssText = `position:fixed;top:${rect.bottom + 4}px;right:${window.innerWidth - rect.right}px;background:var(--bg-primary);border:0.5px solid var(--border-med);border-radius:var(--radius-md);z-index:9999;overflow:hidden;min-width:220px;box-shadow:var(--shadow-popover)`
     menu.innerHTML = `
       <div id="spe-premiere" style="padding:10px 14px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:10px"
         onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''">

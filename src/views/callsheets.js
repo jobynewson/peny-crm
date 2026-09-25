@@ -44,7 +44,7 @@ export class CallSheetsView {
                 ${s.location_name ? esc(s.location_name) : 'No location set'}
               </div>
             </div>
-            <span style="font-size:11px;padding:3px 10px;border-radius:20px;background:${s.status==='sent'?'rgba(110,201,110,0.15)':'var(--bg-secondary)'};color:${s.status==='sent'?'#6ec96e':'var(--text-tertiary)'};border:0.5px solid ${s.status==='sent'?'rgba(110,201,110,0.3)':'var(--border-med)'}">
+            <span style="font-size:11px;padding:3px 10px;border-radius:20px;background:${s.status==='sent'?'var(--success-soft)':'var(--bg-secondary)'};color:${s.status==='sent'?'var(--success)':'var(--text-tertiary)'};border:0.5px solid ${s.status==='sent'?'var(--success-soft)':'var(--border-med)'}">
               ${s.status==='sent'?'Sent':'Draft'}
             </span>
           </div>`).join('')
@@ -121,13 +121,13 @@ export class CallSheetsView {
         <button class="btn-secondary" id="cs-back-list">← All call sheets</button>
         <h2 style="flex:1;font-size:15px;font-weight:500;min-width:200px">${fmtDate(s.sheet_date)||'New call sheet'}</h2>
         <span id="cs-save-indicator" style="font-size:11px;color:var(--text-tertiary)">—</span>
-        <span id="cs-status-badge" style="font-size:11px;padding:4px 12px;border-radius:20px;cursor:pointer;background:${s.status==='sent'?'rgba(110,201,110,0.15)':'var(--bg-secondary)'};color:${s.status==='sent'?'#6ec96e':'var(--text-tertiary)'};border:0.5px solid ${s.status==='sent'?'rgba(110,201,110,0.3)':'var(--border-med)'}">
+        <span id="cs-status-badge" style="font-size:11px;padding:4px 12px;border-radius:20px;cursor:pointer;background:${s.status==='sent'?'var(--success-soft)':'var(--bg-secondary)'};color:${s.status==='sent'?'var(--success)':'var(--text-tertiary)'};border:0.5px solid ${s.status==='sent'?'var(--success-soft)':'var(--border-med)'}">
           ${s.status==='sent'?'✓ Sent':'Draft'} — click to toggle
         </span>
         <button class="btn-secondary" id="cs-dup">Duplicate for next day</button>
         <button class="btn-secondary" id="cs-pdf">Export PDF</button>
         <button class="btn-secondary" id="cs-copy-all">Copy all call times</button>
-        <button class="row-btn" id="cs-delete" style="color:#b03020;border-color:rgba(180,50,30,0.2)">Delete</button>
+        <button class="row-btn" id="cs-delete" style="color:var(--danger);border-color:var(--danger-border)">Delete</button>
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 280px;gap:16px;margin-top:16px;align-items:flex-start;min-height:0">
@@ -341,7 +341,7 @@ export class CallSheetsView {
       <div style="display:grid;grid-template-columns:1fr 80px 24px;gap:6px;align-items:center;margin-bottom:6px">
         <input type="text" class="bl-in w" value="${esc(c.name)}" placeholder="Name" data-cs-crew-name="${i}" style="font-size:13px;padding:5px 8px;font-weight:500;background:var(--bg-primary)" />
         <input type="time" class="bl-in" value="${esc(c.call_time||'')}" data-cs-crew-time="${i}" style="font-size:12px;padding:5px 4px;background:var(--bg-primary)" />
-        <button class="row-btn" data-cs-rem-crew="${i}" style="color:#b03020;padding:2px">×</button>
+        <button class="row-btn" data-cs-rem-crew="${i}" style="color:var(--danger);padding:2px">×</button>
       </div>
       <input type="text" class="bl-in" value="${esc(c.role||'')}" placeholder="Role" data-cs-crew-role="${i}" style="font-size:11px;padding:3px 7px;color:var(--text-secondary);background:var(--bg-primary);width:100%;display:block" />
     </div>`
@@ -351,7 +351,7 @@ export class CallSheetsView {
     return `<div style="display:grid;grid-template-columns:90px 1fr 28px;gap:6px;padding:6px 0;border-bottom:0.5px solid var(--border-light);align-items:center">
       <input type="time" class="bl-in" value="${esc(r.time||'')}" data-cs-sched-time="${i}" style="font-size:12px;padding:5px 6px" />
       <input type="text" class="bl-in" value="${esc(r.description||'')}" placeholder="Description" data-cs-sched-desc="${i}" style="font-size:12px;padding:5px 8px" />
-      <button class="row-btn" data-cs-rem-sched="${i}" style="color:#b03020">×</button>
+      <button class="row-btn" data-cs-rem-sched="${i}" style="color:var(--danger)">×</button>
     </div>`
   }
 
@@ -360,7 +360,7 @@ export class CallSheetsView {
       <div style="display:grid;grid-template-columns:1fr 80px 28px;gap:6px;margin-bottom:6px;align-items:center">
         <input type="text" class="bl-in" value="${esc(l.name||'')}" placeholder="Location name" data-cs-loc-name="${i}" style="font-size:12px;padding:5px 8px" />
         <input type="time" class="bl-in" value="${esc(l.move_time||'')}" placeholder="Move time" data-cs-loc-time="${i}" title="Move time" style="font-size:12px;padding:5px 6px" />
-        <button class="row-btn" data-cs-rem-loc="${i}" style="color:#b03020">×</button>
+        <button class="row-btn" data-cs-rem-loc="${i}" style="color:var(--danger)">×</button>
       </div>
       <input type="text" class="bl-in w" value="${esc(l.address||'')}" placeholder="Address" data-cs-loc-addr="${i}" style="font-size:12px;padding:5px 8px;width:100%;display:block;margin-bottom:4px" />
       <input type="text" class="bl-in w" value="${esc(l.notes||'')}" placeholder="Notes (parking, access, etc.)" data-cs-loc-notes="${i}" style="font-size:12px;padding:5px 8px;width:100%;display:block" />
@@ -419,7 +419,7 @@ export class CallSheetsView {
         const updated = await updateCallSheet(s.id, data)
         Object.assign(s, updated)
         showSaved()
-      } catch(e) { console.error(e); if (indicator) { indicator.textContent = '⚠ Save failed'; indicator.style.color = '#e07070' } }
+      } catch(e) { console.error(e); if (indicator) { indicator.textContent = '⚠ Save failed'; indicator.style.color = 'var(--danger)' } }
     }
 
     const saveCrew = async () => {

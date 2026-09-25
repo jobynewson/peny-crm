@@ -86,7 +86,7 @@ bootstrap().catch(err => {
   document.body.innerHTML = `
     <div class="loading" style="flex-direction:column;gap:12px;">
       <div>Something went wrong loading the app.</div>
-      <div style="font-size:11px;color:#a8a8a0;">${err.message}</div>
+      <div style="font-size:11px;color:var(--text-subtle);">${err.message}</div>
       <button onclick="location.reload()" style="margin-top:8px;padding:6px 14px;cursor:pointer;">Retry</button>
     </div>
   `

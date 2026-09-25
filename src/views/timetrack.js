@@ -50,8 +50,9 @@ export class TimeTrackView {
       || this.app.user?.primaryEmailAddress?.emailAddress
       || 'Unknown'
 
+    // Form on the left, the project's log beside it (as Expenses).
     mc.innerHTML = `
-      <div style="max-width:520px">
+      <div class="page-split">
 
         <!-- Log form -->
         <div style="background:var(--bg-primary);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:20px;box-shadow:var(--shadow-md);margin-bottom:24px">
@@ -113,7 +114,7 @@ export class TimeTrackView {
         </div>
 
         <!-- Hours log for selected project -->
-        <div id="tt-log">
+        <div id="tt-log" style="min-width:0">
           ${selectedProject
             ? `<div style="font-size:11px;color:var(--text-tertiary);padding:8px 0">Loading entries…</div>`
             : `<div style="font-size:13px;color:var(--text-tertiary);padding:4px 0">Select a project to see the log.</div>`
@@ -182,12 +183,12 @@ export class TimeTrackView {
         })
         mc.querySelector('#tt-hours').value = ''
         mc.querySelector('#tt-note').value  = ''
-        show('Logged ✓', '#22a06b')
+        show('Logged ✓', 'var(--success)')
         this.app.toast('Hours logged')
         if (project) this._loadLog(mc, project)
       } catch (e) {
         console.error(e)
-        show('Error logging hours.', '#ef4444')
+        show('Error logging hours.', 'var(--danger)')
       } finally {
         if (submitBtn) submitBtn.disabled = false
       }

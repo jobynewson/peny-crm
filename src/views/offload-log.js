@@ -1,3 +1,5 @@
+import { toolbarSearch } from './toolbar.js'
+
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
 
 // "2026_BU1_A" style drive names and free-text fields, formatted for display.
@@ -19,8 +21,8 @@ function fmtBytes(n) {
 
 function statusBadge(passed) {
   const ok = !!passed
-  const color = ok ? 'var(--accent-green,#38a169)' : 'var(--accent-red,#e53e3e)'
-  return `<span style="display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:999px;color:${color};background:${color}1a;white-space:nowrap">${ok ? 'Pass' : 'Fail'}</span>`
+  const tone = ok ? 'success' : 'danger'
+  return `<span style="display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:999px;color:var(--${tone});background:var(--${tone}-soft);white-space:nowrap">${ok ? 'Pass' : 'Fail'}</span>`
 }
 
 export class OffloadLogView {
@@ -65,26 +67,33 @@ export class OffloadLogView {
     })
   }
 
+  // Search and the result count sit in the page toolbar (views/toolbar.js).
+  toolbar() {
+    return {
+      filters: toolbarSearch({ id: 'ol-search', label: 'Search offloads', placeholder: 'Search by client, project or drive name…', value: this.search, wide: true })
+        + `<span class="toolbar-note" id="ol-count" aria-live="polite"></span>`,
+    }
+  }
+
+  bindToolbar(bar) {
+    bar?.querySelector('#ol-search')?.addEventListener('input', e => {
+      this.search = e.target.value
+      const mc = document.getElementById('main-content')
+      if (this.offloads && mc) this._render(mc)
+    })
+  }
+
   _render(mc) {
     const all = this.offloads ?? []
     const rows = this._filtered()
     const q = this.search.trim()
+    const count = document.getElementById('ol-count')
+    if (count) count.textContent = `${rows.length} of ${all.length} offload${all.length === 1 ? '' : 's'}`
 
     const th = (label, extra = '') => `<th style="padding:10px 14px;font-size:11px;font-weight:500;color:var(--text-tertiary);text-align:left;white-space:nowrap;${extra}">${label}</th>`
 
     mc.innerHTML = `
-      <div style="max-width:1180px">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap">
-          <div style="position:relative;flex:1;min-width:240px;max-width:380px">
-            <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text-tertiary);pointer-events:none">
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
-            </span>
-            <input id="ol-search" type="text" value="${esc(this.search)}" placeholder="Search by client, project or drive name…"
-              style="width:100%;padding:7px 10px 7px 30px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);outline:none;box-sizing:border-box">
-          </div>
-          <div style="font-size:12px;color:var(--text-tertiary)">${rows.length} of ${all.length} offload${all.length === 1 ? '' : 's'}</div>
-        </div>
-
+      <div>
         ${all.length === 0 ? `
           <div class="panel" style="padding:48px;text-align:center">
             <div style="font-size:32px;margin-bottom:12px">💾</div>
@@ -212,17 +221,6 @@ export class OffloadLogView {
   }
 
   _bind(mc) {
-    const searchEl = mc.querySelector('#ol-search')
-    if (searchEl) {
-      searchEl.addEventListener('input', e => {
-        this.search = e.target.value
-        const start = searchEl.selectionStart
-        this._render(mc)
-        const next = mc.querySelector('#ol-search')
-        if (next) { next.focus(); next.setSelectionRange(start, start) }
-      })
-    }
-
     mc.querySelectorAll('.ol-row').forEach(row => {
       row.addEventListener('click', () => {
         const id = row.dataset.id

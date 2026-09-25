@@ -7,7 +7,8 @@ const TYPE_ICON = {
   overnight:  `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 10A6 6 0 016 3a6 6 0 100 10 6 6 0 007-3z"/></svg>`,
   commission: `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v12M11 4.5c0-1.1-1.34-2-3-2s-3 .9-3 2c0 1.1 1.34 1.5 3 2s3 .9 3 2-1.34 2-3 2-3-.9-3-2"/></svg>`,
 }
-const TYPE_COLOR = { mileage: 'var(--accent)', expense: '#059669', overnight: '#7c3aed', commission: '#d97706' }
+// [icon background, icon colour] per entry type
+const TYPE_COLOR = { mileage: ['var(--accent-soft)', 'var(--accent-text)'], expense: ['var(--cat-green-soft)', 'var(--cat-green)'], overnight: ['var(--cat-purple-soft)', 'var(--cat-purple)'], commission: ['var(--cat-amber-soft)', 'var(--cat-amber)'] }
 const TYPE_LABEL = { mileage: 'Mileage', expense: 'Expense', overnight: 'Per Diem Days', commission: 'Commission' }
 const CHECK_ICON = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 8l4 4 6-7"/></svg>`
 
@@ -58,15 +59,15 @@ export class ExpensesView {
     const projects = this.app.projects ?? []
 
     mc.innerHTML = `
-      <div style="max-width:860px">
+      <div class="page-split">
 
         <!-- Add entry form -->
-        <div class="panel" style="margin-bottom:20px">
+        <div class="panel">
           <div class="panel-header"><span class="panel-title">Log expense</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
-            <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <div class="seg seg--grid" role="group" aria-label="Expense type">
               ${['mileage', 'expense', 'overnight', 'commission'].map(t => `
-                <button class="exp-type-btn" data-type="${t}" style="padding:6px 16px;border-radius:20px;border:1px solid ${this._addType === t ? 'var(--accent)' : 'var(--border-med)'};background:${this._addType === t ? 'var(--accent)' : 'transparent'};color:${this._addType === t ? '#fff' : 'var(--text-secondary)'};font-size:13px;cursor:pointer;font-family:var(--font);transition:all 0.15s">${TYPE_LABEL[t]}</button>`).join('')}
+                <button type="button" class="seg-btn exp-type-btn" data-type="${t}" aria-pressed="${this._addType === t}">${TYPE_LABEL[t]}</button>`).join('')}
             </div>
             <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
               <div class="field" style="flex:0 0 auto">
@@ -107,12 +108,13 @@ export class ExpensesView {
           </div>
         </div>
 
+        <div class="panel-stack">
         <!-- Current month -->
-        <div class="panel" style="margin-bottom:20px">
+        <div class="panel">
           <div class="panel-header" style="display:flex;align-items:center;justify-content:space-between">
             <span class="panel-title">${this._fmtMonth(currentMonthKey)}</span>
             ${isCurrentSubmitted
-              ? `<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:#d1fae5;color:#065f46;border-radius:20px;font-size:12px;font-weight:500">${CHECK_ICON} Submitted</span>`
+              ? `<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:var(--success-soft);color:var(--success);border-radius:20px;font-size:12px;font-weight:500">${CHECK_ICON} Submitted</span>`
               : `<button class="btn-primary" id="exp-submit-now-btn" style="font-size:12px;padding:5px 12px">Submit expenses now</button>`}
           </div>
           <div style="display:flex;align-items:flex-start;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border-light);font-size:12px;color:var(--text-tertiary);line-height:1.5">
@@ -124,16 +126,16 @@ export class ExpensesView {
 
         <!-- Past months -->
         ${pastMonths.length ? `
-          <div style="font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:8px;padding-left:2px">Previous months</div>
+          <div class="section-label" style="margin-bottom:-6px;padding-left:2px">Previous months</div>
           ${pastMonths.map(mk => {
             const submitted = this._isMonthSubmitted(mk, byMonth[mk])
             return `
-              <div class="panel" style="margin-bottom:10px">
+              <div class="panel">
                 <div class="exp-month-head" data-mk="${mk}" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;cursor:pointer;user-select:none">
                   <div style="display:flex;align-items:center;gap:10px">
                     <svg class="exp-chev" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" style="transition:transform 0.15s;flex-shrink:0"><path d="M5 7l3 3 3-3"/></svg>
                     <span style="font-size:14px;font-weight:500;color:var(--text-primary)">${this._fmtMonth(mk)}</span>
-                    ${submitted ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:#d1fae5;color:#065f46;border-radius:12px;font-size:11px;font-weight:500">${CHECK_ICON} Submitted</span>` : ''}
+                    ${submitted ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:var(--success-soft);color:var(--success);border-radius:12px;font-size:11px;font-weight:500">${CHECK_ICON} Submitted</span>` : ''}
                   </div>
                   <span style="font-size:12px;color:var(--text-tertiary)">${this._summary(byMonth[mk], mileageRate, perDiemRate)}</span>
                 </div>
@@ -143,6 +145,7 @@ export class ExpensesView {
               </div>`
           }).join('')}
         ` : ''}
+        </div>
       </div>`
 
     this._bind(mc, currentMonthKey)
@@ -228,7 +231,7 @@ export class ExpensesView {
             return `
               <tr style="border-bottom:1px solid var(--border-light)">
                 <td style="padding:10px 4px 10px 16px">
-                  <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:${TYPE_COLOR[e.type]}1a;color:${TYPE_COLOR[e.type]}">${TYPE_ICON[e.type]}</span>
+                  <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:${(TYPE_COLOR[e.type] ?? TYPE_COLOR.expense)[0]};color:${(TYPE_COLOR[e.type] ?? TYPE_COLOR.expense)[1]}">${TYPE_ICON[e.type]}</span>
                 </td>
                 <td style="padding:10px 16px;font-size:13px;color:var(--text-secondary);white-space:nowrap">${new Date(e.entry_date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</td>
                 <td style="padding:10px 16px;font-size:13px;color:var(--text-primary)">${esc(e.description || '—')}</td>
