@@ -102,7 +102,7 @@ export class CanvasView {
     }
 
     mc.innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:8px;max-width:680px">
+      <div class="card-grid">
         ${list.map(c => {
           const proj = c.project_id ? (this.app.projects ?? []).find((/** @type {any} */ p) => p.id === c.project_id) : null
           const nested = this._descendantCount(c.id)

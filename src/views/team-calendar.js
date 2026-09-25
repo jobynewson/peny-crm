@@ -176,9 +176,10 @@ export class TeamCalendarView {
     const label = base.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
     const navBtn = 'background:var(--bg-secondary);border:1px solid var(--border-med);border-radius:var(--radius-md);padding:5px 11px;cursor:pointer;font-size:14px;color:var(--text-secondary);font-family:var(--font);line-height:1.2'
 
+    // Same edges as every other page: no extra padding, full width.
     section.innerHTML = `
-      <div style="padding:18px 22px;max-width:1500px;margin:0 auto">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+      <div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap">
           <div style="display:flex;align-items:center;gap:6px">
             <button id="tc-fp-prev"  style="${navBtn}" title="Previous month">‹</button>
             <button id="tc-fp-today" style="${navBtn};font-size:12px">Today</button>

@@ -2,6 +2,8 @@
 // Book leave → named approver approves/declines → approved leave is mirrored
 // onto the Team Calendar and deducted from the person's annual allowance.
 
+import { segTabs, bindSegTabs } from './toolbar.js'
+
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
 // `color` is written onto the Team Calendar entry an approved request creates,
@@ -121,50 +123,52 @@ export class LeaveView {
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────
+  // The page toolbar holds the view tabs and Book leave (see views/toolbar.js).
+  toolbar() {
+    const approvals = pendingApprovalsFor(this.me, this.requests)
+    const tabs = [
+      { id: 'mine', label: 'My leave' },
+      { id: 'approvals', label: 'Approvals', count: approvals.length },
+      { id: 'team', label: "Who's off" },
+    ]
+    if (this.isAdmin) tabs.push({ id: 'balances', label: 'Balances' })
+    return {
+      tabs: segTabs('Leave views', tabs, this._tab),
+      actions: this.canBook ? `<button class="btn-primary" id="leave-book-btn">+ Book leave</button>` : '',
+    }
+  }
+
+  bindToolbar(bar) {
+    bindSegTabs(bar, id => { this._tab = id; this._rerender() })
+    bar?.querySelector('#leave-book-btn')?.addEventListener('click', () => this._openBookModal())
+  }
+
   render(mc) {
     const bal = this.me ? leaveBalance(this.me, this.requests, this.fyMonth, this.fyDay) : null
-    const approvals = pendingApprovalsFor(this.me, this.requests)
-
-    const tabs = [
-      ['mine', 'My leave'],
-      ['approvals', `Approvals${approvals.length ? ` (${approvals.length})` : ''}`],
-      ['team', "Who's off"],
-    ]
-    if (this.isAdmin) tabs.push(['balances', 'Balances'])
-
     mc.innerHTML = `
-      <div style="max-width:1080px">
-        ${bal ? this._balanceCard(bal) : ''}
-        <div style="display:flex;align-items:center;gap:8px;margin:18px 0 14px;flex-wrap:wrap">
-          ${tabs.map(([id, label]) => `
-            <button class="leave-tab" data-tab="${id}" style="padding:7px 14px;border-radius:20px;border:1px solid ${this._tab === id ? 'var(--accent)' : 'var(--border-med)'};background:${this._tab === id ? 'var(--accent)' : 'transparent'};color:${this._tab === id ? 'var(--on-accent)' : 'var(--text-secondary)'};font-size:13px;cursor:pointer;font-family:var(--font);transition:all 0.15s">${esc(label)}</button>`).join('')}
-          <div style="margin-left:auto"></div>
-          ${this.canBook ? `<button class="btn-primary" id="leave-book-btn">+ Book leave</button>` : ''}
-        </div>
-        <div id="leave-tab-body"></div>
-      </div>`
-
-    mc.querySelectorAll('.leave-tab').forEach(b => b.addEventListener('click', () => { this._tab = b.dataset.tab; this.render(mc) }))
-    mc.querySelector('#leave-book-btn')?.addEventListener('click', () => this._openBookModal())
-
+      ${bal ? this._balanceCards(bal) : ''}
+      <div id="leave-tab-body"></div>`
     this._renderTab(mc.querySelector('#leave-tab-body'))
   }
 
-  _balanceCard(bal) {
-    const cell = (label, value, color) => `
-      <div style="flex:1;min-width:120px;padding:14px 16px;border-right:1px solid var(--border-light)">
-        <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">${label}</div>
-        <div style="font-size:24px;font-weight:600;color:${color || 'var(--text-primary)'};margin-top:3px">${value}</div>
+  // My allowance for the leave year, as the same stat cards Projects and
+  // Contacts use.
+  _balanceCards(bal) {
+    const start = leaveYearStart(this.fyMonth, this.fyDay)
+    const end = new Date(start.getFullYear() + 1, start.getMonth(), 0)
+    const year = `${start.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })} – ${end.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}`
+    const card = (label, value, sub, color) => `
+      <div class="stat-card">
+        <div class="stat-label">${label}</div>
+        <div class="stat-value"${color ? ` style="color:${color}"` : ''}>${value}</div>
+        <div class="stat-sub">${sub}</div>
       </div>`
     return `
-      <div class="panel" style="overflow:hidden">
-        <div class="panel-header"><span class="panel-title">My allowance · ${esc(leaveYearStart(this.fyMonth, this.fyDay).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }))} – ${esc(new Date(leaveYearStart(this.fyMonth, this.fyDay).getFullYear() + 1, leaveYearStart(this.fyMonth, this.fyDay).getMonth(), 0).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }))}</span></div>
-        <div style="display:flex;flex-wrap:wrap">
-          ${cell('Allowance', bal.allowance, null)}
-          ${cell('Booked', bal.booked, 'var(--cat-cyan)')}
-          ${cell('Pending', bal.pending, 'var(--warning)')}
-          ${cell('Remaining', bal.remaining, bal.remaining < 0 ? 'var(--danger)' : 'var(--success)')}
-        </div>
+      <div class="stats-row">
+        ${card('Allowance', bal.allowance, `days · ${esc(year)}`)}
+        ${card('Booked', bal.booked, 'days approved', 'var(--cat-cyan)')}
+        ${card('Pending', bal.pending, 'days awaiting approval', 'var(--warning)')}
+        ${card('Remaining', bal.remaining, 'days left to book', bal.remaining < 0 ? 'var(--danger)' : 'var(--success)')}
       </div>`
   }
 
@@ -189,11 +193,9 @@ export class LeaveView {
   // ── My leave ──────────────────────────────────────────────────────────────
   _renderMine(body) {
     const mine = this.requests.filter(r => r.requester_id === this.me?.id)
-    if (!mine.length) {
-      body.innerHTML = `<div class="empty-state" style="padding:40px;text-align:center;color:var(--text-tertiary);font-size:13px">No leave booked yet.${this.canBook ? ' Hit <strong>Book leave</strong> to request some time off.' : ''}</div>`
-      return
-    }
-    body.innerHTML = `<div style="display:flex;flex-direction:column;gap:10px">${mine.map(r => this._requestRow(r, true)).join('')}</div>`
+    body.innerHTML = this._panel('My requests', mine.length,
+      mine.length ? mine.map(r => this._requestRow(r, true)).join('')
+        : `<div class="empty-state">No leave booked yet.${this.canBook ? ' Use <strong>Book leave</strong> to request some time off.' : ''}</div>`)
     this._bindRowActions(body)
   }
 
@@ -202,7 +204,7 @@ export class LeaveView {
     const canCancel = mineView && (r.status === 'pending' || (r.status === 'approved' && r.end_date >= today))
     const approverName = r.approver_id ? this._userName(r.approver_id) : 'Unassigned'
     return `
-      <div style="border:1px solid var(--border-light);border-radius:var(--radius-md);padding:13px 15px;display:flex;align-items:center;gap:14px;flex-wrap:wrap" data-req="${r.id}">
+      <div class="leave-row" data-req="${r.id}">
         <div style="flex:1;min-width:200px">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
             ${this._typeChip(r.leave_type)}
@@ -223,31 +225,37 @@ export class LeaveView {
     const pending = pendingApprovalsFor(this.me, this.requests)
     const decided = this.requests.filter(r => r.decided_by === this.me?.id && r.status !== 'pending')
     if (!pending.length && !decided.length) {
-      body.innerHTML = `<div class="empty-state" style="padding:40px;text-align:center;color:var(--text-tertiary);font-size:13px">No leave requests need your approval.</div>`
+      body.innerHTML = this._panel('Awaiting your decision', 0, `<div class="empty-state">No leave requests need your approval.</div>`)
       return
     }
-    body.innerHTML = `
-      ${pending.length ? `<div style="font-size:12px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px">Awaiting your decision</div>
-      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px">
-        ${pending.map(r => `
-          <div style="border:1px solid var(--border-light);border-radius:var(--radius-md);padding:13px 15px" data-req="${r.id}">
-            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-              <div style="flex:1;min-width:200px">
-                <div style="font-size:13px;font-weight:500;color:var(--text-primary);margin-bottom:4px">${esc(this._userName(r.requester_id))}</div>
-                <div style="display:flex;align-items:center;gap:10px;margin-bottom:3px">${this._typeChip(r.leave_type)}<span style="font-size:12px;color:var(--text-tertiary)">${Number(r.total_days)} day${Number(r.total_days) === 1 ? '' : 's'}</span></div>
-                <div style="font-size:13px;color:var(--text-primary)">${esc(this._fmtRange(r))}</div>
-                ${r.reason ? `<div style="font-size:12px;color:var(--text-tertiary);margin-top:3px">“${esc(r.reason)}”</div>` : ''}
-              </div>
-              <div style="display:flex;gap:8px">
-                <button class="btn-primary" data-approve="${r.id}" style="font-size:12px;padding:6px 14px">Approve</button>
-                <button class="row-btn" data-decline="${r.id}" style="font-size:12px;color:var(--danger);border-color:var(--danger-border)">Decline</button>
-              </div>
+    const awaiting = pending.map(r => `
+          <div class="leave-row" data-req="${r.id}">
+            <div style="flex:1;min-width:200px">
+              <div style="font-size:13px;font-weight:500;color:var(--text-primary);margin-bottom:4px">${esc(this._userName(r.requester_id))}</div>
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:3px">${this._typeChip(r.leave_type)}<span style="font-size:12px;color:var(--text-tertiary)">${Number(r.total_days)} day${Number(r.total_days) === 1 ? '' : 's'}</span></div>
+              <div style="font-size:13px;color:var(--text-primary)">${esc(this._fmtRange(r))}</div>
+              ${r.reason ? `<div style="font-size:12px;color:var(--text-tertiary);margin-top:3px">“${esc(r.reason)}”</div>` : ''}
             </div>
-          </div>`).join('')}
-      </div>` : ''}
-      ${decided.length ? `<div style="font-size:12px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px">Previously decided by you</div>
-      <div style="display:flex;flex-direction:column;gap:10px">${decided.map(r => this._requestRow(r, false)).join('')}</div>` : ''}`
+            <div style="display:flex;gap:8px">
+              <button class="btn-primary" data-approve="${r.id}" style="font-size:12px;padding:6px 14px">Approve</button>
+              <button class="row-btn" data-decline="${r.id}" style="font-size:12px;color:var(--danger);border-color:var(--danger-border)">Decline</button>
+            </div>
+          </div>`).join('')
+    body.innerHTML = `
+      <div class="panel-grid">
+        ${this._panel('Awaiting your decision', pending.length, awaiting || `<div class="empty-state">Nothing waiting for you.</div>`)}
+        ${decided.length ? this._panel('Decided by you', decided.length, decided.map(r => this._requestRow(r, false)).join('')) : ''}
+      </div>`
     this._bindRowActions(body)
+  }
+
+  // A panel of leave rows with a titled header and a count.
+  _panel(title, count, inner) {
+    return `
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">${esc(title)}</span>${count ? `<span class="seg-count">${count}</span>` : ''}</div>
+        <div class="leave-rows">${inner}</div>
+      </div>`
   }
 
   // ── Who's off (month wall chart) ─────────────────────────────────────────────
@@ -267,13 +275,14 @@ export class LeaveView {
     const navBtn = 'background:var(--bg-secondary);border:1px solid var(--border-med);border-radius:var(--radius-md);padding:4px 11px;cursor:pointer;font-size:13px;color:var(--text-secondary);font-family:var(--font);line-height:1.2'
 
     body.innerHTML = `
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-        <button id="leave-team-prev" style="${navBtn}">‹</button>
+      <div class="panel">
+      <div class="panel-header">
+        <button id="leave-team-prev" style="${navBtn}" aria-label="Previous month">‹</button>
         <button id="leave-team-today" style="${navBtn};font-size:12px">Today</button>
-        <button id="leave-team-next" style="${navBtn}">›</button>
-        <div style="font-size:15px;font-weight:600;color:var(--text-primary);margin-left:6px">${esc(label)}</div>
+        <button id="leave-team-next" style="${navBtn}" aria-label="Next month">›</button>
+        <div class="panel-title" style="margin-left:6px">${esc(label)}</div>
       </div>
-      <div style="overflow-x:auto;border:1px solid var(--border-light);border-radius:var(--radius-md)">
+      <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:${140 + this.users.length * 70}px">
           <thead><tr style="background:var(--bg-secondary)">
             <th style="padding:7px 10px;text-align:left;font-weight:500;font-size:11px;color:var(--text-tertiary);position:sticky;left:0;background:var(--bg-secondary);border-right:1px solid var(--border-light)">Date</th>
@@ -302,8 +311,9 @@ export class LeaveView {
           </tbody>
         </table>
       </div>
-      <div style="margin-top:10px;display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--text-tertiary)">
+      <div style="padding:10px 16px;border-top:1px solid var(--border-light);display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--text-tertiary)">
         ${Object.values(LEAVE_TYPES).map(t => `<span style="display:flex;align-items:center;gap:5px"><span style="width:9px;height:9px;border-radius:50%;background:var(--cat-${t.tone})"></span>${esc(t.label)}</span>`).join('')}
+      </div>
       </div>`
 
     body.querySelector('#leave-team-prev')?.addEventListener('click', () => { this._teamMonthOffset--; this._renderTeam(body) })
@@ -314,7 +324,7 @@ export class LeaveView {
   // ── Balances (admin) ──────────────────────────────────────────────────────
   _renderBalances(body) {
     body.innerHTML = `
-      <div style="overflow-x:auto;border:1px solid var(--border-light);border-radius:var(--radius-md)">
+      <div class="panel" style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead><tr style="background:var(--bg-secondary)">
             ${['Team member', 'Approver', 'Allowance', 'Booked', 'Pending', 'Remaining'].map((h, i) => `<th style="padding:9px 12px;text-align:${i === 0 || i === 1 ? 'left' : 'center'};font-weight:500;font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border-light)">${h}</th>`).join('')}
@@ -405,7 +415,9 @@ export class LeaveView {
   }
 
   _rerender() {
-    if (this.app.currentView === 'leave') this.render(document.getElementById('main-content'))
+    if (this.app.currentView !== 'leave') return
+    this.render(document.getElementById('main-content'))
+    this.app.updateTitle()   // the Approvals count sits in the toolbar
     this.app.updateLeaveBadge?.()
   }
 

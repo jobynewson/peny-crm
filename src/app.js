@@ -21,6 +21,7 @@ import { icon } from './views/icons.js'
 import { closeFloating } from './views/popover.js'
 import { searchCommands } from './views/search-commands.js'
 import { matchCommands } from './utils/command-search.js'
+import { segTabs, bindSegTabs } from './views/toolbar.js'
 import { syncThemeColor } from './theme.js'
 
 const PHONE = '(max-width: 768px)'
@@ -553,11 +554,27 @@ export class App {
   // actions on the right. Detail pages (a project, budget, board, plan) have
   // their own header row instead, so the toolbar is empty there.
   toolbarHtml() {
-    const switcher = this._viewSwitcherHtml()
-    const filters  = this.topbarSearch()
-    const actions  = this.topbarButton()
+    // Pages can supply their own tabs, filters and main action; see
+    // views/toolbar.js.
+    const own = this._toolbarOwner()?.toolbar?.() ?? {}
+    const switcher = this._viewSwitcherHtml() || own.tabs || ''
+    const filters  = own.filters ?? this.topbarSearch()
+    const actions  = own.actions ?? this.topbarButton()
     if (!switcher && !filters && !actions) return ''
     return `${switcher}${filters ? `<div class="page-toolbar-filters">${filters}</div>` : ''}<div class="page-toolbar-actions">${actions}</div>`
+  }
+
+  // The object that fills in the toolbar for the current page, if any.
+  _toolbarOwner() {
+    return {
+      leave: this.leaveView,
+      expenses: this.expensesView,
+      'password-manager': this.passwordManagerView,
+      'offload-log': this.offloadLogView,
+      marketing: this.marketingView,
+      planning: this.boardsView,
+      settings: { toolbar: () => this._settingsToolbar(), bindToolbar: bar => this._bindSettingsToolbar(bar) },
+    }[this.currentView]
   }
 
   // View switcher under the Projects tab: All projects · Budgets · Planning.
@@ -610,7 +627,9 @@ export class App {
 
   bindToolbar() {
     this.bindTopbarBtn()
-    if (this.currentView === 'tasks') this.tasksView.bindToolbarFilters(this.container.querySelector('#page-toolbar'))
+    const bar = this.container.querySelector('#page-toolbar')
+    if (this.currentView === 'tasks') this.tasksView.bindToolbarFilters(bar)
+    this._toolbarOwner()?.bindToolbar?.(bar)
     const search = this.container.querySelector('#contact-search')
     if (search) {
       search.value = this.contactsView.search
@@ -2259,12 +2278,11 @@ export class App {
     } catch(e) { console.error('Failed to delete note:', e); this.toast('Error deleting note') }
   }
 
-  renderSettings(mc) {
-    const s = this.settings ?? {}
+  // Settings sections, shown as tabs in the page toolbar. Workspace is split
+  // into sections for admins; non-admins only have the (non-admin) leave
+  // settings, so they keep a single Workspace section.
+  _settingsSections() {
     const isAdmin = this.appUser?.role === 'superadmin'
-
-    // Workspace is split into sub-tabs for admins; non-admins only have the
-    // (non-admin) leave settings, so they keep a single Workspace tab.
     const tabs = isAdmin
       ? [
           { id: 'account',   label: 'My account' },
@@ -2277,9 +2295,30 @@ export class App {
           { id: 'account',   label: 'My account' },
           { id: 'workspace', label: 'Workspace' },
         ]
-    // Fall back to the first tab if the remembered one isn't valid for this role.
+    // Fall back to the first section if the remembered one isn't valid for this role.
     let tab = this._settingsTab ?? 'account'
     if (!tabs.some(t => t.id === tab)) tab = 'account'
+    return { tabs, tab }
+  }
+
+  _settingsToolbar() {
+    const { tabs, tab } = this._settingsSections()
+    return { tabs: segTabs('Settings sections', tabs, tab) }
+  }
+
+  _bindSettingsToolbar(bar) {
+    bindSegTabs(bar, id => {
+      this._settingsTab = id
+      const mc = document.getElementById('main-content')
+      if (mc) this.renderSettings(mc)
+      this.updateTitle()
+    })
+  }
+
+  renderSettings(mc) {
+    const s = this.settings ?? {}
+    const isAdmin = this.appUser?.role === 'superadmin'
+    const { tab } = this._settingsSections()
 
     // ── User-level panels ───────────────────────────────────────────────
     const accountPanel = `
@@ -2384,7 +2423,7 @@ export class App {
               <input type="email" id="invite-email" placeholder="colleague@email.com" style="flex:1;padding:8px 11px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none" />
               <button class="btn-primary" id="invite-btn">Send invite</button>
             </div>
-            <div id="users-list"><div style="font-size:12px;color:var(--text-tertiary)">Loading users…</div></div>
+            <div id="users-list" class="users-grid"><div style="font-size:12px;color:var(--text-tertiary)">Loading users…</div></div>
           </div>
         </div>` : ''
 
@@ -2527,35 +2566,25 @@ export class App {
           </div>
         </div>` : '<div></div>'
 
-    // ── Assemble tabs ───────────────────────────────────────────────────
-    const tabBar = `<div style="display:flex;gap:0;border-bottom:1px solid var(--border-light);margin-bottom:20px">
-      ${tabs.map(t => `
-        <button class="settings-tab" data-tab="${t.id}"
-          style="padding:8px 16px;font-size:13px;font-family:var(--font);cursor:pointer;background:none;border:none;border-bottom:2px solid ${tab===t.id?'var(--accent)':'transparent'};color:${tab===t.id?'var(--accent)':'var(--text-secondary)'};font-weight:${tab===t.id?'600':'400'};transition:all 0.15s;margin-bottom:-1px">
-          ${t.label}
-        </button>`).join('')}
-    </div>`
-
-    const wrap = inner => `<div style="display:flex;flex-direction:column;gap:16px;max-width:760px">${inner}</div>`
+    // ── Assemble the section ────────────────────────────────────────────
+    // Panels sit side by side as the window allows (the section tabs are in
+    // the page toolbar).
+    const grid = inner => `<div class="panel-grid">${inner}</div>`
+    const wide = inner => `<div class="panel-grid-wide">${inner}</div>`
     if (tab === 'account') {
-      mc.innerHTML = tabBar + wrap(`${accountPanel}${roundupPanel}`)
+      mc.innerHTML = grid(`${accountPanel}${roundupPanel}`)
     } else if (tab === 'company') {
-      mc.innerHTML = tabBar + wrap(`${companyDetailsPanel}${timersPanel}`)
+      mc.innerHTML = grid(`${companyDetailsPanel}${timersPanel}`)
     } else if (tab === 'invoicing') {
-      mc.innerHTML = tabBar + wrap(`${invoicingDefaultsPanel}${expenseFxPanels}`)
+      mc.innerHTML = grid(`${invoicingDefaultsPanel}${expenseFxPanels}`)
     } else if (tab === 'budget') {
-      mc.innerHTML = tabBar + wrap(budgetPanel)
+      mc.innerHTML = grid(wide(budgetPanel))
     } else if (tab === 'users') {
-      mc.innerHTML = tabBar + wrap(`${usersPanel}${holidaysPanel}${leavePanel}`)
+      mc.innerHTML = grid(`${wide(usersPanel)}${holidaysPanel}${leavePanel}`)
     } else {
-      // Non-admin "Workspace" tab — leave settings only.
-      mc.innerHTML = tabBar + wrap(leavePanel)
+      // Non-admin "Workspace" section — leave settings only.
+      mc.innerHTML = grid(leavePanel)
     }
-
-    mc.querySelectorAll('.settings-tab').forEach(btn => btn.addEventListener('click', () => {
-      this._settingsTab = btn.dataset.tab
-      this.renderSettings(mc)
-    }))
 
     mc.querySelector('#settings-save-btn')?.addEventListener('click', () => this.saveSettings(mc))
     mc.querySelector('#settings-save-btn-2')?.addEventListener('click', () => this.saveSettings(mc))
@@ -2762,7 +2791,7 @@ export class App {
 
       el.innerHTML = users.map(u => {
         const isSelf = u.clerk_id === this.clerkUserId
-        return `<div style="border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px;margin-bottom:10px" data-uid="${u.id}">
+        return `<div style="border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px" data-uid="${u.id}">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
             <div style="font-size:13px;font-weight:500;flex:1">${esc(u.name)||'—'} ${isSelf?'<span style="font-size:10px;color:var(--text-tertiary)">(you)</span>':''}</div>
             <select class="status-select" data-role-uid="${u.id}" ${isSelf?'disabled':''} style="width:130px" title="${isSelf?'You cannot change your own role':''}">

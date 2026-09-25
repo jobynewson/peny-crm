@@ -13,6 +13,7 @@ import {
 } from '../db/client.js'
 import { joinRoom } from '../realtime/realtime.js'
 import { mountStatusSwitch } from './board-status.js'
+import { segTabs, bindSegTabs } from './toolbar.js'
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
 const fmtDate = d => d ? new Date(String(d).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''
@@ -52,30 +53,31 @@ export class BoardsView {
     else this._renderList(mc)
   }
 
-  // ── Planning hub: Boards | Canvases tabs ─────────────────────────────────────
+  // ── Planning hub: Boards | Canvases ───────────────────────────────────────────
+  // The two views are tabs in the page toolbar, beside the Projects switcher
+  // (views/toolbar.js). Board and canvas pages have their own header instead.
+
+  toolbar() {
+    if (this.currentId || this.app.canvasView.currentId) return {}
+    return {
+      filters: segTabs('Planning views', [
+        { id: 'boards', label: 'Boards' },
+        { id: 'canvases', label: 'Canvases' },
+      ], this.activeTab),
+    }
+  }
+
+  bindToolbar(bar) {
+    bindSegTabs(bar, id => {
+      this.activeTab = id
+      this.app.updateTitle()   // the toolbar's + New board / + New canvas follows the tab
+      const mc = document.getElementById('main-content')
+      if (mc) this._renderList(mc)
+    })
+  }
 
   _renderList(mc) {
-    const tabs = [
-      { id: 'boards',   label: '🗂 Boards' },
-      { id: 'canvases', label: '🖼 Canvases' },
-    ]
-    mc.innerHTML = `
-      <div style="display:flex;gap:0;border-bottom:1px solid var(--border-light);margin-bottom:20px">
-        ${tabs.map(t => `
-          <button class="plan-hub-tab" data-tab="${t.id}"
-            style="padding:8px 16px;font-size:13px;font-family:var(--font);cursor:pointer;background:none;border:none;border-bottom:2px solid ${this.activeTab === t.id ? 'var(--accent)' : 'transparent'};color:${this.activeTab === t.id ? 'var(--accent)' : 'var(--text-secondary)'};font-weight:${this.activeTab === t.id ? '600' : '400'};transition:all 0.15s;margin-bottom:-1px">
-            ${t.label}
-          </button>`).join('')}
-      </div>
-      <div id="plan-hub-content"></div>`
-
-    mc.querySelectorAll('.plan-hub-tab').forEach(btn => {
-      btn.addEventListener('click', () => {
-        this.activeTab = btn.dataset.tab
-        this.app.updateTitle()   // topbar button label depends on the tab
-        this._renderList(mc)
-      })
-    })
+    mc.innerHTML = `<div id="plan-hub-content"></div>`
 
     const content = mc.querySelector('#plan-hub-content')
     if (this.activeTab === 'canvases') this.app.canvasView.renderList(content)
@@ -110,7 +112,7 @@ export class BoardsView {
     }
 
     mc.innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:8px;max-width:680px">
+      <div class="card-grid">
         ${boards.map(b => {
           const proj = b.project_id ? this.app.projects.find(p => p.id === b.project_id) : null
           return `

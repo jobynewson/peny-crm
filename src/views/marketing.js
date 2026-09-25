@@ -1,6 +1,7 @@
 // Marketing view — Kanban board + Social Calendar
 
 import { mountStatusSwitch } from './board-status.js'
+import { segTabs, bindSegTabs } from './toolbar.js'
 
 const COLUMNS = [
   { id: 'ideas',      label: 'Ideas',           color: 'var(--cat-purple)' },
@@ -40,27 +41,28 @@ export class MarketingView {
     this._dragCardId = null
   }
 
-  render(mc) {
-    const tabs = [
-      { id: 'kanban', label: 'Kanban board' },
-      { id: 'social', label: 'Social calendar' },
-    ]
-    mc.innerHTML = `
-      <div style="display:flex;gap:0;border-bottom:1px solid var(--border-light);margin-bottom:20px">
-        ${tabs.map(t => `
-          <button class="mkt-tab${this.activeTab === t.id ? ' mkt-tab--active' : ''}" data-tab="${t.id}"
-            style="padding:8px 16px;font-size:13px;font-family:var(--font);cursor:pointer;background:none;border:none;border-bottom:2px solid ${this.activeTab === t.id ? 'var(--accent)' : 'transparent'};color:${this.activeTab === t.id ? 'var(--accent)' : 'var(--text-secondary)'};font-weight:${this.activeTab === t.id ? '600' : '400'};transition:all 0.15s;margin-bottom:-1px">
-            ${t.label}
-          </button>`).join('')}
-      </div>
-      <div id="mkt-tab-content"></div>`
+  // The Kanban board / Social calendar tabs sit in the page toolbar, beside
+  // + New card (views/toolbar.js).
+  toolbar() {
+    return {
+      tabs: segTabs('Marketing views', [
+        { id: 'kanban', label: 'Kanban board' },
+        { id: 'social', label: 'Social calendar' },
+      ], this.activeTab),
+    }
+  }
 
-    mc.querySelectorAll('.mkt-tab').forEach(btn => {
-      btn.addEventListener('click', () => {
-        this.activeTab = btn.dataset.tab
-        this.render(mc)
-      })
+  bindToolbar(bar) {
+    bindSegTabs(bar, id => {
+      this.activeTab = id
+      const mc = document.getElementById('main-content')
+      if (mc) this.render(mc)
+      this.app.updateTitle()
     })
+  }
+
+  render(mc) {
+    mc.innerHTML = `<div id="mkt-tab-content"></div>`
 
     const content = mc.querySelector('#mkt-tab-content')
     if (this.activeTab === 'kanban') {
@@ -482,17 +484,15 @@ export class MarketingView {
     if (!this.expandedSocialPosts) this.expandedSocialPosts = new Set()
 
     mc.innerHTML = `
-      <div style="max-width:500px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-          <div style="display:flex;align-items:center;gap:6px">
-            <span style="width:8px;height:8px;border-radius:50%;background:var(--cat-green);flex-shrink:0"></span>
-            <span style="font-size:13px;font-weight:600;color:var(--text-primary)">Social calendar</span>
-            ${posts.filter(p => !p.completed).length ? `<span style="font-size:11px;background:var(--bg-secondary);border:0.5px solid var(--border-med);border-radius:10px;padding:1px 7px;color:var(--text-secondary)">${posts.filter(p => !p.completed).length}</span>` : ''}
-          </div>
-          <button id="social-add-btn" style="font-size:11px;padding:3px 10px;border:0.5px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-secondary);color:var(--text-secondary);cursor:pointer;font-family:var(--font)">+ Add</button>
+      <div class="panel">
+        <div class="panel-header">
+          <span style="width:8px;height:8px;border-radius:50%;background:var(--cat-green);flex-shrink:0"></span>
+          <span class="panel-title">Post ideas</span>
+          ${posts.filter(p => !p.completed).length ? `<span class="seg-count">${posts.filter(p => !p.completed).length}</span>` : ''}
+          <button class="btn-secondary" id="social-add-btn" style="margin-left:auto">+ Add</button>
         </div>
 
-        <div id="social-add-form" style="display:none;background:var(--bg-secondary);border:0.5px solid var(--border-med);border-radius:var(--radius-md);padding:12px;margin-bottom:12px">
+        <div id="social-add-form" style="display:none;background:var(--bg-secondary);border-bottom:1px solid var(--border-light);padding:12px 20px">
           <input id="social-new-title" type="text" placeholder="Project / topic name" maxlength="200"
             style="width:100%;padding:7px 10px;font-size:13px;border:0.5px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none;margin-bottom:8px;box-sizing:border-box">
           <textarea id="social-new-notes" placeholder="Notes (optional)" rows="2"
@@ -503,15 +503,15 @@ export class MarketingView {
           </div>
         </div>
 
-        <div id="social-post-list" style="display:flex;flex-direction:column;gap:6px">
+        <div id="social-post-list" class="leave-rows">
           ${(() => {
             const active = posts.filter(p => !p.completed)
             const done   = posts.filter(p => p.completed)
             const renderPost = (p) => {
               const isOpen = this.expandedSocialPosts.has(p.id)
               return `
-              <div class="social-post-row" data-social-id="${p.id}" style="background:var(--bg-secondary);border:0.5px solid var(--border-light);border-radius:var(--radius-md);overflow:hidden;${p.completed ? 'opacity:0.45;' : ''}">
-                <div style="display:flex;align-items:center;gap:8px;padding:8px 10px">
+              <div class="social-post-row" data-social-id="${p.id}" style="${p.completed ? 'opacity:0.45;' : ''}">
+                <div style="display:flex;align-items:center;gap:10px;padding:10px 20px">
                   <input type="checkbox" class="social-check" data-social-id="${p.id}" ${p.completed ? 'checked' : ''}
                     style="flex-shrink:0;cursor:pointer;accent-color:var(--success)">
                   <input class="social-title-input" data-social-id="${p.id}" value="${esc2(p.title)}" placeholder="Title"
@@ -519,7 +519,7 @@ export class MarketingView {
                   <button class="social-toggle-btn" data-social-id="${p.id}"
                     style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:13px;line-height:1;padding:0 2px;opacity:0.55">${isOpen ? '▾' : '▸'}</button>
                 </div>
-                <div class="social-post-body" data-social-id="${p.id}" style="display:${isOpen ? 'block' : 'none'};padding:0 10px 10px 28px">
+                <div class="social-post-body" data-social-id="${p.id}" style="display:${isOpen ? 'block' : 'none'};padding:0 20px 10px 44px">
                   <textarea class="social-notes-input" data-social-id="${p.id}" placeholder="Add notes…" rows="2"
                     style="width:100%;background:transparent;border:none;outline:none;font-size:11px;color:var(--text-tertiary);font-family:var(--font);resize:none;padding:0;line-height:1.4;overflow:hidden;box-sizing:border-box;margin-bottom:6px">${esc2(p.notes || '')}</textarea>
                   <div style="display:flex;justify-content:flex-end">
@@ -530,7 +530,7 @@ export class MarketingView {
               </div>`
             }
             if (!active.length && !done.length) {
-              return `<div style="color:var(--text-tertiary);font-size:13px;padding:8px 0">No post ideas yet. Hit + Add to get started.</div>`
+              return `<div class="empty-state">No post ideas yet. Use + Add to get started.</div>`
             }
             return active.map(renderPost).join('') + done.map(renderPost).join('')
           })()}

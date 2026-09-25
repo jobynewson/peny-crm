@@ -1,3 +1,5 @@
+import { toolbarSearch } from './toolbar.js'
+
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
 
 export class PasswordManagerView {
@@ -11,6 +13,24 @@ export class PasswordManagerView {
   async _load() {
     const { getCredentials } = await import('../db/client.js')
     this.credentials = await getCredentials(this.app.userId)
+  }
+
+  // Search and Add credential sit in the page toolbar (see views/toolbar.js),
+  // so typing redraws only the list below, not the search box.
+  toolbar() {
+    return {
+      filters: toolbarSearch({ id: 'pm-search', label: 'Search passwords', placeholder: 'Search programs…', value: this.search }),
+      actions: `<button class="btn-primary" id="pm-add-btn">+ Add credential</button>`,
+    }
+  }
+
+  bindToolbar(bar) {
+    const mc = () => document.getElementById('main-content')
+    bar?.querySelector('#pm-search')?.addEventListener('input', e => {
+      this.search = e.target.value
+      if (this.credentials && mc()) this._render(mc())
+    })
+    bar?.querySelector('#pm-add-btn')?.addEventListener('click', () => this._openModal(mc(), null))
   }
 
   async render(mc) {
@@ -45,18 +65,7 @@ export class PasswordManagerView {
     })
 
     mc.innerHTML = `
-      <div style="max-width:960px">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
-          <div style="position:relative;flex:1;max-width:340px">
-            <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text-tertiary);pointer-events:none">
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
-            </span>
-            <input id="pm-search" type="text" value="${esc(this.search)}" placeholder="Search programs…"
-              style="width:100%;padding:7px 10px 7px 30px;font-size:13px;border:1px solid var(--border-med);border-radius:var(--radius-md);background:var(--bg-secondary);color:var(--text-primary);font-family:var(--font);outline:none;box-sizing:border-box">
-          </div>
-          <button class="btn-primary" id="pm-add-btn">+ Add credential</button>
-        </div>
-
+      <div>
         ${creds.length === 0 && !q ? `
           <div class="panel" style="padding:48px;text-align:center">
             <div style="font-size:32px;margin-bottom:12px">🔑</div>
@@ -68,7 +77,7 @@ export class PasswordManagerView {
           <div style="padding:40px;text-align:center;color:var(--text-tertiary);font-size:13px">No results for "${esc(q)}"</div>
         ` : sortedCats.map(cat => `
           <div style="margin-bottom:24px">
-            <div style="font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:8px;padding-left:2px">${esc(cat)}</div>
+            <div class="section-label" style="margin-bottom:8px;padding-left:2px">${esc(cat)}</div>
             <div class="panel">
               <table style="width:100%;border-collapse:collapse">
                 <thead>
@@ -120,12 +129,6 @@ export class PasswordManagerView {
   }
 
   _bind(mc) {
-    mc.querySelector('#pm-search')?.addEventListener('input', e => {
-      this.search = e.target.value
-      this._render(mc)
-    })
-
-    mc.querySelector('#pm-add-btn')?.addEventListener('click', () => this._openModal(mc, null))
     mc.querySelector('#pm-add-btn-2')?.addEventListener('click', () => this._openModal(mc, null))
 
     mc.querySelectorAll('.pm-toggle-pw').forEach(btn => {

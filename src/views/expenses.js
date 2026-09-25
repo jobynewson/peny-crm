@@ -59,15 +59,15 @@ export class ExpensesView {
     const projects = this.app.projects ?? []
 
     mc.innerHTML = `
-      <div style="max-width:860px">
+      <div class="page-split">
 
         <!-- Add entry form -->
-        <div class="panel" style="margin-bottom:20px">
+        <div class="panel">
           <div class="panel-header"><span class="panel-title">Log expense</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
-            <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <div class="seg seg--grid" role="group" aria-label="Expense type">
               ${['mileage', 'expense', 'overnight', 'commission'].map(t => `
-                <button class="exp-type-btn" data-type="${t}" style="padding:6px 16px;border-radius:20px;border:1px solid ${this._addType === t ? 'var(--accent)' : 'var(--border-med)'};background:${this._addType === t ? 'var(--accent)' : 'transparent'};color:${this._addType === t ? 'var(--on-accent)' : 'var(--text-secondary)'};font-size:13px;cursor:pointer;font-family:var(--font);transition:all 0.15s">${TYPE_LABEL[t]}</button>`).join('')}
+                <button type="button" class="seg-btn exp-type-btn" data-type="${t}" aria-pressed="${this._addType === t}">${TYPE_LABEL[t]}</button>`).join('')}
             </div>
             <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
               <div class="field" style="flex:0 0 auto">
@@ -108,8 +108,9 @@ export class ExpensesView {
           </div>
         </div>
 
+        <div class="panel-stack">
         <!-- Current month -->
-        <div class="panel" style="margin-bottom:20px">
+        <div class="panel">
           <div class="panel-header" style="display:flex;align-items:center;justify-content:space-between">
             <span class="panel-title">${this._fmtMonth(currentMonthKey)}</span>
             ${isCurrentSubmitted
@@ -125,11 +126,11 @@ export class ExpensesView {
 
         <!-- Past months -->
         ${pastMonths.length ? `
-          <div style="font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:8px;padding-left:2px">Previous months</div>
+          <div class="section-label" style="margin-bottom:-6px;padding-left:2px">Previous months</div>
           ${pastMonths.map(mk => {
             const submitted = this._isMonthSubmitted(mk, byMonth[mk])
             return `
-              <div class="panel" style="margin-bottom:10px">
+              <div class="panel">
                 <div class="exp-month-head" data-mk="${mk}" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;cursor:pointer;user-select:none">
                   <div style="display:flex;align-items:center;gap:10px">
                     <svg class="exp-chev" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" style="transition:transform 0.15s;flex-shrink:0"><path d="M5 7l3 3 3-3"/></svg>
@@ -144,6 +145,7 @@ export class ExpensesView {
               </div>`
           }).join('')}
         ` : ''}
+        </div>
       </div>`
 
     this._bind(mc, currentMonthKey)

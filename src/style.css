@@ -559,7 +559,7 @@ kbd { font-family: var(--font-mono); }
   transition: background 0.12s, color 0.12s;
 }
 .seg-btn:hover { color: var(--text); }
-.seg-btn[aria-checked="true"], .seg-btn[aria-current="page"], .seg-btn[aria-pressed="true"] { background: var(--surface); color: var(--text); font-weight: 600; }
+.seg-btn[aria-checked="true"], .seg-btn[aria-current="page"], .seg-btn[aria-current="true"], .seg-btn[aria-pressed="true"] { background: var(--surface); color: var(--text); font-weight: 600; }
 .seg-btn:focus-visible { outline-offset: -2px; }
 
 /* Visually hidden, still read by screen readers */
@@ -577,9 +577,17 @@ kbd { font-family: var(--font-mono); }
 .page-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
 .page-toolbar[hidden] { display: none; }
 .page-toolbar-filters { display: flex; align-items: center; gap: 8px; }
+.toolbar-note { font-size: 12px; color: var(--text-tertiary); white-space: nowrap; }
 .page-toolbar-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .page-toolbar-actions:empty { display: none; }
-.view-switch .seg-btn { flex: 0 0 auto; }
+.view-switch .seg-btn { flex: 0 0 auto; white-space: nowrap; }
+/* A toolbar's tabs scroll sideways rather than wrap when there are more
+   than fit (Settings on a phone). */
+.page-toolbar .view-switch { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.page-toolbar .view-switch::-webkit-scrollbar { display: none; }
+/* A two-by-two segmented control, for four options in a narrow column. */
+.seg--grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.search-wrap--wide input { width: 320px; }
 
 /* Breadcrumb on a single project page ("Projects / Project name") */
 .crumbs { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; font-size: 15px; }
@@ -755,6 +763,23 @@ kbd { font-family: var(--font-mono); }
 /* ════════════════════════════════════════════════════════════════════════
    SHARED COMPONENTS — stats, panels, lists, tags
    ════════════════════════════════════════════════════════════════════════ */
+
+/* Page layouts. Every page starts at the same left edge as the header and
+   uses the full width: the first row is the toolbar (tabs, filters, main
+   action), then stat cards if the page has figures, then its panels.
+   .page-split puts a form beside what it adds to (Expenses); .panel-grid
+   sets panels side by side as the window allows (Settings); .card-grid is
+   for a set of cards (Story Planner, Planning lists). */
+.page-split { display: grid; grid-template-columns: minmax(320px, 400px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.panel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(460px, 100%), 1fr)); gap: 16px; align-items: start; }
+.panel-grid > .panel-grid-wide { grid-column: 1 / -1; }
+.panel-stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: 12px; }
+.users-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(480px, 100%), 1fr)); gap: 12px; align-items: start; }
+@media (max-width: 1100px) { .page-split { grid-template-columns: minmax(0, 1fr); } }
+/* Rows inside a panel, e.g. leave requests and approvals. */
+.leave-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 13px 20px; }
+.leave-rows > .leave-row + .leave-row, .leave-rows > .social-post-row + .social-post-row { border-top: 1px solid var(--border-light); }
 
 .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
 .stat-card {

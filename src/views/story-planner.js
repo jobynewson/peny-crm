@@ -26,7 +26,7 @@ export class StoryPlannerView {
   // ── List view ─────────────────────────────────────────────────────────────
 
   async _renderList(mc) {
-    mc.innerHTML = `<div style="padding:20px;max-width:900px"><div style="color:var(--text-tertiary);font-size:13px">Loading plans…</div></div>`
+    mc.innerHTML = `<div class="empty-state">Loading plans…</div>`
     try {
       this.plans = await getStoryPlans(this.app.userId)
     } catch(e) {
@@ -39,7 +39,7 @@ export class StoryPlannerView {
   _renderListHTML(mc) {
     const plans = this.plans || []
     mc.innerHTML = `
-      <div style="max-width:900px;padding:24px 20px">
+      <div>
         ${plans.length === 0 ? `
           <div style="text-align:center;padding:80px 20px;color:var(--text-tertiary)">
             <div style="font-size:36px;margin-bottom:16px">🎬</div>
@@ -48,7 +48,7 @@ export class StoryPlannerView {
             <button class="btn-primary" id="sp-new-plan-empty">+ Create your first plan</button>
           </div>
         ` : `
-          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px">
+          <div class="card-grid">
             ${plans.map(p => this._planCardHTML(p)).join('')}
           </div>
         `}
@@ -127,7 +127,7 @@ export class StoryPlannerView {
       : null
 
     mc.innerHTML = `
-      <div style="max-width:700px;padding:24px 20px">
+      <div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
           <button class="btn-secondary" id="sp-back" style="flex-shrink:0">← Plans</button>
           <input id="sp-plan-title" value="${esc(plan.title)}"
