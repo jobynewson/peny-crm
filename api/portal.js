@@ -2,7 +2,7 @@
 // Public endpoint — no authentication required
 // GET /api/portal?token=xxx → returns project info, deliverables, work log, frame.io link
 
-import { neon } from '@neondatabase/serverless'
+import { getSql } from './_db.js'
 import { isRateLimited, getClientIp } from './_ratelimit.js'
 import { handleDashboard } from './_dashboard.js'
 import { handleOffloadIngest } from './_offloads.js'
@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   // limit — see claude.md. It has its own auth and method handling, so dispatch
   // before the GET-only portal guard below.
   if (req.query.view === 'offloads') {
-    return handleOffloadIngest(req, res, neon(process.env.VITE_DATABASE_URL))
+    return handleOffloadIngest(req, res, getSql())
   }
 
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -26,7 +26,7 @@ export default async function handler(req, res) {
     return res.status(429).json({ error: 'Too many requests' })
   }
 
-  const sql = neon(process.env.VITE_DATABASE_URL)
+  const sql = getSql()
 
   // The public office dashboard shares this function (rather than its own file)
   // to stay within Vercel's 12-function limit — see claude.md. Delegates on

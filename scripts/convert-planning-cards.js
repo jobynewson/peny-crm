@@ -4,8 +4,8 @@
 // jsonb) into canvas_items on each project's canvas. Throwaway — not wired into
 // the app or CI. Run manually against the target DB:
 //
-//   VITE_DATABASE_URL=postgres://… node scripts/convert-planning-cards.js          # dry run (default)
-//   VITE_DATABASE_URL=postgres://… node scripts/convert-planning-cards.js --apply  # actually writes
+//   DATABASE_URL=postgres://… node scripts/convert-planning-cards.js          # dry run (default)
+//   DATABASE_URL=postgres://… node scripts/convert-planning-cards.js --apply  # actually writes
 //
 // Dry run logs exactly what it WOULD convert and writes nothing. Confirm the
 // counts look right, then re-run with --apply. It does NOT touch the
@@ -29,8 +29,8 @@ function gridPos(i) {
 }
 
 async function main() {
-  const url = process.env.VITE_DATABASE_URL
-  if (!url) { console.error('Set VITE_DATABASE_URL'); process.exit(1) }
+  const url = process.env.DATABASE_URL
+  if (!url) { console.error('Set DATABASE_URL'); process.exit(1) }
   const sql = neon(url)
 
   console.log(APPLY ? '🟢 APPLY mode — writing canvas_items\n' : '🟡 DRY RUN — nothing will be written (pass --apply to commit)\n')

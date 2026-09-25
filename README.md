@@ -12,8 +12,12 @@ Copy `.env.local` and fill in your keys:
 
 ```
 VITE_CLERK_PUBLISHABLE_KEY=pk_test_...   # Clerk → API Keys
-VITE_DATABASE_URL=postgresql://...        # Neon → Connection Details (pooled)
+CLERK_SECRET_KEY=sk_test_...              # Clerk → API Keys (server-only)
+DATABASE_URL=postgresql://...             # Neon → Connection Details (pooled, server-only)
+VITE_DATABASE_URL=postgresql://...        # transitional, restricted role — see claude.md
 ```
+
+Only `VITE_`-prefixed variables reach the browser. Never put a secret in one.
 
 ### 3. Run the database schema
 In the Neon console SQL editor, run the contents of `schema.sql`.
@@ -31,7 +35,9 @@ Sign up with your email, then you're in.
 - Go to vercel.com → New Project → import your repo
 - Add environment variables in Vercel dashboard:
   - `VITE_CLERK_PUBLISHABLE_KEY`
-  - `VITE_DATABASE_URL`
+  - `CLERK_SECRET_KEY`
+  - `DATABASE_URL`
+  - `VITE_DATABASE_URL` (transitional — see claude.md)
 - Deploy
 
 ## Project structure
@@ -42,7 +48,7 @@ src/
     clerk.js        # Clerk initialisation and helpers
   db/
     schema.js       # Drizzle ORM schema (mirrors schema.sql)
-    client.js       # DB connection + all query helpers
+    client.js       # Query helpers the views call (moving behind /api/db)
   app.js            # Top-level app shell and router
   main.js           # Entry point — auth → data load → app mount
   style.css         # Global styles
@@ -58,7 +64,9 @@ schema.sql          # Raw SQL schema (run once in Neon)
   are stored as `user_id TEXT` on every table and used to scope all queries.
 
 - **Database:** Neon (Postgres) via the `@neondatabase/serverless` driver,
-  with Drizzle ORM for type-safe queries.
+  with Drizzle ORM for type-safe queries. Server code uses `DATABASE_URL`; the
+  browser reaches the database through `POST /api/db`, which checks the Clerk
+  session and the caller's role (see "Database access" in claude.md).
 
 - **Routing:** Client-side only. `vercel.json` rewrites all paths to
   `index.html` so navigation works on refresh.

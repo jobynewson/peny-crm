@@ -17,7 +17,9 @@ Peny CRM is a web-based CRM system for managing contacts, projects, budgets, tim
 src/
   auth/clerk.js           # Clerk initialization and auth helpers
   db/
-    client.js             # Database connection and query helpers
+    client.js             # Query helpers the views call (moving behind /api/db)
+    api.js                # callDb(): browser side of POST /api/db
+    roles.js              # Role → permission presets, shared with the server
     schema.js             # Drizzle ORM schema definitions
   views/                  # Feature modules (contacts, projects, budgets, etc.)
     app.js                # Main app shell and router
@@ -29,7 +31,11 @@ index.html                # App HTML shell
 ## Key Files
 - `src/app.js` - Router and main app component. Maps routes to view modules
 - `src/main.js` - Bootstrap: initializes Clerk auth, loads data, mounts app
-- `src/db/client.js` - ALL database queries defined here as helper methods
+- `src/db/client.js` - the database helpers views call. Helpers that have
+  moved to the server are thin `callDb()` stubs; their queries live in
+  `api/_db-ops.js`
+- `api/db.js` + `api/_db-ops.js` - `POST /api/db`, authenticated database
+  access for the browser (see "Database access" below)
 - `src/db/schema.js` - Drizzle ORM table definitions
 - `drizzle.config.js` - Drizzle Kit config (migrations)
 - `schema.sql` - Raw SQL schema (run once in Neon console)
@@ -45,6 +51,8 @@ index.html                # App HTML shell
 - Neon PostgreSQL with `@neondatabase/serverless` driver (supports edge runtimes)
 - Drizzle ORM for type-safe queries
 - Schemas defined in both `schema.js` (Drizzle) and `schema.sql` (raw SQL) — keep in sync
+- Server code connects with `DATABASE_URL` through `getSql()` in `api/_db.js`.
+  The browser is moving to `POST /api/db` — see "Database access" below.
 
 ### Routing
 - Client-side only (no server routes needed)
@@ -68,12 +76,38 @@ index.html                # App HTML shell
     `api/portal.js` when `?view=offloads`. `POST /api/offloads` is a
     `vercel.json` rewrite onto `/api/portal?view=offloads`, which gives Fence
     a clean URL.
-- Current functions: `ai`, `blob`, `callsheet`, `generate-ra`, `google`,
+- Current functions: `ai`, `blob`, `callsheet`, `db`, `generate-ra`, `google`,
   `invite`, `maps`, `packing`, `portal`, `quote`, `realtime`, `reminders`,
   `track`.
   All Google Calendar work lives behind the single `google` function: shared
   plumbing in `api/_gcal.js`, the Team Calendar entry push in
   `api/_gcal-entries.js` — see "External calendar sync" below.
+- `npm run dev` serves `/api/*` from these files too (a dev-only middleware in
+  `vite.config.js`), so `.env.local` needs the server-only variables the
+  routes use (at least `DATABASE_URL` and `CLERK_SECRET_KEY`).
+
+### Database access (`/api/db`)
+- The browser is moving off its direct database connection. `POST /api/db`
+  (`api/db.js`) runs named operations from the allow-list in `api/_db-ops.js`;
+  `callDb(op, ...args)` in `src/db/api.js` is the browser side.
+- The server decides everything from the verified Clerk session: the workspace
+  (`workspace.owner_id`), the caller's `app_users` row and role, and whether
+  that role grants the op's permission (`ROLE_PRESETS` in `src/db/roles.js`,
+  shared with the UI). A `workspaceId` passed from the browser is ignored, and
+  writes only take the columns each op allow-lists (`pickFields`).
+- Moved so far: `runMigrations` (any signed-in user; runs once per server
+  instance; the DDL lives in `api/_migrations.js`) and the password manager
+  (`vault` permission).
+- **Moving a helper:** copy its query into an op in `api/_db-ops.js` (same
+  Drizzle code; `db`, `workspaceId` and `appUser` come from the context), give
+  it the permission it needs and an allow-list for anything it writes, then
+  replace the body in `src/db/client.js` with `return callDb('name', …)`,
+  keeping the signature so views don't change. Test it in
+  `api/_db-ops.test.js`.
+- **When a table has no helpers left in the browser**, revoke it from the
+  browser's restricted role in Neon: `REVOKE ALL ON <table> FROM slate_app;`.
+  Ready to revoke: `credentials`. When nothing is left, delete
+  `VITE_DATABASE_URL`, drop the role, and remove the fallback in `api/_db.js`.
 
 ### Views
 - Each feature (contacts, projects, etc.) has a view module in `src/views/`
@@ -119,7 +153,18 @@ npm run preview      # Preview production build
 ## Environment Variables
 Required (set in `.env.local` for local development, Vercel dashboard for production):
 - `VITE_CLERK_PUBLISHABLE_KEY` - Public Clerk API key
-- `VITE_DATABASE_URL` - Neon PostgreSQL connection string (use pooled connection)
+- `CLERK_SECRET_KEY` - Clerk secret key (server-only); the API routes use it
+  to verify session tokens.
+- `DATABASE_URL` - Neon PostgreSQL connection string (use pooled connection).
+  Server-only: every `api/*.js` route connects through `getSql()` in
+  `api/_db.js`, and it runs the migrations, so it must be the role that owns
+  the tables. Never give it a `VITE_` prefix — Vite inlines every `VITE_*`
+  variable into the browser bundle.
+- `VITE_DATABASE_URL` - Transitional: the browser's direct connection for the
+  helpers in `src/db/client.js` that haven't moved behind `/api/db` yet. Point
+  it at the restricted `slate_app` role (reads and writes rows; no DDL, no
+  roles). Delete it once every helper has moved (see "Database access").
+  Server code falls back to it only while `DATABASE_URL` is unset.
 - `DASHBOARD_TOKEN` - Fixed secret token gating the public office-display
   dashboard at `/dashboard/<token>` (served by `public/dashboard.html`, data
   from `/api/portal?view=dashboard`). Unset = the dashboard returns 503.
@@ -161,8 +206,9 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 
 ### Adding a new database table
 1. Add schema to `src/db/schema.js` (Drizzle)
-2. Add raw SQL to `schema.sql`
-3. Add query helpers to `src/db/client.js`
+2. Add idempotent DDL (`CREATE TABLE IF NOT EXISTS …`) to `api/_migrations.js`
+3. Add its queries as ops in `api/_db-ops.js` and same-named `callDb()` stubs
+   in `src/db/client.js` (see "Database access"), not as direct queries
 
 ### Adding a new view
 1. Create `src/views/myview.js` with a `render()` function

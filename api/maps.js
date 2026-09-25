@@ -11,7 +11,7 @@
 //   Looks up a place's phone number via Google Places (Text Search). Rate-limited
 //   and budgeted to stay inside the Places API free tier.
 
-import { neon } from '@neondatabase/serverless'
+import { databaseUrl, getSql } from './_db.js'
 import { isRateLimited, getClientIp } from './_ratelimit.js'
 
 // ── Google Places monthly budget tracking ────────────────────────────────────
@@ -140,8 +140,8 @@ export default async function handler(req, res) {
     const cap = Number(process.env.GOOGLE_PLACES_MONTHLY_CAP || 4500)
     let dbSql = null
     try {
-      if (process.env.VITE_DATABASE_URL) {
-        dbSql = neon(process.env.VITE_DATABASE_URL)
+      if (databaseUrl()) {
+        dbSql = getSql()
         if (await placesUsedThisMonth(dbSql) >= cap) {
           return res.status(200).json({ phone: null, source: null, reason: 'budget' })
         }

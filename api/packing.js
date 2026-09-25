@@ -2,7 +2,7 @@
 // GET /api/packing?token=SHOOT_TOKEN — read packing state
 // POST /api/packing?token=SHOOT_TOKEN — save packing state
 // Note: no CORS headers — packing.html is served same-origin from Vercel
-import { neon } from '@neondatabase/serverless'
+import { getSql } from './_db.js'
 import { isRateLimited, getClientIp } from './_ratelimit.js'
 
 export default async function handler(req, res) {
@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   const { token } = req.query
   if (!token) return res.status(400).json({ error: 'Token required' })
 
-  const sql = neon(process.env.VITE_DATABASE_URL)
+  const sql = getSql()
 
   if (req.method === 'GET') {
     if (isRateLimited(ip, { max: 60 })) return res.status(429).json({ error: 'Too many requests' })

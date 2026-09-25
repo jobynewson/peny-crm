@@ -4,14 +4,14 @@
 // POST /api/track             → submits a time entry
 // Note: no CORS headers — track.html is served same-origin from Vercel
 
-import { neon } from '@neondatabase/serverless'
+import { getSql } from './_db.js'
 import { isRateLimited, getClientIp } from './_ratelimit.js'
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
 
   const ip = getClientIp(req)
-  const sql = neon(process.env.VITE_DATABASE_URL)
+  const sql = getSql()
 
   // ── GET ───────────────────────────────────────────────────────────────────
   if (req.method === 'GET') {

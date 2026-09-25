@@ -1,6 +1,6 @@
 // api/callsheet.js
 // Public endpoint — GET /api/callsheet?token=SHOOT_TOKEN&crew=CREW_TOKEN
-import { neon } from '@neondatabase/serverless'
+import { getSql } from './_db.js'
 import { isRateLimited, getClientIp } from './_ratelimit.js'
 
 export default async function handler(req, res) {
@@ -17,7 +17,7 @@ export default async function handler(req, res) {
   const { token, crew: crewToken } = req.query
   if (!token) return res.status(400).json({ error: 'Token required' })
 
-  const sql = neon(process.env.VITE_DATABASE_URL)
+  const sql = getSql()
 
   const rows = await sql`
     SELECT

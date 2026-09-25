@@ -8,7 +8,7 @@
 //   expenses early ("Submit expenses now"); emails the configured recipients
 // GET ?type=leave-approve&token=xxx&action=approve|decline — email-based leave approval
 
-import { neon } from '@neondatabase/serverless'
+import { getSql } from './_db.js'
 import nodemailer from 'nodemailer'
 import { verifyToken } from '@clerk/backend'
 import { syncLeaveRequestGoogle } from './google.js'
@@ -42,7 +42,7 @@ export default async function handler(req, res) {
   }
 
   const type = req.query.type || 'deliverables'
-  const sql = neon(process.env.VITE_DATABASE_URL)
+  const sql = getSql()
   const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -470,7 +470,7 @@ async function handleLeaveNotify(req, res) {
   const { action, requestId } = req.body ?? {}
   if (!action || !requestId) return res.status(400).json({ error: 'action and requestId required' })
 
-  const sql = neon(process.env.VITE_DATABASE_URL)
+  const sql = getSql()
 
   let request, requester, approver, superadmins = []
   try {
@@ -600,7 +600,7 @@ async function handleLeaveApprove(req, res) {
     return res.status(400).json({ error: 'Invalid action' })
   }
 
-  const sql = neon(process.env.VITE_DATABASE_URL)
+  const sql = getSql()
 
   try {
     // Find the leave request by token
@@ -884,7 +884,7 @@ async function handleExpenseSubmit(req, res) {
     return res.status(400).json({ error: 'monthKey (YYYY-MM) required' })
   }
 
-  const sql = neon(process.env.VITE_DATABASE_URL)
+  const sql = getSql()
 
   let settingsRows = []
   try { settingsRows = await sql`SELECT expense_recipients, mileage_rate, per_diem_rate FROM settings LIMIT 1` } catch (_) {}

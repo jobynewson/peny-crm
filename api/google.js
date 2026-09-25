@@ -9,7 +9,7 @@
 // POST action=entry-purge     — Take every pushed entry back off a user's Slate calendar
 // (all POSTs require Clerk auth, or the internal CRON_SECRET)
 
-import { neon } from '@neondatabase/serverless'
+import { getSql } from './_db.js'
 import { verifyToken } from '@clerk/backend'
 import { ensureFreshToken, toDateOnly, addUtcDays, ensureSlateCalendar } from './_gcal.js'
 import {
@@ -113,7 +113,7 @@ export async function syncLeaveRequestGoogle(sql, { action, requestId }) {
 }
 
 export default async function handler(req, res) {
-  const sql = neon(process.env.VITE_DATABASE_URL)
+  const sql = getSql()
   const proto = req.headers['x-forwarded-proto'] || 'https'
   const base  = `${proto}://${req.headers.host}`
 

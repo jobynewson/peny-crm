@@ -4,7 +4,7 @@
 // authenticated; see api/_realtime.js. Returns 503 when ABLY_API_KEY is unset,
 // which the app treats as "realtime off" and keeps polling instead.
 import { verifyToken } from '@clerk/backend'
-import { neon } from '@neondatabase/serverless'
+import { getSql } from './_db.js'
 import { issueRealtimeToken, RealtimeError } from './_realtime.js'
 
 export default async function handler(req, res) {
@@ -20,7 +20,7 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Invalid session token' })
   }
   try {
-    const sql = neon(process.env.VITE_DATABASE_URL)
+    const sql = getSql()
     const token = await issueRealtimeToken({ clerkUserId, sql, apiKey: process.env.ABLY_API_KEY })
     return res.status(200).json(token)
   } catch (err) {

@@ -1,6 +1,6 @@
 // api/invite.js
 import { createClerkClient, verifyToken } from '@clerk/backend'
-import { neon } from '@neondatabase/serverless'
+import { getSql } from './_db.js'
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -25,7 +25,7 @@ export default async function handler(req, res) {
     }
 
     // Verify the caller is a superadmin in our DB
-    const sql = neon(process.env.VITE_DATABASE_URL)
+    const sql = getSql()
     const rows = await sql`
       SELECT role FROM app_users WHERE clerk_id = ${callerUserId} LIMIT 1
     `

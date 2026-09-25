@@ -1,6 +1,6 @@
 // api/generate-ra.js
 // POST /api/generate-ra — generates a risk assessment from shoot + project data
-import { neon } from '@neondatabase/serverless'
+import { getSql } from './_db.js'
 import { verifyToken } from '@clerk/backend'
 
 export default async function handler(req, res) {
@@ -26,7 +26,7 @@ export default async function handler(req, res) {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' })
 
-  const sql = neon(process.env.VITE_DATABASE_URL)
+  const sql = getSql()
 
   // Pull shoot + project data — user_id constraint prevents cross-user access
   const rows = await sql`
