@@ -3710,7 +3710,7 @@ export class ProjectsView {
       </div>
 
       <div style="display:flex;gap:6px;margin-bottom:8px">
-        <button class="tt-bd-tab btn-cancel" data-bd="task" style="font-size:11px;padding:3px 10px">By task</button>
+        <button class="tt-bd-tab btn-cancel" data-bd="task" style="font-size:11px;padding:3px 10px">By role</button>
         <button class="tt-bd-tab btn-cancel" data-bd="person" style="font-size:11px;padding:3px 10px">By person</button>
       </div>
       <div id="pv-tt-breakdown" style="margin-bottom:16px"></div>
