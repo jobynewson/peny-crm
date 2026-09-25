@@ -381,6 +381,12 @@ kbd { font-family: var(--font-mono); }
 }
 .hdr-account-dot[hidden] { display: none; }
 
+/* Search palette rows (App._openSearch): records, pages and actions. The
+   highlighted row follows the arrow keys and the mouse. */
+.search-row { display: flex; align-items: center; gap: 12px; padding: 11px 16px; cursor: pointer; border-bottom: 1px solid var(--border-light); }
+.search-row[aria-selected="true"] { background: var(--bg-secondary); }
+.search-row-icon { width: 20px; flex-shrink: 0; display: inline-flex; justify-content: center; font-size: 16px; color: var(--text-muted); }
+
 /* Notification bell (task notifications): unread count on its corner. */
 .hdr-bell { position: relative; }
 .hdr-bell-count {

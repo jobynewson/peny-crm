@@ -19,12 +19,14 @@ import { PlanningTabsView } from './views/planning-tabs.js'
 import { HeaderView, tabForView } from './views/header.js'
 import { icon } from './views/icons.js'
 import { closeFloating } from './views/popover.js'
+import { searchCommands } from './views/search-commands.js'
+import { matchCommands } from './utils/command-search.js'
 import { syncThemeColor } from './theme.js'
 
 const PHONE = '(max-width: 768px)'
 
 // Every route the app has used; old bookmarks keep working.
-const VIEWS = ['tasks', 'dashboard', 'calendar', 'projects', 'budgets', 'planning', 'contacts', 'marketing', 'story-planner', 'leave', 'expenses', 'password-manager', 'offload-log', 'settings', 'timetrack']
+const VIEWS = ['dashboard', 'tasks', 'calendar', 'projects', 'budgets', 'planning', 'contacts', 'marketing', 'story-planner', 'leave', 'expenses', 'password-manager', 'offload-log', 'settings', 'timetrack']
 
 export class App {
   constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, leaveRequests, publicHolidays, onSignOut }) {
@@ -300,8 +302,11 @@ export class App {
     }
 
     const typeIcon   = { contact:'👤', project:'🎬', budget:'£', marketing:'📣', shoot:'🎥', note:'📝' }
-    const typeTone   = { contact:'purple', project:'blue', budget:'green', marketing:'amber', shoot:'red', note:'grey' }
-    const typeLabel  = { contact:'Contact', project:'Project', budget:'Budget', marketing:'Card', shoot:'Shoot', note:'Note' }
+    const typeTone   = { contact:'purple', project:'blue', budget:'green', marketing:'amber', shoot:'red', note:'grey', page:'cyan', action:'grey' }
+    const typeLabel  = { contact:'Contact', project:'Project', budget:'Budget', marketing:'Card', shoot:'Shoot', note:'Note', page:'Page', action:'Action' }
+    // Slate's own pages and actions ("expenses", "new project"), listed above
+    // the records — see views/search-commands.js.
+    const commands = searchCommands(this)
 
     // The input is built once; typing only redraws the results under it.
     // (Rebuilding the input on every keystroke put the caret back at the
@@ -310,11 +315,12 @@ export class App {
       <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:520px;overflow:hidden;cursor:default;box-shadow:var(--shadow-popover)" onclick="event.stopPropagation()">
         <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border-light)">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--text-tertiary)" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
-          <input id="search-input" type="text" aria-label="Search" autocomplete="off" placeholder="Search contacts, projects, budgets, cards, shoots, notes…"
+          <input id="search-input" type="text" aria-label="Search or jump to" autocomplete="off" placeholder="Search or jump to…"
+            role="combobox" aria-expanded="false" aria-controls="search-results" aria-autocomplete="list"
             style="flex:1;background:transparent;border:none;outline:none;font-size:15px;color:var(--text-primary);font-family:var(--font)" />
           <kbd style="font-size:11px;color:var(--text-tertiary);background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:2px 6px">Esc</kbd>
         </div>
-        <div id="search-results" style="max-height:360px;overflow-y:auto"></div>
+        <div id="search-results" aria-label="Results" style="max-height:360px;overflow-y:auto"></div>
         <div id="search-count" style="padding:8px 16px;font-size:11px;color:var(--text-tertiary);border-top:1px solid var(--border-light)" hidden></div>
       </div>`
 
@@ -322,17 +328,30 @@ export class App {
     const list  = overlay.querySelector('#search-results')
     const count = overlay.querySelector('#search-count')
     let results = []
+    let active = 0          // the highlighted row: arrow keys move it, Enter opens it
+
+    const syncActive = () => {
+      list.querySelectorAll('[data-result]').forEach(row => row.setAttribute('aria-selected', String(+row.dataset.result === active)))
+      if (results.length) input.setAttribute('aria-activedescendant', `sr-${active}`)
+      else input.removeAttribute('aria-activedescendant')
+    }
 
     const render = () => {
       const query = input.value
       const q = query.toLowerCase().trim()
-      results = find(q)
-      list.innerHTML = q.length === 0 ? `<div style="padding:24px;text-align:center;font-size:13px;color:var(--text-tertiary)">Start typing to search across all records</div>`
+      results = [
+        ...matchCommands(commands, query).map(c => ({ type: c.kind, label: c.label, sub: c.hint, icon: c.icon, run: c.run })),
+        ...find(q),
+      ]
+      active = 0
+      if (results.length) list.setAttribute('role', 'listbox')
+      else list.removeAttribute('role')
+      input.setAttribute('aria-expanded', String(results.length > 0))
+      list.innerHTML = q.length === 0 ? `<div style="padding:24px;text-align:center;font-size:13px;color:var(--text-tertiary)">Search records, pages and actions. Try “expenses” or “new project”.</div>`
         : results.length === 0 ? `<div style="padding:24px;text-align:center;font-size:13px;color:var(--text-tertiary)">No results for "${esc(query)}"</div>`
         : results.map((r,i) => `
-          <div data-result="${i}" style="display:flex;align-items:center;gap:12px;padding:11px 16px;cursor:pointer;border-bottom:1px solid var(--border-light);transition:background 0.1s"
-            onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''">
-            <span style="font-size:16px;flex-shrink:0">${typeIcon[r.type]}</span>
+          <div class="search-row" role="option" id="sr-${i}" data-result="${i}" aria-selected="${i === active}">
+            <span class="search-row-icon" aria-hidden="true">${r.icon ? icon(r.icon, 18) : typeIcon[r.type]}</span>
             <div style="flex:1;min-width:0">
               <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.label)}</div>
               ${r.sub ? `<div style="font-size:11px;color:var(--text-tertiary)">${esc(r.sub)}</div>` : ''}
@@ -341,6 +360,7 @@ export class App {
           </div>`).join('')
       count.hidden = !(q && results.length)
       count.textContent = `${results.length} result${results.length !== 1 ? 's' : ''}`
+      syncActive()
     }
 
     // Closing hands focus back to whatever opened the search (e.g. the
@@ -352,6 +372,7 @@ export class App {
     }
 
     const open = r => {
+      if (r.run) { close(); r.run(); return }      // a page or action
       overlay.remove()
       if (r.type === 'contact') { this.navigate('contacts'); setTimeout(() => this.contactsView.selectContact(r.id), 50) }
       else if (r.type === 'project') { this.openProject(r.id) }
@@ -376,11 +397,21 @@ export class App {
     input.addEventListener('keydown', e => {
       // Handled here, so the app's own Escape (e.g. leave a project) doesn't also run.
       if (e.key === 'Escape') { e.stopPropagation(); close() }
-      if (e.key === 'Enter' && results.length > 0) open(results[0])
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && results.length) {
+        e.preventDefault()
+        active = (active + (e.key === 'ArrowDown' ? 1 : -1) + results.length) % results.length
+        syncActive()
+        list.querySelector(`#sr-${active}`)?.scrollIntoView({ block: 'nearest' })
+      }
+      if (e.key === 'Enter' && results.length > 0) { e.preventDefault(); open(results[active]) }
     })
     list.addEventListener('click', e => {
       const row = e.target.closest('[data-result]')
       if (row) open(results[+row.dataset.result])
+    })
+    list.addEventListener('mousemove', e => {
+      const row = e.target.closest('[data-result]')
+      if (row && +row.dataset.result !== active) { active = +row.dataset.result; syncActive() }
     })
 
     overlay.addEventListener('click', close)
