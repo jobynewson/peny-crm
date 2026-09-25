@@ -446,7 +446,7 @@ export class PlanningTabsView {
     document.getElementById('pt-link-modal')?.remove()
     const overlay = document.createElement('div')
     overlay.id = 'pt-link-modal'
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
     overlay.innerHTML = `
       <div class="pt-link" onclick="event.stopPropagation()">
         <div style="font-size:14px;font-weight:600">Link a board or canvas</div>

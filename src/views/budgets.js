@@ -202,7 +202,7 @@ export class BudgetsView {
             <div style="font-weight:500">${gbpA(budTotal(b))}</div>
             <div style="font-size:11px">
               ${b.signed_off
-                ? `<span style="color:#6ec96e;font-weight:500">✓ ${soDate}</span>
+                ? `<span style="color:var(--success);font-weight:500">✓ ${soDate}</span>
                    ${b.signed_off_by ? `<div style="color:var(--text-tertiary);font-size:10px">${esc(b.signed_off_by)}</div>` : ''}`
                 : `<span style="color:var(--text-tertiary)">—</span>`}
             </div>
@@ -463,7 +463,7 @@ export class BudgetsView {
   ccySwitcherHTML() {
     const ccy = CURRENCIES[this.displayCurrency] ? this.displayCurrency : 'GBP'
     return `<div style="display:inline-flex;align-items:center;border:0.5px solid var(--border-med);border-radius:var(--radius-pill);overflow:hidden;height:fit-content">
-      ${Object.keys(CURRENCIES).map(c => `<button class="bv-ccy" data-ccy="${c}" title="Show figures in ${c}" style="padding:5px 11px;font-size:12px;line-height:1;border:none;cursor:pointer;font-family:var(--font);transition:background 0.12s,color 0.12s;background:${c===ccy?'var(--accent)':'transparent'};color:${c===ccy?'#fff':'var(--text-secondary)'}">${CURRENCIES[c].symbol} ${c}</button>`).join('')}
+      ${Object.keys(CURRENCIES).map(c => `<button class="bv-ccy" data-ccy="${c}" title="Show figures in ${c}" style="padding:5px 11px;font-size:12px;line-height:1;border:none;cursor:pointer;font-family:var(--font);transition:background 0.12s,color 0.12s;background:${c===ccy?'var(--accent)':'transparent'};color:${c===ccy?'var(--on-accent)':'var(--text-secondary)'}">${CURRENCIES[c].symbol} ${c}</button>`).join('')}
     </div>`
   }
 
@@ -483,7 +483,7 @@ export class BudgetsView {
       ? `<button id="bv-fx-refresh" title="Fetch the current rate and lock it to this budget" style="font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;padding:0;font-family:var(--font);white-space:nowrap">↻ Refresh rate</button>`
       : ''
     return `<div id="bv-fx-note" style="font-size:11px;color:var(--text-tertiary);margin:-4px 0 14px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">
-      <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${live?'#6ec96e':'#d6a020'};flex-shrink:0"></span>
+      <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${live?'var(--success)':'var(--warning)'};flex-shrink:0"></span>
       <span>Converted from GBP at 1 £ = ${MONEY.rate.toFixed(4)} ${ccy}${mkNote} — ${src}${lockNote}. Figures are indicative; the budget is held in GBP.</span>
       ${refreshBtn}
     </div>`
@@ -534,10 +534,10 @@ export class BudgetsView {
       ${b.notes ? `<div style="background:var(--bg-secondary);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:16px;font-size:13px;color:var(--text-secondary);line-height:1.6;white-space:pre-line">${esc(b.notes)}</div>` : ''}
       <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
         ${cl ? `<span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary)">${esc(cl.first_name)} ${esc(cl.last_name)} — ${esc(cl.company)}</span>` : ''}
-        ${proj ? `<span class="tag" style="background:#daeeff;color:#0d4a8a">${esc(proj.name)}</span>` : ''}
+        ${proj ? `<span class="tag" style="background:var(--cat-blue-soft);color:var(--cat-blue)">${esc(proj.name)}</span>` : ''}
         ${b.vat ? `<span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary)">VAT included</span>` : ''}
         ${b.signed_off
-          ? `<button id="bv-signedoff-toggle" style="display:flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(110,201,110,0.12);border:0.5px solid rgba(110,201,110,0.3);border-radius:var(--radius-pill);color:#6ec96e;font-size:12px;font-weight:500;cursor:pointer;font-family:var(--font)">
+          ? `<button id="bv-signedoff-toggle" style="display:flex;align-items:center;gap:6px;padding:5px 12px;background:var(--success-soft);border:0.5px solid var(--success-soft);border-radius:var(--radius-pill);color:var(--success);font-size:12px;font-weight:500;cursor:pointer;font-family:var(--font)">
                ✓ Signed off${b.signed_off_at ? ' · '+new Date(b.signed_off_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : ''}
                <span style="font-size:10px;opacity:0.6">✕</span>
              </button>`
@@ -911,7 +911,7 @@ export class BudgetsView {
         </label>
       </td>
       <td class="bl-tot ${showTot?'nz':''}" id="blt-${si}-${li}">${showTot?gbpA(t):'—'}</td>
-      <td style="text-align:right"><button class="row-btn" style="color:#c03020" data-rem-line="${si},${li}">×</button></td>
+      <td style="text-align:right"><button class="row-btn" style="color:var(--danger)" data-rem-line="${si},${li}">×</button></td>
     </tr>`
   }
 
@@ -1168,7 +1168,7 @@ export class BudgetsView {
             <div style="font-size:10px;color:var(--text-tertiary)">${fmt(v.created_at)}</div>
           </div>
           <button class="row-btn" data-restore="${v.id}" title="Restore this version" style="font-size:10px;flex-shrink:0">Restore</button>
-          <button class="row-btn" data-del-ver="${v.id}" style="font-size:10px;color:#b03020;flex-shrink:0">×</button>
+          <button class="row-btn" data-del-ver="${v.id}" style="font-size:10px;color:var(--danger);flex-shrink:0">×</button>
         </div>`).join('')
 
       listEl.querySelectorAll('[data-restore]').forEach(btn => {

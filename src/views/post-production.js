@@ -398,7 +398,7 @@ export class PostProductionView {
                     title="Click to edit · drag edges to resize · drag to move${blockTitle ? ' · ' + esc(blockTitle) : ''}${assigneeName ? ' · ' + esc(assigneeName) : ''}${block.is_complete ? ' · ✓ Complete' : ''}"
                     style="position:relative;border-left:2px solid ${rgba55};${isFirst ? `border-top:2px solid ${rgba55};` : ''}${isLast ? `border-bottom:2px solid ${rgba55};` : ''}background:${rgba25};padding:2px 6px;cursor:grab;${block.is_complete ? 'opacity:0.55;' : ''}">
                     ${isFirst ? `<div class="pps-resize-handle" data-phase-id="${ph.id}" data-block-id="${block.id}" data-edge="start" style="position:absolute;top:0;left:0;right:0;height:6px;cursor:ns-resize;color:${color}"></div>` : ''}
-                    ${isFirst && block.is_complete ? `<div style="font-size:9px;color:#6ec96e;font-weight:700;line-height:1.2">✓</div>` : ''}
+                    ${isFirst && block.is_complete ? `<div style="font-size:9px;color:var(--success);font-weight:700;line-height:1.2">✓</div>` : ''}
                     ${isFirst && blockTitle ? `<div style="font-size:9px;font-weight:700;color:${color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:${CELL_W - 12}px;text-transform:uppercase;letter-spacing:0.3px;${block.is_complete ? 'text-decoration:line-through;' : ''}" title="${esc(blockTitle)}">${esc(blockTitle)}</div>` : ''}
                     ${isFirst && assigneeName ? `<div style="font-size:9px;color:${color};opacity:0.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:${CELL_W - 12}px" title="${esc(assigneeName)}">${esc(abbr(assigneeName))}</div>` : ''}
                     ${isLast ? `<div class="pps-resize-handle" data-phase-id="${ph.id}" data-block-id="${block.id}" data-edge="end" style="position:absolute;bottom:0;left:0;right:0;height:6px;cursor:ns-resize;color:${color}"></div>` : ''}
@@ -636,7 +636,7 @@ export class PostProductionView {
     document.getElementById('pps-block-modal')?.remove()
     const overlay = document.createElement('div')
     overlay.id = 'pps-block-modal'
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(9,30,66,0.54);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px 16px'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px 16px'
 
     const users = this.app.allUsers || []
     const isNew = !block
@@ -647,10 +647,10 @@ export class PostProductionView {
 
     const render = () => {
       const autoSwatch = `<div class="pps-sw${selColor === '' ? ' pps-sw-sel' : ''}" data-c=""
-        style="width:22px;height:22px;border-radius:50%;background:var(--bg-tertiary,#333);cursor:pointer;border:2px solid ${selColor === '' ? 'var(--accent)' : 'var(--border-med)'};font-size:8px;display:flex;align-items:center;justify-content:center;color:var(--text-tertiary);flex-shrink:0" title="Inherit column colour">auto</div>`
+        style="width:22px;height:22px;border-radius:50%;background:var(--bg-tertiary);cursor:pointer;border:2px solid ${selColor === '' ? 'var(--accent)' : 'var(--border-med)'};font-size:8px;display:flex;align-items:center;justify-content:center;color:var(--text-tertiary);flex-shrink:0" title="Inherit column colour">auto</div>`
       const swatches = autoSwatch + PRESET_COLORS.map(c =>
         `<div class="pps-sw${selColor === c ? ' pps-sw-sel' : ''}" data-c="${c}"
-          style="width:22px;height:22px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${selColor === c ? '#fff' : 'transparent'};flex-shrink:0"></div>`
+          style="width:22px;height:22px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${selColor === c ? 'var(--text)' : 'transparent'};flex-shrink:0"></div>`
       ).join('')
 
       overlay.innerHTML = `
@@ -697,7 +697,7 @@ export class PostProductionView {
                 <span style="font-size:11px;color:var(--text-tertiary)">(shows in dashboard "Edit Deadlines")</span>
               </label>
               <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text-primary)">
-                <input type="checkbox" id="ppsb-complete" ${data.is_complete ? 'checked' : ''} style="cursor:pointer;accent-color:#6ec96e;width:14px;height:14px;flex-shrink:0" />
+                <input type="checkbox" id="ppsb-complete" ${data.is_complete ? 'checked' : ''} style="cursor:pointer;accent-color:var(--success);width:14px;height:14px;flex-shrink:0" />
                 <span>Mark as complete</span>
               </label>
               ${project.portal_token ? `
@@ -795,14 +795,14 @@ export class PostProductionView {
     document.getElementById('pps-col-modal')?.remove()
     const overlay = document.createElement('div')
     overlay.id = 'pps-col-modal'
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(9,30,66,0.54);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px 16px'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px 16px'
 
     let selColor = phase?.color || '#C47E3A'
 
     const render = () => {
       const swatches = PRESET_COLORS.map(c =>
         `<div class="pps-sw${selColor === c ? ' pps-sw-sel' : ''}" data-c="${c}"
-          style="width:22px;height:22px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${selColor === c ? '#fff' : 'transparent'};flex-shrink:0"></div>`
+          style="width:22px;height:22px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${selColor === c ? 'var(--text)' : 'transparent'};flex-shrink:0"></div>`
       ).join('')
 
       overlay.innerHTML = `

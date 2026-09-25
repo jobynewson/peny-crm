@@ -103,7 +103,7 @@ export class App {
 
     const overlay = document.createElement('div')
     overlay.id = 'dev-req-overlay'
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
 
     const { getDevRequests, addDevRequest, toggleDevRequest, deleteDevRequest } = await import('./db/client.js')
     const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -186,10 +186,10 @@ export class App {
           const name = this.appUser?.name || this.user?.primaryEmailAddress?.emailAddress || this.clerkUserId
           await addDevRequest(this.clerkUserId, name, msg)
           overlay.querySelector('#dev-req-text').value = ''
-          if (msgEl) { msgEl.style.display='block'; msgEl.style.color='#6ec96e'; msgEl.textContent='✓ Request submitted' }
+          if (msgEl) { msgEl.style.display='block'; msgEl.style.color='var(--success)'; msgEl.textContent='✓ Request submitted' }
           setTimeout(() => { if (msgEl) msgEl.style.display='none' }, 2500)
           if (isAdmin) renderModal()
-        } catch(e) { console.error(e); if (msgEl) { msgEl.style.display='block'; msgEl.style.color='#e07070'; msgEl.textContent='Error submitting' } }
+        } catch(e) { console.error(e); if (msgEl) { msgEl.style.display='block'; msgEl.style.color='var(--danger)'; msgEl.textContent='Error submitting' } }
       })
 
       // Submit only via the button — Enter inserts a newline as normal.
@@ -235,7 +235,7 @@ export class App {
 
     const overlay = document.createElement('div')
     overlay.id = 'search-overlay'
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:flex-start;justify-content:center;padding-top:15vh;z-index:9999;cursor:pointer'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);display:flex;align-items:flex-start;justify-content:center;padding-top:15vh;z-index:9999;cursor:pointer'
 
     const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 
@@ -281,11 +281,11 @@ export class App {
       }
 
       const typeIcon   = { contact:'👤', project:'🎬', budget:'£', marketing:'📣', shoot:'🎥', note:'📝' }
-      const typeColour = { contact:'#a78bfa', project:'#4a90d9', budget:'#6ec96e', marketing:'#f59e0b', shoot:'#ef4444', note:'#8590A2' }
+      const typeTone   = { contact:'purple', project:'blue', budget:'green', marketing:'amber', shoot:'red', note:'grey' }
       const typeLabel  = { contact:'Contact', project:'Project', budget:'Budget', marketing:'Card', shoot:'Shoot', note:'Note' }
 
       overlay.innerHTML = `
-        <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:520px;overflow:hidden;cursor:default;box-shadow:0 20px 60px rgba(0,0,0,0.4)" onclick="event.stopPropagation()">
+        <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:520px;overflow:hidden;cursor:default;box-shadow:var(--shadow-popover)" onclick="event.stopPropagation()">
           <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border-light)">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--text-tertiary)" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
             <input id="search-input" placeholder="Search contacts, projects, budgets, cards, shoots, notes…" value="${esc(query)}"
@@ -303,7 +303,7 @@ export class App {
                   <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.label)}</div>
                   ${r.sub ? `<div style="font-size:11px;color:var(--text-tertiary)">${esc(r.sub)}</div>` : ''}
                 </div>
-                <span style="font-size:10px;color:${typeColour[r.type]};background:${typeColour[r.type]}22;border-radius:var(--radius-md);padding:2px 7px;flex-shrink:0">${typeLabel[r.type] ?? r.type}</span>
+                <span style="font-size:10px;color:var(--cat-${typeTone[r.type] ?? 'grey'});background:var(--cat-${typeTone[r.type] ?? 'grey'}-soft);border-radius:var(--radius-md);padding:2px 7px;flex-shrink:0">${typeLabel[r.type] ?? r.type}</span>
               </div>`).join('')}
           </div>
           ${q.length > 0 && results.length > 0 ? `<div style="padding:8px 16px;font-size:11px;color:var(--text-tertiary);border-top:1px solid var(--border-light)">${results.length} result${results.length!==1?'s':''}</div>` : ''}
@@ -611,7 +611,7 @@ export class App {
       if (overlay) { overlay.remove(); return }
       overlay = document.createElement('div')
       overlay.id = 'shortcut-overlay'
-      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;cursor:pointer'
+      overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);display:flex;align-items:center;justify-content:center;z-index:9999;cursor:pointer'
       overlay.innerHTML = `
         <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);padding:28px 32px;width:320px;cursor:default" onclick="event.stopPropagation()">
           <div style="font-size:13px;font-weight:600;margin-bottom:16px">Keyboard shortcuts</div>
@@ -1055,7 +1055,7 @@ export class App {
       const totalLogged = entries.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
       const totalAlloc  = trackableLines.reduce((s, l) => s + l.allocHours, 0)
       const pct = totalAlloc > 0 ? Math.min(100, Math.round(totalLogged / totalAlloc * 100)) : 0
-      const barColour = pct >= 100 ? '#6ec96e' : pct >= 80 ? '#f59e0b' : '#4a90d9'
+      const barColour = pct >= 100 ? 'var(--success)' : pct >= 80 ? 'var(--warning)' : 'var(--cat-blue)'
 
       const byLine = {}
       entries.forEach(e => { byLine[e.line_label] = (byLine[e.line_label] || 0) + parseFloat(e.hours || 0) })
@@ -1076,7 +1076,7 @@ export class App {
           return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
             <span style="font-size:11px;color:var(--text-secondary);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.label)}</span>
             <div style="width:80px;height:3px;background:var(--bg-tertiary);border-radius:2px;flex-shrink:0">
-              <div style="height:100%;width:${lPct}%;background:${lPct>=100?'#6ec96e':'#4a90d9'};border-radius:2px"></div>
+              <div style="height:100%;width:${lPct}%;background:${lPct>=100?'var(--success)':'var(--cat-blue)'};border-radius:2px"></div>
             </div>
             <span style="font-size:10px;color:var(--text-tertiary);flex-shrink:0;width:52px;text-align:right">${logged.toFixed(1)}/${l.allocHours}h</span>
           </div>`
@@ -1197,14 +1197,14 @@ export class App {
       return new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
     }
     const initials = name => (name||'?').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
-    const avatarColors = ['#4a90d9','#6ec96e','#f59e0b','#a78bfa','#ef4444','#06b6d4','#ec4899']
+    const avatarColors = ['blue','green','amber','purple','red','cyan','pink'].map(t => `var(--cat-${t})`)
     const avatarColor = id => {
       if (!id) return avatarColors[0]
       let h = 0
       for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) & 0x7fffffff
       return avatarColors[h % avatarColors.length]
     }
-    const statusColor = s => ({ 'Pre-production': '#4a90d9', 'In Production': '#6ec96e', 'Post': '#f59e0b' }[s] || '#8590A2')
+    const statusTone = s => ({ 'Pre-production': 'blue', 'In Production': 'green', 'Post': 'amber' }[s] || 'grey')
 
     // --- Init persisted open/pin state ---
     if (!this._dbPinned) {
@@ -1307,7 +1307,7 @@ export class App {
       const clientName = cl ? `${cl.first_name} ${cl.last_name}` : ''
       const comments = (p.dashboard_comments || [])
       const isOpen = this._dbPinned.has(p.id)
-      const col = statusColor(p.status)
+      const tone = statusTone(p.status)
       const delivs = (p.deliverables||[]).filter(d => d.text)
       const doneCount = delivs.filter(d => d.done).length
       const unresolvedCount = comments.filter(c => !c.resolved).length
@@ -1333,12 +1333,12 @@ export class App {
       return `<div class="db-proj-row" data-pid="${p.id}">
         <div class="db-proj-header" data-toggle-pid="${p.id}">
           <span class="db-chevron${isOpen ? ' db-chevron--open' : ''}" data-chevron="${p.id}">▶</span>
-          <span class="db-status-dot" style="background:${col}"></span>
+          <span class="db-status-dot" style="background:var(--cat-${tone})"></span>
           <span class="db-proj-name-label">${esc(p.name)}</span>
           ${clientName ? `<span class="db-proj-client-label">${esc(clientName)}</span>` : ''}
-          ${delivs.length ? `<span class="db-badge" style="color:${doneCount===delivs.length?'#6ec96e':'var(--text-tertiary)'}">${doneCount}/${delivs.length} done</span>` : ''}
-          ${unresolvedCount ? `<span class="db-badge" style="color:#f59e0b">${unresolvedCount} open</span>` : ''}
-          <span class="db-status-pill" style="color:${col};background:${col}18;border-color:${col}30">${p.status}</span>
+          ${delivs.length ? `<span class="db-badge" style="color:${doneCount===delivs.length?'var(--success)':'var(--text-tertiary)'}">${doneCount}/${delivs.length} done</span>` : ''}
+          ${unresolvedCount ? `<span class="db-badge" style="color:var(--warning)">${unresolvedCount} open</span>` : ''}
+          <span class="db-status-pill" style="color:var(--cat-${tone});background:var(--cat-${tone}-soft);border-color:var(--cat-${tone}-soft)">${p.status}</span>
           <button class="db-pin-btn${this._dbPinned.has(p.id) ? ' db-pin-btn--on' : ''}" data-pin-pid="${p.id}" title="${this._dbPinned.has(p.id) ? 'Unpin (panel stays open)' : 'Pin open'}">⊙</button>
           <button class="db-action-link" style="font-size:11px;padding:3px 8px" data-open-pid="${p.id}">Open ↗</button>
         </div>
@@ -1392,17 +1392,17 @@ export class App {
 
     const statCards = `
       <div class="stat-card stat-card--sm stat-card--link" data-db-nav="projects" role="button" tabindex="0" title="View projects"><div class="stat-label">Pipeline</div><div class="stat-value stat-value--sm">${gbp(pipelineValue + retainerPipelineVal)}</div><div class="stat-sub">${regularProjects.length} project${regularProjects.length!==1?'s':''}${retainerPipelineVal>0?' + '+retainers.filter(p=>p.status==='Enquiry').length+' retainer enquir'+(retainers.filter(p=>p.status==='Enquiry').length===1?'y':'ies'):''}</div></div>
-      <div class="stat-card stat-card--sm stat-card--link" data-db-nav="budgets" role="button" tabindex="0" title="View budgets"><div class="stat-label">Awaiting invoice</div><div class="stat-value stat-value--sm" style="color:#6ec96e">${gbp(awaitingVal)}</div><div class="stat-sub">${awaitingInvoice.length} budget${awaitingInvoice.length!==1?'s':''}</div></div>
+      <div class="stat-card stat-card--sm stat-card--link" data-db-nav="budgets" role="button" tabindex="0" title="View budgets"><div class="stat-label">Awaiting invoice</div><div class="stat-value stat-value--sm" style="color:var(--success)">${gbp(awaitingVal)}</div><div class="stat-sub">${awaitingInvoice.length} budget${awaitingInvoice.length!==1?'s':''}</div></div>
       <div class="stat-card stat-card--sm stat-card--link" data-db-nav="budgets" role="button" tabindex="0" title="View budgets"><div class="stat-label">Invoiced this month</div><div class="stat-value stat-value--sm" style="color:var(--accent)">${gbp(invoicedMonthVal)}</div><div class="stat-sub">${invoicedThisMonth.length} budget${invoicedThisMonth.length!==1?'s':''}</div></div>
       <div class="stat-card stat-card--sm stat-card--link" data-db-nav="budgets" role="button" tabindex="0" title="View budgets"><div class="stat-label">Invoiced this quarter</div><div class="stat-value stat-value--sm" style="color:var(--accent)">${gbp(invoicedQtrVal)}</div><div class="stat-sub">${invoicedThisQtr.length} budget${invoicedThisQtr.length!==1?'s':''}</div></div>
       <div class="stat-card stat-card--sm stat-card--link" data-db-nav="budgets" role="button" tabindex="0" title="View budgets"><div class="stat-label">Invoiced this FY</div><div class="stat-value stat-value--sm" style="color:var(--accent)">${gbp(invoicedFYVal)}</div><div class="stat-sub">${fyLabel}</div></div>
-      <div class="stat-card stat-card--sm stat-card--link" data-db-nav="projects" role="button" tabindex="0" title="View projects"><div class="stat-label">Retainer MRR</div><div class="stat-value stat-value--sm" style="color:#a78bfa">${gbp(retainerMRR)}</div><div class="stat-sub">per month</div></div>`
+      <div class="stat-card stat-card--sm stat-card--link" data-db-nav="projects" role="button" tabindex="0" title="View projects"><div class="stat-label">Retainer MRR</div><div class="stat-value stat-value--sm" style="color:var(--cat-purple)">${gbp(retainerMRR)}</div><div class="stat-sub">per month</div></div>`
 
     mc.innerHTML = `
       <!-- Live Projects -->
       <div style="margin-bottom:28px">
         <div class="db-section-head">
-          <span class="db-section-dot" style="background:#6ec96e"></span>
+          <span class="db-section-dot" style="background:var(--cat-green)"></span>
           Live Projects
           <span class="db-section-count">${liveProjects.length}</span>
         </div>
@@ -1414,7 +1414,7 @@ export class App {
       <!-- Enquiries -->
       <div style="margin-bottom:28px">
         <div class="db-section-head db-enq-toggle" id="db-enq-toggle" style="cursor:pointer;user-select:none">
-          <span class="db-section-dot" style="background:#f59e0b"></span>
+          <span class="db-section-dot" style="background:var(--cat-amber)"></span>
           Enquiries
           <span class="db-section-count">${enquiryProjects.length}</span>
           <span class="db-chevron${this._dbEnqOpen ? ' db-chevron--open' : ''}" style="margin-left:auto" id="db-enq-chevron">▶</span>
@@ -1484,10 +1484,10 @@ export class App {
           const calcFee = (p.retainer_items||[]).reduce((s,i) => { const mult = periodMult[i.period||'month']||1; return s + (parseFloat(i.rate)||0)*(parseFloat(i.qty)||0)*mult }, 0)
           const fee = p.retainer_fee_mode==='calculated' ? calcFee : (parseFloat(p.retainer_fee)||0)
           const retPeriod = this._retainerPeriodLabel(p.retainer_start)
-          return `<div class="kanban-card" style="border-left:3px solid #a78bfa;cursor:default" data-retainer="${p.id}">
+          return `<div class="kanban-card" style="border-left:3px solid var(--cat-purple);cursor:default" data-retainer="${p.id}">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
               <div class="kanban-card-title" style="cursor:pointer" data-open-pid="${p.id}">${esc(p.name)}</div>
-              ${fee ? `<div style="font-size:12px;font-weight:600;color:#a78bfa;white-space:nowrap;margin-left:8px">£${fee.toLocaleString('en-GB')}/mo</div>` : ''}
+              ${fee ? `<div style="font-size:12px;font-weight:600;color:var(--cat-purple);white-space:nowrap;margin-left:8px">£${fee.toLocaleString('en-GB')}/mo</div>` : ''}
             </div>
             <div class="kanban-card-client">${cl ? esc(cl.first_name+' '+cl.last_name) : 'No client'}</div>
             ${retPeriod ? `<div style="font-size:10px;color:var(--text-tertiary);margin-top:3px">${retPeriod}</div>` : ''}
@@ -1534,7 +1534,7 @@ export class App {
           <div>
             <div class="db-section-head" style="justify-content:space-between">
               <div style="display:flex;align-items:center;gap:6px">
-                <span class="db-section-dot" style="background:#a78bfa"></span>
+                <span class="db-section-dot" style="background:var(--cat-purple)"></span>
                 Marketing Tasks
                 ${myTasks.length ? `<span class="db-section-count">${myTasks.length}</span>` : ''}
               </div>
@@ -1554,7 +1554,7 @@ export class App {
           <!-- Upcoming Deliverables -->
           <div>
             <div class="db-section-head">
-              <span class="db-section-dot" style="background:#ef4444"></span>
+              <span class="db-section-dot" style="background:var(--cat-red)"></span>
               Deliverables
               ${upcomingDeliverables.length ? `<span class="db-section-count">${upcomingDeliverables.length}</span>` : ''}
             </div>
@@ -1575,7 +1575,7 @@ export class App {
           <!-- Edit Deadlines Coming Due -->
           <div>
             <div class="db-section-head">
-              <span class="db-section-dot" style="background:#f59e0b"></span>
+              <span class="db-section-dot" style="background:var(--cat-amber)"></span>
               Edit Deadlines
               ${editDeadlines.length ? `<span class="db-section-count">${editDeadlines.length}</span>` : ''}
             </div>
@@ -1584,7 +1584,7 @@ export class App {
               ${editDeadlines.map(e => {
                 const assignee = this.allUsers.find(u => u.id === e.assignee_id)
                 return `<div class="db-proj-row db-deadline-row" style="display:flex;align-items:center;gap:8px;padding:8px 12px;min-height:unset;${e.is_complete ? 'opacity:0.45;' : ''}">
-                  ${e.phase_id ? `<input type="checkbox" class="db-deadline-check" data-phase-id="${e.phase_id}" data-block-id="${e.block_id}" ${e.is_complete ? 'checked' : ''} style="cursor:pointer;flex-shrink:0;width:13px;height:13px;accent-color:#6ec96e" />` : ''}
+                  ${e.phase_id ? `<input type="checkbox" class="db-deadline-check" data-phase-id="${e.phase_id}" data-block-id="${e.block_id}" ${e.is_complete ? 'checked' : ''} style="cursor:pointer;flex-shrink:0;width:13px;height:13px;accent-color:var(--success)" />` : ''}
                   ${deadlineDuePill(e)}
                   <span class="db-proj-name-label" style="flex:1;font-size:12px;${e.is_complete ? 'text-decoration:line-through;' : ''}">${esc(e.label)}</span>
                   ${assignee ? `<span style="font-size:10px;color:var(--text-tertiary);flex-shrink:0">${esc(assignee.name || assignee.email.split('@')[0])}</span>` : ''}
@@ -1596,7 +1596,7 @@ export class App {
           <!-- Retainers -->
           <div>
             <div class="db-section-head">
-              <span class="db-section-dot" style="background:#a78bfa"></span>
+              <span class="db-section-dot" style="background:var(--cat-purple)"></span>
               Retainers
               ${retainers.length ? `<span class="db-section-count">${retainers.length}</span>` : ''}
             </div>
@@ -2026,7 +2026,7 @@ export class App {
               totalEffective += aH
               const iL = entries.filter(e => e.line_label === item.label).reduce((s,e) => s + parseFloat(e.hours), 0)
               const iPct = aH > 0 ? Math.min(100, Math.round(iL / aH * 100)) : 100
-              const iCol = iPct >= 100 ? '#ef4444' : iPct >= alertPctVal ? '#f59e0b' : '#a78bfa'
+              const iCol = iPct >= 100 ? 'var(--danger)' : iPct >= alertPctVal ? 'var(--warning)' : 'var(--cat-purple)'
               const bar = mc.querySelector(`[data-ret-item-bar="${p.id}-${ii}"]`)
               const lbl = mc.querySelector(`[data-ret-item-label="${p.id}-${ii}"]`)
               if (bar) { bar.style.width = iPct + '%'; bar.style.background = iCol }
@@ -2035,7 +2035,7 @@ export class App {
             })
             const hours = totalEffective || allocH
             const pct = hours > 0 ? Math.min(100, Math.round(logged / hours * 100)) : 0
-            const colour = pct >= 100 ? '#ef4444' : pct >= alertPctVal ? '#f59e0b' : '#a78bfa'
+            const colour = pct >= 100 ? 'var(--danger)' : pct >= alertPctVal ? 'var(--warning)' : 'var(--cat-purple)'
             if (alertEl && pct >= alertPctVal && pct < 100) { alertEl.style.display='block'; alertEl.style.color=colour; alertEl.textContent=`⚠ ${pct}% used overall` }
             if (alertEl && pct >= 100) { alertEl.style.display='block'; alertEl.style.color=colour; alertEl.textContent=`⚠ Over allocation by ${(logged-hours).toFixed(1)}h` }
           } else {
@@ -2052,7 +2052,7 @@ export class App {
             const pct = Math.min(100, Math.round(logged / hours * 100))
             const bar = mc.querySelector(`[data-ret-bar="${p.id}"]`)
             const label = mc.querySelector(`[data-ret-label="${p.id}"]`)
-            const colour = pct >= 100 ? '#ef4444' : pct >= alertPctVal ? '#f59e0b' : '#a78bfa'
+            const colour = pct >= 100 ? 'var(--danger)' : pct >= alertPctVal ? 'var(--warning)' : 'var(--cat-purple)'
             if (bar) { bar.style.width = pct + '%'; bar.style.background = colour }
             if (label) { label.textContent = `${logged.toFixed(1)} / ${hours}h`; label.style.color = pct >= alertPctVal ? colour : '' }
             if (alertEl && pct >= alertPctVal && pct < 100) { alertEl.style.display='block'; alertEl.style.color=colour; alertEl.textContent=`⚠ ${pct}% used — ${(hours-logged).toFixed(1)}h remaining` }
@@ -2647,7 +2647,7 @@ export class App {
                 <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-tertiary);cursor:pointer;white-space:nowrap">
                   <input type="checkbox" ${s.crew?'checked':''} data-tpl-crew="${si}" style="cursor:pointer" /> Crew section
                 </label>
-                <button class="row-btn" data-tpl-del-sec="${si}" style="color:#b03020;flex-shrink:0">× Remove section</button>
+                <button class="row-btn" data-tpl-del-sec="${si}" style="color:var(--danger);flex-shrink:0">× Remove section</button>
               </div>
               <table style="width:100%;border-collapse:collapse">
                 <thead>
@@ -2678,7 +2678,7 @@ export class App {
                         <input type="checkbox" ${l.track_time?'checked':''} data-tpl-track="${si},${li}" style="cursor:pointer" ${!l.useDays?'disabled title="Enable daily rate first"':''} />
                       </td>
                       <td style="padding:5px 4px;text-align:center">
-                        <button class="row-btn" data-tpl-del-line="${si},${li}" style="color:#b03020;font-size:11px;padding:2px 6px">×</button>
+                        <button class="row-btn" data-tpl-del-line="${si},${li}" style="color:var(--danger);font-size:11px;padding:2px 6px">×</button>
                       </td>
                     </tr>`).join('')}
                 </tbody>
@@ -2837,12 +2837,12 @@ export class App {
             <div style="font-size:12px;color:var(--text-secondary);white-space:nowrap">Google Calendar:</div>
             ${isSelf
               ? u.google_calendar_connected
-                ? `<span style="font-size:12px;color:#16a34a;font-weight:500">✓ Connected</span>
-                   <button class="row-btn" data-gcal-disconnect="${u.id}" style="font-size:11px;color:var(--red,#e05252);border-color:var(--red,#e05252)">Disconnect</button>`
+                ? `<span style="font-size:12px;color:var(--success);font-weight:500">✓ Connected</span>
+                   <button class="row-btn" data-gcal-disconnect="${u.id}" style="font-size:11px;color:var(--danger);border-color:var(--danger-border)">Disconnect</button>`
                 : `<button class="row-btn" data-gcal-connect="${u.id}" style="font-size:11px">Connect Google Calendar</button>
                    <span style="font-size:11px;color:var(--text-tertiary)">Approved leave and your calendar entries appear on your own calendar</span>`
               : u.google_calendar_connected
-                ? `<span style="font-size:12px;color:#16a34a">✓ Connected</span>`
+                ? `<span style="font-size:12px;color:var(--success)">✓ Connected</span>`
                 : `<span style="font-size:12px;color:var(--text-tertiary)">Not connected</span>`}
           </div>
           ${isSelf && u.google_calendar_connected ? `
@@ -2855,7 +2855,7 @@ export class App {
             <span style="font-size:11px;color:var(--text-tertiary)">One-way, into a separate “Slate” calendar — your own events are never touched</span>
           </div>` : ''}
           <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
-            ${!isSelf ? `<button class="row-btn" data-remove-user="${u.id}" data-remove-name="${esc(u.name)||esc(u.email)}" style="font-size:11px;color:var(--red,#e05252);border-color:var(--red,#e05252)">Remove user</button>` : '<span></span>'}
+            ${!isSelf ? `<button class="row-btn" data-remove-user="${u.id}" data-remove-name="${esc(u.name)||esc(u.email)}" style="font-size:11px;color:var(--danger);border-color:var(--danger-border)">Remove user</button>` : '<span></span>'}
             <button class="row-btn" data-save-user="${u.id}" style="font-size:11px">Save changes</button>
           </div>
         </div>`
@@ -3016,7 +3016,7 @@ export class App {
       <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border-light)">
         <div style="font-size:13px;color:var(--text-primary);width:120px">${new Date(h.holiday_date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
         <div style="flex:1;font-size:13px;color:var(--text-secondary)">${esc(h.name)}</div>
-        <button class="row-btn" data-del-hol="${h.id}" style="font-size:11px;color:var(--red,#e05252);border-color:var(--red,#e05252)">Remove</button>
+        <button class="row-btn" data-del-hol="${h.id}" style="font-size:11px;color:var(--danger);border-color:var(--danger-border)">Remove</button>
       </div>`).join('')
     el.querySelectorAll('[data-del-hol]').forEach(btn => btn.addEventListener('click', async () => {
       try {
@@ -3428,7 +3428,7 @@ export class App {
     layer.className = 'cd-confetti-layer'
     document.body.appendChild(layer)
 
-    const COLORS = ['#f59e0b','#ef4444','#10b981','#3b82f6','#8b5cf6','#ec4899','#f97316','#06b6d4','#fbbf24','#a3e635']
+    const COLORS = Array.from({ length: 10 }, (_, i) => `var(--confetti-${i + 1})`)
     const spawn = () => {
       if (!document.contains(layer)) { clearInterval(confettiTimer); return }
       for (let i = 0; i < 8; i++) {

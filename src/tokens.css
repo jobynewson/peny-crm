@@ -49,6 +49,42 @@
      lift off the page (--shadow-lg / --shadow-popover, per theme below). */
   --shadow-sm: 0 0 #0000;
   --shadow-md: 0 0 #0000;
+
+  /* Text on colours people pick (canvas notes and boards, teammates' cursor
+     colours). Those colours are data and look the same in both themes, so
+     the text on them does too. */
+  --on-pastel: #1F2430;          /* canvas notes: always light pastels */
+  --on-pastel-subtle: #5E6472;
+  --pastel-border: rgba(0, 0, 0, 0.08);
+  --on-data: #FFFFFF;            /* saturated board and cursor colours */
+  --shadow-cursor: 0 1px 1px rgba(0, 0, 0, 0.25);
+
+  /* The office-dashboard YouTube ticker keeps a brand red, deliberately not
+     --danger so it can't be mistaken for the days-since banner. */
+  --brand-youtube: #E6002E;
+  --on-brand: #FFFFFF;
+
+  /* Dashboard countdown celebration: a dark party gradient with white text,
+     the same in both themes. */
+  --celebrate-text: #FFFFFF;
+  --celebrate-text-muted: rgba(255, 255, 255, 0.75);
+  --celebrate-glow: rgba(255, 220, 80, 0.7);
+  --celebrate-plum: #1A0533;
+  --celebrate-navy: #0A1A3D;
+  --celebrate-forest: #001A10;
+  --celebrate-olive: #1A2800;
+  --celebrate-rust: #3D1500;
+  --celebrate-wine: #3D0A1A;
+  --confetti-1: #F59E0B;
+  --confetti-2: #EF4444;
+  --confetti-3: #10B981;
+  --confetti-4: #3B82F6;
+  --confetti-5: #8B5CF6;
+  --confetti-6: #EC4899;
+  --confetti-7: #F97316;
+  --confetti-8: #06B6D4;
+  --confetti-9: #FBBF24;
+  --confetti-10: #A3E635;
 }
 
 /* ── Warm Paper (light) — the default ── */
@@ -96,6 +132,7 @@
   --cat-blue: #1D5FB4;    --cat-blue-soft: #E7EEF9;
   --cat-green: #1E7A35;   --cat-green-soft: #E4F2E7;
   --cat-amber: #B45309;   --cat-amber-soft: #FDF5E8;
+  --cat-yellow: #856200;  --cat-yellow-soft: #FBF4DC;
   --cat-purple: #6B3FD1;  --cat-purple-soft: #EFEAFB;
   --cat-red: #B42318;     --cat-red-soft: #FBE9E7;
   --cat-cyan: #0E7490;    --cat-cyan-soft: #E1F2F6;
@@ -154,6 +191,7 @@ html[data-theme="dark"] {
   --cat-blue: #86B6F7;    --cat-blue-soft: #1E2D45;
   --cat-green: #7FD396;   --cat-green-soft: #1C3526;
   --cat-amber: #F5B460;   --cat-amber-soft: #3A2D18;
+  --cat-yellow: #EBD26A;  --cat-yellow-soft: #34301A;
   --cat-purple: #B9A5FB;  --cat-purple-soft: #2D2747;
   --cat-red: #FF8A80;     --cat-red-soft: #3D2124;
   --cat-cyan: #6FD4E8;    --cat-cyan-soft: #163840;
@@ -214,6 +252,7 @@ html[data-theme="dark"] {
     --cat-blue: #86B6F7;    --cat-blue-soft: #1E2D45;
     --cat-green: #7FD396;   --cat-green-soft: #1C3526;
     --cat-amber: #F5B460;   --cat-amber-soft: #3A2D18;
+    --cat-yellow: #EBD26A;  --cat-yellow-soft: #34301A;
     --cat-purple: #B9A5FB;  --cat-purple-soft: #2D2747;
     --cat-red: #FF8A80;     --cat-red-soft: #3D2124;
     --cat-cyan: #6FD4E8;    --cat-cyan-soft: #163840;

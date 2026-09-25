@@ -311,12 +311,13 @@ export function usagePct(logged, allocated) {
 
 // Bar colour for a usage level, matching the retainer bars in src/app.js:
 // purple under the alert threshold, amber at it, red at or over allocation.
+// Returns a theme token (see src/tokens.css), for use in inline styles.
 export function usageColour(logged, allocated, alertPct = 80) {
-  if (!(allocated > 0)) return '#a78bfa'
+  if (!(allocated > 0)) return 'var(--cat-purple)'
   const pct = (logged / allocated) * 100
-  if (pct >= 100) return '#ef4444'
-  if (pct >= (parseFloat(alertPct) || 80)) return '#f59e0b'
-  return '#a78bfa'
+  if (pct >= 100) return 'var(--danger)'
+  if (pct >= (parseFloat(alertPct) || 80)) return 'var(--warning)'
+  return 'var(--cat-purple)'
 }
 
 // True if any retainer item is priced over something other than a month, i.e.

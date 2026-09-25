@@ -4,18 +4,20 @@
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
+// `color` is written onto the Team Calendar entry an approved request creates,
+// so it stays a literal (it's stored data); the UI uses the `tone` tokens.
 export const LEAVE_TYPES = {
-  holiday: { label: 'Annual leave', color: '#0891b2', deducts: true  },
-  sick:    { label: 'Sickness',     color: '#dc2626', deducts: false },
-  unpaid:  { label: 'Unpaid leave', color: '#6b7280', deducts: false },
-  other:   { label: 'Other',        color: '#7c3aed', deducts: false },
+  holiday: { label: 'Annual leave', color: '#0891b2', tone: 'cyan',   deducts: true  },
+  sick:    { label: 'Sickness',     color: '#dc2626', tone: 'red',    deducts: false },
+  unpaid:  { label: 'Unpaid leave', color: '#6b7280', tone: 'grey',   deducts: false },
+  other:   { label: 'Other',        color: '#7c3aed', tone: 'purple', deducts: false },
 }
 
 const STATUS_META = {
-  pending:   { label: 'Pending',  color: '#d97706', bg: 'rgba(217,119,6,0.12)' },
-  approved:  { label: 'Approved', color: '#16a34a', bg: 'rgba(22,163,74,0.12)' },
-  declined:  { label: 'Declined', color: '#dc2626', bg: 'rgba(220,38,38,0.12)' },
-  cancelled: { label: 'Cancelled',color: '#6b7280', bg: 'rgba(107,114,128,0.12)' },
+  pending:   { label: 'Pending',   tone: 'amber' },
+  approved:  { label: 'Approved',  tone: 'green' },
+  declined:  { label: 'Declined',  tone: 'red' },
+  cancelled: { label: 'Cancelled', tone: 'grey' },
 }
 
 // ── Shared date helpers (also used by the dashboard / nav badge) ───────────────
@@ -135,7 +137,7 @@ export class LeaveView {
         ${bal ? this._balanceCard(bal) : ''}
         <div style="display:flex;align-items:center;gap:8px;margin:18px 0 14px;flex-wrap:wrap">
           ${tabs.map(([id, label]) => `
-            <button class="leave-tab" data-tab="${id}" style="padding:7px 14px;border-radius:20px;border:1px solid ${this._tab === id ? 'var(--accent)' : 'var(--border-med)'};background:${this._tab === id ? 'var(--accent)' : 'transparent'};color:${this._tab === id ? '#fff' : 'var(--text-secondary)'};font-size:13px;cursor:pointer;font-family:var(--font);transition:all 0.15s">${esc(label)}</button>`).join('')}
+            <button class="leave-tab" data-tab="${id}" style="padding:7px 14px;border-radius:20px;border:1px solid ${this._tab === id ? 'var(--accent)' : 'var(--border-med)'};background:${this._tab === id ? 'var(--accent)' : 'transparent'};color:${this._tab === id ? 'var(--on-accent)' : 'var(--text-secondary)'};font-size:13px;cursor:pointer;font-family:var(--font);transition:all 0.15s">${esc(label)}</button>`).join('')}
           <div style="margin-left:auto"></div>
           ${this.canBook ? `<button class="btn-primary" id="leave-book-btn">+ Book leave</button>` : ''}
         </div>
@@ -159,9 +161,9 @@ export class LeaveView {
         <div class="panel-header"><span class="panel-title">My allowance · ${esc(leaveYearStart(this.fyMonth, this.fyDay).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }))} – ${esc(new Date(leaveYearStart(this.fyMonth, this.fyDay).getFullYear() + 1, leaveYearStart(this.fyMonth, this.fyDay).getMonth(), 0).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }))}</span></div>
         <div style="display:flex;flex-wrap:wrap">
           ${cell('Allowance', bal.allowance, null)}
-          ${cell('Booked', bal.booked, '#0891b2')}
-          ${cell('Pending', bal.pending, '#d97706')}
-          ${cell('Remaining', bal.remaining, bal.remaining < 0 ? '#dc2626' : '#16a34a')}
+          ${cell('Booked', bal.booked, 'var(--cat-cyan)')}
+          ${cell('Pending', bal.pending, 'var(--warning)')}
+          ${cell('Remaining', bal.remaining, bal.remaining < 0 ? 'var(--danger)' : 'var(--success)')}
         </div>
       </div>`
   }
@@ -176,12 +178,12 @@ export class LeaveView {
 
   _statusPill(status) {
     const m = STATUS_META[status] || STATUS_META.pending
-    return `<span style="font-size:11px;font-weight:500;color:${m.color};background:${m.bg};padding:2px 9px;border-radius:20px">${m.label}</span>`
+    return `<span style="font-size:11px;font-weight:500;color:var(--cat-${m.tone});background:var(--cat-${m.tone}-soft);padding:2px 9px;border-radius:20px">${m.label}</span>`
   }
 
   _typeChip(type) {
     const t = LEAVE_TYPES[type] || LEAVE_TYPES.other
-    return `<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text-secondary)"><span style="width:9px;height:9px;border-radius:2px;background:${t.color}"></span>${esc(t.label)}</span>`
+    return `<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text-secondary)"><span style="width:9px;height:9px;border-radius:2px;background:var(--cat-${t.tone})"></span>${esc(t.label)}</span>`
   }
 
   // ── My leave ──────────────────────────────────────────────────────────────
@@ -210,9 +212,9 @@ export class LeaveView {
           <div style="font-size:13px;color:var(--text-primary)">${esc(this._fmtRange(r))}</div>
           ${r.reason ? `<div style="font-size:12px;color:var(--text-tertiary);margin-top:3px">“${esc(r.reason)}”</div>` : ''}
           ${!mineView ? `<div style="font-size:12px;color:var(--text-tertiary);margin-top:3px">${esc(this._userName(r.requester_id))}</div>` : `<div style="font-size:11px;color:var(--text-tertiary);margin-top:3px">Approver: ${esc(approverName)}</div>`}
-          ${r.status === 'declined' && r.decision_note ? `<div style="font-size:12px;color:#dc2626;margin-top:3px">Declined: ${esc(r.decision_note)}</div>` : ''}
+          ${r.status === 'declined' && r.decision_note ? `<div style="font-size:12px;color:var(--danger);margin-top:3px">Declined: ${esc(r.decision_note)}</div>` : ''}
         </div>
-        ${canCancel ? `<button class="row-btn" data-cancel="${r.id}" style="font-size:11px;color:var(--red,#e05252);border-color:var(--red,#e05252)">Cancel</button>` : ''}
+        ${canCancel ? `<button class="row-btn" data-cancel="${r.id}" style="font-size:11px;color:var(--danger);border-color:var(--danger-border)">Cancel</button>` : ''}
       </div>`
   }
 
@@ -238,7 +240,7 @@ export class LeaveView {
               </div>
               <div style="display:flex;gap:8px">
                 <button class="btn-primary" data-approve="${r.id}" style="font-size:12px;padding:6px 14px">Approve</button>
-                <button class="row-btn" data-decline="${r.id}" style="font-size:12px;color:var(--red,#e05252);border-color:var(--red,#e05252)">Decline</button>
+                <button class="row-btn" data-decline="${r.id}" style="font-size:12px;color:var(--danger);border-color:var(--danger-border)">Decline</button>
               </div>
             </div>
           </div>`).join('')}
@@ -293,7 +295,7 @@ export class LeaveView {
                   const r = approved.find(x => x.requester_id === u.id && inMonth(x, key))
                   if (!r) return `<td style="border-right:1px solid var(--border-light)"></td>`
                   const t = LEAVE_TYPES[r.leave_type] || LEAVE_TYPES.other
-                  return `<td title="${esc(t.label)}" style="border-right:1px solid var(--border-light);background:${t.color}33;text-align:center"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${t.color}"></span></td>`
+                  return `<td title="${esc(t.label)}" style="border-right:1px solid var(--border-light);background:var(--cat-${t.tone}-soft);text-align:center"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--cat-${t.tone})"></span></td>`
                 }).join('')}
               </tr>`
             }).join('')}
@@ -301,7 +303,7 @@ export class LeaveView {
         </table>
       </div>
       <div style="margin-top:10px;display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--text-tertiary)">
-        ${Object.values(LEAVE_TYPES).map(t => `<span style="display:flex;align-items:center;gap:5px"><span style="width:9px;height:9px;border-radius:50%;background:${t.color}"></span>${esc(t.label)}</span>`).join('')}
+        ${Object.values(LEAVE_TYPES).map(t => `<span style="display:flex;align-items:center;gap:5px"><span style="width:9px;height:9px;border-radius:50%;background:var(--cat-${t.tone})"></span>${esc(t.label)}</span>`).join('')}
       </div>`
 
     body.querySelector('#leave-team-prev')?.addEventListener('click', () => { this._teamMonthOffset--; this._renderTeam(body) })
@@ -324,9 +326,9 @@ export class LeaveView {
                 <td style="padding:9px 12px;color:var(--text-primary)">${esc(u.name || u.email)}</td>
                 <td style="padding:9px 12px;color:var(--text-tertiary)">${u.approver_id ? esc(this._userName(u.approver_id)) : '—'}</td>
                 <td style="padding:9px 12px;text-align:center">${b.allowance}</td>
-                <td style="padding:9px 12px;text-align:center;color:#0891b2">${b.booked}</td>
-                <td style="padding:9px 12px;text-align:center;color:#d97706">${b.pending}</td>
-                <td style="padding:9px 12px;text-align:center;font-weight:600;color:${b.remaining < 0 ? '#dc2626' : '#16a34a'}">${b.remaining}</td>
+                <td style="padding:9px 12px;text-align:center;color:var(--cat-cyan)">${b.booked}</td>
+                <td style="padding:9px 12px;text-align:center;color:var(--warning)">${b.pending}</td>
+                <td style="padding:9px 12px;text-align:center;font-weight:600;color:${b.remaining < 0 ? 'var(--danger)' : 'var(--success)'}">${b.remaining}</td>
               </tr>`
             }).join('')}
           </tbody>
@@ -446,7 +448,7 @@ export class LeaveView {
     document.getElementById('leave-modal')?.remove()
     const overlay = document.createElement('div')
     overlay.id = 'leave-modal'
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(9,30,66,0.54);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px 16px'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px 16px'
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
 
     const today = dateKey(new Date())
@@ -487,9 +489,9 @@ export class LeaveView {
               <div class="leave-lbl">Leave type</div>
               <div style="display:flex;gap:6px;flex-wrap:wrap">
                 ${Object.entries(LEAVE_TYPES).map(([val, t]) => `
-                  <label style="display:flex;align-items:center;gap:5px;cursor:pointer;padding:5px 11px;border:1px solid ${type === val ? t.color : 'var(--border-med)'};border-radius:var(--radius-md);font-size:12px;background:${type === val ? t.color + '22' : 'var(--bg-secondary)'};color:${type === val ? t.color : 'var(--text-secondary)'}">
+                  <label style="display:flex;align-items:center;gap:5px;cursor:pointer;padding:5px 11px;border:1px solid ${type === val ? `var(--cat-${t.tone})` : 'var(--border-med)'};border-radius:var(--radius-md);font-size:12px;background:${type === val ? t.color + '22' : 'var(--bg-secondary)'};color:${type === val ? t.color : 'var(--text-secondary)'}">
                     <input type="radio" name="lm-type" value="${val}" ${type === val ? 'checked' : ''} style="display:none">
-                    <span style="width:9px;height:9px;border-radius:2px;background:${t.color}"></span>${esc(t.label)}
+                    <span style="width:9px;height:9px;border-radius:2px;background:var(--cat-${t.tone})"></span>${esc(t.label)}
                   </label>`).join('')}
               </div>
             </div>
@@ -521,11 +523,11 @@ export class LeaveView {
             </div>
             <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
               <div style="font-size:13px;color:var(--text-primary)"><strong>${total}</strong> working day${total === 1 ? '' : 's'}${deducts ? '' : ' <span style="color:var(--text-tertiary)">(not deducted)</span>'}</div>
-              ${deducts ? `<div style="font-size:12px;color:${projected < 0 ? '#dc2626' : 'var(--text-tertiary)'}">Remaining after: <strong>${projected}</strong></div>` : ''}
+              ${deducts ? `<div style="font-size:12px;color:${projected < 0 ? 'var(--danger)' : 'var(--text-tertiary)'}">Remaining after: <strong>${projected}</strong></div>` : ''}
             </div>
             ${approverName ? `<div style="font-size:12px;color:var(--text-tertiary)">This request will be sent to <strong>${esc(approverName)}</strong> for approval.</div>`
-              : `<div style="font-size:12px;color:#d97706">No approver is assigned${canPickPerson ? ' for this person' : ' to you'} — a Superadmin can approve it. Set approvers under Settings → Users.</div>`}
-            ${deducts && projected < 0 ? `<div style="font-size:12px;color:#dc2626">⚠ This exceeds the remaining allowance.</div>` : ''}
+              : `<div style="font-size:12px;color:var(--warning)">No approver is assigned${canPickPerson ? ' for this person' : ' to you'} — a Superadmin can approve it. Set approvers under Settings → Users.</div>`}
+            ${deducts && projected < 0 ? `<div style="font-size:12px;color:var(--danger)">⚠ This exceeds the remaining allowance.</div>` : ''}
             <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
               <button class="btn-cancel" id="lm-cancel">Cancel</button>
               <button class="btn-primary" id="lm-submit" ${total <= 0 ? 'disabled' : ''}>Submit request</button>

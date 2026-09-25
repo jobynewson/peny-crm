@@ -135,7 +135,7 @@ export class CanvasView {
     document.getElementById('cv-new-modal')?.remove()
     const overlay = document.createElement('div')
     overlay.id = 'cv-new-modal'
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
     overlay.innerHTML = `
       <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:380px;padding:20px" onclick="event.stopPropagation()">
         <div style="font-size:14px;font-weight:600;margin-bottom:14px">New canvas</div>

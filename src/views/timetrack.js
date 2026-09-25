@@ -182,12 +182,12 @@ export class TimeTrackView {
         })
         mc.querySelector('#tt-hours').value = ''
         mc.querySelector('#tt-note').value  = ''
-        show('Logged ✓', '#22a06b')
+        show('Logged ✓', 'var(--success)')
         this.app.toast('Hours logged')
         if (project) this._loadLog(mc, project)
       } catch (e) {
         console.error(e)
-        show('Error logging hours.', '#ef4444')
+        show('Error logging hours.', 'var(--danger)')
       } finally {
         if (submitBtn) submitBtn.disabled = false
       }

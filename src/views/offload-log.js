@@ -19,8 +19,8 @@ function fmtBytes(n) {
 
 function statusBadge(passed) {
   const ok = !!passed
-  const color = ok ? 'var(--accent-green,#38a169)' : 'var(--accent-red,#e53e3e)'
-  return `<span style="display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:999px;color:${color};background:${color}1a;white-space:nowrap">${ok ? 'Pass' : 'Fail'}</span>`
+  const tone = ok ? 'success' : 'danger'
+  return `<span style="display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:999px;color:var(--${tone});background:var(--${tone}-soft);white-space:nowrap">${ok ? 'Pass' : 'Fail'}</span>`
 }
 
 export class OffloadLogView {

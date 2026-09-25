@@ -172,7 +172,7 @@ export class ContactsView {
       </div>
       <div class="detail-section">
         <div class="section-title">Contact info</div>
-        <div class="info-row"><span class="info-key">Email</span><span class="info-val" style="color:#0d4a8a">${esc(c.email)||'—'}</span></div>
+        <div class="info-row"><span class="info-key">Email</span><span class="info-val" style="color:var(--accent-text)">${esc(c.email)||'—'}</span></div>
         <div class="info-row"><span class="info-key">Phone</span><span class="info-val">${esc(c.phone)||'—'}</span></div>
         <div class="info-row"><span class="info-key">Location</span><span class="info-val">${esc(c.location)||'—'}</span></div>
         <div class="info-row"><span class="info-key">Client since</span><span class="info-val">${esc(c.since)||'—'}</span></div>
@@ -209,7 +209,7 @@ export class ContactsView {
         <div id="contact-activity-${c.id}" style="font-size:11px;color:var(--text-tertiary)">Loading…</div>
       </div>
       <div class="detail-section">
-        <button class="row-btn" style="width:100%;padding:8px;text-align:center;color:#b03020;border-color:rgba(180,50,30,0.25)" data-delete="${c.id}">Delete contact</button>
+        <button class="row-btn" style="width:100%;padding:8px;text-align:center;color:var(--danger);border-color:var(--danger-border)" data-delete="${c.id}">Delete contact</button>
       </div>`
   }
 

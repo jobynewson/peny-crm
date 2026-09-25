@@ -6,7 +6,7 @@ import { monthlyUsage, overallUsage, windowUsage, monthlyAllocationHours, usageP
 const STAGES = ['Enquiry','Pre-production','In Production','Post','Delivered']
 const RETAINER_STAGE = 'Retainer'
 const ALL_STAGES = [...STAGES, RETAINER_STAGE]
-const STAGE_DOT = { Enquiry:'#b5d4f4', 'Pre-production':'#dddaf7', 'In Production':'#d0e8b0', Post:'#fce2b0', Delivered:'#ebebeb' }
+const STAGE_DOT = { Enquiry:'var(--cat-blue)', 'Pre-production':'var(--cat-purple)', 'In Production':'var(--cat-green)', Post:'var(--cat-amber)', Delivered:'var(--cat-grey)' }
 const KANBAN_POS_GAP = 1024
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')
 const moy = () => { const d = new Date(); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] + ' ' + d.getFullYear() }
@@ -62,7 +62,7 @@ export class ProjectsView {
         <div class="kanban-card-meta">
           ${p.shoot_start ? `<span class="kanban-card-date">${p.shoot_start}</span>` : ''}
           ${total ? `<span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary)">${done}/${total} done</span>` : ''}
-          ${linked ? `<span class="tag" style="background:#daeeff;color:#0d4a8a">${linked} budget${linked>1?'s':''}</span>` : ''}
+          ${linked ? `<span class="tag" style="background:var(--cat-blue-soft);color:var(--cat-blue)">${linked} budget${linked>1?'s':''}</span>` : ''}
         </div>
       </div>`
     }
@@ -74,12 +74,12 @@ export class ProjectsView {
         return s + (parseFloat(i.rate)||0)*(parseFloat(i.qty)||0)*mult
       }, 0)
       const fee = p.retainer_fee_mode === 'calculated' ? calcFee : (parseFloat(p.retainer_fee)||0)
-      return `<div class="kanban-card" data-open="${p.id}" ${this.canEdit ? 'draggable="true"' : ''} style="border-left:3px solid ${isEnquiry?'#c4a8fb':'#a78bfa'}">
+      return `<div class="kanban-card" data-open="${p.id}" ${this.canEdit ? 'draggable="true"' : ''} style="border-left:3px ${isEnquiry?'dashed':'solid'} var(--cat-purple)">
         <div class="kanban-card-title">${esc(p.name)}</div>
         <div class="kanban-card-client">${cl ? esc(cl.first_name)+' '+esc(cl.last_name)+' · '+esc(cl.company) : 'No client'}</div>
         <div class="kanban-card-meta">
-          ${fee ? `<span class="tag" style="background:rgba(167,139,250,0.15);color:#a78bfa">£${Math.round(fee).toLocaleString('en-GB')}/mo</span>` : ''}
-          ${isEnquiry ? `<span class="tag" style="background:rgba(167,139,250,0.1);color:#c4a8fb;border:0.5px solid rgba(167,139,250,0.3)">Enquiry</span>` : ''}
+          ${fee ? `<span class="tag" style="background:var(--cat-purple-soft);color:var(--cat-purple)">£${Math.round(fee).toLocaleString('en-GB')}/mo</span>` : ''}
+          ${isEnquiry ? `<span class="tag" style="background:transparent;color:var(--cat-purple);border:1px solid currentColor">Enquiry</span>` : ''}
         </div>
       </div>`
     }
@@ -94,7 +94,7 @@ export class ProjectsView {
           const col = this._projectsFor(stage, false)
           return `<div class="kanban-col">
             <div class="kanban-col-head">
-              <span style="width:8px;height:8px;border-radius:50%;background:${STAGE_DOT[stage]};border:1px solid rgba(0,0,0,0.15);display:inline-block;flex-shrink:0"></span>
+              <span style="width:8px;height:8px;border-radius:50%;background:${STAGE_DOT[stage]};display:inline-block;flex-shrink:0"></span>
               ${stage} <span class="kanban-count">${col.length}</span>
             </div>
             <div class="kanban-col-body" data-col-stage="${esc(stage)}">
@@ -105,7 +105,7 @@ export class ProjectsView {
         }).join('')}
         <div class="kanban-col">
           <div class="kanban-col-head">
-            <span style="width:8px;height:8px;border-radius:50%;background:#a78bfa;border:1px solid rgba(0,0,0,0.15);display:inline-block;flex-shrink:0"></span>
+            <span style="width:8px;height:8px;border-radius:50%;background:var(--cat-purple);display:inline-block;flex-shrink:0"></span>
             Retainer <span class="kanban-count">${retainerProjects.length}</span>
           </div>
           <div class="kanban-col-body" data-col-retainer="1">
@@ -216,7 +216,7 @@ export class ProjectsView {
             const clientEl = mc.querySelector('#pf-client')
             if (clientEl) clientEl.value = match.id
             statusEl.textContent = `✓ Matched client: ${match.first_name} ${match.last_name}${match.company ? ' — ' + match.company : ''}`
-            statusEl.style.color = 'var(--green, #5a9a5a)'
+            statusEl.style.color = 'var(--success)'
           } else {
             // No match — show new contact panel pre-filled
             const panel  = mc.querySelector('#pf-new-contact-panel')
@@ -246,7 +246,7 @@ export class ProjectsView {
       } catch(e) {
         console.error(e)
         statusEl.textContent = '⚠ Extraction failed — check your API key or try again'
-        statusEl.style.color = '#e07070'
+        statusEl.style.color = 'var(--danger)'
       } finally {
         extractBtn.disabled = false
       }
@@ -606,7 +606,7 @@ export class ProjectsView {
             ? `<button class="btn-cancel" id="pv-gen-portal" style="font-size:11px">Create Portal Link</button>`
             : ''}
         ${this.app.permissions?.projects_edit ? `<button class="btn-primary" id="enter-edit">Edit project</button>` : ''}
-        <button class="row-btn" id="pv-delete" style="color:#b03020;border-color:rgba(180,50,30,0.2)">Delete</button>
+        <button class="row-btn" id="pv-delete" style="color:var(--danger);border-color:var(--danger-border)">Delete</button>
       </div>
 
       <div class="proj-layout">
@@ -730,7 +730,7 @@ export class ProjectsView {
             const daysLeft = dueDate ? Math.round((dueDate - today2) / 86400000) : null
             const isOverdue = !d.done && dueDate && daysLeft < 0
             const isDueSoon = !d.done && dueDate && daysLeft >= 0 && daysLeft <= 3
-            const dueColour = isOverdue ? '#ef4444' : isDueSoon ? '#f59e0b' : 'var(--text-tertiary)'
+            const dueColour = isOverdue ? 'var(--danger)' : isDueSoon ? 'var(--warning)' : 'var(--text-tertiary)'
             const dueLabel = dueDate && !d.done
               ? isOverdue ? `${Math.abs(daysLeft)}d overdue` : daysLeft === 0 ? 'due today' : `${daysLeft}d left`
               : dueDate && d.done
@@ -739,7 +739,7 @@ export class ProjectsView {
             const assignee = d.assignee_id ? (this.app.allUsers||[]).find(u => u.id === d.assignee_id) : null
             const assigneeName = assignee ? (assignee.name || assignee.email.split('@')[0]) : null
             return `
-            <div class="deliv-row" style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border-light)${isOverdue?';background:rgba(239,68,68,0.04);border-radius:6px;margin:1px 0':''}">
+            <div class="deliv-row" style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border-light)${isOverdue?';background:var(--danger-soft);border-radius:6px;margin:1px 0':''}">
               <input type="checkbox" ${d.done?'checked':''} data-pv-deliv="${p.id},${i}" style="width:15px;height:15px;cursor:pointer;flex-shrink:0" />
               <span style="font-size:13px;flex:1;min-width:0;${d.done?'text-decoration:line-through;color:var(--text-tertiary)':''}">${esc(d.text)}</span>
               ${assigneeName ? `<span style="font-size:11px;color:var(--text-tertiary);white-space:nowrap;flex-shrink:0;padding:2px 7px;border:0.5px solid var(--border-light);border-radius:5px" title="Assigned to ${esc(assigneeName)}">👤 ${esc(assigneeName)}</span>` : ''}
@@ -830,7 +830,7 @@ export class ProjectsView {
           const d = firstDate ? new Date(firstDate).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}) : 'No date'
           const dEnd = lastDate && lastDate !== firstDate ? ' → '+new Date(lastDate).toLocaleDateString('en-GB',{day:'numeric',month:'short'}) : ''
           const label = sh.name || sh.location_name || 'Untitled shoot'
-          const statusColor = sh.status === 'sent' ? '#6ec96e' : 'var(--text-tertiary)'
+          const statusColor = sh.status === 'sent' ? 'var(--success)' : 'var(--text-tertiary)'
           const gc = sh.general_call || dates[0]?.general_call || ''
           return `<div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:var(--bg-secondary);border-radius:var(--radius-md);border:1px solid var(--border-light);margin-bottom:8px;cursor:pointer" data-open-shoot="${sh.id}">
             <div style="flex:1;min-width:0">
@@ -858,7 +858,7 @@ export class ProjectsView {
           <div>
             <div style="font-size:14px;font-weight:500;margin-bottom:3px">${esc(b.name)}</div>
             <div style="display:flex;gap:10px">
-              ${b.signed_off ? '<div style="font-size:12px;color:#6ec96e">✓ Signed off</div>' : ''}
+              ${b.signed_off ? '<div style="font-size:12px;color:var(--success)">✓ Signed off</div>' : ''}
               ${b.invoiced ? '<div style="font-size:12px;color:var(--accent)">✓ Invoiced</div>' : ''}
             </div>
           </div>
@@ -912,7 +912,7 @@ export class ProjectsView {
       return d < 7 ? `${d}d ago` : new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
     }
     const ini = name => (name||'?').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
-    const avatarColors = ['#4a90d9','#6ec96e','#f59e0b','#a78bfa','#ef4444','#06b6d4','#ec4899']
+    const avatarColors = ['blue','green','amber','purple','red','cyan','pink'].map(t => `var(--cat-${t})`)
     const avatarColor = id => {
       if (!id) return avatarColors[0]
       let h = 0
@@ -1012,7 +1012,7 @@ export class ProjectsView {
             <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;background:var(--bg-secondary);border-radius:var(--radius-md);font-size:12px;cursor:pointer" data-open-budget="${b.id}">
               <span style="font-weight:500">${esc(b.name)}</span>
               <span style="display:flex;gap:6px">
-                ${b.signed_off ? `<span style="font-size:10px;color:#6ec96e" title="Signed off">✓ signed off</span>` : ''}
+                ${b.signed_off ? `<span style="font-size:10px;color:var(--success)" title="Signed off">✓ signed off</span>` : ''}
                 ${b.invoiced ? `<span style="font-size:10px;color:var(--accent)" title="Invoiced">✓ invoiced</span>` : ''}
               </span>
             </div>`).join('')}
@@ -1337,7 +1337,7 @@ export class ProjectsView {
       listEl.innerHTML = (p._shoots||[]).length ? (p._shoots||[]).map(sh => {
         const d = sh.shoot_date ? new Date(sh.shoot_date).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}) : 'No date'
         const label = sh.name || sh.location_name || 'Untitled shoot'
-        const statusColor = sh.status === 'sent' ? '#6ec96e' : 'var(--text-tertiary)'
+        const statusColor = sh.status === 'sent' ? 'var(--success)' : 'var(--text-tertiary)'
         return `<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:var(--bg-secondary);border-radius:var(--radius-md);font-size:12px;cursor:pointer" data-open-shoot="${sh.id}">
           <div style="flex:1;min-width:0">
             <div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(label)}</div>
@@ -1481,7 +1481,7 @@ export class ProjectsView {
           <div style="font-size:11px;color:var(--text-tertiary)">${esc(p.name)}</div>
         </div>
         <span id="se-indicator" style="font-size:11px;color:var(--text-tertiary)"></span>
-        <button class="row-btn" id="se-delete" style="color:#b03020;border-color:rgba(180,50,30,0.2);flex-shrink:0">Delete</button>
+        <button class="row-btn" id="se-delete" style="color:var(--danger);border-color:var(--danger-border);flex-shrink:0">Delete</button>
       </div>
 
       <div style="flex:1;padding:20px;max-width:1200px;margin:0 auto;width:100%">
@@ -1549,7 +1549,7 @@ export class ProjectsView {
                     <div><div class="proj-field-label">${label} address</div><input type="text" class="proj-input" id="${id}-addr" value="${esc(sh[key+'_address']||'')}" placeholder="Address" /></div>
                     ${phone?`<div><div class="proj-field-label">${label} phone</div><input type="text" class="proj-input" id="${id}-phone" value="${esc(sh[key+'_phone']||'')}" placeholder="Non-emergency" /></div>`:''}
                   </div>`).join('')}
-                  <div style="font-size:11px;color:var(--text-sec,#888)">📞 Fetched numbers are switchboard / non-emergency lines — always call <strong>999</strong> (or 112) in an emergency. Fire brigade: 999 only.</div>
+                  <div style="font-size:11px;color:var(--text-subtle)">📞 Fetched numbers are switchboard / non-emergency lines — always call <strong>999</strong> (or 112) in an emergency. Fire brigade: 999 only.</div>
                 </div>
               </div>
             </div>
@@ -1820,7 +1820,7 @@ export class ProjectsView {
         <input type="text" class="bl-in w" value="${esc(l.name||'')}" placeholder="Location name" data-loc-field="${i},name" style="flex:1;font-size:12px;padding:5px 8px" />
         ${dateSelect}
         <input type="time" class="bl-in" value="${esc(l.move_time||'')}" placeholder="Move time" data-loc-field="${i},move_time" style="width:90px;font-size:12px;padding:5px 8px;flex-shrink:0" />
-        <button class="row-btn" style="color:#c03020" data-loc-rem="${i}">×</button>
+        <button class="row-btn" style="color:var(--danger)" data-loc-rem="${i}">×</button>
       </div>
       <input type="text" class="bl-in w" value="${esc(l.address||'')}" placeholder="Address" data-loc-field="${i},address" style="width:100%;font-size:12px;padding:5px 8px;margin-bottom:6px" />
       <input type="text" class="bl-in w" value="${esc(l.notes||'')}" placeholder="Notes" data-loc-field="${i},notes" style="width:100%;font-size:12px;padding:5px 8px" />
@@ -1839,7 +1839,7 @@ export class ProjectsView {
       ${dateSelect}
       <input type="time" class="bl-in w" value="${esc(r.time||'')}" data-sched-field="${i},time" style="font-size:12px;padding:5px 8px" />
       <input type="text" class="bl-in w" value="${esc(r.description||'')}" placeholder="Description" data-sched-field="${i},description" style="font-size:12px;padding:5px 8px" />
-      <button class="row-btn" style="color:#c03020" data-sched-rem="${i}">×</button>
+      <button class="row-btn" style="color:var(--danger)" data-sched-rem="${i}">×</button>
     </div>`
   }
 
@@ -1855,7 +1855,7 @@ export class ProjectsView {
         <input type="date" class="proj-input" value="${d.date?String(d.date).split('T')[0]:''}" data-date-field="${i},date" style="font-size:12px;padding:5px 8px" />
         <div style="font-size:11px;color:var(--text-tertiary)">${d.date ? new Date(d.date).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'}) : ''}</div>
         ${showCallTimes ? `<input type="time" class="proj-input" value="${esc(d.general_call||'')}" placeholder="General call" data-date-field="${i},general_call" style="font-size:12px;padding:5px 8px" />` : ''}
-        <button class="row-btn" style="color:#c03020" data-date-rem="${i}">×</button>
+        <button class="row-btn" style="color:var(--danger)" data-date-rem="${i}">×</button>
       </div>`).join('')
   }
 
@@ -1876,7 +1876,7 @@ export class ProjectsView {
           <input type="text" class="bl-in w" value="${esc(c.role||'')}" placeholder="Role" data-crew-field="${idx},role" style="font-size:12px;padding:5px 8px" />
           <input type="tel" class="bl-in w" value="${esc(c.phone||'')}" placeholder="Phone" data-crew-field="${idx},phone" style="font-size:12px;padding:5px 8px" />
           <input type="text" class="bl-in w" value="${esc(c.co||'')}" placeholder="c/o" data-crew-field="${idx},co" style="font-size:12px;padding:5px 8px" title="e.g. Red Bull (booked through)" />
-          <button class="row-btn" style="color:#c03020" data-crew-rem="${idx}">×</button>
+          <button class="row-btn" style="color:var(--danger)" data-crew-rem="${idx}">×</button>
         </div>`).join('')
     }
     // With dates — table layout with drag handle column
@@ -1897,7 +1897,7 @@ export class ProjectsView {
         <td style="padding:3px 2px"><input type="tel" class="bl-in w" value="${esc(c.phone||'')}" placeholder="Phone" data-crew-field="${idx},phone" style="font-size:12px;padding:5px 6px;width:100%" /></td>
         <td style="padding:3px 2px"><input type="text" class="bl-in w" value="${esc(c.co||'')}" placeholder="c/o" data-crew-field="${idx},co" style="font-size:12px;padding:5px 6px;width:100%" title="e.g. Red Bull (booked through)" /></td>
         ${cells}
-        <td style="padding:3px 2px;text-align:center"><button class="row-btn" style="color:#c03020" data-crew-rem="${idx}">×</button></td>
+        <td style="padding:3px 2px;text-align:center"><button class="row-btn" style="color:var(--danger)" data-crew-rem="${idx}">×</button></td>
       </tr>`
     }).join('')
     return `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:${620 + dates.length*100}px">
@@ -1921,7 +1921,7 @@ export class ProjectsView {
     return `<div class="se-hotel-card" style="border:1px solid var(--border-med);border-radius:var(--radius-md);padding:12px;margin-bottom:8px;background:var(--bg-secondary)" data-hotel-idx="${i}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
         <input type="text" class="proj-input" value="${esc(h.name||'')}" placeholder="Hotel name" data-hotel-field="${i},name" style="flex:1;margin-right:8px" />
-        <button class="row-btn" style="color:#c03020;flex-shrink:0" data-hotel-rem="${i}">×</button>
+        <button class="row-btn" style="color:var(--danger);flex-shrink:0" data-hotel-rem="${i}">×</button>
       </div>
       <input type="text" class="proj-input" value="${esc(h.address||'')}" placeholder="Address or Maps URL" data-hotel-field="${i},address" style="margin-bottom:8px" />
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
@@ -1957,7 +1957,7 @@ export class ProjectsView {
         <div style="display:grid;grid-template-columns:1fr 140px 28px;gap:6px;margin-bottom:6px">
           <input type="text" class="proj-input" value="${esc(e.category||'')}" placeholder="Category — e.g. Camera Equipment" data-equip-field="${i},category" style="font-size:13px;font-weight:500" />
           <input type="text" class="proj-input" value="${esc(e.supplier||'')}" placeholder="Supplied by — e.g. C/O Production" data-equip-field="${i},supplier" style="font-size:12px" />
-          <button class="row-btn" style="color:#c03020" data-equip-rem="${i}">×</button>
+          <button class="row-btn" style="color:var(--danger)" data-equip-rem="${i}">×</button>
         </div>
         <textarea class="proj-textarea" placeholder="Equipment list / notes — e.g. Mix of Reds, Sonys, Canons. 2x GoPro 13, FPV drone, Mavic" data-equip-field="${i},description" style="width:100%;min-height:50px;font-size:12px;font-family:inherit">${esc(e.description||'')}</textarea>
       </div>`).join('')
@@ -1974,7 +1974,7 @@ export class ProjectsView {
       const isCam = r.is_camera_kit !== false // default true
       const total = totalItems(r), packed = packedItems(r)
       const pct = total > 0 ? Math.round(packed/total*100) : 0
-      const pctColor = pct === 100 ? '#6ec96e' : pct > 50 ? '#f59e0b' : 'var(--text-tertiary)'
+      const pctColor = pct === 100 ? 'var(--success)' : pct > 50 ? 'var(--warning)' : 'var(--text-tertiary)'
       return `<div style="border:1px solid var(--border-med);border-radius:var(--radius-md);padding:12px;margin-bottom:8px;background:var(--bg-secondary)" data-rig-idx="${i}">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
           <div style="flex:1;min-width:0;margin-right:8px">
@@ -1986,7 +1986,7 @@ export class ProjectsView {
               <div style="font-size:18px;font-weight:700;color:${pctColor}">${pct}%</div>
               <div style="font-size:10px;color:var(--text-tertiary)">${packed}/${total} packed</div>
             </div>` : ''}
-            <button class="row-btn" style="color:#c03020" data-rig-rem="${i}">×</button>
+            <button class="row-btn" style="color:var(--danger)" data-rig-rem="${i}">×</button>
           </div>
         </div>
         <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
@@ -2007,8 +2007,8 @@ export class ProjectsView {
     const hazards = Array.isArray(ra.hazards) ? ra.hazards : []
     const riskCell = (l, s) => {
       const score = (parseInt(l)||0) * (parseInt(s)||0)
-      const color = score >= 15 ? '#c03020' : score >= 8 ? '#d98020' : score >= 4 ? '#c0a030' : '#5a9a5a'
-      return `<span style="display:inline-block;min-width:22px;text-align:center;padding:1px 4px;background:${color};color:white;border-radius:3px;font-size:11px;font-weight:500">${score||''}</span>`
+      const color = score >= 15 ? 'var(--cat-red)' : score >= 8 ? 'var(--cat-amber)' : score >= 4 ? 'var(--cat-yellow)' : 'var(--cat-green)'
+      return `<span style="display:inline-block;min-width:22px;text-align:center;padding:1px 4px;background:${color};color:var(--on-cat);border-radius:3px;font-size:11px;font-weight:500">${score||''}</span>`
     }
     if (!hazards.length) {
       return `<div style="font-size:12px;color:var(--text-tertiary);padding:6px 0">No risk assessment yet. Click <strong style="color:var(--text-primary)">✨ Generate with AI</strong> to create one based on this shoot's details, or <strong style="color:var(--text-primary)">Copy from shoot</strong> to duplicate one from another shoot.</div>`
@@ -2046,7 +2046,7 @@ export class ProjectsView {
                 <td style="padding:6px 4px;text-align:center"><input type="number" class="bl-in w" min="1" max="5" value="${h.residual_severity||''}" data-ra-field="${i},residual_severity" style="width:38px;font-size:11px;padding:4px;text-align:center" /></td>
                 <td style="padding:6px 4px;text-align:center">${riskCell(h.residual_likelihood, h.residual_severity)}</td>
                 <td style="padding:6px 4px"><input type="text" class="bl-in w" value="${esc(h.responsible||'')}" data-ra-field="${i},responsible" style="width:100%;font-size:11px;padding:4px 6px" /></td>
-                <td style="padding:6px 2px;text-align:center"><button class="row-btn" style="color:#c03020;padding:2px 6px;font-size:11px" data-ra-rem="${i}">×</button></td>
+                <td style="padding:6px 2px;text-align:center"><button class="row-btn" style="color:var(--danger);padding:2px 6px;font-size:11px" data-ra-rem="${i}">×</button></td>
               </tr>
             `).join('')}
           </tbody>
@@ -2076,10 +2076,10 @@ export class ProjectsView {
 
       <div style="margin-top:10px;font-size:10px;color:var(--text-tertiary);line-height:1.5">
         <strong>Scale:</strong> Likelihood 1 (rare) → 5 (almost certain). Severity 1 (minor) → 5 (catastrophic). Score = L × S.
-        <span style="color:#5a9a5a">●</span> Low (1–3) ·
-        <span style="color:#c0a030">●</span> Medium (4–7) ·
-        <span style="color:#d98020">●</span> High (8–14) ·
-        <span style="color:#c03020">●</span> Critical (15–25)
+        <span style="color:var(--cat-green)">●</span> Low (1–3) ·
+        <span style="color:var(--cat-yellow)">●</span> Medium (4–7) ·
+        <span style="color:var(--cat-amber)">●</span> High (8–14) ·
+        <span style="color:var(--cat-red)">●</span> Critical (15–25)
       </div>
     `
   }
@@ -2177,7 +2177,7 @@ export class ProjectsView {
         showSaved()
         // Refresh crew links sidebar (tokens may have been generated)
         this._renderShootCrewLinks(overlay, sh)
-      } catch(e) { console.error(e); if (indicator) { indicator.textContent = '⚠ Save failed'; indicator.style.color = '#e07070' } }
+      } catch(e) { console.error(e); if (indicator) { indicator.textContent = '⚠ Save failed'; indicator.style.color = 'var(--danger)' } }
     }
 
     // Close
@@ -2286,7 +2286,7 @@ export class ProjectsView {
         document.getElementById('rig-lib-picker')?.remove()
         const picker = document.createElement('div')
         picker.id = 'rig-lib-picker'
-        picker.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px'
+        picker.style.cssText = 'position:fixed;inset:0;background:var(--scrim);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px'
         picker.innerHTML = `<div style="background:var(--bg-primary);border-radius:var(--radius-lg);max-width:440px;width:100%;max-height:80vh;display:flex;flex-direction:column">
           <div style="padding:14px 18px;border-bottom:1px solid var(--border-light);display:flex;justify-content:space-between;align-items:center">
             <strong style="font-size:14px">Add rig from library</strong>
@@ -2701,7 +2701,7 @@ export class ProjectsView {
       document.getElementById('ra-copy-picker')?.remove()
       const picker = document.createElement('div')
       picker.id = 'ra-copy-picker'
-      picker.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px'
+      picker.style.cssText = 'position:fixed;inset:0;background:var(--scrim);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px'
       const esc_ = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
       picker.innerHTML = `
         <div style="background:var(--bg-primary);border-radius:var(--radius-lg);max-width:500px;width:100%;max-height:80vh;display:flex;flex-direction:column">
@@ -3740,7 +3740,7 @@ export class ProjectsView {
       tabs.forEach(t => {
         const on = t.dataset.bd === which
         t.style.background = on ? 'var(--accent)' : ''
-        t.style.color = on ? '#fff' : ''
+        t.style.color = on ? 'var(--on-accent)' : ''
         t.style.borderColor = on ? 'var(--accent)' : ''
       })
     }
@@ -3842,7 +3842,7 @@ export class ProjectsView {
             : STAGES.map(s=>`<option value="${s}" ${p.status===s?'selected':''}>${s}</option>`).join('')}
         </select>
         <button class="btn-primary" id="pe-save-close">Save &amp; close</button>
-        <button class="row-btn" id="pe-delete" style="color:#b03020;border-color:rgba(180,50,30,0.2)">Delete</button>
+        <button class="row-btn" id="pe-delete" style="color:var(--danger);border-color:var(--danger-border)">Delete</button>
       </div>
       <div class="proj-layout">
         <div class="proj-main">
@@ -3932,7 +3932,7 @@ export class ProjectsView {
                       <option value="half"    ${item.period==='half'?'selected':''}>Per half year</option>
                       <option value="year"    ${item.period==='year'?'selected':''}>Per year</option>
                     </select>
-                    <button class="row-btn" data-ri-rem="${i}" style="color:#b03020;font-size:14px;padding:0;text-align:center">×</button>
+                    <button class="row-btn" data-ri-rem="${i}" style="color:var(--danger);font-size:14px;padding:0;text-align:center">×</button>
                   </div>`).join('')}
                 </div>
                 <button class="add-line" id="pe-add-ret-item" style="margin-top:4px">+ add retainer item</button>
@@ -4063,7 +4063,7 @@ export class ProjectsView {
               ${linked.map(b=>`
                 <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;background:var(--bg-secondary);border-radius:var(--radius-md);font-size:12px">
                   <span style="font-weight:500;cursor:pointer" data-open-budget="${b.id}">${esc(b.name)}</span>
-                  <button class="row-btn" style="font-size:10px;color:#b03020" data-unlink="${b.id}">×</button>
+                  <button class="row-btn" style="font-size:10px;color:var(--danger)" data-unlink="${b.id}">×</button>
                 </div>`).join('')}
               ${linked.length === 0 ? '<div style="font-size:12px;color:var(--text-tertiary)">No budgets linked yet</div>' : ''}
               ${unlinked.length ? `
@@ -4239,7 +4239,7 @@ export class ProjectsView {
 
   async _createBudgetFromRetainer(p, mc) {
     const overlay = document.createElement('div')
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:9999'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);display:flex;align-items:center;justify-content:center;z-index:9999'
     const defaultName = `${p.name} — ${new Date().toLocaleDateString('en-GB',{month:'short',year:'numeric'})}`
     overlay.innerHTML = `
       <div style="background:var(--bg-primary);border:1px solid var(--border-med);border-radius:var(--radius-lg);padding:24px;width:400px" onclick="event.stopPropagation()">
@@ -4249,7 +4249,7 @@ export class ProjectsView {
           <div class="field-label">Budget name</div>
           <input id="rb-name" type="text" value="${esc(defaultName)}" style="width:100%" />
         </div>
-        <div id="rb-msg" style="font-size:12px;color:#e07070;margin-bottom:8px;display:none"></div>
+        <div id="rb-msg" style="font-size:12px;color:var(--danger);margin-bottom:8px;display:none"></div>
         <div style="display:flex;gap:8px;justify-content:flex-end">
           <button class="btn-cancel" id="rb-cancel">Cancel</button>
           <button class="btn-primary" id="rb-create">Create budget</button>
@@ -4362,7 +4362,7 @@ export class ProjectsView {
     const daysUntil = due ? Math.round((due - today) / 86400000) : null
     const overdue  = !d.done && due && daysUntil < 0
     const dueSoon  = !d.done && due && daysUntil >= 0 && daysUntil <= 3
-    const dueColour = overdue ? '#ef4444' : dueSoon ? '#f59e0b' : 'var(--text-tertiary)'
+    const dueColour = overdue ? 'var(--danger)' : dueSoon ? 'var(--warning)' : 'var(--text-tertiary)'
     const dueLabel  = due && !d.done
       ? overdue
         ? `${Math.abs(daysUntil)}d overdue`
@@ -4373,7 +4373,7 @@ export class ProjectsView {
       `<option value="">Assignee…</option>`,
       ...users.map(u => `<option value="${esc(u.id)}" ${d.assignee_id===u.id?'selected':''}>${esc(u.name||u.email)}</option>`)
     ].join('')
-    return `<div class="deliverable-row" data-di="${i}" style="${overdue?'background:rgba(239,68,68,0.04);border-radius:6px;margin:1px 0':''}">
+    return `<div class="deliverable-row" data-di="${i}" style="${overdue?'background:var(--danger-soft);border-radius:6px;margin:1px 0':''}">
       <input type="checkbox" class="deliverable-check" ${d.done?'checked':''} data-${pfx}deliv-done="${i}" />
       <input type="text" class="deliverable-text" value="${esc(d.text)}" placeholder="${isMonthly ? 'e.g. Monthly edit, Social content...' : 'e.g. 90s hero film, 3x social cutdowns...'}" data-${pfx}deliv-text="${i}" />
       <input type="date" class="deliverable-date" value="${d.due||''}" data-${pfx}deliv-due="${i}"
@@ -4385,7 +4385,7 @@ export class ProjectsView {
       </select>
       <input type="url" class="deliverable-link-input" value="${esc(d.link||'')}" placeholder="Link (e.g. Frame.io…)" data-${pfx}deliv-link="${i}"
         style="min-width:0;flex:0 1 160px;font-size:11px;padding:3px 6px;border:1px solid var(--border-light);border-radius:5px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none" />
-      <button class="row-btn" style="color:#b03020;flex-shrink:0" data-${pfx}deliv-rem="${i}">×</button>
+      <button class="row-btn" style="color:var(--danger);flex-shrink:0" data-${pfx}deliv-rem="${i}">×</button>
     </div>`
   }
 
@@ -4393,7 +4393,7 @@ export class ProjectsView {
     return `<div class="shot-row" data-si="${i}">
       <span class="shot-num">${i+1}.</span>
       <textarea class="shot-text" rows="1" placeholder="Describe the shot..." data-shot-text="${i}">${esc(s.text)}</textarea>
-      <button class="row-btn" style="color:#b03020;flex-shrink:0" data-shot-rem="${i}">×</button>
+      <button class="row-btn" style="color:var(--danger);flex-shrink:0" data-shot-rem="${i}">×</button>
     </div>`
   }
 
@@ -4402,7 +4402,7 @@ export class ProjectsView {
       <input type="text" class="bl-in w" value="${esc(c.name)}" placeholder="Name" data-crew-name="${i}" style="font-size:12px" />
       <input type="text" class="bl-in w" value="${esc(c.role)}" placeholder="Role" data-crew-role="${i}" style="font-size:12px" />
       <input type="tel" class="bl-in w" value="${esc(c.phone||'')}" placeholder="Phone" data-crew-phone="${i}" style="font-size:12px" />
-      <button class="row-btn" style="color:#b03020" data-crew-rem="${i}">×</button>
+      <button class="row-btn" style="color:var(--danger)" data-crew-rem="${i}">×</button>
     </div>`
   }
 

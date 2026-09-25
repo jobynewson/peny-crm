@@ -104,7 +104,7 @@ export class PasswordManagerView {
                       <td style="padding:12px 16px;font-size:12px;color:var(--text-tertiary);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.notes) || ''}</td>
                       <td style="padding:12px 16px;text-align:right;white-space:nowrap">
                         <button class="pm-edit" data-id="${c.id}" style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);padding:4px 6px;font-size:12px;border-radius:var(--radius-sm);transition:color 0.15s" onmouseover="this.style.color='var(--text-primary)'" onmouseout="this.style.color='var(--text-tertiary)'">Edit</button>
-                        <button class="pm-delete" data-id="${c.id}" style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);padding:4px 6px;font-size:12px;border-radius:var(--radius-sm);transition:color 0.15s" onmouseover="this.style.color='var(--accent-red,#e53e3e)'" onmouseout="this.style.color='var(--text-tertiary)'">Delete</button>
+                        <button class="pm-delete" data-id="${c.id}" style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);padding:4px 6px;font-size:12px;border-radius:var(--radius-sm);transition:color 0.15s" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--text-tertiary)'">Delete</button>
                       </td>
                     </tr>
                   `).join('')}
@@ -148,7 +148,7 @@ export class PasswordManagerView {
           await navigator.clipboard.writeText(btn.dataset.val)
           const orig = btn.innerHTML
           btn.innerHTML = this._iconCheck()
-          btn.style.color = 'var(--accent-green, #38a169)'
+          btn.style.color = 'var(--success)'
           setTimeout(() => { btn.innerHTML = orig; btn.style.color = 'var(--text-tertiary)' }, 1500)
           if (btn.dataset.id) {
             this._logVaultActivity(this.credentials.find(c => c.id === btn.dataset.id),
@@ -181,12 +181,12 @@ export class PasswordManagerView {
 
   _openModal(mc, existing) {
     const overlay = document.createElement('div')
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'
 
     const categories = [...new Set((this.credentials ?? []).map(c => c.category).filter(Boolean))].sort()
 
     overlay.innerHTML = `
-      <div style="background:var(--bg-primary);border:0.5px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:480px;box-shadow:0 8px 32px rgba(0,0,0,0.25)" onclick="event.stopPropagation()">
+      <div style="background:var(--bg-primary);border:0.5px solid var(--border-med);border-radius:var(--radius-lg);width:100%;max-width:480px;box-shadow:var(--shadow-lg)" onclick="event.stopPropagation()">
         <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:0.5px solid var(--border-light)">
           <div style="font-size:14px;font-weight:600">${existing ? 'Edit credential' : 'Add credential'}</div>
           <button id="pm-modal-close" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-tertiary);line-height:1;padding:4px">×</button>
@@ -221,7 +221,7 @@ export class PasswordManagerView {
             <div class="field-label">Notes (optional)</div>
             <input id="pm-f-notes" type="text" value="${esc(existing?.notes ?? '')}" placeholder="e.g. x2 seat licence" />
           </div>
-          <div id="pm-modal-err" style="font-size:12px;color:var(--accent-red,#e53e3e);display:none"></div>
+          <div id="pm-modal-err" style="font-size:12px;color:var(--danger);display:none"></div>
           <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:4px">
             <button class="btn-cancel" id="pm-modal-cancel">Cancel</button>
             <button class="btn-primary" id="pm-modal-save">${existing ? 'Save changes' : 'Add credential'}</button>

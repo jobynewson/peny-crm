@@ -1085,7 +1085,7 @@ export class TeamCalendarView {
     document.getElementById('tc-modal')?.remove()
     const overlay = document.createElement('div')
     overlay.id = 'tc-modal'
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(9,30,66,0.54);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px 16px'
+    overlay.style.cssText = 'position:fixed;inset:0;background:var(--scrim);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px 16px'
 
     const users    = this.app.allUsers || []
     const projects = (this.app.projects || []).filter(p => !p.is_retainer)
@@ -1123,8 +1123,8 @@ export class TeamCalendarView {
       const projectShoots = selProject ? (selProject._shoots || []) : []
       const COLORS = ['', '#4CAF50', '#C47E3A', '#7B6EAB', '#4a90d9', '#ef4444', '#f59e0b', '#06b6d4', '#ec4899']
       const colorSwatches = COLORS.map(c => c
-        ? `<div class="tc-swatch${selColor === c ? ' tc-swatch--sel' : ''}" data-color="${c}" style="width:20px;height:20px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${selColor === c ? '#fff' : 'transparent'};flex-shrink:0"></div>`
-        : `<div class="tc-swatch tc-swatch--auto${selColor === '' ? ' tc-swatch--sel' : ''}" data-color="" style="width:20px;height:20px;border-radius:50%;background:var(--bg-tertiary,#333);border:2px solid ${selColor === '' ? 'var(--accent)' : 'var(--border-med)'};cursor:pointer;font-size:8px;display:flex;align-items:center;justify-content:center;color:var(--text-tertiary);flex-shrink:0">auto</div>`
+        ? `<div class="tc-swatch${selColor === c ? ' tc-swatch--sel' : ''}" data-color="${c}" style="width:20px;height:20px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${selColor === c ? 'var(--text)' : 'transparent'};flex-shrink:0"></div>`
+        : `<div class="tc-swatch tc-swatch--auto${selColor === '' ? ' tc-swatch--sel' : ''}" data-color="" style="width:20px;height:20px;border-radius:50%;background:var(--bg-tertiary);border:2px solid ${selColor === '' ? 'var(--accent)' : 'var(--border-med)'};cursor:pointer;font-size:8px;display:flex;align-items:center;justify-content:center;color:var(--text-tertiary);flex-shrink:0">auto</div>`
       ).join('')
 
       // Days span calculator

@@ -345,14 +345,14 @@ describe('usagePct / usageColour', () => {
     expect(Number.isFinite(usagePct(3, 0))).toBe(true)
   })
   it('colours by the alert threshold, matching the dashboard bars', () => {
-    expect(usageColour(1, 4, 80)).toBe('#a78bfa')
-    expect(usageColour(3.2, 4, 80)).toBe('#f59e0b')
-    expect(usageColour(4, 4, 80)).toBe('#ef4444')
-    expect(usageColour(5, 4, 80)).toBe('#ef4444')
+    expect(usageColour(1, 4, 80)).toBe('var(--cat-purple)')
+    expect(usageColour(3.2, 4, 80)).toBe('var(--warning)')
+    expect(usageColour(4, 4, 80)).toBe('var(--danger)')
+    expect(usageColour(5, 4, 80)).toBe('var(--danger)')
   })
   it('honours a custom alert threshold', () => {
-    expect(usageColour(2, 4, 50)).toBe('#f59e0b')
-    expect(usageColour(1.9, 4, 50)).toBe('#a78bfa')
+    expect(usageColour(2, 4, 50)).toBe('var(--warning)')
+    expect(usageColour(1.9, 4, 50)).toBe('var(--cat-purple)')
   })
 })
 
