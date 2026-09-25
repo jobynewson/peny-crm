@@ -1,5 +1,7 @@
 import { createProject, updateProject, deleteProject, renumberProjectKanban, linkBudgetToProject, unlinkBudgetFromProject, logActivity, getActivityLog, getTimeEntries, setTrackToken, deleteTimeEntry, getWorkLog, addWorkLogEntry, deleteWorkLogEntry, updateBudget } from '../db/client.js'
 import { PostProductionView } from './post-production.js'
+import { timeLogFormHtml, bindTimeLogForm } from './time-log.js'
+import { icon } from './icons.js'
 import { continuationScript, PDF_CONTINUED_CSS, a4ContentWidthPx, a4ContentHeightPx } from '../utils/pdfContinuation.js'
 import { monthlyUsage, overallUsage, windowUsage, monthlyAllocationHours, usagePct, usageColour, hasAmortisedItems, hasPerUnitItems, contractLines, parseDateUTC } from '../utils/retainer-usage.js'
 
@@ -575,6 +577,7 @@ export class ProjectsView {
       { id: 'budget',           label: 'Budget' },
       { id: 'planning',         label: 'Planning' },
       { id: 'story-plans',      label: 'Story' },
+      { id: 'time',             label: 'Time' },
       { id: 'notes',            label: 'Notes' },
     ].filter(t => !t.hide)
     // Anything else (an old #…/files link, a hidden tab) lands on Overview.
@@ -669,13 +672,8 @@ export class ProjectsView {
     this._bindTabContent(mc, tab, p, cl, linked)
     // Sidebar bindings
     this._bindSidebar(mc, p, linked)
-    // Async loaders
+    // Async loaders (per-tab ones run from _bindTabContent)
     this._loadShoots(mc, p)
-    if (tab === 'overview') {
-      this._loadProjectActivity(mc, p.id)
-      this._loadWorkLog(mc, p)
-      this._loadTimeTracking(mc, p)
-    }
   }
 
   _renderTab(tab, p, cl, linked) {
@@ -697,6 +695,7 @@ export class ProjectsView {
     if (tab === 'planning')        return this._renderTabPlanning(p)
     if (tab === 'notes')           return this._renderTabNotes(p)
     if (tab === 'story-plans')     return this._renderTabStoryPlans(p)
+    if (tab === 'time')            return this._renderTabTime(p)
     return ''
   }
 
@@ -794,13 +793,6 @@ export class ProjectsView {
       </div>` : ''}
 
       <div class="proj-panel">
-        <div class="proj-panel-head">Time tracking</div>
-        <div id="pv-timetrack" style="padding:12px 14px">
-          <div style="font-size:11px;color:var(--text-tertiary);padding:10px 0">Loading…</div>
-        </div>
-      </div>
-
-      <div class="proj-panel">
         <div class="proj-panel-head">Work log</div>
         <div id="pv-worklog" style="padding:12px 14px">
           <div style="font-size:11px;color:var(--text-tertiary);padding:10px 0">Loading…</div>
@@ -872,6 +864,24 @@ export class ProjectsView {
   // driven by PlanningTabsView (src/views/planning-tabs.js).
   _renderTabPlanning(p) {
     return '<div id="pv-planning"><div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">Loading…</div></div>'
+  }
+
+  // Time: the project's entries (and, for a retainer, its usage over time)
+  // with a log form beside them; the project is implied.
+  _renderTabTime(p) {
+    return `
+      <div class="pv-time">
+        <div class="proj-panel pv-time-main">
+          <div class="proj-panel-head">Time tracking</div>
+          <div id="pv-timetrack" style="padding:12px 14px">
+            <div style="font-size:11px;color:var(--text-tertiary);padding:10px 0">Loading…</div>
+          </div>
+        </div>
+        <section class="proj-panel pv-time-form" aria-labelledby="pv-tl-title">
+          <h3 class="proj-panel-head" id="pv-tl-title">Log time</h3>
+          <div class="proj-panel-body">${timeLogFormHtml(this.app, { idPrefix: 'pv-tl', projectId: p.id, fixedProject: true })}</div>
+        </section>
+      </div>`
   }
 
   _renderTabStoryPlans(p) {
@@ -1011,7 +1021,13 @@ export class ProjectsView {
   }
 
   _bindTabContent(mc, tab, p, cl, linked) {
+    if (tab === 'time') {
+      this._loadTimeTracking(mc, p)
+      bindTimeLogForm(this.app, mc, { idPrefix: 'pv-tl' })
+    }
     if (tab === 'overview') {
+      this._loadProjectActivity(mc, p.id)
+      this._loadWorkLog(mc, p)
       mc.querySelectorAll('[data-pv-deliv]').forEach(el => {
         el.addEventListener('change', async () => {
           const [pid, i] = el.dataset.pvDeliv.split(',')
@@ -3629,7 +3645,7 @@ export class ProjectsView {
       // A retainer with no time logged yet still has a useful view: the month
       // blocks show the allocation sitting unused.
       el.innerHTML = usageHTML +
-        '<div style="font-size:11px;color:var(--text-tertiary);padding:8px 0">No time logged yet. Use the Time Tracker to log hours against this project.</div>'
+        '<div style="font-size:12px;color:var(--text-tertiary);padding:8px 0">No time logged yet. Log hours with the form here, or the Log time button in the header.</div>'
       this._wireRetainerUsage(el, mc, p)
       return
     }
@@ -3688,24 +3704,30 @@ export class ProjectsView {
       </div>
       <div id="pv-tt-breakdown" style="margin-bottom:16px"></div>
 
-      <button id="pv-tt-log-toggle" aria-expanded="${open}" aria-controls="pv-tt-log"
-        style="display:flex;align-items:center;gap:6px;width:100%;background:none;border:none;padding:0 0 6px;cursor:pointer;font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;font-family:inherit;text-align:left">
-        <span id="pv-tt-log-chev" style="display:inline-block;transition:transform 0.15s;transform:rotate(${open ? 90 : 0}deg)">▶</span>
-        <span>Log (${entries.length})</span>
+      <button id="pv-tt-log-toggle" class="section-label tt-log-toggle" aria-expanded="${open}" aria-controls="pv-tt-log">
+        <span id="pv-tt-log-chev" aria-hidden="true" style="display:inline-block;transition:transform 0.15s;transform:rotate(${open ? 90 : 0}deg)">▶</span>
+        <span>Entries (${entries.length})</span>
       </button>
-      <div id="pv-tt-log" ${open ? '' : 'hidden'}>
-        ${entries.map(e => `
-          <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-light)">
-            <div style="flex:1;min-width:0">
-              <div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap">
-                <span style="font-size:13px;font-weight:500;color:var(--text-primary)">${esc(e.line_label)}</span>
-                <span style="font-size:11px;color:var(--text-tertiary)">${fmtDate(e.entry_date)}</span>
-              </div>
-              <div style="font-size:11px;color:var(--text-tertiary);margin-top:1px">${esc(e.crew_name)}${e.note ? ' · ' + esc(e.note) : ''}</div>
-            </div>
-            <span style="font-size:13px;font-weight:600;color:var(--accent);flex-shrink:0">${fmtH(parseFloat(e.hours) || 0)}h</span>
-            ${canEdit ? `<button data-del-tt="${e.id}" style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:13px;padding:0;flex-shrink:0" title="Delete">×</button>` : ''}
-          </div>`).join('')}
+      <div id="pv-tt-log" class="tt-table-wrap" ${open ? '' : 'hidden'}>
+        <table class="tt-table">
+          <thead>
+            <tr>
+              <th scope="col">Date</th><th scope="col">Who</th><th scope="col">Role</th><th scope="col" class="num">Hours</th><th scope="col">Notes</th>
+              ${canEdit ? '<th scope="col"><span class="visually-hidden">Delete</span></th>' : ''}
+            </tr>
+          </thead>
+          <tbody>
+            ${entries.map(e => `
+              <tr>
+                <td class="mono">${fmtDate(e.entry_date)}</td>
+                <td>${esc(e.crew_name)}</td>
+                <td>${esc(e.line_label)}</td>
+                <td class="num mono">${fmtH(parseFloat(e.hours) || 0)}</td>
+                <td class="tt-note">${esc(e.note || '')}</td>
+                ${canEdit ? `<td class="tt-act"><button type="button" class="icon-btn" data-del-tt="${e.id}" aria-label="Delete ${fmtH(parseFloat(e.hours) || 0)}h on ${fmtDate(e.entry_date)}" title="Delete">${icon('close', 14)}</button></td>` : ''}
+              </tr>`).join('')}
+          </tbody>
+        </table>
       </div>`
 
     this._wireRetainerUsage(el, mc, p)

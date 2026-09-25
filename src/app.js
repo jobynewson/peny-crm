@@ -804,29 +804,19 @@ export class App {
     return [prevStart, currentStart]
   }
 
-  // ── Sidebar quick-log widget ─────────────────────────────────────────────────
-
-  _sttTrackableLines(project) {
-    if (!project) return []
-    const lines = []
-    if (project.is_retainer && (project.retainer_items || []).length) {
-      for (const item of project.retainer_items) {
-        if (item.label) lines.push({ label: item.label, budgetId: null })
-      }
-    } else {
-      for (const bid of (project.budget_ids || [])) {
-        const b = this.budgets.find(x => x.id === bid)
-        if (!b) continue
-        for (const s of (b.sections || [])) {
-          if (!s.enabled) continue
-          for (const l of (s.lines || [])) {
-            if (!l.track_time || !l.item) continue
-            lines.push({ label: l.item, budgetId: b.id })
-          }
-        }
-      }
+  // After time is logged (Log time popover, a project's Time tab), refresh
+  // whatever on screen shows that project's hours.
+  refreshTimeViews(projectId) {
+    const mc = document.getElementById('main-content')
+    const project = this.projects.find(p => p.id === projectId)
+    if (!mc || !project) return
+    if (mc.querySelector(`#db-time-${projectId}`)) this._loadDbTimeSection(mc, project)
+    if (this.currentView === 'projects' && this.projectsView.currentId === projectId && mc.querySelector('#pv-timetrack')) {
+      this.projectsView._loadTimeTracking(mc, project)
     }
-    return lines
+    if (this.currentView === 'timetrack' && mc.querySelector('#tt-project')?.value === projectId) {
+      this.timeTrackView._loadLog(mc, project)
+    }
   }
 
   // Fetch shoots / planning / story-plan counts for the Live Projects tab-nav
@@ -1151,6 +1141,7 @@ export class App {
         { id: 'budget',          label: 'Budget', count: (p.budget_ids||[]).length },
         { id: 'planning',        label: 'Planning', key: 'planning' },
         { id: 'story-plans',     label: 'Story', key: 'story_plans' },
+        { id: 'time',            label: 'Time' },
         { id: 'notes',           label: 'Notes', count: comments.length },
       ].filter(t => !t.hide)
       const navRow = `<div class="db-proj-nav">${navTabs.map((t, i) => {

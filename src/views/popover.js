@@ -94,7 +94,7 @@ export function openFloating({ anchor, id, role = 'menu', label, html, className
   onReady?.(el, close)
   const first = role === 'menu'
     ? items()[0]
-    : el.querySelector('[autofocus]') || el.querySelector('input:not([type="hidden"]), select, textarea, button')
+    : el.querySelector('[data-autofocus]') || el.querySelector('input:not([type="hidden"]), select, textarea, button')
   first?.focus()
   return state
 }

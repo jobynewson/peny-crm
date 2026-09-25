@@ -416,6 +416,67 @@ kbd { font-family: var(--font-mono); }
 .dd-theme { padding: 0 4px 4px; }
 .dd-theme .dd-label { padding-left: 6px; }
 
+/* ── Log time: header popover and a project's Time tab (views/time-log.js) ── */
+.lt-pop { width: 340px; max-width: calc(100vw - 16px); padding: 16px; }
+.lt-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.lt-title { flex: 1; font-size: 15px; font-weight: 600; color: var(--text); }
+.tl-form { display: flex; flex-direction: column; gap: 12px; }
+.tl-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.tl-field label { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+.tl-optional { font-weight: 400; color: var(--text-subtle); }
+.tl-field select, .tl-field input {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.tl-field input[type="date"] { font-family: var(--font-mono); font-size: 12px; }
+.tl-field select:focus, .tl-field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15); }
+.tl-field select:disabled { color: var(--text-subtle); background: var(--surface-2); cursor: not-allowed; }
+.tl-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tl-hint { font-size: 12px; line-height: 1.45; color: var(--text-subtle); }
+.tl-hint[hidden] { display: none; }
+.tl-submit { width: 100%; height: 40px; justify-content: center; }
+.tl-msg { font-size: 12px; min-height: 0; color: var(--text-muted); }
+.tl-msg:empty { display: none; }
+.tl-msg[data-tone="error"] { color: var(--danger); }
+
+.pv-time { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 12px; align-items: start; }
+@media (max-width: 1100px) {
+  .pv-time { grid-template-columns: 1fr; }
+  .pv-time-form { order: -1; }
+}
+.tt-log-toggle { display: flex; align-items: center; gap: 6px; width: 100%; padding: 0 0 8px; background: none; border: none; cursor: pointer; text-align: left; }
+.tt-table-wrap { overflow-x: auto; }
+.tt-table-wrap[hidden] { display: none; }
+.tt-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tt-table th {
+  padding: 8px 10px;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-subtle);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.tt-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: top; }
+.tt-table tr:last-child td { border-bottom: none; }
+.tt-table .num { text-align: right; }
+.tt-table .mono { font-family: var(--font-mono); font-size: 12px; white-space: nowrap; }
+.tt-table .tt-note { color: var(--text-muted); min-width: 140px; }
+.tt-table .tt-act { width: 1%; padding: 2px 4px; }
+.tt-table .tt-act .icon-btn { width: 30px; height: 30px; }
+
 /* ── Segmented control (theme, view switchers, mobile board status) ── */
 .seg { display: flex; gap: 2px; padding: 3px; background: var(--surface-sunken); border-radius: var(--radius-md); }
 .seg-btn {

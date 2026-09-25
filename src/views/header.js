@@ -1,11 +1,12 @@
-// App header: the Slate wordmark, the four top-level tabs, search, New,
-// Notes and the account menu. The tabs are real links styled as tabs; the active one
+// App header: the Slate wordmark, the four top-level tabs, search, Log time,
+// New, Notes and the account menu. The tabs are real links styled as tabs; the active one
 // takes the page background so it joins the content below.
 
 import { icon } from './icons.js'
 import { openFloating } from './popover.js'
 import { getThemeChoice, setThemeChoice } from '../theme.js'
 import { pendingApprovalsFor } from './leave.js'
+import { timeLogFormHtml, bindTimeLogForm } from './time-log.js'
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
@@ -62,6 +63,7 @@ export class HeaderView {
           <button type="button" class="hdr-search" id="hdr-search" aria-keyshortcuts="${mac ? 'Meta+K' : 'Control+K'}">
             ${icon('search', 16)}<span class="hdr-search-text">Search or jump to…</span><kbd>${mac ? '⌘K' : 'Ctrl K'}</kbd>
           </button>
+          <button type="button" class="hdr-btn hdr-btn--outline" id="hdr-logtime" aria-haspopup="dialog" aria-expanded="false">${icon('stopwatch', 16)}<span>Log time</span></button>
           <button type="button" class="hdr-btn hdr-btn--accent" id="hdr-new" aria-haspopup="menu" aria-expanded="false">${icon('plus', 16)}<span>New</span></button>
           <button type="button" class="hdr-icon-btn" id="hdr-notes" title="Notes" aria-label="Notes" aria-controls="notes-panel" aria-expanded="${this.app._notesOpen ? 'true' : 'false'}">${icon('notes', 20)}</button>
           <button type="button" class="hdr-account" id="hdr-account" aria-haspopup="menu" aria-expanded="false" aria-label="${esc(this.accountLabel())}">
@@ -74,6 +76,7 @@ export class HeaderView {
 
   bind(root) {
     root.querySelector('#hdr-search')?.addEventListener('click', () => this.app._openSearch())
+    root.querySelector('#hdr-logtime')?.addEventListener('click', e => this.openLogTime(e.currentTarget))
     root.querySelector('#hdr-new')?.addEventListener('click', e => this.openNewMenu(e.currentTarget))
     root.querySelector('#hdr-notes')?.addEventListener('click', () => this.app.toggleNotes())
     root.querySelector('#hdr-account')?.addEventListener('click', e => this.openAccountMenu(e.currentTarget))
@@ -147,6 +150,26 @@ export class HeaderView {
           else if (action === 'shortcuts') app._openShortcuts()
           else if (action === 'sign-out') app.onSignOut()
         }))
+      },
+    })
+  }
+
+  // One click to log hours from anywhere. On a project page that project is
+  // pre-selected.
+  openLogTime(anchor) {
+    const app = this.app
+    const projectId = app.currentView === 'projects' ? app.projectsView.currentId : null
+    const html = `
+      <div class="lt-head">
+        <h2 class="lt-title" id="lt-title">Log time</h2>
+        <!-- Timer mode (start/stop) will add a "Log hours | Timer" switch here. -->
+      </div>
+      ${timeLogFormHtml(app, { idPrefix: 'lt', projectId })}`
+    openFloating({
+      anchor, id: 'logtime-pop', role: 'dialog', className: 'lt-pop', html,
+      onReady: (el, close) => {
+        el.setAttribute('aria-labelledby', 'lt-title')
+        bindTimeLogForm(app, el, { idPrefix: 'lt', onLogged: () => close() })
       },
     })
   }
