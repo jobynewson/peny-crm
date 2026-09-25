@@ -125,10 +125,27 @@ There is no sidebar. The shell is a header over the page:
   opens a bottom sheet instead (see "Phones" below).
 - **Page toolbar**: the first row of each list page (`toolbarHtml()` in
   `src/app.js`): the view switcher (All projects · Budgets · Planning under
-  the Projects tab), then filters, then primary actions on the right. Pages
-  don't repeat their title. Detail pages (a project, budget, board, plan)
-  hide it and use their own header row. A project's row starts with a
-  "Projects / <name>" breadcrumb.
+  the Projects tab) or the page's own tabs, then filters, then primary
+  actions on the right. Pages don't repeat their title. Detail pages (a
+  project, budget, board, plan) hide it and use their own header row. A
+  project's row starts with a "Projects / <name>" breadcrumb.
+- **A page can fill in the toolbar itself**: implement `toolbar()` returning
+  `{ tabs, filters, actions }` (HTML, any of them optional) and
+  `bindToolbar(bar)`, and list the view in `_toolbarOwner()` in
+  `src/app.js`. `src/views/toolbar.js` has the pieces: `segTabs()` for tabs
+  within a page (Leave, Settings, Marketing, Planning's Boards · Canvases),
+  `toolbarSearch()` for a search box. When a page's own state changes what
+  the toolbar shows (a tab, a count), call `app.updateTitle()` to redraw it.
+  Keep search boxes in the toolbar, not in the page body: a page that
+  redraws its body on each keystroke would otherwise rebuild the box and
+  lose the cursor.
+- **Page layout**: every page starts at the same left edge as the header and
+  uses the full width. No `max-width` columns and no centring. Figures go in
+  `.stats-row` / `.stat-card`, content in `.panel`s. For a form next to what
+  it adds to, use `.page-split` (Expenses, the old time tracker). For panels
+  side by side as space allows, use `.panel-grid`, with `.panel-grid-wide`
+  for one that spans the row (Settings). For sets of cards, use `.card-grid`
+  (Story Planner, Planning). All of these stack on narrow screens.
 - **Notes** (the header's Notes button) docks as a panel on the right of the
   page on desktop and remembers being open (`slate-notes-open`). On phones
   it's a full-screen sheet that closes when you navigate.
