@@ -6,8 +6,18 @@ import { neon } from '@neondatabase/serverless'
 import { isRateLimited, getClientIp } from './_ratelimit.js'
 import { handleDashboard } from './_dashboard.js'
 import { handleOffloadIngest } from './_offloads.js'
+import { handleTasks } from './_tasks.js'
 
 export default async function handler(req, res) {
+  // The task board API shares this function for the same reason as the two
+  // handlers below — we are at Vercel's 12-function cap (see claude.md). Every
+  // /api/tasks/* and /api/notifications/* request is rewritten here as
+  // ?view=tasks; _tasks.js does its own Clerk auth, method and path handling, so
+  // dispatch before the public-portal CORS/GET guard below.
+  if (req.query.view === 'tasks') {
+    return handleTasks(req, res, neon(process.env.VITE_DATABASE_URL))
+  }
+
   // The Offload Log ingest (POST /api/offloads → rewritten here as
   // ?view=offloads) shares this function to stay within Vercel's 12-function
   // limit — see claude.md. It has its own auth and method handling, so dispatch

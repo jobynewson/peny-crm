@@ -14,6 +14,7 @@ import { ExpensesView } from './views/expenses.js'
 import { OffloadLogView } from './views/offload-log.js'
 import { BoardsView } from './views/boards.js'
 import { CanvasView } from './views/canvas.js'
+import { TasksView } from './views/tasks.js'
 import { PlanningTabsView } from './views/planning-tabs.js'
 import { HeaderView, tabForView } from './views/header.js'
 import { icon } from './views/icons.js'
@@ -58,6 +59,7 @@ export class App {
     this.offloadLogView       = new OffloadLogView(this)
     this.boardsView           = new BoardsView(this)
     this.canvasView           = new CanvasView(this)
+    this.tasksView            = new TasksView(this)
     this.planningTabs         = new PlanningTabsView(this)
     this.header               = new HeaderView(this)
     window.app = this
@@ -761,6 +763,8 @@ export class App {
       this.leaveView.render(mc)
     } else if (this.currentView === 'calendar') {
       this.teamCalendarView.renderFullPage(mc)
+    } else if (this.currentView === 'tasks') {
+      this.tasksView.render(mc)
     } else if (this.currentView === 'dashboard') {
       this.renderDashboard(mc)
     } else {
@@ -960,6 +964,7 @@ export class App {
         setTimeout(() => document.querySelector('#topbar-btn')?.click(), 50)
       })
       this.teamCalendarView.renderDashboardSection(mc)
+      this.tasksView.renderDashboardSection(mc)
       this._mountCountdownWidget(mc)
       this._mountDaysSinceWidget(mc)
       this._mountYoutubeWidget(mc)
@@ -1466,6 +1471,8 @@ export class App {
       </div>`
 
     this.teamCalendarView.renderDashboardSection(mc)
+    // Tasks sits between the calendar and Live Projects.
+    this.tasksView.renderDashboardSection(mc)
     this._mountCountdownWidget(mc)
     this._mountDaysSinceWidget(mc)
     this._mountYoutubeWidget(mc)
