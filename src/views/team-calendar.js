@@ -341,7 +341,7 @@ export class TeamCalendarView {
         <th style="padding:8px 10px;text-align:left;font-weight:500;font-size:11px;color:var(--text-tertiary);width:130px;border-right:1px solid var(--border-light);white-space:nowrap">Team</th>
         ${dayMeta.map(m => `
           <th style="padding:8px 10px;text-align:left;font-weight:500;font-size:11px;min-width:100px;border-right:1px solid var(--border-light);white-space:nowrap;${m.isToday ? 'color:var(--accent)' : m.isWeekend ? 'color:var(--text-tertiary)' : 'color:var(--text-secondary)'}">
-            ${esc(m.shortStr)}${m.isToday ? ' <span style="font-size:9px;background:var(--accent);color:var(--accent-text);border-radius:var(--radius-sm);padding:1px 4px;vertical-align:middle">TODAY</span>' : ''}
+            ${esc(m.shortStr)}${m.isToday ? ' <span style="font-size:9px;background:var(--accent);color:var(--on-accent);border-radius:var(--radius-sm);padding:1px 4px;vertical-align:middle">TODAY</span>' : ''}
           </th>`).join('')}`
       tbody = users.map(u => `<tr style="border-top:1px solid var(--border-light)">
           <td style="padding:7px 10px;border-right:1px solid var(--border-light);vertical-align:middle;white-space:nowrap;font-weight:500;color:var(--text-secondary)">
@@ -363,7 +363,7 @@ export class TeamCalendarView {
         const rowBg = m.isToday ? 'rgba(var(--accent-rgb),0.06)' : m.isWeekend ? 'var(--bg-secondary)' : 'var(--bg-primary)'
         return `<tr style="background:${rowBg};border-top:1px solid var(--border-light)">
           <td style="padding:7px 10px;border-right:1px solid var(--border-light);vertical-align:middle;white-space:nowrap;${m.isToday ? 'font-weight:600;color:var(--accent)' : m.isWeekend ? 'color:var(--text-tertiary)' : 'color:var(--text-secondary)'}">
-            ${esc(m.shortStr)}${m.isToday ? ' <span style="font-size:9px;background:var(--accent);color:var(--accent-text);border-radius:var(--radius-sm);padding:1px 4px;vertical-align:middle">TODAY</span>' : ''}
+            ${esc(m.shortStr)}${m.isToday ? ' <span style="font-size:9px;background:var(--accent);color:var(--on-accent);border-radius:var(--radius-sm);padding:1px 4px;vertical-align:middle">TODAY</span>' : ''}
           </td>
           ${users.map(u => cellHtml(m.dateKey, u.id)).join('')}
         </tr>`

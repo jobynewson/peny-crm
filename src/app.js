@@ -15,6 +15,7 @@ import { OffloadLogView } from './views/offload-log.js'
 import { BoardsView } from './views/boards.js'
 import { CanvasView } from './views/canvas.js'
 import { PlanningTabsView } from './views/planning-tabs.js'
+import { effectiveTheme, setThemeChoice } from './theme.js'
 
 export class App {
   constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, leaveRequests, publicHolidays, onSignOut }) {
@@ -55,8 +56,6 @@ export class App {
 
   mount(container) {
     this.container = container
-    const saved = localStorage.getItem('slate-theme') || 'dark'
-    document.documentElement.setAttribute('data-theme', saved)
     this._restoreFromHash()   // parse URL before first render
     this.render()
     this._bindKeyboard()
@@ -590,10 +589,7 @@ export class App {
     const toggleBtn = this.container.querySelector('#theme-toggle-btn')
     if (toggleBtn) {
       toggleBtn.addEventListener('click', () => {
-        const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
-        const next = isDark ? 'light' : 'dark'
-        document.documentElement.setAttribute('data-theme', next)
-        localStorage.setItem('slate-theme', next)
+        setThemeChoice(effectiveTheme() === 'dark' ? 'light' : 'dark')
         toggleBtn.innerHTML = this.iconTheme()
       })
     }
@@ -3704,7 +3700,7 @@ export class App {
   iconSignOut()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M10 11l4-4-4-4M14 8H6"/></svg>` }
   iconCollapse() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 4.5L6 8l3.5 3.5M13 4.5L9.5 8l3.5 3.5"/></svg>` }
   iconTheme() {
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+    const isDark = effectiveTheme() === 'dark'
     return isDark
       ? `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M11.4 4.6l-1.4 1.4M4.6 11.4l-1.4 1.4"/></svg>`
       : `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M13.5 10A5.5 5.5 0 0 1 6 2.5a5.5 5.5 0 1 0 7.5 7.5z"/></svg>`
