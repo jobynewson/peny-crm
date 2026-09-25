@@ -568,9 +568,18 @@ export class ProjectsView {
     if (!p) { this.currentId = null; this.renderKanban(mc); return }
 
     if (p.is_retainer && p.retainer_start) this._checkRetainerReset(p)
-    // Files isn't built yet — never land on it (e.g. from an old URL).
-    if (this._pvTab === 'files') this._pvTab = 'overview'
-    const tab = this._pvTab || 'overview'
+    const TABS = [
+      { id: 'overview',         label: 'Overview' },
+      { id: 'shoots',           label: 'Shoots', hide: (p.project_type||'full_service') === 'post_production' },
+      { id: 'post-production',  label: 'Post Production' },
+      { id: 'budget',           label: 'Budget' },
+      { id: 'planning',         label: 'Planning' },
+      { id: 'story-plans',      label: 'Story' },
+      { id: 'notes',            label: 'Notes' },
+    ].filter(t => !t.hide)
+    // Anything else (an old #…/files link, a hidden tab) lands on Overview.
+    if (!TABS.some(t => t.id === this._pvTab)) this._pvTab = 'overview'
+    const tab = this._pvTab
     const { contacts, budgets } = this.app
     const cl = contacts.find(c => c.id === p.client_id)
     const budgetIds = Array.isArray(p.budget_ids) ? p.budget_ids : []
@@ -578,21 +587,10 @@ export class ProjectsView {
 
     const sidebarCollapsed = localStorage.getItem('slate-sidebar-collapsed') === '1'
 
-    const TABS = [
-      { id: 'overview',         label: '📋 Overview' },
-      { id: 'shoots',           label: '🎬 Shoots', hide: (p.project_type||'full_service') === 'post_production' },
-      { id: 'post-production',  label: '🎞 Post Production' },
-      { id: 'budget',           label: '💰 Budget' },
-      { id: 'planning',         label: '🗂 Planning' },
-      { id: 'files',            label: '📁 Files', disabled: true },
-      { id: 'notes',            label: '💬 Notes' },
-      { id: 'story-plans',      label: '🎬 Story Plans' },
-    ].filter(t => !t.hide)
-
     mc.innerHTML = `
       <div class="bh-row">
-        <button class="btn-secondary" id="back-to-kanban">← All projects</button>
-        <input id="pv-name" value="${esc(p.name)}" style="flex:1;font-size:15px;font-weight:500;background:transparent;border:none;outline:none;border-bottom:1.5px solid transparent;padding:2px 4px;color:var(--text-primary);font-family:var(--font);transition:border-color 0.15s;min-width:0" onfocus="this.style.borderBottomColor='var(--border-strong)'" onblur="this.style.borderBottomColor='transparent'" placeholder="Project name" />
+        <nav class="crumbs" aria-label="Breadcrumb"><a href="#projects" id="back-to-kanban">Projects</a><span class="crumb-sep" aria-hidden="true">/</span></nav>
+        <input id="pv-name" aria-label="Project name" value="${esc(p.name)}" style="flex:1;font-size:15px;font-weight:500;background:transparent;border:none;outline:none;border-bottom:1.5px solid transparent;padding:2px 4px;color:var(--text-primary);font-family:var(--font);transition:border-color 0.15s;min-width:0" onfocus="this.style.borderBottomColor='var(--border-strong)'" onblur="this.style.borderBottomColor='transparent'" placeholder="Project name" />
         <select id="pv-status" class="status-select" style="font-size:12px">
           ${p.is_retainer
             ? `<option value="Enquiry" ${p.status==='Enquiry'?'selected':''}>Enquiry</option>
@@ -614,9 +612,7 @@ export class ProjectsView {
           <div style="display:flex;align-items:center;gap:0;border-bottom:1px solid var(--border-light);margin-bottom:20px">
             <div class="proj-tab-bar-wrap" style="flex:1;min-width:0">
               <div class="proj-tab-bar" id="proj-tab-bar" style="border-bottom:none">
-                ${TABS.map(t => t.disabled
-                  ? `<button class="proj-tab proj-tab--disabled" disabled title="Coming soon">${t.label} <span class="proj-tab-soon">Soon</span></button>`
-                  : `<button class="proj-tab ${t.id===tab?'active':''}" data-tab="${t.id}">${t.label}</button>`).join('')}
+                ${TABS.map(t => `<button class="proj-tab ${t.id===tab?'active':''}" data-tab="${t.id}"${t.id===tab?' aria-current="page"':''}>${t.label}</button>`).join('')}
               </div>
               <div class="proj-tab-fade proj-tab-fade--left" aria-hidden="true"></div>
               <div class="proj-tab-fade proj-tab-fade--right" aria-hidden="true"></div>
@@ -642,7 +638,10 @@ export class ProjectsView {
         const newTab = btn.dataset.tab
         this._pvTab = newTab
         this.app._pushAppState(`#projects/${p.id}/${newTab}`, { view:'projects', id:p.id, tab:newTab })
-        mc.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === newTab))
+        mc.querySelectorAll('[data-tab]').forEach(b => {
+          b.classList.toggle('active', b.dataset.tab === newTab)
+          if (b.dataset.tab === newTab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current')
+        })
         const content = mc.querySelector('#pv-tab-content')
         if (content) {
           content.innerHTML = this._renderTab(newTab, p, cl, linked)
@@ -696,7 +695,6 @@ export class ProjectsView {
     if (tab === 'post-production') return `<div id="pv-pps-container"><div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">Loading…</div></div>`
     if (tab === 'budget')          return this._renderTabBudget(p, linked)
     if (tab === 'planning')        return this._renderTabPlanning(p)
-    if (tab === 'files')           return this._renderTabFiles(p)
     if (tab === 'notes')           return this._renderTabNotes(p)
     if (tab === 'story-plans')     return this._renderTabStoryPlans(p)
     return ''
@@ -739,7 +737,7 @@ export class ProjectsView {
             const assignee = d.assignee_id ? (this.app.allUsers||[]).find(u => u.id === d.assignee_id) : null
             const assigneeName = assignee ? (assignee.name || assignee.email.split('@')[0]) : null
             return `
-            <div class="deliv-row" style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border-light)${isOverdue?';background:var(--danger-soft);border-radius:6px;margin:1px 0':''}">
+            <div class="deliv-row" style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border-light)${isOverdue?';background:var(--danger-wash);border-radius:6px;margin:1px 0':''}">
               <input type="checkbox" ${d.done?'checked':''} data-pv-deliv="${p.id},${i}" style="width:15px;height:15px;cursor:pointer;flex-shrink:0" />
               <span style="font-size:13px;flex:1;min-width:0;${d.done?'text-decoration:line-through;color:var(--text-tertiary)':''}">${esc(d.text)}</span>
               ${assigneeName ? `<span style="font-size:11px;color:var(--text-tertiary);white-space:nowrap;flex-shrink:0;padding:2px 7px;border:0.5px solid var(--border-light);border-radius:5px" title="Assigned to ${esc(assigneeName)}">👤 ${esc(assigneeName)}</span>` : ''}
@@ -874,15 +872,6 @@ export class ProjectsView {
   // driven by PlanningTabsView (src/views/planning-tabs.js).
   _renderTabPlanning(p) {
     return '<div id="pv-planning"><div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">Loading…</div></div>'
-  }
-
-  _renderTabFiles(p) {
-    return `
-      <div style="text-align:center;padding:60px 20px;color:var(--text-tertiary)">
-        <div style="font-size:32px;margin-bottom:12px">📁</div>
-        <div style="font-size:15px;font-weight:500;color:var(--text-secondary);margin-bottom:8px">Files coming soon</div>
-        <div style="font-size:13px;line-height:1.6;max-width:320px;margin:0 auto">Contracts, release forms, risk assessment exports, and other project files will live here.</div>
-      </div>`
   }
 
   _renderTabStoryPlans(p) {
@@ -1210,7 +1199,8 @@ export class ProjectsView {
   }
 
   _bindViewerHeader(mc, p) {
-    mc.querySelector('#back-to-kanban')?.addEventListener('click', () => {
+    mc.querySelector('#back-to-kanban')?.addEventListener('click', e => {
+      e.preventDefault()
       this.currentId = null; this.editingId = null
       history.pushState({ view: 'projects' }, '', '#projects')
       this.renderKanban(mc); this.app.updateTitle()
@@ -3829,8 +3819,8 @@ export class ProjectsView {
 
     mc.innerHTML = `
       <div class="bh-row">
-        <button class="btn-secondary" id="back-to-kanban">← All projects</button>
-        <h2 style="flex:1;font-size:15px;font-weight:500">${esc(p.name)}</h2>
+        <nav class="crumbs" aria-label="Breadcrumb"><a href="#projects" id="back-to-kanban">Projects</a><span class="crumb-sep" aria-hidden="true">/</span></nav>
+        <h2 style="flex:1;font-size:15px;font-weight:600">${esc(p.name)}</h2>
         <div style="display:flex;gap:4px;background:var(--bg-secondary);border-radius:20px;padding:3px">
           <button class="filter-pill ${(p.project_type||'full_service')==='full_service'?'active':''}" data-proj-type="full_service" style="border-radius:16px;font-size:11px">Full service</button>
           <button class="filter-pill ${(p.project_type||'full_service')==='post_production'?'active':''}" data-proj-type="post_production" style="border-radius:16px;font-size:11px">Post production</button>
@@ -4373,7 +4363,7 @@ export class ProjectsView {
       `<option value="">Assignee…</option>`,
       ...users.map(u => `<option value="${esc(u.id)}" ${d.assignee_id===u.id?'selected':''}>${esc(u.name||u.email)}</option>`)
     ].join('')
-    return `<div class="deliverable-row" data-di="${i}" style="${overdue?'background:var(--danger-soft);border-radius:6px;margin:1px 0':''}">
+    return `<div class="deliverable-row" data-di="${i}" style="${overdue?'background:var(--danger-wash);border-radius:6px;margin:1px 0':''}">
       <input type="checkbox" class="deliverable-check" ${d.done?'checked':''} data-${pfx}deliv-done="${i}" />
       <input type="text" class="deliverable-text" value="${esc(d.text)}" placeholder="${isMonthly ? 'e.g. Monthly edit, Social content...' : 'e.g. 90s hero film, 3x social cutdowns...'}" data-${pfx}deliv-text="${i}" />
       <input type="date" class="deliverable-date" value="${d.due||''}" data-${pfx}deliv-due="${i}"
@@ -4428,8 +4418,11 @@ export class ProjectsView {
       this.editingId = null; this.render(mc); this.app.updateTitle()
     }
 
-    mc.querySelector('#back-to-kanban')?.addEventListener('click', () => {
-      this.currentId = null; this.editingId = null; this.render(mc); this.app.updateTitle()
+    mc.querySelector('#back-to-kanban')?.addEventListener('click', e => {
+      e.preventDefault()
+      this.currentId = null; this.editingId = null
+      history.pushState({ view: 'projects' }, '', '#projects')
+      this.render(mc); this.app.updateTitle()
     })
     mc.querySelector('#pe-save-close')?.addEventListener('click', exitEdit)
     mc.querySelector('#pe-delete')?.addEventListener('click', () => this.deleteProject(p.id, mc))

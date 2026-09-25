@@ -29,6 +29,11 @@
   --radius-sheet: 18px;    /* mobile bottom sheets (top corners) */
   --radius-pill: 999px;
 
+  /* App chrome: header height plus, on phones, the bottom tab bar. */
+  --header-h: 64px;
+  --tabbar-h: 0px;
+  --chrome-h: calc(var(--header-h) + var(--tabbar-h));
+
   /* Type scale */
   --fs-2xs: 9px;
   --fs-xs: 10px;
@@ -124,6 +129,7 @@
   --warning-soft: #FDF5E8;
   --danger: #B42318;           /* overdue */
   --danger-soft: #FBE9E7;
+  --danger-wash: #FDF4F3;       /* faint row highlight, e.g. an overdue deliverable */
   --danger-border: rgba(180, 35, 24, 0.35);
 
   /* Categorical colours: project stages, calendar and search types, avatars,
@@ -186,6 +192,7 @@ html[data-theme="dark"] {
   --warning-soft: #3A2D18;
   --danger: #FF8A80;
   --danger-soft: #3D2124;
+  --danger-wash: #2A2226;
   --danger-border: rgba(255, 138, 128, 0.4);
 
   --cat-blue: #86B6F7;    --cat-blue-soft: #1E2D45;
@@ -247,6 +254,7 @@ html[data-theme="dark"] {
     --warning-soft: #3A2D18;
     --danger: #FF8A80;
     --danger-soft: #3D2124;
+    --danger-wash: #2A2226;
     --danger-border: rgba(255, 138, 128, 0.4);
 
     --cat-blue: #86B6F7;    --cat-blue-soft: #1E2D45;
@@ -284,17 +292,4 @@ html[data-theme="dark"] {
   --border-med: var(--border-strong);
   --accent-subtle: var(--accent-soft);
   --danger-subtle: var(--danger-soft);
-}
-
-/* ── Sidebar — always dark in both themes ── */
-:root {
-  --sb-bg: #15171D;
-  --sb-border: rgba(255, 255, 255, 0.07);
-  --sb-surface: rgba(255, 255, 255, 0.04);
-  --sb-surface-hover: rgba(255, 255, 255, 0.08);
-  --sb-text: #A6AEBC;
-  --sb-text-dim: #5D6571;
-  --sb-text-bright: #F2F4F8;
-  --sb-accent: #818CF8;
-  --sb-accent-wash: rgba(129, 140, 248, 0.14);
 }

@@ -15,8 +15,12 @@ import { OffloadLogView } from './views/offload-log.js'
 import { BoardsView } from './views/boards.js'
 import { CanvasView } from './views/canvas.js'
 import { PlanningTabsView } from './views/planning-tabs.js'
-import { HeaderView } from './views/header.js'
+import { HeaderView, tabForView } from './views/header.js'
+import { icon } from './views/icons.js'
 import { closeFloating } from './views/popover.js'
+
+// Every route the app has used; old bookmarks keep working.
+const VIEWS = ['dashboard', 'calendar', 'projects', 'budgets', 'planning', 'contacts', 'marketing', 'story-planner', 'leave', 'expenses', 'password-manager', 'offload-log', 'settings', 'timetrack']
 
 export class App {
   constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, leaveRequests, publicHolidays, onSignOut }) {
@@ -58,8 +62,13 @@ export class App {
 
   mount(container) {
     this.container = container
+    // The Notes panel docks beside the page on desktop and remembers being
+    // open, the way the sidebar notes were always there. On phones it's a
+    // sheet you open when needed.
+    try { this._notesOpen = localStorage.getItem('slate-notes-open') === '1' && !window.matchMedia('(max-width: 768px)').matches } catch { this._notesOpen = false }
     this._restoreFromHash()   // parse URL before first render
     this.render()
+    this._loadNotes()         // notes are also indexed by ⌘K search
     this._bindKeyboard()
     this._bindNavLinks()
     this._bindDateRangeLinks()
@@ -369,11 +378,12 @@ export class App {
     }
   }
 
-  // Open and focus a note from a global-search result (notes live in the sidebar).
+  // Open and focus a note from a global-search result (notes live in the Notes panel).
   _openNoteFromSearch(id) {
     if (!this._openNoteIds) this._openNoteIds = new Set()
     this._openNoteIds.add(id)
-    this._renderNotesList()
+    if (!this._notesOpen) this.toggleNotes(true, { focus: false })
+    else this._renderNotesList()
     const card = document.querySelector(`.notes-card[data-note-id="${id}"]`)
     if (card) {
       card.scrollIntoView({ block: 'center', behavior: 'smooth' })
@@ -461,61 +471,47 @@ export class App {
   render() {
     closeFloating({ restoreFocus: false })
     const showDetail = this.currentView === 'contacts'
-    const collapsed = this._sidebarCollapsed()
+    const toolbar = this.toolbarHtml()
     this.container.innerHTML = `
       ${this.header.html()}
       <div class="app-body">
-      <div class="sidebar-overlay" id="sidebar-overlay"></div>
-      <div class="sidebar${collapsed ? ' collapsed' : ''}" id="app-sidebar">
-        <div class="logo">
-          <img src="/slate-logo.png" alt="Slate" />
-          <button class="sidebar-collapse-btn" id="sidebar-collapse-btn" aria-label="Toggle sidebar" title="${collapsed ? 'Expand sidebar' : 'Collapse sidebar'}">${this.iconCollapse()}</button>
-        </div>
-        <div class="nav-label">Main</div>
-        ${[['dashboard','Dashboard',this.iconPipeline()],['calendar','Calendar',this.iconCalendar()],['contacts','Contacts',this.iconContacts()],['projects','Projects',this.iconProjects()],['budgets','Budgets',this.iconBudgets()],['planning','Planning',this.iconPlanning()],['marketing','Marketing',this.iconMarketing()],['story-planner','Story Planner',this.iconStoryPlanner()]].map(([id,label,icon])=>`
-          <div class="nav-item ${this.currentView===id?'active':''}" data-view="${id}" title="${label}">${icon}<span class="nav-text">${label}</span></div>`).join('')}
-        <div class="sidebar-notes">
-          <div class="sidebar-notes-header">
-            <span class="sidebar-notes-title">Notes</span>
-            <button id="notes-new-btn" class="sidebar-notes-new-btn">+ New</button>
-          </div>
-          <div class="notes-list" id="notes-list"><div class="notes-empty">No notes yet.<br>Hit + New to get started.</div></div>
-        </div>
-        <div class="nav-bottom">
-          <div class="sidebar-tt" id="sidebar-tt">${this._renderSidebarTT()}</div>
-          <div class="nav-item ${this.currentView==='leave'?'active':''}" data-view="leave" title="Leave">${this.iconLeave()}<span class="nav-text">Leave</span>${this._leaveBadgeHtml()}</div>
-          <div class="nav-item ${this.currentView==='expenses'?'active':''}" data-view="expenses" title="Expenses">${this.iconExpenses()}<span class="nav-text">Expenses</span></div>
-          ${(this.permissions?.vault || this.appUser?.role === 'superadmin') ? `<div class="nav-item ${this.currentView==='password-manager'?'active':''}" data-view="password-manager" title="Passwords">${this.iconPasswordManager()}<span class="nav-text">Passwords</span></div>` : ''}
-          <div class="nav-item nav-item--dim ${this.currentView==='offload-log'?'active':''}" data-view="offload-log" title="Offload Log">${this.iconOffloads()}<span class="nav-text">Offload Log</span></div>
-          ${this.permissions.settings ? `<div class="nav-item" data-view="settings" title="Settings">${this.iconSettings()}<span class="nav-text">Settings</span></div>` : ''}
-          <div class="nav-item nav-item--dim" id="dev-request-btn" title="Dev request">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v4M8 11v.5"/></svg>
-            <span class="nav-text">Dev request</span>
-          </div>
-          <div class="nav-item nav-item--dim" id="sign-out-btn" title="Sign out">${this.iconSignOut()}<span class="nav-text">Sign out</span></div>
-        </div>
-      </div>
-      <div class="main">
-        <div class="topbar">
-          <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Toggle navigation">${this.iconHamburger()}</button>
-          <div class="topbar-title" id="view-title">${this.viewTitle()}</div>
-          <div id="topbar-actions" style="display:flex;gap:8px;align-items:center;flex-shrink:0">${this.topbarSearch()}${this.topbarButton()}</div>
-        </div>
-        <div class="content" id="main-content"></div>
-      </div>
-      ${showDetail ? `<div class="detail-panel" id="detail-panel"><div class="detail-empty">Select a contact<br>to view details</div></div>` : ''}
+        <main class="page" id="page">
+          <div class="page-toolbar" id="page-toolbar"${toolbar ? '' : ' hidden'}>${toolbar}</div>
+          <div class="content" id="main-content"></div>
+        </main>
+        ${showDetail ? `<div class="detail-panel" id="detail-panel"><div class="detail-empty">Select a contact<br>to view details</div></div>` : ''}
+        ${this._notesOpen ? this._notesPanelHtml() : ''}
       </div>
     `
     this.header.bind(this.container)
-    this.bindNav()
+    this.bindToolbar()
     this.renderCurrentView()
-    if (this._notesLoaded) this._renderNotesList()
-    else this._loadNotes()
+    if (this._notesOpen) this._bindNotesPanel()
+  }
+
+  // The first row of each list page: view switcher, filters, then primary
+  // actions on the right. Detail pages (a project, budget, board, plan) have
+  // their own header row instead, so the toolbar is empty there.
+  toolbarHtml() {
+    const switcher = this._viewSwitcherHtml()
+    const filters  = this.topbarSearch()
+    const actions  = this.topbarButton()
+    if (!switcher && !filters && !actions) return ''
+    return `${switcher}${filters ? `<div class="page-toolbar-filters">${filters}</div>` : ''}<div class="page-toolbar-actions">${actions}</div>`
+  }
+
+  // Projects tab view switcher: All projects · Budgets · Planning.
+  _viewSwitcherHtml() {
+    const views = [['projects', 'All projects'], ['budgets', 'Budgets'], ['planning', 'Planning']]
+    if (!views.some(([v]) => v === this.currentView)) return ''
+    if (this.projectsView.currentId || this.budgetsView.currentId || this.boardsView.currentId || this.canvasView.currentId) return ''
+    return `<nav class="seg view-switch" aria-label="Project views">${views.map(([v, label]) =>
+      `<a class="seg-btn" href="#${v}" data-nav="${v}"${v === this.currentView ? ' aria-current="page"' : ''}>${label}</a>`).join('')}</nav>`
   }
 
   topbarSearch() {
     if (this.currentView !== 'contacts') return ''
-    return `<div class="search-wrap"><span class="search-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg></span><input type="text" id="contact-search" placeholder="Search contacts…" /></div>`
+    return `<div class="search-wrap"><label for="contact-search" class="visually-hidden">Search contacts</label><span class="search-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg></span><input type="text" id="contact-search" placeholder="Search contacts…" /></div>`
   }
 
   topbarButton() {
@@ -525,12 +521,10 @@ export class App {
     }
     if (this.currentView === 'budgets') {
       if (!this.budgetsView.currentId) return p.budgets_edit ? `<button class="btn-primary" id="topbar-btn">+ New budget</button>` : ''
-      if (this.budgetsView.editingId) return `<button class="btn-secondary" id="topbar-btn">← All budgets</button>`
       return ''
     }
     if (this.currentView === 'projects') {
       if (!this.projectsView.currentId) return p.projects_edit ? `<button class="btn-primary" id="topbar-btn">+ New project</button>` : ''
-      if (this.projectsView.editingId) return `<button class="btn-secondary" id="topbar-btn">← All projects</button>`
       return ''
     }
     if (this.currentView === 'marketing') {
@@ -549,57 +543,13 @@ export class App {
   }
 
 
-  _closeMobileSidebar() {
-    document.getElementById('app-sidebar')?.classList.remove('open')
-    document.getElementById('sidebar-overlay')?.classList.remove('open')
-  }
-
-  // Whether the desktop sidebar is collapsed to an icon-only rail (persisted).
-  _sidebarCollapsed() {
-    return localStorage.getItem('slate-sidebar-collapsed') === '1'
-  }
-
-  _toggleSidebarCollapsed() {
-    const sidebar = document.getElementById('app-sidebar')
-    if (!sidebar) return
-    const collapsed = sidebar.classList.toggle('collapsed')
-    localStorage.setItem('slate-sidebar-collapsed', collapsed ? '1' : '0')
-    const btn = document.getElementById('sidebar-collapse-btn')
-    if (btn) btn.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar'
-  }
-
-  bindNav() {
-    // Mobile sidebar toggle
-    const menuBtn  = this.container.querySelector('#mobile-menu-btn')
-    const sidebar  = this.container.querySelector('#app-sidebar')
-    const overlay  = this.container.querySelector('#sidebar-overlay')
-    if (menuBtn && sidebar && overlay) {
-      menuBtn.addEventListener('click', () => {
-        sidebar.classList.toggle('open')
-        overlay.classList.toggle('open')
-      })
-      overlay.addEventListener('click', () => this._closeMobileSidebar())
-    }
-
-    // Desktop sidebar collapse/expand toggle
-    this.container.querySelector('#sidebar-collapse-btn')?.addEventListener('click', () => this._toggleSidebarCollapsed())
-
-    this.container.querySelectorAll('.nav-item[data-view]').forEach(el => {
-      el.addEventListener('click', () => { this._closeMobileSidebar(); this.navigate(el.dataset.view) })
-    })
-    this.container.querySelector('#sign-out-btn')?.addEventListener('click', () => { this._closeMobileSidebar(); this.onSignOut() })
-    this.container.querySelector('#dev-request-btn')?.addEventListener('click', () => { this._closeMobileSidebar(); this._openDevRequest() })
-
+  bindToolbar() {
     this.bindTopbarBtn()
-    this._bindSidebarTT()
     const search = this.container.querySelector('#contact-search')
     if (search) {
       search.value = this.contactsView.search
       search.addEventListener('input', e => { this.contactsView.search = e.target.value; this.contactsView.refreshList() })
     }
-
-    // Notes new button
-    this.container.querySelector('#notes-new-btn')?.addEventListener('click', () => this._newNote())
   }
 
   // Links carrying data-nav (header tabs, account menu, view switchers) are
@@ -622,7 +572,7 @@ export class App {
     if (kind === 'project')      { this.navigate('projects'); this.projectsView.openNewModal(null, null, mc()) }
     else if (kind === 'contact') { this.navigate('contacts'); this.contactsView.openAdd(mc()) }
     else if (kind === 'budget')  { this.navigate('budgets');  this.budgetsView.openNewModal() }
-    else if (kind === 'note')    { this._newNote() }
+    else if (kind === 'note')    { if (!this._notesOpen) this.toggleNotes(true, { focus: false }); this._newNote() }
   }
 
   _openShortcuts() {
@@ -657,12 +607,10 @@ export class App {
       const mc = document.getElementById('main-content')
       if (this.currentView === 'contacts') { this.contactsView.openAdd(mc) }
       else if (this.currentView === 'budgets') {
-        if (this.budgetsView.editingId) { this.budgetsView.editingId = null; this.render() }
-        else if (!this.budgetsView.currentId) this.budgetsView.openNewModal()
+        if (!this.budgetsView.currentId) this.budgetsView.openNewModal()
       }
       else if (this.currentView === 'projects') {
-        if (this.projectsView.editingId) { this.projectsView.editingId = null; this.render() }
-        else if (!this.projectsView.currentId) this.projectsView.openNewModal(null, null, mc)
+        if (!this.projectsView.currentId) this.projectsView.openNewModal(null, null, mc)
       }
       else if (this.currentView === 'marketing') {
         this.marketingView.openCardModal(null, this.marketingView.activeTab === 'kanban' ? 'ideas' : 'ideas')
@@ -691,7 +639,9 @@ export class App {
     this.boardsView.board = null
     this.canvasView.currentId = null
     this.canvasView.canvas = null
-    history.pushState({ view }, '', `#${view}`)
+    // Tasks (the Dashboard for now) is the home page, "/". Every other view
+    // keeps its old #hash, so bookmarks still resolve.
+    history.pushState({ view }, '', view === 'dashboard' ? '/' : `#${view}`)
     this.render()
   }
 
@@ -700,14 +650,19 @@ export class App {
     history.pushState(state, '', hash)
   }
 
+  // #view[/id[/tab]] — the same routes the app has always used. "/" and
+  // #dashboard are Tasks; #projects, #budgets and #planning sit under the
+  // Projects tab; the rest are reached from the account menu.
+  _parseHash() {
+    const [view = 'dashboard', id, tab] = (location.hash.slice(1) || 'dashboard').split('/')
+    return VIEWS.includes(view) ? { view, id, tab } : null
+  }
+
   // Parse the URL hash and restore view state before first render
   _restoreFromHash() {
-    const hash = location.hash.slice(1)
-    if (!hash) return
-    const parts = hash.split('/')
-    const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses','leave','offload-log','planning']
-    if (!validViews.includes(view)) return
+    const route = this._parseHash()
+    if (!route) return
+    const { view, id, tab } = route
     this.currentView = view
     if (view === 'projects' && id) {
       this.projectsView.currentId = id
@@ -728,11 +683,9 @@ export class App {
     const modal = document.querySelector('.modal-overlay, #ra-copy-picker, #rig-lib-picker')
     if (modal) { modal.remove(); return }
 
-    const hash = location.hash.slice(1)
-    const parts = (hash || 'dashboard').split('/')
-    const view = parts[0], id = parts[1], tab = parts[2]
-    const validViews = ['contacts','projects','budgets','settings','dashboard','calendar','marketing','timetrack','story-planner','password-manager','expenses','leave','offload-log','planning']
-    if (!validViews.includes(view)) { this.currentView = 'dashboard'; this.render(); return }
+    const route = this._parseHash()
+    if (!route) { this.currentView = 'dashboard'; this.render(); return }
+    const { view, id, tab } = route
 
     this.currentView = view
     this.projectsView.currentId = (view === 'projects' && id) ? id : null
@@ -789,22 +742,15 @@ export class App {
     }
   }
 
-  viewTitle() {
-    if (this.currentView === 'projects' && this.projectsView?.currentId) return this.projects.find(p=>p.id===this.projectsView.currentId)?.name ?? 'Project'
-    if (this.currentView === 'budgets'  && this.budgetsView?.currentId)  return this.budgets.find(b=>b.id===this.budgetsView.currentId)?.name  ?? 'Budget'
-    if (this.currentView === 'planning' && this.canvasView?.currentId)   return this.canvasView.canvas?.name ?? 'Planning'
-    if (this.currentView === 'planning' && this.boardsView?.currentId)   return this.boardsView.board?.name ?? 'Planning'
-    return {contacts:'Contacts',projects:'Projects',budgets:'Budgets',dashboard:'Dashboard',calendar:'Team Calendar',settings:'Settings',marketing:'Marketing',planning:'Planning',timetrack:'Time tracker','story-planner':'Story Planner','password-manager':'Passwords',expenses:'Expenses',leave:'Leave','offload-log':'Offload Log'}[this.currentView] ?? ''
-  }
-
+  // Views call this after changing sub-state (list ↔ detail, a tab that
+  // changes the primary action); it refreshes the page toolbar.
   updateTitle() {
-    const el = document.getElementById('view-title')
-    if (el) el.textContent = this.viewTitle()
-    const actions = document.getElementById('topbar-actions')
-    if (actions) actions.innerHTML = this.topbarSearch() + this.topbarButton()
-    const search = document.getElementById('contact-search')
-    if (search) search.addEventListener('input', e => { this.contactsView.search = e.target.value; this.contactsView.refreshList() })
-    this.bindTopbarBtn()
+    const bar = document.getElementById('page-toolbar')
+    if (!bar) return
+    const html = this.toolbarHtml()
+    bar.innerHTML = html
+    bar.hidden = !html
+    this.bindToolbar()
   }
 
   openProject(id, tab) {
@@ -881,141 +827,6 @@ export class App {
       }
     }
     return lines
-  }
-
-  _renderSidebarTT() {
-    const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
-    const savedPid  = localStorage.getItem('tt-project-id') || ''
-    const savedTask = localStorage.getItem('tt-task-label') || ''
-    const projects  = (this.projects || []).filter(p => p.status !== 'Delivered')
-    const project   = projects.find(p => p.id === savedPid) || null
-    const lines     = this._sttTrackableLines(project)
-
-    return `
-      <div class="stt-label">
-        ${this.iconTimeTrack()} Time
-      </div>
-      <select id="stt-project" class="stt-select">
-        <option value="">Project…</option>
-        ${projects.map(p => `<option value="${p.id}"${p.id === savedPid ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}
-      </select>
-      <select id="stt-task" class="stt-select" ${!lines.length ? 'disabled' : ''}>
-        ${!project
-          ? '<option value="">Task…</option>'
-          : lines.length
-            ? lines.map(l => `<option value="${esc(l.label)}"${l.label === savedTask ? ' selected' : ''}>${esc(l.label)}</option>`).join('')
-            : '<option value="">No tracked lines</option>'
-        }
-      </select>
-      <input id="stt-date" type="date" class="stt-select" style="margin-top:5px;color-scheme:dark"
-        value="${new Date().toISOString().slice(0, 10)}" max="${new Date().toISOString().slice(0, 10)}" title="Date" />
-      <div style="display:flex;gap:5px;margin-top:5px">
-        <input id="stt-hours" type="number" min="0.5" max="24" step="0.5" placeholder="hrs"
-          class="stt-hours" />
-        <button id="stt-log" class="stt-btn">Log</button>
-      </div>
-      <input id="stt-note" type="text" placeholder="Notes (optional)" maxlength="300"
-        class="stt-select" style="margin-top:5px" />
-      <div id="stt-msg" style="font-size:10px;min-height:14px;margin-top:4px;color:#596773"></div>`
-  }
-
-  _bindSidebarTT() {
-    const wrap = document.getElementById('sidebar-tt')
-    if (!wrap) return
-
-    const projectSel = wrap.querySelector('#stt-project')
-    const taskSel    = wrap.querySelector('#stt-task')
-    const hoursInput = wrap.querySelector('#stt-hours')
-    const logBtn     = wrap.querySelector('#stt-log')
-    const msgEl      = wrap.querySelector('#stt-msg')
-
-    const showMsg = (text, color = '#596773', ms = 2500) => {
-      if (!msgEl) return
-      msgEl.style.color = color
-      msgEl.textContent = text
-      clearTimeout(this._sttMsgTimer)
-      this._sttMsgTimer = setTimeout(() => { if (msgEl) msgEl.textContent = '' }, ms)
-    }
-
-    const updateTasks = (project) => {
-      if (!taskSel) return
-      const lines = this._sttTrackableLines(project)
-      const saved = localStorage.getItem('tt-task-label') || ''
-      if (!project) {
-        taskSel.innerHTML = '<option value="">Task…</option>'
-        taskSel.disabled = true
-      } else if (!lines.length) {
-        taskSel.innerHTML = '<option value="">No tracked lines</option>'
-        taskSel.disabled = true
-      } else {
-        taskSel.innerHTML = lines.map(l => {
-          const v = String(l.label ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')
-          return `<option value="${v}"${l.label === saved ? ' selected' : ''}>${v}</option>`
-        }).join('')
-        taskSel.disabled = false
-      }
-    }
-
-    projectSel?.addEventListener('change', () => {
-      const pid = projectSel.value
-      localStorage.setItem('tt-project-id', pid)
-      if (!pid) localStorage.removeItem('tt-task-label')
-      const proj = this.projects.find(p => p.id === pid) || null
-      updateTasks(proj)
-    })
-
-    taskSel?.addEventListener('change', () => {
-      localStorage.setItem('tt-task-label', taskSel.value)
-    })
-
-    logBtn?.addEventListener('click', async () => {
-      const pid   = projectSel?.value
-      const task  = taskSel?.value
-      const hours = parseFloat(hoursInput?.value)
-      const note  = wrap.querySelector('#stt-note')?.value?.trim() || null
-
-      if (!pid)               return showMsg('Select a project', '#f59e0b')
-      if (!task)              return showMsg('Select a task', '#f59e0b')
-      if (!hours || hours <= 0 || hours > 24) return showMsg('Enter valid hours', '#f59e0b')
-
-      const project  = this.projects.find(p => p.id === pid)
-      const budgetId = project ? (this._sttTrackableLines(project).find(l => l.label === task)?.budgetId ?? null) : null
-      const name     = this.appUser?.name || this.user?.primaryEmailAddress?.emailAddress || 'Unknown'
-      const date     = wrap.querySelector('#stt-date')?.value || new Date().toISOString().slice(0, 10)
-
-      logBtn.disabled = true
-      logBtn.textContent = '…'
-      try {
-        const { addTimeEntry } = await import('./db/client.js')
-        await addTimeEntry({ project_id: pid, budget_id: budgetId, line_label: task, crew_name: name, hours, entry_date: date, note })
-        hoursInput.value = ''
-        const noteInput = wrap.querySelector('#stt-note')
-        if (noteInput) noteInput.value = ''
-        logBtn.textContent = '✓'
-        showMsg(`${hours}h logged`, '#6ec96e')
-        setTimeout(() => { if (logBtn) logBtn.textContent = 'Log' }, 1200)
-        this.toast(`${hours}h logged`)
-
-        // Refresh the dashboard time section if it's visible
-        const timeEl = document.getElementById(`db-time-${pid}`)
-        if (timeEl && project) {
-          const mc = document.getElementById('main-content')
-          if (mc) this._loadDbTimeSection(mc, project)
-        }
-      } catch(e) {
-        console.error(e)
-        logBtn.textContent = 'Log'
-        showMsg('Error logging', '#ef4444')
-      } finally {
-        logBtn.disabled = false
-        if (logBtn.textContent === '…') logBtn.textContent = 'Log'
-      }
-    })
-
-    // Enter on hours → log
-    hoursInput?.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); logBtn?.click() }
-    })
   }
 
   // Fetch shoots / planning / story-plan counts for the Live Projects tab-nav
@@ -1337,10 +1148,10 @@ export class App {
         { id: 'overview',        label: 'Overview' },
         { id: 'shoots',          label: 'Shoots', key: 'shoots', hide: (p.project_type||'full_service') === 'post_production' },
         { id: 'post-production', label: 'Post Production', count: ppsCountByProject[p.id] || 0 },
-        { id: 'budget',          label: 'Budgets', count: (p.budget_ids||[]).length },
+        { id: 'budget',          label: 'Budget', count: (p.budget_ids||[]).length },
         { id: 'planning',        label: 'Planning', key: 'planning' },
+        { id: 'story-plans',     label: 'Story', key: 'story_plans' },
         { id: 'notes',           label: 'Notes', count: comments.length },
-        { id: 'story-plans',     label: 'Story Plans', key: 'story_plans' },
       ].filter(t => !t.hide)
       const navRow = `<div class="db-proj-nav">${navTabs.map((t, i) => {
         const n = t.key ? (cached?.[t.key] ?? 0) : t.count
@@ -2081,7 +1892,57 @@ export class App {
     }
   }
 
-  // ── Notes sidebar ────────────────────────────────────────────────────────────
+  // ── Notes panel ──────────────────────────────────────────────────────────────
+  // Opened from the header's Notes button. Docked beside the page on desktop
+  // (and remembered), a full-height sheet on phones. Same notes and behaviour
+  // as the old sidebar list.
+
+  _notesPanelHtml() {
+    return `
+      <aside class="notes-panel" id="notes-panel" aria-labelledby="notes-panel-title">
+        <div class="notes-panel-head">
+          <h2 class="notes-panel-title section-label" id="notes-panel-title">Notes</h2>
+          <button type="button" class="btn-secondary notes-panel-new" id="notes-new-btn">${icon('plus', 14)}New note</button>
+          <button type="button" class="icon-btn" id="notes-close" aria-label="Close notes">${icon('close', 18)}</button>
+        </div>
+        <div class="notes-list" id="notes-list"><div class="notes-empty">Loading…</div></div>
+      </aside>`
+  }
+
+  _bindNotesPanel() {
+    const panel = document.getElementById('notes-panel')
+    if (!panel) return
+    panel.querySelector('#notes-new-btn')?.addEventListener('click', () => this._newNote())
+    panel.querySelector('#notes-close')?.addEventListener('click', () => this.toggleNotes(false))
+    // Escape outside a field closes the panel (inside one it just leaves the field).
+    panel.addEventListener('keydown', e => {
+      if (e.key !== 'Escape' || ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return
+      e.stopPropagation()
+      this.toggleNotes(false)
+    })
+    if (this._notesLoaded) this._renderNotesList()
+  }
+
+  toggleNotes(open = !this._notesOpen, { focus = true } = {}) {
+    this._notesOpen = open
+    try { localStorage.setItem('slate-notes-open', open ? '1' : '0') } catch {}
+    document.getElementById('notes-panel')?.remove()
+    const btn = document.getElementById('hdr-notes')
+    btn?.setAttribute('aria-expanded', String(open))
+    if (open) {
+      this.container.querySelector('.app-body')?.insertAdjacentHTML('beforeend', this._notesPanelHtml())
+      this._bindNotesPanel()
+      if (!this._notesLoaded) this._loadNotes()
+      if (focus) document.getElementById('notes-new-btn')?.focus()
+    } else if (focus) btn?.focus()
+    // The page just changed width. The Team Calendar positions its entry chips
+    // in pixels, so lay it out again.
+    requestAnimationFrame(() => {
+      const section = document.querySelector('#tc-section')
+      if (section) this.teamCalendarView._refreshGrid(section)
+    })
+  }
+
 
   async _loadNotes() {
     const list = document.getElementById('notes-list')
@@ -2128,16 +1989,16 @@ export class App {
       return `
       <div class="notes-card${isOpen?' open':''}" data-note-id="${n.id}">
         <div class="notes-card-header" data-toggle-id="${n.id}">
-          <input class="notes-title-input" data-note-id="${n.id}" value="${(n.title||'').replace(/"/g,'&quot;')}" placeholder="Untitled" />
+          <input class="notes-title-input" data-note-id="${n.id}" value="${(n.title||'').replace(/"/g,'&quot;')}" placeholder="Untitled" aria-label="Note title" />
           <button class="notes-delete-hover" data-delete-id="${n.id}" aria-label="Delete note" title="Delete note">${trashIcon}</button>
           <button class="notes-card-toggle" data-toggle-id="${n.id}" aria-label="Toggle note" aria-expanded="${isOpen}">${chevron}</button>
         </div>
         <div class="notes-card-body">
-          <textarea class="notes-body-input" data-note-id="${n.id}" placeholder="Write something…" rows="4">${n.content||''}</textarea>
-          <div class="notes-card-meta" style="display:flex;align-items:center;gap:6px;padding:4px 10px 2px;flex-wrap:wrap">
-            <input type="date" class="notes-due-input" data-note-id="${n.id}" value="${n.due_date||''}" title="Due date" />
-            <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#596773;cursor:pointer;user-select:none">
-              <input type="checkbox" class="notes-reminder-input" data-note-id="${n.id}" ${n.reminder?'checked':''} style="width:12px;height:12px;cursor:pointer" />
+          <textarea class="notes-body-input" data-note-id="${n.id}" placeholder="Write something…" rows="4" aria-label="Note">${n.content||''}</textarea>
+          <div class="notes-card-meta">
+            <input type="date" class="notes-due-input" data-note-id="${n.id}" value="${n.due_date||''}" title="Due date" aria-label="Due date" />
+            <label class="notes-reminder">
+              <input type="checkbox" class="notes-reminder-input" data-note-id="${n.id}" ${n.reminder?'checked':''} />
               Remind 36h before
             </label>
           </div>
@@ -3689,33 +3550,7 @@ export class App {
     }
   }
 
-  iconHamburger() { return `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 4.5h14M2 9h14M2 13.5h14"/></svg>` }
-  iconContacts() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="6" cy="5" r="2.5"/><path d="M1 14c0-2.8 2.2-4.5 5-4.5s5 1.7 5 4.5"/><path d="M11 3.5a2 2 0 0 1 0 4M15 14c0-2.4-1.5-3.8-4-4"/></svg>` }
-  iconMarketing()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1 8c0 0 2-5 7-5s7 5 7 5-2 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>` }
-  iconTimeTrack()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="9" r="5.5"/><path d="M8 6v3.5l2 1.5"/><path d="M6 1h4M8 1v2.5"/></svg>` }
-  iconProjects() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 6h6M5 9h4"/></svg>` }
-  iconBudgets()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 3h12v2H2zM2 7h9M2 11h7"/><circle cx="13" cy="11" r="2.2"/><path d="M13 9.8v1l.7.7"/></svg>` }
-  iconPlanning() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="2" width="3.6" height="12" rx="0.8"/><rect x="6.2" y="2" width="3.6" height="8.5" rx="0.8"/><rect x="10.9" y="2" width="3.6" height="5.5" rx="0.8"/></svg>` }
-  iconPipeline() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1" y="4" width="4" height="9" rx="1"/><rect x="6" y="6" width="4" height="7" rx="1"/><rect x="11" y="8" width="4" height="5" rx="1"/></svg>` }
-  iconCalendar() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="3" width="13" height="11.5" rx="1.5"/><path d="M1.5 6.5h13M5 1.5v3M11 1.5v3"/></svg>` }
-  iconStoryPlanner() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="2" width="13" height="3.5" rx="0.8"/><rect x="1.5" y="6.5" width="13" height="3.5" rx="0.8"/><rect x="1.5" y="11" width="8" height="3.5" rx="0.8"/></svg>` }
-  iconSettings() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M11.4 4.6l-1.4 1.4M4.6 11.4l-1.4 1.4"/></svg>` }
-  iconPasswordManager() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/><circle cx="8" cy="11" r="1" fill="currentColor" stroke="none"/></svg>` }
-  iconExpenses()        { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="4" width="12" height="9" rx="1.5"/><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M8 7.5v3M6.5 9h3"/></svg>` }
-  iconOffloads()        { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="4" rx="1"/><rect x="2" y="9" width="12" height="4" rx="1"/><circle cx="4.5" cy="5" r="0.6" fill="currentColor" stroke="none"/><circle cx="4.5" cy="11" r="0.6" fill="currentColor" stroke="none"/></svg>` }
-  iconLeave()           { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 2c2.5 1.5 3.5 4 2.5 7-.8 2.4-2.5 4-2.5 4s-1.7-1.6-2.5-4C4.5 6 5.5 3.5 8 2z"/><path d="M8 6v7"/></svg>` }
-  _leaveBadgeHtml() {
-    const n = pendingApprovalsFor(this.appUser, this.leaveRequests).length
-    return n ? `<span class="leave-nav-badge">${n}</span>` : ''
-  }
   updateLeaveBadge() {
     this.header.refreshLeaveBadge()
-    const item = document.querySelector('.nav-item[data-view="leave"]')
-    if (!item) return
-    item.querySelector('.leave-nav-badge')?.remove()
-    const html = this._leaveBadgeHtml()
-    if (html) item.insertAdjacentHTML('beforeend', html)
   }
-  iconSignOut()  { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M10 11l4-4-4-4M14 8H6"/></svg>` }
-  iconCollapse() { return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 4.5L6 8l3.5 3.5M13 4.5L9.5 8l3.5 3.5"/></svg>` }
 }

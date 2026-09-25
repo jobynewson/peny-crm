@@ -1,5 +1,5 @@
-// App header: the Slate wordmark, the four top-level tabs, search, New and
-// the account menu. The tabs are real links styled as tabs; the active one
+// App header: the Slate wordmark, the four top-level tabs, search, New,
+// Notes and the account menu. The tabs are real links styled as tabs; the active one
 // takes the page background so it joins the content below.
 
 import { icon } from './icons.js'
@@ -63,6 +63,7 @@ export class HeaderView {
             ${icon('search', 16)}<span class="hdr-search-text">Search or jump to…</span><kbd>${mac ? '⌘K' : 'Ctrl K'}</kbd>
           </button>
           <button type="button" class="hdr-btn hdr-btn--accent" id="hdr-new" aria-haspopup="menu" aria-expanded="false">${icon('plus', 16)}<span>New</span></button>
+          <button type="button" class="hdr-icon-btn" id="hdr-notes" title="Notes" aria-label="Notes" aria-controls="notes-panel" aria-expanded="${this.app._notesOpen ? 'true' : 'false'}">${icon('notes', 20)}</button>
           <button type="button" class="hdr-account" id="hdr-account" aria-haspopup="menu" aria-expanded="false" aria-label="${esc(this.accountLabel())}">
             <span class="hdr-avatar" aria-hidden="true">${esc(this.initials)}</span>${icon('chevron', 14)}
             <span class="hdr-account-dot"${this.pendingLeave() ? '' : ' hidden'}></span>
@@ -74,6 +75,7 @@ export class HeaderView {
   bind(root) {
     root.querySelector('#hdr-search')?.addEventListener('click', () => this.app._openSearch())
     root.querySelector('#hdr-new')?.addEventListener('click', e => this.openNewMenu(e.currentTarget))
+    root.querySelector('#hdr-notes')?.addEventListener('click', () => this.app.toggleNotes())
     root.querySelector('#hdr-account')?.addEventListener('click', e => this.openAccountMenu(e.currentTarget))
   }
 

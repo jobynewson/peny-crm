@@ -274,7 +274,8 @@ export class CanvasView {
     })
 
     this.surface = surface
-    surface.mount(/** @type {HTMLElement} */ (mc.querySelector('#cv-host')), 'calc(100vh - 170px)')
+    // Fill the page below the header (and, on phones, above the tab bar).
+    surface.mount(/** @type {HTMLElement} */ (mc.querySelector('#cv-host')), 'calc(100vh - var(--chrome-h) - 108px)')
   }
 
   /** @param {HTMLInputElement | null} input @param {CanvasRow} canvas */
