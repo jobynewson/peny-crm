@@ -25,6 +25,7 @@ body {
   color: var(--text-primary);
   font-size: 14px;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   transition: background 0.2s, color 0.2s;
   -webkit-font-smoothing: antialiased;
@@ -235,7 +236,7 @@ kbd { font-family: var(--font-mono); }
    APP SHELL — header, page, notes panel
    ════════════════════════════════════════════════════════════════════════ */
 
-#app { height: 100vh; display: flex; flex-direction: column; }
+#app { height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
 .app-body { flex: 1; min-height: 0; display: flex; }
 
 /* ── Header: wordmark, literal tabs, actions ── */
@@ -251,6 +252,9 @@ kbd { font-family: var(--font-mono); }
 }
 .app-wordmark {
   align-self: center;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 22px;
@@ -973,12 +977,6 @@ kbd { font-family: var(--font-mono); }
 .mkt-col-body--over { outline: 2px dashed var(--accent); outline-offset: 3px; border-radius: var(--radius-md); }
 .mkt-card--dragging { opacity: 0.4; }
 .mkt-card--over { box-shadow: 0 -3px 0 0 var(--accent); }
-
-/* Marketing kanban — mobile swipe-paging indicator (row itself becomes a
-   snap-scrolling row of wider columns at the mobile breakpoint above) */
-.mkt-kanban-dots { display: none; justify-content: center; gap: 6px; margin-top: 12px; }
-.mkt-kanban-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border-med); border: none; padding: 0; cursor: pointer; transition: background 0.15s, transform 0.15s; }
-.mkt-kanban-dot.active { background: var(--accent); transform: scale(1.35); }
 
 /* ════════════════════════════════════════════════════════════════════════
    BUDGETS
@@ -2239,15 +2237,6 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
   .page { padding: 16px !important; }
   .stats-row { grid-template-columns: repeat(2, 1fr) !important; }
   .db-quad-row { grid-template-columns: 1fr !important; }
-  .kanban-wrap {
-    display: flex !important;
-    overflow-x: auto;
-    gap: 12px;
-    padding-bottom: 12px;
-    scrollbar-width: thin;
-    -webkit-overflow-scrolling: touch;
-  }
-  .kanban-col { min-width: 210px; flex-shrink: 0; }
   .field-row { grid-template-columns: 1fr !important; }
   .budget-layout { flex-direction: column !important; }
   .budget-sidebar-panel { width: 100% !important; }
@@ -2268,18 +2257,6 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
   /* Team calendar: reveal the single-person switcher (grid itself is
      already filtered to one person's columns in JS at this breakpoint) */
   .tc-mobile-switcher { display: block; }
-  /* Marketing kanban: widen columns into swipeable, snap-scrolling pages
-     instead of squeezing all 5 into equal fractions */
-  .mkt-kanban-row {
-    grid-template-columns: none !important;
-    grid-auto-flow: column !important;
-    grid-auto-columns: minmax(240px, 78vw) !important;
-    scroll-snap-type: x mandatory;
-    scrollbar-width: thin;
-    -webkit-overflow-scrolling: touch;
-  }
-  .mkt-kanban-row .mkt-col { scroll-snap-align: start; }
-  .mkt-kanban-dots { display: flex !important; }
 }
 
 /* ── ≤480px (small mobile) ── */
@@ -2288,7 +2265,161 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
   .page { padding: 12px !important; }
   .panel-header { padding: 10px 14px !important; gap: 4px; }
   .filter-pill { font-size: 12px; padding: 4px 8px; }
-  .kanban-col { min-width: 185px; }
+}
+
+/* ── Phones (≤768px): header, bottom tab bar, sheets, boards, touch targets ── */
+.app-tabbar { display: none; }
+.board-status { display: none; }
+.seg-count { font-family: var(--font-mono); font-size: 11px; font-weight: 500; color: var(--text-subtle); }
+
+/* Bottom sheets (account menu, Log time) — see views/popover.js */
+.sheet-scrim { position: fixed; inset: 0; z-index: 10000; background: var(--scrim); animation: backdrop-in 0.15s ease-out; }
+.sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10001;
+  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px - env(safe-area-inset-top));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+  box-shadow: var(--shadow-popover);
+  padding: 10px max(16px, env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  animation: sheet-up 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes sheet-up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+.sheet-grab { width: 40px; height: 5px; margin: 0 auto 8px; border-radius: var(--radius-pill); background: var(--border-strong); }
+.sheet-close { position: absolute; top: 8px; right: max(8px, env(safe-area-inset-right)); width: 44px; height: 44px; }
+.sheet .dd { width: auto; max-height: none; overflow: visible; padding: 0; }
+.sheet .dd-head { padding-right: 52px; }
+.sheet .dd-item { min-height: 48px; font-size: 15px; }
+.sheet .seg-btn { min-height: 44px; }
+.sheet .lt-pop { width: auto; max-width: none; padding: 0 4px; }
+.sheet .lt-head { min-height: 44px; padding-right: 48px; }
+.sheet .tl-field select, .sheet .tl-field input { height: 46px; font-size: 16px; }
+.sheet .tl-submit { height: 48px; font-size: 15px; }
+
+@media (max-width: 768px) {
+  :root { --header-h: 56px; --tabbar-h: calc(80px + env(safe-area-inset-bottom)); }
+
+  /* Header: wordmark, then Log time, search, Notes and the avatar. */
+  .app-header {
+    height: calc(var(--header-h) + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) max(8px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+    align-items: center;
+    gap: 8px;
+  }
+  .app-tabs, #hdr-new, .hdr-account .icon { display: none; }
+  .app-header-actions { gap: 2px; }
+  #hdr-logtime { order: 1; }
+  .hdr-search { order: 2; }
+  #hdr-notes { order: 3; }
+  .hdr-account { order: 4; }
+  #hdr-logtime, .hdr-search {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--header-text);
+  }
+  #hdr-logtime .icon, .hdr-search .icon { width: 20px; height: 20px; }
+  /* Icon-only on phones; the text stays as the accessible name. */
+  #hdr-logtime > span, .hdr-search-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .hdr-search kbd { display: none; }
+  .hdr-icon-btn { width: 44px; height: 44px; }
+  .hdr-account { width: 44px; height: 44px; padding: 0; justify-content: center; }
+  .hdr-avatar { width: 32px; height: 32px; }
+  .hdr-account-dot { left: 29px; top: 4px; }
+
+  /* Bottom tab bar: four equal columns, icon over label, active pill. */
+  .app-tabbar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    flex-shrink: 0;
+    height: var(--tabbar-h);
+    padding: 8px max(8px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    background: var(--header-bg);
+  }
+  .app-tabbar a {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-height: 44px;
+    border-radius: 14px;
+    color: var(--header-text);
+    font-size: 11px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .app-tabbar a[aria-current="page"] { background: var(--bg); color: var(--text); }
+  .app-tabbar a:focus-visible { outline-offset: -2px; }
+
+  /* Notes: a full-screen sheet over everything. */
+  .notes-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 10001;
+    width: auto;
+    border-left: none;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    box-shadow: none;
+  }
+  .notes-panel-head { padding: 8px max(8px, env(safe-area-inset-right)) 8px max(16px, env(safe-area-inset-left)); }
+  .notes-card-toggle, .notes-delete-hover { width: 44px; height: 44px; }
+  .notes-delete-hover { opacity: 1; }
+  .notes-title-input, .notes-body-input { font-size: 16px; }
+
+  /* Detail pages: the breadcrumb and name get most of the first row. */
+  .crumbs + input, .crumbs + h2 { flex: 1 1 55% !important; min-width: 0; }
+
+  /* Toolbar: the filters take the full width. */
+  .page-toolbar-filters { flex: 1 1 100%; }
+  .page-toolbar-filters .search-wrap, .page-toolbar-filters .search-wrap input { width: 100% !important; }
+
+  /* Kanban boards: one column at a time, picked with the status switch. */
+  .board-status { display: flex; overflow-x: auto; margin-bottom: 12px; scrollbar-width: none; }
+  .board-status::-webkit-scrollbar { display: none; }
+  .board-status .seg-btn { flex: 1 0 auto; }
+  .board--switchable.board--switchable { display: block !important; overflow: visible !important; padding-bottom: 0 !important; }
+  .board--switchable > .is-col { width: auto !important; min-width: 0 !important; max-width: none !important; }
+  .board--switchable > .is-col:not(.is-current) { display: none !important; }
+
+  /* Tasks home, live projects: the name gets the first line; client, badges,
+     status and the pin / Open buttons wrap onto the next. */
+  .db-proj-header { flex-wrap: wrap; row-gap: 0; }
+  .db-proj-name-label { flex: 1 1 calc(100% - 48px); }
+  .db-pin-btn { margin-left: auto; }
+  .db-action-link { margin-top: 0; white-space: nowrap; }
+
+  /* Touch targets: at least 44px. */
+  .btn-primary, .btn-secondary, .btn-cancel, .btn-danger,
+  .filter-pill, .proj-tab, .seg-btn,
+  .kanban-add, .dashed-btn, .bd-add-card, .bd-add-col, .mkt-add-btn,
+  .db-pin-btn, .db-action-link, .db-nav-link { min-height: 44px; }
+  .row-btn { min-height: 44px; min-width: 44px; }
+  .icon-btn { width: 44px; height: 44px; }
+  .tt-table .tt-act .icon-btn { width: 44px; height: 44px; }
+  .crumbs a { display: inline-flex; align-items: center; min-height: 44px; }
+  /* 16px fields also stop iOS zooming in on focus. */
+  .search-wrap input, .field input, .field select, .field textarea, .tl-field input, .tl-field select { font-size: 16px; }
+  .search-wrap input, .field input, .field select, .tl-field input, .tl-field select { min-height: 44px; }
 }
 
 /* ── Feature additions (ported from the former injectGlobalStyles) ──────────── */

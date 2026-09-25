@@ -275,7 +275,9 @@ export class CanvasView {
 
     this.surface = surface
     // Fill the page below the header (and, on phones, above the tab bar).
-    surface.mount(/** @type {HTMLElement} */ (mc.querySelector('#cv-host')), 'calc(100vh - var(--chrome-h) - 108px)')
+    // dvh follows mobile browsers' collapsing toolbars; older ones get vh.
+    const vh = CSS.supports?.('height', '100dvh') ? '100dvh' : '100vh'
+    surface.mount(/** @type {HTMLElement} */ (mc.querySelector('#cv-host')), `calc(${vh} - var(--chrome-h) - 108px)`)
   }
 
   /** @param {HTMLInputElement | null} input @param {CanvasRow} canvas */

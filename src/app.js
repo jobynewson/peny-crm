@@ -18,6 +18,9 @@ import { PlanningTabsView } from './views/planning-tabs.js'
 import { HeaderView, tabForView } from './views/header.js'
 import { icon } from './views/icons.js'
 import { closeFloating } from './views/popover.js'
+import { syncThemeColor } from './theme.js'
+
+const PHONE = '(max-width: 768px)'
 
 // Every route the app has used; old bookmarks keep working.
 const VIEWS = ['dashboard', 'calendar', 'projects', 'budgets', 'planning', 'contacts', 'marketing', 'story-planner', 'leave', 'expenses', 'password-manager', 'offload-log', 'settings', 'timetrack']
@@ -65,9 +68,11 @@ export class App {
     // The Notes panel docks beside the page on desktop and remembers being
     // open, the way the sidebar notes were always there. On phones it's a
     // sheet you open when needed.
-    try { this._notesOpen = localStorage.getItem('slate-notes-open') === '1' && !window.matchMedia('(max-width: 768px)').matches } catch { this._notesOpen = false }
+    try { this._notesOpen = localStorage.getItem('slate-notes-open') === '1' && !window.matchMedia(PHONE).matches } catch { this._notesOpen = false }
     this._restoreFromHash()   // parse URL before first render
     this.render()
+    syncThemeColor()
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', syncThemeColor)
     this._loadNotes()         // notes are also indexed by ⌘K search
     this._bindKeyboard()
     this._bindNavLinks()
@@ -482,11 +487,13 @@ export class App {
         ${showDetail ? `<div class="detail-panel" id="detail-panel"><div class="detail-empty">Select a contact<br>to view details</div></div>` : ''}
         ${this._notesOpen ? this._notesPanelHtml() : ''}
       </div>
+      ${this.header.tabBarHtml()}
     `
     this.header.bind(this.container)
     this.bindToolbar()
     this.renderCurrentView()
     if (this._notesOpen) this._bindNotesPanel()
+    this._syncNotesModal()
   }
 
   // The first row of each list page: view switcher, filters, then primary
@@ -627,6 +634,8 @@ export class App {
   }
 
   navigate(view) {
+    // On phones the Notes panel is a full-screen sheet; moving on closes it.
+    if (this._notesOpen && window.matchMedia(PHONE).matches) this._notesOpen = false
     if (view !== 'dashboard') { clearInterval(this._cdInterval); this._cdInterval = null; document.getElementById('cd-confetti-layer')?.remove() }
     this.currentView = view
     this.projectsView.currentId = null
@@ -1914,6 +1923,17 @@ export class App {
     if (this._notesLoaded) this._renderNotesList()
   }
 
+  // On phones the open panel covers the screen, so it's a modal dialog and
+  // everything behind it is inert.
+  _syncNotesModal() {
+    const modal = !!this._notesOpen && window.matchMedia(PHONE).matches
+    this.container.querySelectorAll('.app-header, .page, .app-tabbar, .detail-panel').forEach(n => n.toggleAttribute('inert', modal))
+    const panel = document.getElementById('notes-panel')
+    if (!panel) return
+    if (modal) { panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true') }
+    else { panel.removeAttribute('role'); panel.removeAttribute('aria-modal') }
+  }
+
   toggleNotes(open = !this._notesOpen, { focus = true } = {}) {
     this._notesOpen = open
     try { localStorage.setItem('slate-notes-open', open ? '1' : '0') } catch {}
@@ -1926,6 +1946,7 @@ export class App {
       if (!this._notesLoaded) this._loadNotes()
       if (focus) document.getElementById('notes-new-btn')?.focus()
     } else if (focus) btn?.focus()
+    this._syncNotesModal()
     // The page just changed width. The Team Calendar positions its entry chips
     // in pixels, so lay it out again.
     requestAnimationFrame(() => {

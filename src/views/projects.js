@@ -2,6 +2,7 @@ import { createProject, updateProject, deleteProject, renumberProjectKanban, lin
 import { PostProductionView } from './post-production.js'
 import { timeLogFormHtml, bindTimeLogForm } from './time-log.js'
 import { icon } from './icons.js'
+import { mountStatusSwitch } from './board-status.js'
 import { continuationScript, PDF_CONTINUED_CSS, a4ContentWidthPx, a4ContentHeightPx } from '../utils/pdfContinuation.js'
 import { monthlyUsage, overallUsage, windowUsage, monthlyAllocationHours, usagePct, usageColour, hasAmortisedItems, hasPerUnitItems, contractLines, parseDateUTC } from '../utils/retainer-usage.js'
 
@@ -94,7 +95,7 @@ export class ProjectsView {
       <div class="kanban-wrap" style="grid-template-columns:repeat(6,1fr)">
         ${STAGES.map(stage => {
           const col = this._projectsFor(stage, false)
-          return `<div class="kanban-col">
+          return `<div class="kanban-col" data-status-col="${esc(stage)}">
             <div class="kanban-col-head">
               <span style="width:8px;height:8px;border-radius:50%;background:${STAGE_DOT[stage]};display:inline-block;flex-shrink:0"></span>
               ${stage} <span class="kanban-count">${col.length}</span>
@@ -105,7 +106,7 @@ export class ProjectsView {
             <button class="kanban-add" data-stage="${stage}">+ add</button>
           </div>`
         }).join('')}
-        <div class="kanban-col">
+        <div class="kanban-col" data-status-col="${RETAINER_STAGE}">
           <div class="kanban-col-head">
             <span style="width:8px;height:8px;border-radius:50%;background:var(--cat-purple);display:inline-block;flex-shrink:0"></span>
             Retainer <span class="kanban-count">${retainerProjects.length}</span>
@@ -118,6 +119,10 @@ export class ProjectsView {
       </div>
       ${this.newModalHTML()}
     `
+    mountStatusSwitch(mc.querySelector('.kanban-wrap'), {
+      key: 'projects', colAttr: 'data-status-col',
+      columns: [...STAGES.map(s => ({ key: s, label: s, count: this._projectsFor(s, false).length })), { key: RETAINER_STAGE, label: RETAINER_STAGE, count: retainerProjects.length }],
+    })
     mc.querySelectorAll('.kanban-card[data-open]').forEach(el => {
       el.addEventListener('click', () => {
         this.currentId = el.dataset.open
@@ -1209,6 +1214,12 @@ export class ProjectsView {
       const max = bar.scrollWidth - bar.clientWidth
       leftFade?.classList.toggle('proj-tab-fade--visible', bar.scrollLeft > 4)
       rightFade?.classList.toggle('proj-tab-fade--visible', bar.scrollLeft < max - 4)
+    }
+    // Open with the current tab in view; on phones it can sit past the edge.
+    const active = bar.querySelector('.proj-tab.active')
+    if (active && bar.scrollWidth > bar.clientWidth) {
+      const a = active.getBoundingClientRect(), b = bar.getBoundingClientRect()
+      bar.scrollLeft += (a.left + a.width / 2) - (b.left + b.width / 2)
     }
     update()
     bar.addEventListener('scroll', update, { passive: true })

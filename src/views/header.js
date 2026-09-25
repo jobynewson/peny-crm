@@ -74,6 +74,16 @@ export class HeaderView {
       </header>`
   }
 
+  // Phones: the same four tabs as a bottom bar (icon over label). The header
+  // keeps the wordmark, Log time, search, Notes and the avatar.
+  tabBarHtml() {
+    const active = tabForView(this.app.currentView)?.id
+    return `
+      <nav class="app-tabbar" aria-label="Main">
+        ${TABS.map(t => `<a href="${t.href}" data-nav="${t.view}"${t.id === active ? ' aria-current="page"' : ''}>${icon(t.icon, 22)}<span>${t.label}</span></a>`).join('')}
+      </nav>`
+  }
+
   bind(root) {
     root.querySelector('#hdr-search')?.addEventListener('click', () => this.app._openSearch())
     root.querySelector('#hdr-logtime')?.addEventListener('click', e => this.openLogTime(e.currentTarget))

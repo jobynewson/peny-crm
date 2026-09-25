@@ -1,9 +1,16 @@
-// Floating panels anchored to a header button: the account and New menus
+// Floating panels opened from a header button: the account and New menus
 // (role="menu": arrow keys, Home/End) and the Log time popover
 // (role="dialog"). Only one is open at a time. Each closes on Escape, a click
 // outside or navigation (App.render calls closeFloating), takes focus when it
 // opens and hands it back to its button when it closes.
+//
+// On desktop they're popovers anchored below the button. On phones (≤768px)
+// they open as bottom sheets instead: modal, over a dimmed backdrop, with a
+// grab handle and a close button, and focus kept inside until they close.
 
+import { icon } from './icons.js'
+
+const PHONE = '(max-width: 768px)'
 let current = null
 
 export function closeFloating(opts) {
@@ -24,19 +31,39 @@ export function openFloating({ anchor, id, role = 'menu', label, html, className
   if (current && current.id === id && current.anchor === anchor) { current.close(); return null }
   closeFloating({ restoreFocus: false })
 
+  const sheet = window.matchMedia(PHONE).matches
   const el = document.createElement('div')
   el.id = id
-  el.className = `pop ${className}`.trim()
-  el.setAttribute('role', role)
-  if (label) el.setAttribute('aria-label', label)
-  el.innerHTML = html
-  document.body.appendChild(el)
-  place(el, anchor)
+  let scrim = null
+  if (sheet) {
+    // The sheet is the modal dialog; a menu keeps its role on the list inside.
+    scrim = document.createElement('div')
+    scrim.className = 'sheet-scrim'
+    el.className = 'sheet'
+    el.setAttribute('role', 'dialog')
+    el.setAttribute('aria-modal', 'true')
+    if (label) el.setAttribute('aria-label', label)
+    el.innerHTML = `
+      <div class="sheet-grab" aria-hidden="true"></div>
+      <button type="button" class="icon-btn sheet-close" aria-label="Close">${icon('close', 20)}</button>
+      <div class="sheet-body ${className}"${role === 'menu' ? ` role="menu"${label ? ` aria-label="${label}"` : ''}` : ''}>${html}</div>`
+    document.body.append(scrim, el)
+    document.getElementById('app')?.setAttribute('inert', '')
+  } else {
+    el.className = `pop ${className}`.trim()
+    el.setAttribute('role', role)
+    if (label) el.setAttribute('aria-label', label)
+    el.innerHTML = html
+    document.body.appendChild(el)
+    place(el, anchor)
+  }
   anchor.setAttribute('aria-expanded', 'true')
   anchor.setAttribute('aria-controls', id)
 
   const items = () => [...el.querySelectorAll('[role="menuitem"], [role="menuitemradio"]')]
     .filter(n => !n.disabled && n.offsetParent !== null)
+  const focusables = () => [...el.querySelectorAll('a[href], button:not([disabled]), input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled])')]
+    .filter(n => n.offsetParent !== null)
 
   const onKey = e => {
     if (e.key === 'Escape') {
@@ -46,6 +73,15 @@ export function openFloating({ anchor, id, role = 'menu', label, html, className
       return
     }
     const active = document.activeElement
+    if (e.key === 'Tab' && sheet) {
+      // Keep focus inside the sheet.
+      const list = focusables()
+      const i = list.indexOf(active)
+      const next = e.shiftKey ? (i <= 0 ? list.length - 1 : i - 1) : (i === list.length - 1 ? 0 : i + 1)
+      e.preventDefault()
+      list[next]?.focus()
+      return
+    }
     if (!el.contains(active) || role !== 'menu') return
     const list = items()
     const i = list.indexOf(active)
@@ -66,11 +102,16 @@ export function openFloating({ anchor, id, role = 'menu', label, html, className
   const onPointer = e => {
     if (!el.contains(e.target) && !anchor.contains(e.target)) close({ restoreFocus: false })
   }
-  // A dialog closes once focus has moved somewhere outside it.
+  // A popover dialog closes once focus has moved somewhere outside it.
   const onFocusOut = e => {
-    if (role === 'dialog' && e.relatedTarget && !el.contains(e.relatedTarget) && !anchor.contains(e.relatedTarget)) close({ restoreFocus: false })
+    if (!sheet && role === 'dialog' && e.relatedTarget && !el.contains(e.relatedTarget) && !anchor.contains(e.relatedTarget)) close({ restoreFocus: false })
   }
-  const onResize = () => place(el, anchor)
+  // Crossing the phone breakpoint (rotating, resizing) would leave the wrong
+  // kind of panel, so close it; otherwise keep a popover under its button.
+  const onResize = () => {
+    if (window.matchMedia(PHONE).matches !== sheet) close({ restoreFocus: false })
+    else if (!sheet) place(el, anchor)
+  }
 
   const state = { id, el, anchor, close }
   function close({ restoreFocus = true } = {}) {
@@ -83,6 +124,8 @@ export function openFloating({ anchor, id, role = 'menu', label, html, className
     anchor.setAttribute('aria-expanded', 'false')
     anchor.removeAttribute('aria-controls')
     el.remove()
+    scrim?.remove()
+    if (sheet) document.getElementById('app')?.removeAttribute('inert')
     if (restoreFocus && document.contains(anchor)) anchor.focus()
   }
   current = state
@@ -90,11 +133,12 @@ export function openFloating({ anchor, id, role = 'menu', label, html, className
   document.addEventListener('pointerdown', onPointer, true)
   el.addEventListener('focusout', onFocusOut)
   window.addEventListener('resize', onResize)
+  el.querySelector('.sheet-close')?.addEventListener('click', () => close())
 
   onReady?.(el, close)
   const first = role === 'menu'
     ? items()[0]
-    : el.querySelector('[data-autofocus]') || el.querySelector('input:not([type="hidden"]), select, textarea, button')
+    : el.querySelector('[data-autofocus]') || el.querySelector('.sheet-body input:not([type="hidden"]), .sheet-body select, input:not([type="hidden"]), select, textarea')
   first?.focus()
   return state
 }

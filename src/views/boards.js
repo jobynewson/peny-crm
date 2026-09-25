@@ -12,6 +12,7 @@ import {
   spawnDueBoardRecurrences,
 } from '../db/client.js'
 import { joinRoom } from '../realtime/realtime.js'
+import { mountStatusSwitch } from './board-status.js'
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
 const fmtDate = d => d ? new Date(String(d).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''
@@ -361,6 +362,10 @@ export class BoardsView {
         }).join('')}
         ${this.canEdit ? '<button class="bd-add-col" id="bd-add-col">+ Column</button>' : ''}
       </div>`
+    mountStatusSwitch(wrap.querySelector('#bd-board'), {
+      key: `board:${this.board?.id ?? ''}`, colAttr: 'data-col',
+      columns: cols.map(c => ({ key: c.id, label: c.name, count: this._cardsFor(c.id).length })),
+    })
     this._bindBoardBody(wrap)
   }
 

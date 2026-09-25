@@ -32,7 +32,7 @@
   /* App chrome: header height plus, on phones, the bottom tab bar. */
   --header-h: 64px;
   --tabbar-h: 0px;
-  --chrome-h: calc(var(--header-h) + var(--tabbar-h));
+  --chrome-h: calc(var(--header-h) + var(--tabbar-h) + env(safe-area-inset-top, 0px));
 
   /* Type scale */
   --fs-2xs: 9px;
