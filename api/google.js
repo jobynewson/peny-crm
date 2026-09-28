@@ -7,22 +7,23 @@
 // POST action=entry-delete    — Remove one pushed Team Calendar event
 // POST action=entry-sync-all  — Backfill every current entry for one user
 // POST action=entry-purge     — Take every pushed entry back off a user's Slate calendar
-// (all POSTs require Clerk auth, or the internal CRON_SECRET)
+// (all POSTs require a Slate user's session, or the internal CRON_SECRET)
 
 import { neon } from '@neondatabase/serverless'
-import { verifyToken } from '@clerk/backend'
+import { verifyClerkUser } from './_auth.js'
 import { ensureFreshToken, toDateOnly, addUtcDays, ensureSlateCalendar } from './_gcal.js'
 import {
   syncCalendarEntryGoogle, deleteCalendarEntryGoogle,
   syncAllCalendarEntriesGoogle, purgeCalendarEntriesGoogle,
 } from './_gcal-entries.js'
 
-// Returns the verified Clerk payload so callers can check *who* is asking —
-// `sub` is the Clerk user id, which maps to app_users.clerk_id.
-async function verifyClerkToken(req) {
-  const raw = req.headers.authorization?.replace('Bearer ', '').trim()
-  if (!raw) throw Object.assign(new Error('Unauthorised'), { status: 401 })
-  return verifyToken(raw, { secretKey: process.env.CLERK_SECRET_KEY })
+// Returns { sub } so callers can check *who* is asking — `sub` is the Clerk
+// user id, which maps to app_users.clerk_id. A Clerk account with no app_users
+// row (a client portal user) is refused here, like a bad token.
+async function verifyClerkToken(req, sql) {
+  const { user, error } = await verifyClerkUser(req, sql)
+  if (error) throw Object.assign(new Error(error.message), { status: error.status })
+  return { sub: user.clerk_id }
 }
 
 // Connecting, disconnecting and bulk-syncing a calendar are personal actions:
@@ -190,7 +191,7 @@ export default async function handler(req, res) {
   let clerkPayload = null
   if (!isCronSecret) {
     try {
-      clerkPayload = await verifyClerkToken(req)
+      clerkPayload = await verifyClerkToken(req, sql)
     } catch (err) {
       return res.status(err.status || 401).json({ error: err.message })
     }

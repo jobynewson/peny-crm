@@ -4,9 +4,10 @@ import {
   getContacts, getProjects, getBudgets, getSettings,
   getOrCreateAppUser, getOrCreateWorkspace, resolvePermissions, getAllAppUsers,
   getSocialPosts, getMarketingCards, runMigrations, getTeamCalendarEntries,
-  getLeaveRequests, getPublicHolidays, seedDemoBoard, seedDemoCanvas,
+  getLeaveRequests, getPublicHolidays, seedDemoBoard, seedDemoCanvas, isAppUser,
 } from './db/client.js'
 import { listCompanies } from './api/companies.js'
+import { landingFor } from './utils/landing.js'
 
 async function bootstrap() {
   document.body.innerHTML = '<div class="loading">Loading…</div>'
@@ -27,6 +28,15 @@ async function bootstrap() {
   if (!user) return
 
   const clerkUserId = getCurrentUserId()
+
+  // 0. A client (a member of their company's Clerk org) belongs on the portal.
+  //    Checked before migrations or any workspace data, and they never get an
+  //    app_users row. Only org members pay for the extra lookup.
+  const orgCount = user.organizationMemberships?.length ?? 0
+  if (orgCount && landingFor({ orgCount, isStaff: await isAppUser(clerkUserId) }) === 'portal') {
+    goToPortal()
+    return
+  }
 
   // 1. Ensure schema is up to date (idempotent, safe to run every startup).
   //    Must run before creating the user row so role values match the current
@@ -83,6 +93,19 @@ async function bootstrap() {
   })
 
   app.mount(document.getElementById('app'))
+}
+
+function goToPortal() {
+  if (location.pathname !== '/portal') { location.replace('/portal'); return }
+  // Only reachable until the portal page ships: /portal still falls through to
+  // this app, so say where they are rather than redirect in a loop.
+  document.body.innerHTML = `
+    <div class="loading" style="flex-direction:column;gap:12px;text-align:center;padding:24px">
+      <div>This account is for the Peny client portal, which isn't open yet.</div>
+      <button id="portal-signout" style="margin-top:8px;padding:6px 14px;cursor:pointer;">Sign out</button>
+    </div>
+  `
+  document.getElementById('portal-signout')?.addEventListener('click', signOut)
 }
 
 bootstrap().catch(err => {

@@ -1,6 +1,7 @@
 // api/invite.js
-import { createClerkClient, verifyToken } from '@clerk/backend'
+import { createClerkClient } from '@clerk/backend'
 import { neon } from '@neondatabase/serverless'
+import { verifyClerkUser } from './_auth.js'
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -13,25 +14,14 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Valid email required' })
     }
 
-    const raw = req.headers.authorization?.replace('Bearer ', '').trim()
-    if (!raw) return res.status(401).json({ error: 'Unauthorised' })
-
-    let callerUserId
-    try {
-      const payload = await verifyToken(raw, { secretKey: process.env.CLERK_SECRET_KEY })
-      callerUserId = payload.sub
-    } catch {
-      return res.status(401).json({ error: 'Invalid session token' })
-    }
-
-    // Verify the caller is a superadmin in our DB
+    // Verify the caller is a Slate superadmin
     const sql = neon(process.env.VITE_DATABASE_URL)
-    const rows = await sql`
-      SELECT role FROM app_users WHERE clerk_id = ${callerUserId} LIMIT 1
-    `
-    if (!rows[0] || rows[0].role !== 'superadmin') {
+    const { user, error } = await verifyClerkUser(req, sql)
+    if (error) return res.status(error.status).json({ error: error.message })
+    if (user.role !== 'superadmin') {
       return res.status(403).json({ error: 'Superadmin access required' })
     }
+    const callerUserId = user.clerk_id
 
     // Send the Clerk invitation
     const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY })

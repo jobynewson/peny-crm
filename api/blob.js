@@ -7,7 +7,8 @@
 //   GET    /api/blob?action=youtube&id=   — view count for the dashboard ticker
 
 import { put, del } from '@vercel/blob'
-import { verifyToken } from '@clerk/backend'
+import { neon } from '@neondatabase/serverless'
+import { verifyClerkUser } from './_auth.js'
 import { fetchLinkPreview } from './_preview.js'
 import { getYoutubeViews } from './_youtube.js'
 
@@ -17,15 +18,13 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 }
 
+// Slate staff only: a Clerk session alone isn't enough, because client portal
+// accounts have one too. Returns the caller's Clerk id, or null once it has
+// answered the request itself.
 async function requireAuth(req, res) {
-  const raw = req.headers.authorization?.replace('Bearer ', '').trim()
-  if (!raw) { res.status(401).json({ error: 'Unauthorised' }); return null }
-  try {
-    const payload = await verifyToken(raw, { secretKey: process.env.CLERK_SECRET_KEY })
-    return payload.sub
-  } catch {
-    res.status(401).json({ error: 'Invalid session token' }); return null
-  }
+  const { user, error } = await verifyClerkUser(req, neon(process.env.VITE_DATABASE_URL))
+  if (error) { res.status(error.status).json({ error: error.message }); return null }
+  return user.clerk_id
 }
 
 export default async function handler(req, res) {

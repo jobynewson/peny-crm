@@ -177,9 +177,10 @@ export class ProjectsView {
       extractBtn.disabled = true
 
       try {
+        const { getAuthToken } = await import('../auth/clerk.js')
         const res = await fetch('/api/ai', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await getAuthToken()}` },
           body: JSON.stringify({ text }),
         })
         if (!res.ok) throw new Error(await res.text())

@@ -779,10 +779,25 @@ export function resolvePermissions(user) {
   return ROLE_PRESETS[user.role] ?? ROLE_PRESETS.user
 }
 
+// Is this Clerk account a Slate user? Asked before anything else at boot, so a
+// client's browser never runs migrations or loads the workspace.
+export async function isAppUser(clerkId) {
+  const rows = await db.select({ id: app_users.id }).from(app_users)
+    .where(eq(app_users.clerk_id, clerkId))
+  return rows.length > 0
+}
+
 export async function getOrCreateAppUser(clerkUser) {
   const existing = await db.select().from(app_users)
     .where(eq(app_users.clerk_id, clerkUser.id))
   if (existing[0]) return existing[0]
+
+  // A Clerk account in a client's organization is a portal user and must never
+  // become a Slate user. main.js sends them to /portal before this runs;
+  // refusing here too keeps the one place that creates app_users rows safe.
+  if (clerkUser.organizationMemberships?.length) {
+    throw new Error('Client portal accounts cannot join the workspace')
+  }
 
   const allUsers = await db.select({ id: app_users.id }).from(app_users)
   const role = allUsers.length === 0 ? 'superadmin' : 'user'

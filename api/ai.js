@@ -1,12 +1,19 @@
 // api/ai.js
 // POST /api/ai — extracts project + client data from email thread using Claude
+//
+// Slate staff only. It spends the studio's Anthropic key on whatever text it's
+// given, so it must never answer an anonymous caller or a client portal
+// account. Same-origin only: no CORS headers.
+
+import { neon } from '@neondatabase/serverless'
+import { verifyClerkUser } from './_auth.js'
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
-  if (req.method === 'OPTIONS') return res.status(200).end()
+  if (req.method === 'OPTIONS') return res.status(204).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+
+  const { error } = await verifyClerkUser(req, neon(process.env.VITE_DATABASE_URL))
+  if (error) return res.status(error.status).json({ error: error.message })
 
   const { text } = req.body
   if (!text?.trim()) return res.status(400).json({ error: 'No text provided' })

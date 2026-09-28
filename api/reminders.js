@@ -12,7 +12,7 @@
 
 import { neon } from '@neondatabase/serverless'
 import nodemailer from 'nodemailer'
-import { verifyToken } from '@clerk/backend'
+import { verifyClerkUser } from './_auth.js'
 import { syncLeaveRequestGoogle } from './google.js'
 import { groupDueSubTasks } from './_sub-tasks.js'
 import { taskMailer, taskEmailWrap, taskCardHtml, escapeHtml, appBaseUrl } from './_task-mail.js'
@@ -499,19 +499,13 @@ async function handleExpenseDigest(req, res, sql, transporter, todayLabel) {
 
 // ── Leave notifications (POST ?type=leave-notify) ─────────────────────────────
 async function handleLeaveNotify(req, res) {
-  const raw = req.headers.authorization?.replace('Bearer ', '').trim()
-  if (!raw) return res.status(401).json({ error: 'Unauthorised' })
-
-  try {
-    await verifyToken(raw, { secretKey: process.env.CLERK_SECRET_KEY })
-  } catch {
-    return res.status(401).json({ error: 'Invalid session token' })
-  }
+  // Slate staff only (client portal accounts have Clerk sessions too).
+  const sql = neon(process.env.VITE_DATABASE_URL)
+  const { error } = await verifyClerkUser(req, sql)
+  if (error) return res.status(error.status).json({ error: error.message })
 
   const { action, requestId } = req.body ?? {}
   if (!action || !requestId) return res.status(400).json({ error: 'action and requestId required' })
-
-  const sql = neon(process.env.VITE_DATABASE_URL)
 
   let request, requester, approver, superadmins = []
   try {
@@ -908,24 +902,16 @@ function buildExpenseBreakdownSection(name, ents, mileageRate, submitted, perDie
 // that user's breakdown for the month. Mirrors handleLeaveNotify: Clerk-authed,
 // per-recipient outcomes collected, all-failures surfaced as 502.
 async function handleExpenseSubmit(req, res) {
-  const raw = req.headers.authorization?.replace('Bearer ', '').trim()
-  if (!raw) return res.status(401).json({ error: 'Unauthorised' })
-
-  let payload
-  try {
-    payload = await verifyToken(raw, { secretKey: process.env.CLERK_SECRET_KEY })
-  } catch {
-    return res.status(401).json({ error: 'Invalid session token' })
-  }
-  const clerkUserId = payload?.sub
-  if (!clerkUserId) return res.status(401).json({ error: 'Invalid session token' })
+  // Slate staff only (client portal accounts have Clerk sessions too).
+  const sql = neon(process.env.VITE_DATABASE_URL)
+  const { user, error } = await verifyClerkUser(req, sql)
+  if (error) return res.status(error.status).json({ error: error.message })
+  const clerkUserId = user.clerk_id
 
   const { monthKey } = req.body ?? {}
   if (!monthKey || !/^\d{4}-\d{2}$/.test(monthKey)) {
     return res.status(400).json({ error: 'monthKey (YYYY-MM) required' })
   }
-
-  const sql = neon(process.env.VITE_DATABASE_URL)
 
   let settingsRows = []
   try { settingsRows = await sql`SELECT expense_recipients, mileage_rate, per_diem_rate FROM settings LIMIT 1` } catch (_) {}

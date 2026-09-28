@@ -53,6 +53,21 @@ index.html                # App HTML shell
     `task_*` tables.
   - Clerk ID (TEXT): `marketing_cards.lead_owner_id`,
     `canvas_items.sub_tasks[].owner_id`, `user_notes.user_id`.
+- **Clients and staff share one Clerk instance.** A client portal user is a
+  member of their company's Clerk organization and never gets an `app_users`
+  row. So a valid Clerk session proves who someone is, not that they work at
+  Peny:
+  - `api/_auth.js` is the only file that verifies a Clerk token
+    (`verifyClerkSession` for the raw claims, `verifyClerkUser` for a Slate
+    user). Every staff endpoint uses `verifyClerkUser`, which answers 403
+    `not_provisioned` when there's no `app_users` row.
+    `api/_staff-only.test.js` fails if another file calls `verifyToken`, and
+    checks every staff endpoint refuses a client session.
+  - At boot (`src/main.js`), before migrations or any workspace data, a
+    signed-in account that belongs to an org and isn't already a Slate user
+    goes to `/portal` (`landingFor()` in `src/utils/landing.js`).
+    `getOrCreateAppUser()` also refuses to create a row for an org member.
+    Staff who are added to a client's org keep the app.
 - `user_id TEXT` on a table means the **workspace owner's Clerk ID**, not the
   row's author. There is one shared workspace (`getOrCreateWorkspace` returns
   the first user's Clerk ID and every query scopes by it) — this is shared-team
@@ -613,7 +628,7 @@ always the source of truth and nothing is ever read back from Google.
   reconnect starts clean. "Sync now" / connecting backfills entries from 30
   days ago onwards.
 - **Permissions.** `entry-sync` and `entry-delete` are open to any signed-in
-  user, because the Team Calendar is shared and anyone can already move
+  Slate user, because the Team Calendar is shared and anyone can already move
   anyone's entry. `disconnect`, `entry-sync-all` and `entry-purge` act on one
   person's own connection, so they check the caller's Clerk id against
   `app_users.clerk_id` (`assertOwnAccount`).
