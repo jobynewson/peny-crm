@@ -800,3 +800,85 @@ export const notifications = pgTable('notifications', {
   read_at:      timestamp('read_at',    { withTimezone: true }),
   created_at:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
+
+// ── Retainer worklists (drizzle/0033_add_retainer_worklists.sql) ─────────────
+// A company's workstreams, their deliverables and the rounds sent for review,
+// which the client portal shows. Read and written ONLY through the server
+// (/api/retainers, /api/client) — never from db/client.js. The rules (due
+// kinds, statuses, rounds, responses, client labels) are api/_retainer-rules.js.
+export const workstream_status   = pgEnum('workstream_status', ['active', 'paused', 'complete'])
+export const deliverable_status  = pgEnum('deliverable_status',
+  ['planned', 'in_progress', 'waiting_on_client', 'in_review', 'changes_requested', 'approved'])
+export const deliverable_due_kind = pgEnum('deliverable_due_kind', ['exact', 'month', 'window', 'recurring'])
+export const delivery_response   = pgEnum('delivery_response', ['pending', 'approved', 'changes_requested'])
+export const request_status      = pgEnum('request_status', ['new', 'accepted', 'declined'])
+
+export const workstreams = pgTable('workstreams', {
+  id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id:    text('user_id').notNull(),
+  // The client. Deleting a company with a worklist is refused (RESTRICT).
+  company_id: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'restrict' }),
+  // Optional project; a portal token link for it shows its workstreams only.
+  project_id: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
+  title:      text('title').notNull(),
+  brief:      text('brief'),                       // shown to the client
+  status:     workstream_status('status').notNull().default('active'),
+  sort_order: integer('sort_order').notNull().default(0),
+  ...timestamps,
+})
+
+export const deliverables = pgTable('deliverables', {
+  id:             uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  workstream_id:  uuid('workstream_id').notNull().references(() => workstreams.id, { onDelete: 'cascade' }),
+  title:          text('title').notNull(),
+  format:         text('format'),
+  owner_id:       uuid('owner_id').references(() => app_users.id, { onDelete: 'set null' }),
+  // due_date is always the deadline: exact = that day, month = its last day,
+  // window = the window's last day, recurring = the next one if known.
+  due_kind:       deliverable_due_kind('due_kind').notNull().default('exact'),
+  due_date:       date('due_date'),
+  due_label:      text('due_label'),              // the words, e.g. "1st week of November"
+  cadence:        text('cadence'),                // recurring only
+  status:         deliverable_status('status').notNull().default('planned'),
+  waiting_since:  timestamp('waiting_since', { withTimezone: true }),
+  waiting_note:   text('waiting_note'),           // shown to the client
+  client_visible: boolean('client_visible').notNull().default(false),
+  internal_notes: text('internal_notes'),         // never leaves Slate
+  sort_order:     integer('sort_order').notNull().default(0),
+  ...timestamps,
+})
+
+// One row per round sent for review; unique (deliverable_id, round).
+export const deliveries = pgTable('deliveries', {
+  id:                uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  deliverable_id:    uuid('deliverable_id').notNull().references(() => deliverables.id, { onDelete: 'cascade' }),
+  url:               text('url').notNull(),       // http(s) only (CHECK)
+  note:              text('note'),
+  round:             integer('round').notNull(),
+  sent_by:           uuid('sent_by').references(() => app_users.id, { onDelete: 'set null' }),
+  sent_at:           timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
+  client_response:   delivery_response('client_response').notNull().default('pending'),
+  client_comment:    text('client_comment'),
+  responded_at:      timestamp('responded_at', { withTimezone: true }),
+  // A Clerk id — the client, or the Peny user who recorded an emailed reply.
+  responded_by:      text('responded_by'),
+  responded_by_name: text('responded_by_name'),
+  preview_title:     text('preview_title'),
+  preview_image:     text('preview_image'),
+})
+
+// Client requests — stage 2 fills this; nothing reads it yet. Accepting one
+// creates a task (task_id) that the task board then carries.
+export const requests = pgTable('requests', {
+  id:             uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id:        text('user_id').notNull(),
+  company_id:     uuid('company_id').notNull().references(() => companies.id, { onDelete: 'restrict' }),
+  submitted_by:   text('submitted_by'),           // Clerk id
+  title:          text('title').notNull(),
+  detail:         text('detail'),
+  wanted_by:      date('wanted_by'),
+  status:         request_status('status').notNull().default('new'),
+  task_id:        uuid('task_id').references(() => tasks.id, { onDelete: 'set null' }),
+  deliverable_id: uuid('deliverable_id').references(() => deliverables.id, { onDelete: 'set null' }),
+  ...timestamps,
+})

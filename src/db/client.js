@@ -525,6 +525,118 @@ export async function runMigrations() {
   await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE SET NULL`
   await sql`CREATE INDEX IF NOT EXISTS contacts_company_idx ON contacts (company_id)`
   await sql`CREATE INDEX IF NOT EXISTS projects_company_idx ON projects (company_id)`
+
+  // ── Retainer worklists (drizzle/0033_add_retainer_worklists.sql) ───────────
+  // Read and written only through /api (never this file's helpers); the rules
+  // live in api/_retainer-rules.js. CREATE TYPE has no IF NOT EXISTS, hence
+  // the DO blocks, as for task_status.
+  await sql`
+    DO $$ BEGIN
+      CREATE TYPE workstream_status AS ENUM ('active', 'paused', 'complete');
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$
+  `
+  await sql`
+    DO $$ BEGIN
+      CREATE TYPE deliverable_status AS ENUM
+        ('planned', 'in_progress', 'waiting_on_client', 'in_review', 'changes_requested', 'approved');
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$
+  `
+  await sql`
+    DO $$ BEGIN
+      CREATE TYPE deliverable_due_kind AS ENUM ('exact', 'month', 'window', 'recurring');
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$
+  `
+  await sql`
+    DO $$ BEGIN
+      CREATE TYPE delivery_response AS ENUM ('pending', 'approved', 'changes_requested');
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$
+  `
+  await sql`
+    DO $$ BEGIN
+      CREATE TYPE request_status AS ENUM ('new', 'accepted', 'declined');
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS workstreams (
+      id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id    TEXT NOT NULL,
+      company_id UUID NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
+      project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
+      title      TEXT NOT NULL,
+      brief      TEXT,
+      status     workstream_status NOT NULL DEFAULT 'active',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS workstreams_company_idx ON workstreams (company_id, sort_order)`
+  await sql`CREATE INDEX IF NOT EXISTS workstreams_project_idx ON workstreams (project_id)`
+  await sql`
+    CREATE TABLE IF NOT EXISTS deliverables (
+      id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      workstream_id  UUID NOT NULL REFERENCES workstreams(id) ON DELETE CASCADE,
+      title          TEXT NOT NULL,
+      format         TEXT,
+      owner_id       UUID REFERENCES app_users(id) ON DELETE SET NULL,
+      due_kind       deliverable_due_kind NOT NULL DEFAULT 'exact',
+      due_date       DATE,
+      due_label      TEXT,
+      cadence        TEXT,
+      status         deliverable_status NOT NULL DEFAULT 'planned',
+      waiting_since  TIMESTAMPTZ,
+      waiting_note   TEXT,
+      client_visible BOOLEAN NOT NULL DEFAULT false,
+      internal_notes TEXT,
+      sort_order     INTEGER NOT NULL DEFAULT 0,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS deliverables_workstream_idx ON deliverables (workstream_id, sort_order)`
+  await sql`CREATE INDEX IF NOT EXISTS deliverables_owner_idx ON deliverables (owner_id)`
+  await sql`CREATE INDEX IF NOT EXISTS deliverables_open_due_idx ON deliverables (due_date) WHERE status <> 'approved'`
+  await sql`
+    CREATE TABLE IF NOT EXISTS deliveries (
+      id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      deliverable_id    UUID NOT NULL REFERENCES deliverables(id) ON DELETE CASCADE,
+      url               TEXT NOT NULL CHECK (url ~* '^https?://'),
+      note              TEXT,
+      round             INTEGER NOT NULL CHECK (round > 0),
+      sent_by           UUID REFERENCES app_users(id) ON DELETE SET NULL,
+      sent_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      client_response   delivery_response NOT NULL DEFAULT 'pending',
+      client_comment    TEXT,
+      responded_at      TIMESTAMPTZ,
+      responded_by      TEXT,
+      responded_by_name TEXT,
+      preview_title     TEXT,
+      preview_image     TEXT,
+      UNIQUE (deliverable_id, round)
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS requests (
+      id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id        TEXT NOT NULL,
+      company_id     UUID NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
+      submitted_by   TEXT,
+      title          TEXT NOT NULL,
+      detail         TEXT,
+      wanted_by      DATE,
+      status         request_status NOT NULL DEFAULT 'new',
+      task_id        UUID REFERENCES tasks(id) ON DELETE SET NULL,
+      deliverable_id UUID REFERENCES deliverables(id) ON DELETE SET NULL,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS requests_company_status_idx ON requests (company_id, status)`
 }
 
 // One-time demo data so the first visit to Planning isn't an empty screen.

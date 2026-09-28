@@ -744,6 +744,48 @@ always the source of truth and nothing is ever read back from Google.
   keeps it current as companies are created. There is no rename, merge or
   delete screen yet, so a typo makes a stray company.
 
+### Retainer worklists (data and rules)
+- Tables (`drizzle/0033_add_retainer_worklists.sql`), all read and written
+  through the server only:
+  - `workstreams`: a company's workstreams, optionally tied to a project
+    (`project_id`, which a portal token link for that project uses).
+  - `deliverables`: title, format, owner (`app_users.id`), due fields, status,
+    `waiting_since` / `waiting_note`, `client_visible` (**off by default**) and
+    `internal_notes` (never leaves Slate).
+  - `deliveries`: the rounds sent for review — url, note, round, sender, and the
+    client's response with who gave it (`responded_by` is a Clerk id, since
+    clients have no `app_users` row) — plus the link preview.
+  - `requests`: client requests, empty until stage 2. Accepting one will
+    create a task on the task board (`task_id`), which then carries the work;
+    there is no second inbox.
+- Statuses are Postgres enums (`workstream_status`, `deliverable_status`,
+  `deliverable_due_kind`, `delivery_response`, `request_status`), like
+  `task_status`.
+- The rules are pure functions in `api/_retainer-rules.js` (tested in
+  `_retainer-rules.test.js`); nothing else decides them:
+  - **Due dates.** `due_date` is always the deadline, so sorting and
+    "overdue" are the same for every `due_kind`: `exact` = that day, `month` =
+    its last day, `window` = the window's last day with the words in
+    `due_label` ("1st week of November"), `recurring` = the next one if known,
+    with `cadence` (weekly | fortnightly | monthly | quarterly).
+    `dueDisplay()` shows `due_label` if set, else derives it ("Fri 3 Oct",
+    "October", "By 7 Nov", "Monthly · next 5 Oct").
+  - **Client labels.** `clientStatus()` maps the six statuses onto the five
+    the client sees (Planned, In progress, Waiting on you, Ready for review,
+    Approved); `changes_requested` reads as In progress. Mapped on the server,
+    so internal status names never reach the portal.
+  - **Waiting.** Entering `waiting_on_client` sets `waiting_since`; leaving it
+    clears `waiting_since` and `waiting_note`.
+  - **Rounds.** Sending a delivery makes round = previous + 1 (unique per
+    deliverable) and the deliverable `in_review`. A response is only taken on
+    the latest round: approved → `approved`, changes requested (comment
+    required) → `changes_requested`. The same rule serves the client and a Peny
+    user recording an emailed approval.
+  - **URLs.** Only http(s), checked in the rules and by a CHECK constraint,
+    because the URL becomes a link in the portal.
+- Dates are 'YYYY-MM-DD' strings and "today" is London time
+  (`api/_dates.js`: `londonDate()`, `addDays()`, …), not the server's UTC.
+
 ### Kanban boards
 There is no shared kanban component — three independent implementations, each
 with its own card drag-and-drop wiring. Per the cross-feature consistency rule
