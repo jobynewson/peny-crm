@@ -1251,6 +1251,14 @@ kbd { font-family: var(--font-mono); }
 .rt-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; margin-bottom: 20px; }
 .rt-back { font-size: 12px; text-decoration: none; }
 .rt-head-main { flex: 1; min-width: 200px; }
+.rt-head-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.rt-people { margin: 0; padding: 0; list-style: none; }
+.rt-person { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border-light); }
+.rt-person:first-child { border-top: none; }
+.rt-person-main { display: flex; flex: 1; flex-direction: column; min-width: 0; font-size: 12px; }
+.rt-person-name { overflow: hidden; font-size: 13px; font-weight: 500; color: var(--text); text-overflow: ellipsis; }
+.rt-invite { margin-top: 16px; }
+.rt-warn { color: var(--warning); }
 .rt-title { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; color: var(--text); }
 .rt-summary { margin-top: 4px; font-size: 13px; color: var(--text-muted); }
 .rt-ws { margin-bottom: 16px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }

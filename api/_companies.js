@@ -5,6 +5,7 @@
 // NOT a Vercel function — the `_` prefix keeps it out of function detection.
 
 import { fail, invalid, readBody, workspaceId } from './_api.js'
+import { PORTAL_ROUTES } from './_portal-access.js'
 
 export const NAME_MAX = 200
 
@@ -20,6 +21,8 @@ export function normaliseCompanyName(raw) {
 export const ROUTES = [
   { method: 'GET',  pattern: /^companies$/, handler: listCompanies },
   { method: 'POST', pattern: /^companies$/, handler: findOrCreateCompany, access: 'editor' },
+  // A company's client portal access (superadmin): _portal-access.js.
+  ...PORTAL_ROUTES,
 ]
 
 // ── GET /api/companies ───────────────────────────────────────────────────────

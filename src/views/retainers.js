@@ -20,6 +20,7 @@ import * as api from '../api/retainers.js'
 import { openFloating, closeFloating } from './popover.js'
 import { icon } from './icons.js'
 import { companyFieldHtml, bindCompanyField, resolveCompanyField } from './company-field.js'
+import { getPortalAccess, setUpPortal, inviteToPortal, revokePortalInvitation, removePortalMember } from '../api/companies.js'
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 const count = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
@@ -51,6 +52,7 @@ export class RetainersView {
   }
 
   get canEdit() { return this.app.permissions?.projects_edit === true }
+  get isSuperadmin() { return this.app.appUser?.role === 'superadmin' }
 
   // ── Toolbar (list page only; a company page has its own header) ───────────
   toolbar() {
@@ -183,7 +185,10 @@ export class RetainersView {
           <h1 class="rt-title">${esc(company.name)}</h1>
           <div class="rt-summary">${summary}${company.portal ? ' · <span class="rt-chip">Portal on</span>' : ''}</div>
         </div>
-        ${this.canEdit ? '<button class="btn-primary" data-rt-add-ws data-focus-key="add-ws">+ Workstream</button>' : ''}
+        <div class="rt-head-actions">
+          ${this.isSuperadmin ? '<button class="btn-secondary" data-rt-portal data-focus-key="portal">Portal access</button>' : ''}
+          ${this.canEdit ? '<button class="btn-primary" data-rt-add-ws data-focus-key="add-ws">+ Workstream</button>' : ''}
+        </div>
       </div>
       ${ordered.length
         ? ordered.map(w => this._workstreamHtml(w)).join('')
@@ -269,6 +274,7 @@ export class RetainersView {
       e.preventDefault(); this.app.openLink(a.dataset.rtLink)
     }))
     mc.querySelectorAll('[data-rt-add-ws]').forEach(b => b.addEventListener('click', () => this._workstreamForm(b, null)))
+    mc.querySelector('[data-rt-portal]')?.addEventListener('click', e => this._portalPanel(e.currentTarget))
     mc.querySelectorAll('[data-rt-ws-edit]').forEach(b => b.addEventListener('click', () => this._workstreamForm(b, this._workstream(b.dataset.rtWsEdit))))
     mc.querySelectorAll('[data-rt-ws-status]').forEach(b => b.addEventListener('click', () => this._workstreamStatusMenu(b, this._workstream(b.dataset.rtWsStatus))))
     mc.querySelectorAll('[data-rt-toggle-ws]').forEach(b => b.addEventListener('click', () => {
@@ -769,6 +775,113 @@ export class RetainersView {
           } catch (err) { this.app.toast(err.message || 'Could not delete') }
         })
       },
+    })
+  }
+
+  // ── Portal access (superadmins) ────────────────────────────────────────────
+  // Who from this company can sign in to the client portal. Backed by the
+  // company's Clerk organisation (api/_portal-access.js).
+
+  _portalPanel(anchor) {
+    const company = this.page.company
+    openFloating({
+      anchor, id: 'rt-portal', role: 'dialog', className: 'lt-pop rt-pop rt-pop--wide',
+      html: `<div class="lt-head"><h2 class="lt-title" id="rt-portal-title">Portal access · ${esc(company.name)}</h2></div>
+        <div data-portal-body><p class="tl-hint">Loading…</p></div>`,
+      onReady: el => {
+        el.setAttribute('aria-labelledby', 'rt-portal-title')
+        this._loadPortal(el, company)
+      },
+    })
+  }
+
+  async _loadPortal(el, company) {
+    const body = el.querySelector('[data-portal-body]')
+    try {
+      const state = await getPortalAccess(company.id)
+      if (el.isConnected) this._paintPortal(el, company, state)
+    } catch (err) {
+      if (el.isConnected) body.innerHTML = `<p class="tl-msg" data-tone="error">${esc(err.message || 'Could not load portal access')}</p>`
+    }
+  }
+
+  _paintPortal(el, company, { portal, invites_enabled }) {
+    const body = el.querySelector('[data-portal-body]')
+    if (!portal) {
+      body.innerHTML = `
+        <p class="tl-hint">${esc(company.name)} has no client portal yet. Setting it up makes a Clerk organisation for them; nobody is in it until you invite someone.</p>
+        <div class="tl-msg" id="rt-portal-msg" role="alert"></div>
+        <button type="button" class="btn-primary tl-submit" data-portal-setup>Set up the portal</button>`
+      body.querySelector('[data-portal-setup]').addEventListener('click', async e => {
+        e.currentTarget.disabled = true
+        try {
+          const state = await setUpPortal(company.id)
+          company.portal = true
+          this._repaint()
+          if (el.isConnected) this._paintPortal(el, company, state)
+        } catch (err) {
+          e.currentTarget.disabled = false
+          const msg = body.querySelector('#rt-portal-msg')
+          msg.dataset.tone = 'error'
+          msg.textContent = err.message || 'Could not set it up'
+        }
+      })
+      return
+    }
+
+    const person = (main, sub, action) => `
+      <li class="rt-person"><span class="rt-person-main"><span class="rt-person-name">${main}</span>${sub ? `<span class="rt-muted">${sub}</span>` : ''}</span>${action}</li>`
+    body.innerHTML = `
+      <p class="tl-hint">People here sign in with a code sent to their email. They see the deliverables you show to ${esc(company.name)}, and can approve rounds.</p>
+      <h3 class="rt-sheet-label section-label">People</h3>
+      ${portal.members.length
+        ? `<ul class="rt-people">${portal.members.map(m => person(esc(m.name || m.email), m.name ? esc(m.email) : '',
+            `<button type="button" class="rt-link-btn rt-danger" data-remove="${esc(m.user_id)}" data-who="${esc(m.name || m.email)}">Remove</button>`)).join('')}</ul>`
+        : '<p class="tl-hint">Nobody yet.</p>'}
+      ${portal.invitations.length ? `
+        <h3 class="rt-sheet-label section-label">Invited</h3>
+        <ul class="rt-people">${portal.invitations.map(i => person(esc(i.email), i.sent_at ? `Invited ${dayMonth(i.sent_at)}` : '',
+          `<button type="button" class="rt-link-btn rt-danger" data-revoke="${esc(i.id)}" data-who="${esc(i.email)}">Revoke</button>`)).join('')}</ul>` : ''}
+      <form class="tl-form rt-invite" id="rt-invite-form" novalidate>
+        <div class="tl-field"><label for="rt-invite-email">Invite someone from ${esc(company.name)}</label>
+          <input type="email" id="rt-invite-email" autocomplete="off" spellcheck="false" placeholder="name@example.com"${invites_enabled ? '' : ' disabled'} /></div>
+        ${invites_enabled ? '' : '<p class="tl-hint rt-warn">Client logins stay switched off until the database access fix is live. Turning them on is a setting: PORTAL_INVITES_ENABLED.</p>'}
+        <div class="tl-msg" id="rt-invite-msg" role="alert"></div>
+        <button type="submit" class="btn-primary tl-submit"${invites_enabled ? '' : ' disabled'}>Send invitation</button>
+      </form>`
+
+    const reload = () => this._loadPortal(el, company)
+    body.querySelectorAll('[data-remove]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm(`Remove ${b.dataset.who} from the portal? They lose access straight away.`)) return
+      b.disabled = true
+      try { await removePortalMember(company.id, b.dataset.remove); this.app.toast('Removed'); reload() }
+      catch (err) { b.disabled = false; this.app.toast(err.message || 'Could not remove them') }
+    }))
+    body.querySelectorAll('[data-revoke]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm(`Revoke the invitation to ${b.dataset.who}?`)) return
+      b.disabled = true
+      try { await revokePortalInvitation(company.id, b.dataset.revoke); this.app.toast('Invitation revoked'); reload() }
+      catch (err) { b.disabled = false; this.app.toast(err.message || 'Could not revoke it') }
+    }))
+    const form = body.querySelector('#rt-invite-form')
+    form.addEventListener('submit', async e => {
+      e.preventDefault()
+      const input = form.querySelector('#rt-invite-email')
+      const msg = form.querySelector('#rt-invite-msg')
+      const submit = form.querySelector('[type="submit"]')
+      if (!input.value.trim()) { msg.dataset.tone = 'error'; msg.textContent = 'Enter their email address'; input.focus(); return }
+      submit.disabled = true
+      msg.textContent = ''
+      try {
+        const inv = await inviteToPortal(company.id, input.value)
+        this.app.toast(`Invitation sent to ${inv.email}`)
+        reload()
+      } catch (err) {
+        submit.disabled = false
+        msg.dataset.tone = 'error'
+        msg.textContent = err.message || 'Could not send it'
+        input.focus()
+      }
     })
   }
 

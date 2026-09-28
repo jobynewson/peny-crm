@@ -10,3 +10,15 @@ export const listCompanies = () => request('/api/companies').then(r => r.compani
 // same name (ignoring case and spacing) or a new one. Resolves to the company.
 export const findOrCreateCompany = (name) =>
   request('/api/companies', { method: 'POST', body: { name } }).then(r => r.company)
+
+// A company's client portal access (superadmin; api/_portal-access.js).
+// → { portal: null | { members, invitations }, invites_enabled }
+const portal = id => `/api/companies/${id}/portal`
+export const getPortalAccess = companyId => request(portal(companyId))
+export const setUpPortal = companyId => request(portal(companyId), { method: 'POST' })
+export const inviteToPortal = (companyId, email) =>
+  request(`${portal(companyId)}/invitations`, { method: 'POST', body: { email } }).then(r => r.invitation)
+export const revokePortalInvitation = (companyId, invitationId) =>
+  request(`${portal(companyId)}/invitations/${encodeURIComponent(invitationId)}`, { method: 'DELETE' })
+export const removePortalMember = (companyId, userId) =>
+  request(`${portal(companyId)}/members/${encodeURIComponent(userId)}`, { method: 'DELETE' })

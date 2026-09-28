@@ -348,6 +348,11 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
   project was on Vercel Hobby, which allows one run per day per job (a more
   frequent expression fails the deployment). That cap doesn't apply on the
   Pro plan (see "Serverless Functions"), so the schedule can be tightened.
+- `PORTAL_INVITES_ENABLED` - `true` lets superadmins invite client users to
+  the portal (Portal access on a Retainers company page). Unset = invitations
+  are refused. Leave it unset until the query-proxy fix is live: the browser
+  still holds the database credential, and no client may have a login before
+  that.
 - `FENCE_API_KEY` - Shared secret for the Offload Log ingest endpoint
   (`POST /api/offloads`). Fence sends it as `Authorization: Bearer <key>`.
   Unset = the endpoint returns 500 (so it fails closed rather than open).
@@ -912,6 +917,16 @@ always the source of truth and nothing is ever read back from Google.
     `_retainer-rules.js`. Nothing in `src/` imports from `api/` — `/api/*`
     URLs belong to functions, so a module there can't be served to the
     browser under `vercel dev`.
+- **Portal access** (superadmins; `api/_portal-access.js`, routes under
+  `/api/companies/:id/portal…` — vercel.json rewrites `/api/companies/*`
+  with `?route=`). A company's client users are the members of its Clerk
+  organisation, `companies.clerk_org_id`, which is what the portal scopes by.
+  "Set up the portal" creates the organisation with nobody in it (the caller
+  is not made a member); invitations are `org:member`, land on `/portal`,
+  refuse any email that belongs to a Slate user, and are refused altogether
+  unless `PORTAL_INVITES_ENABLED` is `true`. The organisation used is always
+  the company's own, never one from the request. The panel is the "Portal
+  access" button on a company page.
 - **Responses have one writer**: `respondToDelivery(sql, scope, …)` in
   `api/_worklist.js`, shared by the Peny API and the portal. A scope is made
   only by that module's constructors (`staffScope(ws)`; the portal's comes
