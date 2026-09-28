@@ -20,6 +20,7 @@ import { HeaderView, tabForView } from './views/header.js'
 import { icon } from './views/icons.js'
 import { closeFloating } from './views/popover.js'
 import { searchCommands } from './views/search-commands.js'
+import { mountWhatsDue } from './views/whats-due.js'
 import { matchCommands } from './utils/command-search.js'
 import { segTabs, bindSegTabs } from './views/toolbar.js'
 import { syncThemeColor } from './theme.js'
@@ -735,6 +736,21 @@ export class App {
     this.render()
   }
 
+  // Open an in-app link ("#view/id/tab", as the What's due feed gives them)
+  // as though it had been typed in the address bar. Tasks and marketing cards
+  // have no address of their own, so #tasks/<id> and #marketing/<cardId> go to
+  // their page and open the task or card there.
+  openLink(hash) {
+    const [view, id] = String(hash).replace(/^#/, '').split('/')
+    if (view === 'tasks' && id) { this.navigate('tasks'); this.tasksView.openDetail(id); return }
+    if (view === 'marketing' && id) { this.marketingView.pendingOpenCardId = id; this.navigate('marketing'); return }
+    if (!id) { this.navigate(VIEWS.includes(view) ? view : 'dashboard'); return }
+    clearInterval(this._cdInterval); this._cdInterval = null
+    document.getElementById('cd-confetti-layer')?.remove()
+    history.pushState({}, '', `#${String(hash).replace(/^#/, '')}`)
+    this._showHash()
+  }
+
   // Push a URL state for a specific sub-location (called by views)
   _pushAppState(hash, state = {}) {
     history.pushState(state, '', hash)
@@ -773,9 +789,12 @@ export class App {
     if (shootOverlay) { shootOverlay.remove(); return }
     const modal = document.querySelector('.modal-overlay, #ra-copy-picker, #rig-lib-picker')
     if (modal) { modal.remove(); return }
+    this._showHash()
+  }
 
-    // An unknown hash lands on the home page, as a fresh load does, with any
-    // open project, budget or board cleared.
+  // Show what the address bar points at. An unknown hash lands on the home
+  // page, as a fresh load does, with any open project, budget or board cleared.
+  _showHash() {
     const { view, id, tab } = this._parseHash() ?? { view: 'dashboard' }
 
     this.currentView = view
@@ -1132,32 +1151,12 @@ export class App {
     if (this._dbEnqOpen === undefined) {
       this._dbEnqOpen = localStorage.getItem('db_enq_open') !== 'false'
     }
-    // --- Compute upcoming deliverables (due within 7 days, not done) ---
-    const today = new Date(); today.setHours(0,0,0,0)
-    const sevenDaysLater = new Date(today); sevenDaysLater.setDate(sevenDaysLater.getDate() + 7); sevenDaysLater.setHours(23,59,59,999)
-    const upcomingDeliverables = []
-    for (const p of this.projects) {
-      const delivsArr = Array.isArray(p.deliverables) ? p.deliverables : []
-      const monthlyArr = p.is_retainer && Array.isArray(p.monthly_deliverables) ? p.monthly_deliverables : []
-      for (let i = 0; i < delivsArr.length; i++) {
-        const d = delivsArr[i]
-        if (!d.text || d.done || !d.due) continue
-        const due = new Date(d.due)
-        if (due <= sevenDaysLater) upcomingDeliverables.push({ d, p, due, idx: i, src: 'deliverables' })
-      }
-      for (let i = 0; i < monthlyArr.length; i++) {
-        const d = monthlyArr[i]
-        if (!d.text || d.done || !d.due) continue
-        const due = new Date(d.due)
-        if (due <= sevenDaysLater) upcomingDeliverables.push({ d, p, due, idx: i, src: 'monthly_deliverables' })
-      }
-    }
-    upcomingDeliverables.sort((a, b) => a.due - b.due)
+    // What's due (overdue + the next two weeks, every kind of dated work) is
+    // read from the shared feed by src/views/whats-due.js — nothing here works
+    // out what's due.
 
-    // --- Compute edit deadlines coming due (within 14 days) from TC entries + PPS blocks ---
-    const dStr = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-    const fourteenDaysLater = new Date(today); fourteenDaysLater.setDate(today.getDate() + 14)
-    // PPS phases (shared cache with the team calendar view) surface block-level deadlines
+    // PPS phases (shared cache with the team calendar view), for the
+    // per-project post-production counts on the tab-nav row.
     let ppsPhasesForDash = this.teamCalendarView?._ppsPhasesCache
     if (!ppsPhasesForDash) {
       try {
@@ -1166,24 +1165,10 @@ export class App {
         if (this.teamCalendarView) this.teamCalendarView._ppsPhasesCache = ppsPhasesForDash
       } catch (e) { console.error(e); ppsPhasesForDash = [] }
     }
-    // Per-project post-production phase counts for the tab-nav row
     const ppsCountByProject = {}
     for (const ph of (ppsPhasesForDash || [])) {
       if (ph.project_id) ppsCountByProject[ph.project_id] = (ppsCountByProject[ph.project_id] || 0) + 1
     }
-    const ppsDeadlines = []
-    for (const ph of (ppsPhasesForDash || [])) {
-      for (const b of (Array.isArray(ph.blocks) ? ph.blocks : [])) {
-        if (b.is_deadline && b.end_date) {
-          ppsDeadlines.push({ date: b.end_date, label: `${ph.project_name ? ph.project_name + ' — ' : ''}${b.title || ph.name}`, assignee_id: b.assignee_id, phase_id: ph.id, block_id: b.id, is_complete: !!b.is_complete })
-        }
-      }
-    }
-    const editDeadlines = [
-      ...(this.teamCalendarEntries || []).filter(e => e.is_deadline).map(e => ({ date: e.end_date || e.entry_date, label: e.label, assignee_id: e.assignee_id, is_complete: !!e.is_complete })),
-      ...ppsDeadlines,
-    ].filter(e => e.date && e.date <= dStr(fourteenDaysLater))
-     .sort((a, b) => a.date.localeCompare(b.date))
 
     const renderComment = (c, pid) => {
       const ini = initials(c.author_name || 'Unknown')
@@ -1318,6 +1303,9 @@ export class App {
       <div class="stat-card stat-card--sm stat-card--link" data-db-nav="projects" role="button" tabindex="0" title="View projects"><div class="stat-label">Retainer MRR</div><div class="stat-value stat-value--sm" style="color:var(--cat-purple)">${gbp(retainerMRR)}</div><div class="stat-sub">per month</div></div>`
 
     mc.innerHTML = `
+      <!-- What's due (src/views/whats-due.js) -->
+      <div id="db-whats-due" style="margin-bottom:28px"></div>
+
       <!-- Live Projects -->
       <div style="margin-bottom:28px">
         <div class="db-section-head">
@@ -1364,37 +1352,8 @@ export class App {
         </div>
       </div>
 
-      <!-- 4-column row: Marketing Tasks | Deliverables | Edit Deadlines | Retainers -->
+      <!-- Retainers -->
       ${(() => {
-        const todayMs = today.getTime()
-        const sevenDaysMs = sevenDaysLater.getTime()
-        const myTasks = []
-        for (const card of (this.marketingCards || [])) {
-          for (const st of (card.sub_tasks || [])) {
-            if (st.done || !st.due_date || st.owner_id !== this.clerkUserId) continue
-            const dueMs = new Date(st.due_date + 'T00:00:00').getTime()
-            if (dueMs <= sevenDaysMs) myTasks.push({ st, card, dueMs })
-          }
-        }
-        myTasks.sort((a, b) => a.dueMs - b.dueMs)
-
-        const duePillClass = ms => { const d = Math.round((ms - todayMs) / 86400000); return d < 0 ? 'db-due-pill--overdue' : d === 0 ? 'db-due-pill--today' : '' }
-        const dueLabel     = ms => { const d = Math.round((ms - todayMs) / 86400000); return d < 0 ? `${Math.abs(d)}d overdue` : d === 0 ? 'Today' : new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) }
-
-        const delivDuePill = due => {
-          const d = Math.round((due - today) / 86400000)
-          return d < 0 ? `<span class="db-due-pill db-due-pill--overdue">${Math.abs(d)}d overdue</span>`
-               : d === 0 ? `<span class="db-due-pill db-due-pill--today">Today</span>`
-               : `<span class="db-due-pill">${d}d</span>`
-        }
-
-        const deadlineDuePill = entry => {
-          const d = Math.round((new Date(entry.date + 'T00:00:00').getTime() - todayMs) / 86400000)
-          return d < 0 && !entry.is_complete ? `<span class="db-due-pill db-due-pill--overdue">${Math.abs(d)}d overdue</span>`
-               : d === 0 ? `<span class="db-due-pill db-due-pill--today">Today</span>`
-               : `<span class="db-due-pill">${new Date(entry.date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>`
-        }
-
         const retainerCards = retainers.map(p => {
           const cl = this.contacts.find(c => c.id === p.client_id)
           const periodMult = {week:4.33,month:1,quarter:1/3,half:1/6,year:1/12}
@@ -1447,83 +1406,15 @@ export class App {
           </div>`
         }).join('')
 
-        return `<div class="db-quad-row" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:20px;margin-bottom:28px;align-items:flex-start">
-
-          <!-- Marketing Tasks -->
-          <div>
-            <div class="db-section-head" style="justify-content:space-between">
-              <div style="display:flex;align-items:center;gap:6px">
-                <span class="db-section-dot" style="background:var(--cat-purple)"></span>
-                Marketing Tasks
-                ${myTasks.length ? `<span class="db-section-count">${myTasks.length}</span>` : ''}
-              </div>
-              <button class="db-action-link" id="db-mkt-view-all" style="font-size:11px;padding:2px 8px;border:0.5px solid var(--border-med);border-radius:var(--radius-sm);background:var(--bg-secondary)">All ↗</button>
-            </div>
-            ${myTasks.length ? `
-            <div class="db-proj-list" style="border-radius:var(--radius-md)">
-              ${myTasks.map(({ st, card, dueMs }) => `
-              <div class="db-proj-row" style="display:flex;align-items:center;gap:8px;padding:8px 12px;min-height:unset">
-                <span class="db-due-pill ${duePillClass(dueMs)}">${dueLabel(dueMs)}</span>
-                <span class="db-proj-name-label" style="flex:1;font-size:12px">${esc(st.text)}</span>
-                <button class="db-action-link db-mkt-open-card" data-card-id="${card.id}" style="font-size:11px;padding:2px 6px;flex-shrink:0">↗</button>
-              </div>`).join('')}
-            </div>` : `<div style="color:var(--text-tertiary);font-size:12px;padding:8px 0">No tasks due this week.</div>`}
+        return `<div style="margin-bottom:28px">
+          <div class="db-section-head">
+            <span class="db-section-dot" style="background:var(--cat-purple)"></span>
+            Retainers
+            ${retainers.length ? `<span class="db-section-count">${retainers.length}</span>` : ''}
           </div>
-
-          <!-- Upcoming Deliverables -->
-          <div>
-            <div class="db-section-head">
-              <span class="db-section-dot" style="background:var(--cat-red)"></span>
-              Deliverables
-              ${upcomingDeliverables.length ? `<span class="db-section-count">${upcomingDeliverables.length}</span>` : ''}
-            </div>
-            ${upcomingDeliverables.length ? `
-            <div class="db-proj-list" style="border-radius:var(--radius-md)">
-              ${upcomingDeliverables.map(({ d, p, due, idx, src }) => `
-              <div class="db-proj-row db-upcoming-row" style="cursor:default">
-                <div class="db-proj-header" style="cursor:default;gap:8px;padding:8px 12px">
-                  <input type="checkbox" class="db-deliv-check" data-deliv-pid="${p.id}" data-deliv-idx="${idx}" data-deliv-src="${src}" style="cursor:pointer;flex-shrink:0;width:13px;height:13px" />
-                  ${delivDuePill(due)}
-                  <span class="db-proj-name-label" style="flex:1;font-size:12px">${esc(d.text)}</span>
-                  <button class="db-action-link" style="font-size:11px;padding:2px 6px;flex-shrink:0" data-open-pid="${p.id}">↗</button>
-                </div>
-              </div>`).join('')}
-            </div>` : `<div style="color:var(--text-tertiary);font-size:12px;padding:8px 0">No deliverables due this week.</div>`}
-          </div>
-
-          <!-- Edit Deadlines Coming Due -->
-          <div>
-            <div class="db-section-head">
-              <span class="db-section-dot" style="background:var(--cat-amber)"></span>
-              Edit Deadlines
-              ${editDeadlines.length ? `<span class="db-section-count">${editDeadlines.length}</span>` : ''}
-            </div>
-            ${editDeadlines.length ? `
-            <div class="db-proj-list" style="border-radius:var(--radius-md)">
-              ${editDeadlines.map(e => {
-                const assignee = this.allUsers.find(u => u.id === e.assignee_id)
-                return `<div class="db-proj-row db-deadline-row" style="display:flex;align-items:center;gap:8px;padding:8px 12px;min-height:unset;${e.is_complete ? 'opacity:0.45;' : ''}">
-                  ${e.phase_id ? `<input type="checkbox" class="db-deadline-check" data-phase-id="${e.phase_id}" data-block-id="${e.block_id}" ${e.is_complete ? 'checked' : ''} style="cursor:pointer;flex-shrink:0;width:13px;height:13px;accent-color:var(--success)" />` : ''}
-                  ${deadlineDuePill(e)}
-                  <span class="db-proj-name-label" style="flex:1;font-size:12px;${e.is_complete ? 'text-decoration:line-through;' : ''}">${esc(e.label)}</span>
-                  ${assignee ? `<span style="font-size:10px;color:var(--text-tertiary);flex-shrink:0">${esc(assignee.name || assignee.email.split('@')[0])}</span>` : ''}
-                </div>`
-              }).join('')}
-            </div>` : `<div style="color:var(--text-tertiary);font-size:12px;padding:8px 0">No edit deadlines in the next 14 days.</div>`}
-          </div>
-
-          <!-- Retainers -->
-          <div>
-            <div class="db-section-head">
-              <span class="db-section-dot" style="background:var(--cat-purple)"></span>
-              Retainers
-              ${retainers.length ? `<span class="db-section-count">${retainers.length}</span>` : ''}
-            </div>
-            ${retainers.length ? `
-            <div style="display:flex;flex-direction:column;gap:10px" id="retainer-cards">${retainerCards}</div>
-            ` : `<div style="color:var(--text-tertiary);font-size:12px;padding:8px 0">No retainers yet.</div>`}
-          </div>
-
+          ${retainers.length
+            ? `<div class="card-grid" id="retainer-cards">${retainerCards}</div>`
+            : `<div style="color:var(--text-tertiary);font-size:12px;padding:8px 0">No retainers yet.</div>`}
         </div>`
       })()}
 
@@ -1533,6 +1424,7 @@ export class App {
         <div class="stats-row">${statCards}</div>
       </div>`
 
+    mountWhatsDue(this, mc.querySelector('#db-whats-due'))
     this.teamCalendarView.renderDashboardSection(mc)
     // Tasks sits between the calendar and Live Projects.
     this.tasksView.renderDashboardSection(mc)
@@ -1545,16 +1437,6 @@ export class App {
       const go = () => this.navigate(card.dataset.dbNav)
       card.addEventListener('click', go)
       card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go() } })
-    })
-
-    // --- Marketing tasks coming due ---
-    mc.querySelector('#db-mkt-view-all')?.addEventListener('click', () => this.navigate('marketing'))
-    mc.querySelectorAll('.db-mkt-open-card').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const cardId = btn.dataset.cardId
-        this.marketingView.pendingOpenCardId = cardId
-        this.navigate('marketing')
-      })
     })
 
     // --- Open project links ---
@@ -1646,58 +1528,6 @@ export class App {
           await updateProject(this.userId, p.id, { [cb.dataset.delivSrc]: arr })
           this.toast(cb.checked ? '✓ Done' : 'Unmarked')
         } catch(e) { console.error(e) }
-      })
-    })
-
-    mc.querySelectorAll('.db-deliv-check').forEach(cb => {
-      cb.addEventListener('click', e => e.stopPropagation())
-      cb.addEventListener('change', async () => {
-        const p = this.projects.find(x => x.id === cb.dataset.delivPid)
-        if (!p) return
-        const idx = +cb.dataset.delivIdx
-        const src = cb.dataset.delivSrc
-        const arr = p[src]
-        if (!arr || !arr[idx]) return
-        arr[idx].done = cb.checked
-        const row = cb.closest('.db-upcoming-row')
-        if (row) {
-          row.style.opacity = cb.checked ? '0.45' : ''
-          const nameLabel = row.querySelector('.db-proj-name-label')
-          if (nameLabel) nameLabel.style.textDecoration = cb.checked ? 'line-through' : ''
-        }
-        try {
-          const { updateProject } = await import('./db/client.js')
-          await updateProject(this.userId, p.id, { [src]: arr })
-          this.toast(cb.checked ? '✓ Deliverable marked done' : 'Deliverable unmarked')
-        } catch(e) { console.error('Deliverable save failed:', e) }
-      })
-    })
-
-    // --- Edit deadline completion checkboxes ---
-    mc.querySelectorAll('.db-deadline-check').forEach(cb => {
-      cb.addEventListener('click', e => e.stopPropagation())
-      cb.addEventListener('change', async () => {
-        const phaseId = cb.dataset.phaseId
-        const blockId = cb.dataset.blockId
-        const row = cb.closest('.db-deadline-row')
-        if (row) {
-          row.style.opacity = cb.checked ? '0.45' : ''
-          const label = row.querySelector('.db-proj-name-label')
-          if (label) label.style.textDecoration = cb.checked ? 'line-through' : ''
-        }
-        try {
-          const { updatePpsPhase } = await import('./db/client.js')
-          const phases = this.teamCalendarView?._ppsPhasesCache || []
-          const phase = phases.find(p => p.id === phaseId)
-          if (phase && Array.isArray(phase.blocks)) {
-            const block = phase.blocks.find(b => b.id === blockId)
-            if (block) {
-              block.is_complete = cb.checked
-              await updatePpsPhase(phaseId, { blocks: phase.blocks })
-              this.toast(cb.checked ? '✓ Deadline marked complete' : 'Deadline unmarked')
-            }
-          }
-        } catch(e) { console.error('Deadline save failed:', e) }
       })
     })
 

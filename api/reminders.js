@@ -1,6 +1,6 @@
 // api/reminders.js
 // Vercel Cron Jobs call this endpoint via ?type=:
-//   deliverables  — 09:00 UTC daily  — overdue / due ≤3 days
+//   deliverables  — 09:00 UTC daily  — the What's due email: overdue / due ≤3 days
 //   notes         — 21:00 UTC daily  — note reminders due in ~36h
 //   expense-digest — 09:00 UTC daily  — monthly expense summary (2nd-to-last working day only)
 //   task-nudge    — 14:00 UTC daily  — unacknowledged task nudge, then archives
@@ -14,7 +14,8 @@ import { neon } from '@neondatabase/serverless'
 import { verifyClerkUser } from './_auth.js'
 import { notify, mailConfigured } from './_notify.js'
 import { syncLeaveRequestGoogle } from './google.js'
-import { groupDueSubTasks } from './_sub-tasks.js'
+import { dueFeed, dueMeta } from './_due-feed.js'
+import { workspaceId } from './_api.js'
 import { taskEmailWrap, taskCardHtml, escapeHtml, appBaseUrl } from './_task-mail.js'
 import { ARCHIVE_AFTER_DAYS } from './_task-rules.js'
 
@@ -117,143 +118,60 @@ export default async function handler(req, res) {
     else if (outcome) results.push({ ...extra, to: outcome.to, skipped: outcome.skipped })
   }
 
-  // ── Deliverable digest (09:00 run) ────────────────────────────────────────
+  // ── What's due (09:00 run) ───────────────────────────────────────────────
+  // One email per person, read from the what's-due feed (api/_due-feed.js) —
+  // the same list as the Dashboard: their overdue work and whatever is due in
+  // the next 3 days, of every kind (worklist and project deliverables,
+  // marketing, checklists, board cards, edit deadlines, tasks). Work with no
+  // owner isn't emailed. Outstanding unacknowledged tasks ride at the top, and
+  // anyone with some is included even with nothing due — otherwise the
+  // section would miss exactly the people it is for.
   if (type === 'deliverables') {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-
-    const projects = await sql`
-      SELECT id, name, deliverables, monthly_deliverables FROM projects
-      WHERE
-        (deliverables IS NOT NULL AND jsonb_array_length(deliverables) > 0)
-        OR (monthly_deliverables IS NOT NULL AND jsonb_array_length(monthly_deliverables) > 0)
-    `
+    const ws = await workspaceId(sql)
+    const { items } = await dueFeed(sql, { ws, days: 3 })
     const users = await sql`SELECT id, clerk_id, name, email FROM app_users`
     const userById = Object.fromEntries(users.map(u => [u.id, u]))
 
-    const byAssignee = {}
-    const checkDelivs = (delivs, projectName, projectId) => {
-      for (const d of delivs) {
-        if (!d.text || d.done || !d.due || !d.assignee_id) continue
-        const dueDate = new Date(d.due); dueDate.setHours(0, 0, 0, 0)
-        const daysUntil = Math.round((dueDate - today) / 86400000)
-        if (daysUntil > 3) continue
-        if (!byAssignee[d.assignee_id]) byAssignee[d.assignee_id] = []
-        byAssignee[d.assignee_id].push({ projectName, projectId, text: d.text, daysUntil })
-      }
-    }
-    for (const p of projects) {
-      if (Array.isArray(p.deliverables)) checkDelivs(p.deliverables, p.name, p.id)
-      if (Array.isArray(p.monthly_deliverables)) checkDelivs(p.monthly_deliverables, p.name, p.id)
-    }
-
-    const label = (n) => n < 0 ? `${Math.abs(n)}d overdue` : n === 0 ? 'due today' : `${n}d left`
-    const colour = (n) => n < 0 ? '#ef4444' : n === 0 ? '#f59e0b' : '#3b82f6'
-    const tableRows = (items) => items.map(i => `
-      <tr>
-        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:14px;color:#1a1a1a">${i.text}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px"><a href="${baseUrl}/#projects/${i.projectId}/overview" style="color:#3b82f6;text-decoration:none">${i.projectName}</a></td>
-        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:${colour(i.daysUntil)};white-space:nowrap;font-weight:500">${label(i.daysUntil)}</td>
-      </tr>`).join('')
-
-    // Outstanding unacknowledged tasks ride at the TOP of this digest. Anyone
-    // with unacknowledged work is included even with no deliverables due —
-    // otherwise the section silently misses exactly the people it is for.
+    const byOwner = {}
+    for (const item of items) if (item.owner) (byOwner[item.owner.id] ||= []).push(item)
     const unackByAssignee = await unacknowledgedByAssignee(sql)
-    const recipients = new Set([...Object.keys(byAssignee), ...Object.keys(unackByAssignee)])
+    const recipients = new Set([...Object.keys(byOwner), ...Object.keys(unackByAssignee)])
 
-    for (const assigneeId of recipients) {
-      const items = byAssignee[assigneeId] ?? []
-      const unack = unackByAssignee[assigneeId] ?? []
-      const user = userById[assigneeId]
+    const when = n => n < 0 ? `${Math.abs(n)}d overdue` : n === 0 ? 'due today' : `${n}d left`
+    const colour = n => n < 0 ? '#ef4444' : n === 0 ? '#f59e0b' : '#3b82f6'
+    const th = label => `<th style="padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#999;border-bottom:2px solid #f0f0f0">${label}</th>`
+    const dueTable = mine => `
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr>${th('What')}${th('When')}</tr></thead>
+        <tbody>${mine.map(i => `
+          <tr>
+            <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:14px">
+              <a href="${baseUrl}/${i.link}" style="color:#1a1a1a;text-decoration:none">${escapeHtml(i.title)}</a>
+              <div style="font-size:11px;color:#999;margin-top:2px">${escapeHtml(dueMeta(i))}</div>
+            </td>
+            <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:${colour(i.days)};white-space:nowrap;font-weight:500;vertical-align:top">${when(i.days)}</td>
+          </tr>`).join('')}</tbody>
+      </table>`
+
+    for (const ownerId of recipients) {
+      const mine = byOwner[ownerId] ?? []
+      const unack = unackByAssignee[ownerId] ?? []
+      const user = userById[ownerId]
       if (!user?.email) continue
-      const overdueCount = items.filter(i => i.daysUntil < 0).length
-      const subject = unack.length && !items.length
-        ? `👀 ${unack.length} task${unack.length > 1 ? 's' : ''} waiting on you`
+      const overdueCount = mine.filter(i => i.overdue).length
+      const plural = n => (n === 1 ? '' : 's')
+      const subject = !mine.length
+        ? `👀 ${unack.length} task${plural(unack.length)} waiting on you`
         : overdueCount > 0
-        ? `⚠ ${overdueCount} overdue deliverable${overdueCount > 1 ? 's' : ''} — ${items.length} total need attention`
-        : `⏰ ${items.length} deliverable${items.length > 1 ? 's' : ''} due soon`
-      const body = unacknowledgedSectionHtml(unack) + (items.length ? `
-        <table style="width:100%;border-collapse:collapse">
-          <thead><tr>
-            <th style="padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#999;border-bottom:2px solid #f0f0f0">Deliverable</th>
-            <th style="padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#999;border-bottom:2px solid #f0f0f0">Project</th>
-            <th style="padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#999;border-bottom:2px solid #f0f0f0">Status</th>
-          </tr></thead>
-          <tbody>${tableRows(items)}</tbody>
-        </table>` : '')
+        ? `⚠ ${overdueCount} overdue — ${mine.length} thing${plural(mine.length)} need attention`
+        : `⏰ ${mine.length} thing${plural(mine.length)} due soon`
       const name = user.name || user.email.split('@')[0]
-      const greeting = items.length
-        ? `Hi ${name}, here's a summary of your deliverables that need attention:`
-        : `Hi ${name}, nothing is due — but some tasks are still waiting for you to acknowledge them:`
-      const html = emailWrap('Deliverable Reminders', greeting, body)
+      const greeting = mine.length
+        ? `Hi ${escapeHtml(name)}, here's what's due for you:`
+        : `Hi ${escapeHtml(name)}, nothing is due — but some tasks are still waiting for you to acknowledge them:`
+      const html = emailWrap("What's due", greeting, unacknowledgedSectionHtml(unack) + (mine.length ? dueTable(mine) : ''))
       const [outcome] = await notify(sql, { kind: 'due_digest', to: { email: user.email, clerk_id: user.clerk_id, name: user.name }, subject, html })
-      record(outcome, { type: 'deliverable', sent: items.length, unacknowledged: unack.length })
-    }
-  }
-
-  // ── Task sub-task digest (09:00 run, same as deliverables) ──────────────────
-  // Marketing card sub-tasks AND canvas checklist (kind='todo') sub-tasks, both
-  // keyed by Clerk owner_id, folded into one per-owner email.
-  if (type === 'deliverables') {
-    const today2 = new Date()
-    today2.setHours(0, 0, 0, 0)
-
-    let mktCards = []
-    try {
-      mktCards = await sql`
-        SELECT id, title, sub_tasks FROM marketing_cards
-        WHERE sub_tasks IS NOT NULL AND jsonb_array_length(sub_tasks) > 0
-      `
-    } catch (_) { /* table may not exist yet */ }
-
-    let canvasTodos = []
-    try {
-      canvasTodos = await sql`
-        SELECT ci.sub_tasks, c.id AS canvas_id, c.name AS canvas_name
-        FROM canvas_items ci
-        JOIN canvases c ON c.id = ci.canvas_id
-        WHERE ci.kind = 'todo' AND ci.sub_tasks IS NOT NULL AND jsonb_array_length(ci.sub_tasks) > 0
-      `
-    } catch (_) { /* table may not exist yet */ }
-
-    const users2 = await sql`SELECT clerk_id, name, email FROM app_users`
-    const userByClerkId = Object.fromEntries(users2.map(u => [u.clerk_id, u]))
-
-    const sources = [
-      ...mktCards.map(c => ({ title: c.title, sub_tasks: c.sub_tasks, link: `${baseUrl}/#marketing` })),
-      ...canvasTodos.map(t => ({ title: t.canvas_name || 'Canvas checklist', sub_tasks: t.sub_tasks, link: `${baseUrl}/#planning/canvas/${t.canvas_id}` })),
-    ]
-    const mktByOwner = groupDueSubTasks(sources, today2, 3)
-
-    const label2 = (n) => n < 0 ? `${Math.abs(n)}d overdue` : n === 0 ? 'due today' : `${n}d left`
-    const colour2 = (n) => n < 0 ? '#ef4444' : n === 0 ? '#f59e0b' : '#3b82f6'
-
-    for (const [ownerId, items] of Object.entries(mktByOwner)) {
-      const user = userByClerkId[ownerId]
-      if (!user?.email) continue
-      const overdueCount = items.filter(i => i.daysUntil < 0).length
-      const subject = overdueCount > 0
-        ? `⚠ ${overdueCount} overdue task${overdueCount > 1 ? 's' : ''} — ${items.length} total`
-        : `⏰ ${items.length} task${items.length > 1 ? 's' : ''} due soon`
-      const body = `
-        <table style="width:100%;border-collapse:collapse">
-          <thead><tr>
-            <th style="padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#999;border-bottom:2px solid #f0f0f0">Task</th>
-            <th style="padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#999;border-bottom:2px solid #f0f0f0">Source</th>
-            <th style="padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#999;border-bottom:2px solid #f0f0f0">Status</th>
-          </tr></thead>
-          <tbody>${items.map(i => `
-            <tr>
-              <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:14px;color:#1a1a1a">${i.text}</td>
-              <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px">${i.link ? `<a href="${i.link}" style="color:#3b82f6;text-decoration:none">${i.title}</a>` : `<span style="color:#555">${i.title}</span>`}</td>
-              <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:${colour2(i.daysUntil)};white-space:nowrap;font-weight:500">${label2(i.daysUntil)}</td>
-            </tr>`).join('')}</tbody>
-        </table>`
-      const name = user.name || user.email.split('@')[0]
-      const html = emailWrap('Task Reminders', `Hi ${name}, here are your tasks that need attention:`, body)
-      const [outcome] = await notify(sql, { kind: 'due_digest', to: { email: user.email, clerk_id: user.clerk_id, name: user.name }, subject, html })
-      record(outcome, { type: 'marketing-task', sent: items.length })
+      record(outcome, { type: 'due', sent: mine.length, unacknowledged: unack.length })
     }
   }
 
@@ -305,11 +223,11 @@ export default async function handler(req, res) {
     `
 
     for (const admin of roundupRecipients) {
-      const typeLabel = type === 'notes' ? 'Note reminders' : 'Deliverable reminders'
+      const typeLabel = type === 'notes' ? 'Note reminders' : "What's due"
       const subject = `📋 ${typeLabel} roundup — ${sent.length} sent today`
 
       const groupedRows = sent.map(r => {
-        const typeTag = r.type === 'note' ? 'Note' : r.type === 'marketing-task' ? 'Marketing' : 'Deliverable'
+        const typeTag = r.type === 'note' ? 'Note' : "What's due"
         const detail = r.type === 'note'
           ? `1 note reminder`
           : `${r.sent} item${r.sent !== 1 ? 's' : ''}`

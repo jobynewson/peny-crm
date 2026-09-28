@@ -120,6 +120,10 @@ index.html                # App HTML shell
   task board; an unknown hash lands on the dashboard. `VIEWS` in `src/app.js` lists every route
   the app has used; keep old ones there so bookmarks never break.
   `_parseHash()` reads a URL and `navigate(view)` moves between views.
+- `app.openLink(hash)` opens an in-app link (the What's due feed's links) as
+  though it had been typed in the address bar. Tasks and marketing cards have
+  no address of their own, so `#tasks/<id>` and `#marketing/<cardId>` go to
+  their page and open the task or card there.
 - An unknown project tab (e.g. an old `#projects/<id>/files` link) falls back
   to Overview.
 
@@ -243,9 +247,9 @@ There is no sidebar. The shell is a header over the page:
     `api/portal.js` when `?view=offloads`. `POST /api/offloads` is a
     `vercel.json` rewrite onto `/api/portal?view=offloads`, which gives Fence
     a clean URL.
-- Current functions: `ai`, `blob`, `callsheet`, `companies`, `generate-ra`,
-  `google`, `invite`, `maps`, `notification-settings`, `packing`, `portal`,
-  `quote`, `realtime`, `reminders`, `track`.
+- Current functions: `ai`, `blob`, `callsheet`, `companies`, `due`,
+  `generate-ra`, `google`, `invite`, `maps`, `notification-settings`,
+  `packing`, `portal`, `quote`, `realtime`, `reminders`, `track`.
 - **JSON API routers** share `api/_api.js`: a route table matched on
   `${method} ${path}` (`:id` segments must be uuids), 404 / 405 + `Allow`,
   errors always `{ error: { code, message, field? } }`, and `dispatch()`,
@@ -257,7 +261,8 @@ There is no sidebar. The shell is a header over the page:
 - **Integration tests** (`api/*.integration.test.js`) run the real handlers
   against a real Postgres and skip unless `SLATE_TEST_DATABASE_URL` is set
   (the older tasks suite uses `TASKS_TEST_DATABASE_URL`). Setup is in
-  `api/_test-db.js`.
+  `api/_test-db.js`. Run them one file at a time (`--no-file-parallelism`):
+  they share the database and clear tables.
   All Google Calendar work lives behind the single `google` function: shared
   plumbing in `api/_gcal.js`, the Team Calendar entry push in
   `api/_gcal-entries.js` — see "External calendar sync" below.
@@ -333,8 +338,8 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
   dashboard at `/dashboard/<token>` (served by `public/dashboard.html`, data
   from `/api/portal?view=dashboard`). Unset = the dashboard returns 503.
 - `CRON_SECRET` - Bearer token Vercel Cron sends to `/api/reminders`. Four
-  scheduled jobs run: deliverables (09:00), notes (21:00), expense-digest
-  (09:00) and task-nudge (14:00). The nudge dispatches BEFORE the weekday-only
+  scheduled jobs run: deliverables (09:00 — the What's due email, see "What's
+  due"), notes (21:00), expense-digest (09:00) and task-nudge (14:00). The nudge dispatches BEFORE the weekday-only
   guard, so it fires at weekends too — an unacknowledged request should not wait
   until Monday.
 - The task nudge runs once a day, though its rule ("4 hours after
@@ -772,6 +777,51 @@ always the source of truth and nothing is ever read back from Google.
   no longer written.
 - Viewers don't get Settings (the account menu hides it), so their emails stay
   at the defaults.
+
+### What's due (one feed)
+- **Everything dated is read from one feed**: `dueFeed(sql, { ws, days,
+  ownerId })` in `api/_due-feed.js` — one list sorted by date, each item with
+  `type`, `title`, `context` (where it lives, or null when the type says it
+  all), `date`, `due_label` (only when the date alone doesn't say it: a window,
+  a month, a cadence or the client's own words), `owner` and `link` (an in-app
+  `#hash`). The Dashboard's What's due list (`src/views/whats-due.js`, via
+  `GET /api/due?days=&owner=me`), the office screen (`api/_dashboard.js`) and
+  the 09:00 email (`api/reminders.js`) all read it, and stage 2's alerts
+  should too. **Don't work out what's due anywhere else** — add a source to
+  the feed. `fetchDueSources()` is the SQL, `collectDue()` the pure part
+  (unit-tested; `_due-feed.integration.test.js` runs the SQL).
+- Sources, and what counts as finished:
+  - worklist deliverables in **active** workstreams, until approved (a paused
+    or complete workstream drops out);
+  - the older deliverables stored as JSON on projects (monthly ones on
+    retainers only). `legacyProjectDeliverables()` is the only thing that
+    reads them; delete it when they're moved into the worklist tables;
+  - marketing card due dates and sub-tasks, except cards in Done;
+  - canvas checklists (the `sub_tasks` of `todo` items);
+  - planning-board cards, except in a column named Done, Complete(d),
+    Finished, Delivered, Approved or Archived (columns are named by people);
+  - edit deadlines: post-production blocks marked as deadlines and not
+    complete, and Team Calendar deadlines from today on (those can't be
+    ticked off, so a passed one is history, not overdue);
+  - tasks with a due date that aren't done or archived, dated by their
+    London day.
+- Undated work isn't in the feed. Overdue work of any age is, plus the next
+  `days` (14 on the Dashboard and the office screen, 3 in the email).
+- Owners: tasks, boards, deliverables, post-production and the Team Calendar
+  store `app_users` ids; marketing and canvas checklists store Clerk ids.
+  `collectDue()` maps both, and `?owner=me` comes from the session.
+- **Dashboard**: the What's due list sits above Live Projects (after the
+  calendar and Tasks sections): Everyone or Mine (remembered per browser in
+  `slate-due-owner`), grouped by day, no tick boxes — a row opens the item
+  through `app.openLink()`. It replaced the Marketing Tasks, Deliverables and
+  Edit Deadlines lists; Retainers has its own row.
+- **09:00 email** (`?type=deliverables`, kind `due_digest`): one "What's due"
+  email per person — their overdue work and the next three days, with
+  unacknowledged tasks on top. It replaced two emails (project deliverables,
+  and marketing sub-tasks from the removed `api/_sub-tasks.js`) and now also
+  covers board cards, checklists, edit deadlines and dated tasks.
+- **Office screen**: the feed under the `deliverables` key it always read,
+  everyone's, with no owners. Undated deliverables no longer show there.
 
 ### Retainer worklists (data and rules)
 - Tables (`drizzle/0033_add_retainer_worklists.sql`), all read and written

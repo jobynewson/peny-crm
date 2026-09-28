@@ -3,10 +3,11 @@
 // run the real handlers against a real Postgres and skip unless
 // SLATE_TEST_DATABASE_URL is set, so `npm test` stays green with no database.
 //
-// To run them:
+// To run them (one file at a time: they share the database and clear tables):
 //   npm i --no-save pg          # the app's Neon HTTP driver cannot reach localhost
 //   SLATE_TEST_DATABASE_URL=postgresql://postgres@localhost:5432/slate_test \
-//     npx vitest run api/*.integration.test.js
+//     npx vitest run --no-file-parallelism api/*.integration.test.js
+// (_tasks.integration.test.js reads TASKS_TEST_DATABASE_URL instead.)
 //
 // The database needs the whole schema: build it from src/db/schema.js
 // (drizzle-kit generate) and then run the app's runMigrations() once, which

@@ -423,7 +423,7 @@
           <tbody>${tableRows}</tbody>
         </table>`
 
-      // ── Deliverables ──────────────────────────────────────────────
+      // ── What's due (the shared feed: every kind of dated work) ─────
       const delivHTML = d.deliverables.length
         ? d.deliverables.slice(0, 25).map(dl => {
             const m = dueMeta(dl.due, today)
@@ -436,7 +436,7 @@
               <div class="deliv-due ${m.cls}">${esc(m.text)}</div>
             </div>`
           }).join('')
-        : `<div class="empty">No open deliverables.</div>`
+        : `<div class="empty">Nothing due in the next two weeks.</div>`
 
       // ── Live Projects ─────────────────────────────────────────────
       const projHTML = d.liveProjects.length
@@ -531,11 +531,11 @@
 
           <!-- Right: 2×2 grid -->
           <div class="right-panel">
-            <!-- Top-left: Deliverables -->
+            <!-- Top-left: What's due -->
             <div class="sec">
               <div class="sec-hd">
                 <span class="sec-dot" style="background:#ef4444"></span>
-                <span class="sec-hd-title">Deliverables</span>
+                <span class="sec-hd-title">What's due</span>
                 <span class="sec-count">${d.deliverables.length}</span>
               </div>
               <div class="sec-body">${delivHTML}</div>

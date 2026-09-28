@@ -1207,6 +1207,20 @@ kbd { font-family: var(--font-mono); }
 .db-due-pill { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-pill); white-space: nowrap; flex-shrink: 0; background: var(--bg-tertiary); color: var(--text-secondary); }
 .db-due-pill--today { background: var(--warning-soft); color: var(--warning); }
 .db-due-pill--overdue { background: var(--danger-subtle); color: var(--danger); }
+
+/* ── Dashboard › What's due (src/views/whats-due.js) ── */
+.due-list { gap: 0; }
+.due-group + .due-group { border-top: 1px solid var(--border-light); }
+.due-group-label { font-family: var(--font-mono); font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary); padding: 10px 14px 4px; }
+.due-group-label--late { color: var(--danger); }
+.due-row { display: flex; align-items: center; gap: 10px; padding: 7px 14px; color: inherit; text-decoration: none; transition: background 0.12s; }
+.due-row:hover { background: var(--bg-secondary); }
+.due-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.due-title { font-size: 13px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.due-meta { font-size: 11px; color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.due-owner { font-size: 11px; color: var(--text-secondary); flex-shrink: 0; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.due-owner--none { color: var(--text-tertiary); font-style: italic; }
+.due-empty { color: var(--text-tertiary); font-size: 13px; padding: 12px 0 4px; }
 .db-status-pill { font-size: 10px; font-weight: 550; padding: 2px 8px; border-radius: var(--radius-pill); border: 1px solid; white-space: nowrap; flex-shrink: 0; letter-spacing: 0.2px; }
 .db-pin-btn { background: none; border: 1px solid transparent; border-radius: var(--radius-sm); padding: 3px 6px; font-size: 13px; color: var(--text-tertiary); cursor: pointer; flex-shrink: 0; line-height: 1; transition: color 0.12s, border-color 0.12s, background 0.12s; }
 .db-pin-btn:hover { color: var(--text-secondary); border-color: var(--border-med); background: var(--bg-secondary); }
@@ -2328,7 +2342,7 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
   .detail-panel { display: none !important; }
   .page { padding: 16px !important; }
   .stats-row { grid-template-columns: repeat(2, 1fr) !important; }
-  .db-quad-row { grid-template-columns: 1fr !important; }
+  .due-row { min-height: 44px; }
   .field-row { grid-template-columns: 1fr !important; }
   .budget-layout { flex-direction: column !important; }
   .budget-sidebar-panel { width: 100% !important; }

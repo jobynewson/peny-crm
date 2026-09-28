@@ -1,6 +1,6 @@
 // api/_dashboard.js
 // Public office-display handler — whole-workspace overview for a permanent
-// office screen: calendar, deliverables, live projects, time tracked + retainer
+// office screen: calendar, what's due, live projects, time tracked + retainer
 // hours. Deliberately exposes NO financial information (no fees, rates, budget
 // totals or amounts of any kind).
 //
@@ -13,6 +13,7 @@
 // so the link is totally separate from the authenticated app.
 
 import { getYoutubeViews } from './_youtube.js'
+import { dueFeed, dueMeta } from './_due-feed.js'
 
 // Mirror the app's calendar palette (src/views/team-calendar.js).
 const TYPE_COLORS = { shoot: '#4CAF50', post_production: '#C47E3A', leave: '#0891b2', other: '#7B6EAB' }
@@ -115,7 +116,6 @@ export async function handleDashboard(req, res, sql) {
     SELECT
       p.id, p.name, p.status, p.is_retainer, p.shoot_start, p.shoot_end,
       p.retainer_hours, p.retainer_start, p.retainer_alert, p.retainer_rollover,
-      p.deliverables, p.monthly_deliverables,
       c.company AS client_company, c.first_name, c.last_name
     FROM projects p
     LEFT JOIN contacts c ON c.id = p.client_id
@@ -220,28 +220,11 @@ export async function handleDashboard(req, res, sql) {
   }
   retainers.sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1))
 
-  // ── Deliverables (across live projects, pending, due-date sorted) ────────────
-  const deliverables = []
-  for (const p of projectRows) {
-    const isLive = p.is_retainer || LIVE_STAGES.has(p.status)
-    if (!isLive) continue
-    const lists = [...parseJson(p.deliverables), ...parseJson(p.monthly_deliverables)]
-    for (const d of lists) {
-      if (!d || !d.text || d.done) continue
-      deliverables.push({
-        text: d.text,
-        project: p.name,
-        due: d.due ? toDateStr(d.due) : null,
-      })
-    }
-  }
-  // Sort: dated first (ascending), then undated.
-  deliverables.sort((a, b) => {
-    if (a.due && b.due) return a.due < b.due ? -1 : 1
-    if (a.due) return -1
-    if (b.due) return 1
-    return 0
-  })
+  // ── What's due: the same feed as the app's Dashboard and the 09:00 email ────
+  // (api/_due-feed.js) — everyone's, overdue plus the next two weeks. Kept
+  // under the `deliverables` key the screen already reads.
+  const { items: dueItems } = await dueFeed(sql, { ws: uid, days: 14 })
+  const deliverables = dueItems.map(i => ({ text: i.title, project: dueMeta(i), due: i.date }))
 
   // ── Calendar entries (this week → +35d) ──────────────────────────────────────
   const calRows = await sql`
