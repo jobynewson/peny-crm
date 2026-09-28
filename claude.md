@@ -244,8 +244,8 @@ There is no sidebar. The shell is a header over the page:
     `vercel.json` rewrite onto `/api/portal?view=offloads`, which gives Fence
     a clean URL.
 - Current functions: `ai`, `blob`, `callsheet`, `companies`, `generate-ra`,
-  `google`, `invite`, `maps`, `packing`, `portal`, `quote`, `realtime`,
-  `reminders`, `track`.
+  `google`, `invite`, `maps`, `notification-settings`, `packing`, `portal`,
+  `quote`, `realtime`, `reminders`, `track`.
 - **JSON API routers** share `api/_api.js`: a route table matched on
   `${method} ${path}` (`:id` segments must be uuids), 404 / 405 + `Allow`,
   errors always `{ error: { code, message, field? } }`, and `dispatch()`,
@@ -743,6 +743,35 @@ always the source of truth and nothing is ever read back from Google.
 - `app.companies` is loaded at boot from `GET /api/companies`; the field
   keeps it current as companies are created. There is no rename, merge or
   delete screen yet, so a typo makes a stray company.
+
+### Email: one notification path
+- **Every email goes through `notify()` in `api/_notify.js`** — reminders,
+  the 09:00 and 21:00 runs, the roundup, task mail, the nudge, leave and
+  expenses, and stage 2's alerts. It owns the only mail transport (Gmail via
+  `GMAIL_USER` / `GMAIL_APP_PASSWORD`; unset = everything is skipped, nothing
+  throws). `_notify.test.js` fails if any other file imports nodemailer. Add
+  a new email by adding a kind to `KINDS` and calling `notify()`, never a
+  transport of its own.
+- `notify(sql, { kind, to, subject, html })` takes recipients as
+  `{ email, clerk_id?, name? }` and returns one result per recipient (`sent`,
+  `skipped: 'setting' | 'not_configured' | 'no_email'`, or `error`); a failed
+  send is reported, never thrown.
+- **Per-person settings.** `KINDS` lists every kind. A `switchable` one
+  (what's due, tasks assigned, mentions, note reminders; the roundup, which is
+  superadmin-only and off by default) can be turned off or on by each person
+  in Settings › My account › Email notifications. The rest (the unacknowledged
+  task nudge, leave, expenses) are workflows someone is waiting on and always
+  send. Stored in `notification_settings` (`drizzle/0034`: one row per person
+  per kind they've changed, keyed by Clerk id so client users can have
+  settings in stage 2; no row = the kind's default), read and written through
+  `/api/notification-settings` — your own settings only.
+- The reminder roundup used to be one workspace-wide switch
+  (`settings.reminder_roundup`) that only ever reached the settings row's
+  owner, although every user saw the toggle. It is now a personal opt-in for
+  superadmins, carried over for the owner by the migration. The old column is
+  no longer written.
+- Viewers don't get Settings (the account menu hides it), so their emails stay
+  at the defaults.
 
 ### Retainer worklists (data and rules)
 - Tables (`drizzle/0033_add_retainer_worklists.sql`), all read and written

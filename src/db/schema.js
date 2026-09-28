@@ -882,3 +882,14 @@ export const requests = pgTable('requests', {
   deliverable_id: uuid('deliverable_id').references(() => deliverables.id, { onDelete: 'set null' }),
   ...timestamps,
 })
+
+// ── Notification settings (drizzle/0034_add_notification_settings.sql) ───────
+// One row per person per email kind they've changed; no row = the kind's
+// default (KINDS in api/_notify.js). Keyed by Clerk id so client portal users
+// can have settings too. Read and written through /api/notification-settings.
+export const notification_settings = pgTable('notification_settings', {
+  clerk_user_id: text('clerk_user_id').notNull(),
+  kind:          text('kind').notNull(),
+  email:         boolean('email').notNull(),
+  updated_at:    timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})

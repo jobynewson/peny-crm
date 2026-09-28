@@ -952,6 +952,13 @@ kbd { font-family: var(--font-mono); }
 }
 .field textarea { resize: vertical; min-height: 70px; }
 
+/* ── Settings › Email notifications ── */
+.notif-settings { display: flex; flex-direction: column; gap: 4px; }
+.notif-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; cursor: pointer; }
+.notif-row input { width: 16px; height: 16px; margin-top: 2px; flex-shrink: 0; cursor: pointer; accent-color: var(--accent); }
+.notif-label { display: block; font-size: 14px; color: var(--text-primary); }
+.notif-desc { display: block; font-size: 12px; color: var(--text-tertiary); line-height: 1.5; margin-top: 2px; }
+
 /* ── Company field (src/views/company-field.js) ── */
 .company-hint { font-size: 11px; color: var(--text-tertiary); margin-top: 5px; line-height: 1.4; }
 .company-hint-btn { background: none; border: none; padding: 0; font: inherit; font-weight: 600; color: var(--accent-text); cursor: pointer; }
@@ -2514,6 +2521,7 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
   .search-wrap input, .field input, .field select, .field textarea, .tl-field input, .tl-field select { font-size: 16px; }
   .search-wrap input, .field input, .field select, .tl-field input, .tl-field select { min-height: 44px; }
   .company-hint-btn { min-height: 44px; padding: 0 4px; }
+  .notif-row { min-height: 44px; }
 }
 
 /* ── Feature additions (ported from the former injectGlobalStyles) ──────────── */

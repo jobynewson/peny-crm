@@ -637,6 +637,32 @@ export async function runMigrations() {
     )
   `
   await sql`CREATE INDEX IF NOT EXISTS requests_company_status_idx ON requests (company_id, status)`
+
+  // ── Notification settings (drizzle/0034_add_notification_settings.sql) ─────
+  // Read and written through /api/notification-settings; used by notify().
+  await sql`
+    CREATE TABLE IF NOT EXISTS notification_settings (
+      clerk_user_id TEXT NOT NULL,
+      kind          TEXT NOT NULL,
+      email         BOOLEAN NOT NULL,
+      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (clerk_user_id, kind)
+    )
+  `
+  // Carry the old workspace-wide roundup switch over to the person it reached
+  // (the settings row's owner). A no-op once they have a row; never fatal.
+  await sql`
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_name = 'settings' AND column_name = 'reminder_roundup') THEN
+        INSERT INTO notification_settings (clerk_user_id, kind, email)
+        SELECT user_id, 'reminder_roundup', true FROM settings WHERE reminder_roundup = true
+        ON CONFLICT (clerk_user_id, kind) DO NOTHING;
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE WARNING 'carrying over the reminder roundup failed: %', SQLERRM;
+    END $$
+  `
 }
 
 // One-time demo data so the first visit to Planning isn't an empty screen.

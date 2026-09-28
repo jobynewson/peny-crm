@@ -3,29 +3,17 @@
 //
 // NOT a Vercel function — the `_` prefix keeps it out of the function count.
 //
-// Reuses the existing digest transport: same Gmail credentials, same nodemailer
-// setup and the same email chrome as api/reminders.js. No new provider.
-//
-// Only `assigned` and `mentioned` are sent immediately. Everything else waits
-// for the daily digest, so a busy board does not turn into a mailbox.
+// Sends through notify() in _notify.js like every Slate email, with the same
+// chrome as api/reminders.js. Only `assigned` and `mentioned` are sent
+// immediately (each a kind people can switch off in Settings › Notifications).
+// Everything else waits for the daily digest, so a busy board does not turn
+// into a mailbox.
 
-import nodemailer from 'nodemailer'
+import { notify } from './_notify.js'
 
 const IMMEDIATE_TYPES = new Set(['assigned', 'mentioned'])
 
 export const appBaseUrl = () => process.env.VITE_APP_URL || 'https://slate.wearepeny.com'
-
-// Returns null when mail is not configured, so callers degrade to "no email"
-// rather than throwing — a task must still be created if Gmail is down.
-export function taskMailer() {
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) return null
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
-  })
-  const from = process.env.GMAIL_USER
-  return (to, subject, html) => transporter.sendMail({ from, to, subject, html })
-}
 
 // Mirrors emailWrap() in api/reminders.js so task mail looks like every other
 // Slate email.
@@ -66,17 +54,14 @@ export function taskCardHtml(task) {
 export const escapeHtml = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
-// Send the immediate emails for one event's notifications. Never throws: a
-// failed send must not fail the mutation that caused it.
+// Send the immediate emails for one event's notifications. A failed send never
+// fails the mutation that caused it (notify() reports rather than throws).
 export async function sendImmediateTaskEmails(sql, { task, actorName, notifications }) {
   const targets = (notifications || []).filter(n => IMMEDIATE_TYPES.has(n.type))
   if (!targets.length) return { sent: 0 }
 
-  const send = taskMailer()
-  if (!send) return { sent: 0, skipped: 'mail not configured' }
-
   const ids = targets.map(t => t.recipient_id)
-  const users = await sql`SELECT id, name, email FROM app_users WHERE id = ANY(${ids}::uuid[])`
+  const users = await sql`SELECT id, clerk_id, name, email FROM app_users WHERE id = ANY(${ids}::uuid[])`
   const byId = Object.fromEntries(users.map(u => [u.id, u]))
 
   let sent = 0
@@ -92,16 +77,17 @@ export async function sendImmediateTaskEmails(sql, { task, actorName, notificati
       ? `Hi ${user.name || user.email.split('@')[0]}, ${actorName} has assigned you a task. Open it and hit "Got it" so they know you've seen it.`
       : `Hi ${user.name || user.email.split('@')[0]}, ${actorName} mentioned you in a comment.`
 
-    try {
-      await send(user.email, subject, taskEmailWrap(
+    const [result] = await notify(sql, {
+      kind: assigned ? 'task_assigned' : 'task_mentioned',
+      to: { email: user.email, clerk_id: user.clerk_id, name: user.name },
+      subject,
+      html: taskEmailWrap(
         assigned ? 'A task for you' : 'You were mentioned',
         new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
         greeting, taskCardHtml(task),
-      ))
-      sent++
-    } catch (err) {
-      console.error('[task-mail] send failed:', err.message)
-    }
+      ),
+    })
+    if (result?.sent) sent++
   }
   return { sent }
 }

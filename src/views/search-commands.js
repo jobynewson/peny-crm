@@ -45,6 +45,8 @@ export function searchCommands(app) {
       keywords: 'vault logins credentials accounts' },
     p.settings && { label: 'Settings', hint: 'My account', icon: 'settings', run: settings('account'),
       keywords: 'preferences account profile role job title reminders' },
+    p.settings && { label: 'Email notifications', hint: 'Settings', icon: 'settings', run: settings('account'),
+      keywords: 'notifications emails email alerts digest due mentions roundup unsubscribe' },
     ...(isAdmin ? [
       { label: 'Team & roles', hint: 'Settings', icon: 'team', run: settings('users'),
         keywords: 'users people permissions invite members google calendar' },

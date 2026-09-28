@@ -11,11 +11,11 @@
 // GET ?type=leave-approve&token=xxx&action=approve|decline — email-based leave approval
 
 import { neon } from '@neondatabase/serverless'
-import nodemailer from 'nodemailer'
 import { verifyClerkUser } from './_auth.js'
+import { notify, mailConfigured } from './_notify.js'
 import { syncLeaveRequestGoogle } from './google.js'
 import { groupDueSubTasks } from './_sub-tasks.js'
-import { taskMailer, taskEmailWrap, taskCardHtml, escapeHtml, appBaseUrl } from './_task-mail.js'
+import { taskEmailWrap, taskCardHtml, escapeHtml, appBaseUrl } from './_task-mail.js'
 import { ARCHIVE_AFTER_DAYS } from './_task-rules.js'
 
 export default async function handler(req, res) {
@@ -71,21 +71,11 @@ export default async function handler(req, res) {
 
   const type = req.query.type || 'deliverables'
   const sql = neon(process.env.VITE_DATABASE_URL)
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.GMAIL_USER,
-      pass: process.env.GMAIL_APP_PASSWORD,
-    },
-  })
-  const from = process.env.GMAIL_USER
-
-  const sendMail = async (to, subject, html) => transporter.sendMail({ from, to, subject, html })
 
   const todayLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
   if (type === 'expense-digest') {
-    return handleExpenseDigest(req, res, sql, transporter, todayLabel)
+    return handleExpenseDigest(req, res, sql, todayLabel)
   }
 
   const dateStr = (d) => {
@@ -117,7 +107,15 @@ export default async function handler(req, res) {
 </body>
 </html>`
 
+  // Every email goes through notify() (api/_notify.js), which applies each
+  // person's settings. `record` keeps this run's results in the shape the
+  // roundup and the cron response have always used.
   const results = []
+  const record = (outcome, extra) => {
+    if (outcome?.sent) results.push({ ...extra, to: outcome.to })
+    else if (outcome?.error) results.push({ ...extra, to: outcome.to, error: outcome.error })
+    else if (outcome) results.push({ ...extra, to: outcome.to, skipped: outcome.skipped })
+  }
 
   // ── Deliverable digest (09:00 run) ────────────────────────────────────────
   if (type === 'deliverables') {
@@ -130,7 +128,7 @@ export default async function handler(req, res) {
         (deliverables IS NOT NULL AND jsonb_array_length(deliverables) > 0)
         OR (monthly_deliverables IS NOT NULL AND jsonb_array_length(monthly_deliverables) > 0)
     `
-    const users = await sql`SELECT id, name, email FROM app_users`
+    const users = await sql`SELECT id, clerk_id, name, email FROM app_users`
     const userById = Object.fromEntries(users.map(u => [u.id, u]))
 
     const byAssignee = {}
@@ -189,12 +187,8 @@ export default async function handler(req, res) {
         ? `Hi ${name}, here's a summary of your deliverables that need attention:`
         : `Hi ${name}, nothing is due — but some tasks are still waiting for you to acknowledge them:`
       const html = emailWrap('Deliverable Reminders', greeting, body)
-      try {
-        await sendMail(user.email, subject, html)
-        results.push({ type: 'deliverable', to: user.email, sent: items.length, unacknowledged: unack.length })
-      } catch (err) {
-        results.push({ type: 'deliverable', to: user.email, error: err.message })
-      }
+      const [outcome] = await notify(sql, { kind: 'due_digest', to: { email: user.email, clerk_id: user.clerk_id, name: user.name }, subject, html })
+      record(outcome, { type: 'deliverable', sent: items.length, unacknowledged: unack.length })
     }
   }
 
@@ -258,12 +252,8 @@ export default async function handler(req, res) {
         </table>`
       const name = user.name || user.email.split('@')[0]
       const html = emailWrap('Task Reminders', `Hi ${name}, here are your tasks that need attention:`, body)
-      try {
-        await sendMail(user.email, subject, html)
-        results.push({ type: 'marketing-task', to: user.email, sent: items.length })
-      } catch (err) {
-        results.push({ type: 'marketing-task', to: user.email, error: err.message })
-      }
+      const [outcome] = await notify(sql, { kind: 'due_digest', to: { email: user.email, clerk_id: user.clerk_id, name: user.name }, subject, html })
+      record(outcome, { type: 'marketing-task', sent: items.length })
     }
   }
 
@@ -297,29 +287,22 @@ export default async function handler(req, res) {
         </div>
         <a href="${baseUrl}/#dashboard" style="display:inline-block;background:#111;color:#fff;padding:9px 18px;border-radius:6px;text-decoration:none;font-weight:500;font-size:13px">Open note in Slate</a>`
       const html = emailWrap('Note Reminder', `Hi ${name}, this note is due in approximately 36 hours:`, body)
-      try {
-        await sendMail(note.email, subject, html)
-        results.push({ type: 'note', to: note.email, noteId: note.id })
-      } catch (err) {
-        results.push({ type: 'note', to: note.email, error: err.message })
-      }
+      const [outcome] = await notify(sql, { kind: 'note_reminder', to: { email: note.email, clerk_id: note.clerk_id, name: note.name }, subject, html })
+      record(outcome, { type: 'note', noteId: note.id })
     }
   }
 
   // ── Reminder roundup ─────────────────────────────────────────────────────
-  // Send a summary of all emails sent this run to any admin who opted in.
-  const sent = results.filter(r => !r.error)
+  // A summary of the emails this run actually sent, for each superadmin who
+  // has turned the roundup on in Settings › Notifications (notify() skips the
+  // rest). It used to go to whoever the single settings row belonged to — the
+  // workspace owner — and that choice was carried over.
+  const sent = results.filter(r => !r.error && !r.skipped)
   if (sent.length > 0) {
-    let roundupRecipients = []
-    try {
-      roundupRecipients = await sql`
-        SELECT u.email, u.name
-        FROM settings s
-        JOIN app_users u ON u.clerk_id = s.user_id
-        WHERE s.reminder_roundup = true
-          AND u.email IS NOT NULL
-      `
-    } catch (_) { /* settings table may not have column yet */ }
+    const roundupRecipients = await sql`
+      SELECT email, name, clerk_id FROM app_users
+      WHERE role = 'superadmin' AND email IS NOT NULL
+    `
 
     for (const admin of roundupRecipients) {
       const typeLabel = type === 'notes' ? 'Note reminders' : 'Deliverable reminders'
@@ -353,12 +336,8 @@ export default async function handler(req, res) {
         `Hi ${name}, here's a summary of reminder emails sent today (${sent.length} total):`,
         body,
       )
-      try {
-        await sendMail(admin.email, subject, html)
-        results.push({ type: 'roundup', to: admin.email, sent: sent.length })
-      } catch (err) {
-        results.push({ type: 'roundup', to: admin.email, error: err.message })
-      }
+      const [outcome] = await notify(sql, { kind: 'reminder_roundup', to: admin, subject, html })
+      record(outcome, { type: 'roundup', sent: sent.length })
     }
   }
 
@@ -366,15 +345,13 @@ export default async function handler(req, res) {
 }
 
 // ── Expense digest (called as ?type=expense-digest) ───────────────────────────
-async function handleExpenseDigest(req, res, sql, transporter, todayLabel) {
+async function handleExpenseDigest(req, res, sql, todayLabel) {
   const today = new Date()
   if (!isSecondToLastWorkingDay(today)) {
     return res.status(200).json({ ok: true, skipped: 'not second-to-last working day' })
   }
 
   const monthKey = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}`
-  const from = process.env.GMAIL_USER
-  const sendMail = (to, subject, html) => transporter.sendMail({ from, to, subject, html })
 
   let settingsRows = []
   try { settingsRows = await sql`SELECT expense_recipients, mileage_rate, per_diem_rate FROM settings LIMIT 1` } catch (_) {}
@@ -482,18 +459,10 @@ async function handleExpenseDigest(req, res, sql, transporter, todayLabel) {
     <h3 style="font-size:13px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 16px">Breakdown</h3>
     ${breakdownSections}`
 
-  const recipientUsers = await sql`SELECT email FROM app_users WHERE clerk_id = ANY(${recipientClerkIds})`
-  const results = []
-  for (const recipient of recipientUsers) {
-    if (!recipient.email) continue
-    const html = wrapExpenseEmail(`Expense Summary — ${monthLabel}`, todayLabel, bodyHtml)
-    try {
-      await sendMail(recipient.email, `💷 Expense summary — ${monthLabel}`, html)
-      results.push({ to: recipient.email, ok: true })
-    } catch (err) {
-      results.push({ to: recipient.email, error: err.message })
-    }
-  }
+  const recipientUsers = await sql`SELECT email, clerk_id, name FROM app_users WHERE clerk_id = ANY(${recipientClerkIds})`
+  const html = wrapExpenseEmail(`Expense Summary — ${monthLabel}`, todayLabel, bodyHtml)
+  const outcomes = await notify(sql, { kind: 'expense_digest', to: recipientUsers, subject: `💷 Expense summary — ${monthLabel}`, html })
+  const results = outcomes.filter(o => o.to).map(o => (o.sent ? { to: o.to, ok: true } : o.error ? { to: o.to, error: o.error } : { to: o.to, skipped: o.skipped }))
   return res.status(200).json({ ok: true, month: monthKey, results })
 }
 
@@ -530,16 +499,9 @@ async function handleLeaveNotify(req, res) {
     return res.status(500).json({ error: err.message })
   }
 
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+  if (!mailConfigured()) {
     return res.status(200).json({ ok: true, skipped: 'email not configured' })
   }
-
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
-  })
-  const from = process.env.GMAIL_USER
-  const sendMail = (to, subject, html) => transporter.sendMail({ from, to, subject, html })
 
   const fmtDate = d => {
     if (!d) return 'Invalid date'
@@ -570,13 +532,8 @@ async function handleLeaveNotify(req, res) {
   // Gmail rejection, etc.) is reported in the response instead of vanishing.
   const results = []
   const trySend = async (to, subject, html) => {
-    try {
-      const info = await sendMail(to, subject, html)
-      results.push({ to, ok: true, messageId: info?.messageId ?? null })
-    } catch (err) {
-      console.error(`Leave email to ${to} failed:`, err)
-      results.push({ to, error: err.message })
-    }
+    const [o] = await notify(sql, { kind: 'leave', to: { email: to }, subject, html })
+    results.push(o.sent ? { to, ok: true, messageId: o.messageId } : { to, error: o.error || o.skipped })
   }
 
   if (action === 'submitted') {
@@ -941,16 +898,9 @@ async function handleExpenseSubmit(req, res) {
   }
   if (!entries.length) return res.status(200).json({ ok: true, skipped: 'no entries this month' })
 
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+  if (!mailConfigured()) {
     return res.status(200).json({ ok: true, skipped: 'email not configured' })
   }
-
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
-  })
-  const from = process.env.GMAIL_USER
-  const sendMail = (to, subject, html) => transporter.sendMail({ from, to, subject, html })
 
   const todayLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
   const monthLabel = new Date(monthKey + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
@@ -961,18 +911,9 @@ async function handleExpenseSubmit(req, res) {
   const html = wrapExpenseEmail(`Expenses submitted — ${monthLabel}`, todayLabel, bodyHtml)
   const subject = `💷 ${submitterName} submitted expenses — ${monthLabel}`
 
-  const recipientUsers = await sql`SELECT email FROM app_users WHERE clerk_id = ANY(${recipientClerkIds})`
-  const results = []
-  for (const recipient of recipientUsers) {
-    if (!recipient.email) continue
-    try {
-      const info = await sendMail(recipient.email, subject, html)
-      results.push({ to: recipient.email, ok: true, messageId: info?.messageId ?? null })
-    } catch (err) {
-      console.error(`Expense submission email to ${recipient.email} failed:`, err)
-      results.push({ to: recipient.email, error: err.message })
-    }
-  }
+  const recipientUsers = await sql`SELECT email, clerk_id, name FROM app_users WHERE clerk_id = ANY(${recipientClerkIds})`
+  const outcomes = await notify(sql, { kind: 'expense_submitted', to: recipientUsers, subject, html })
+  const results = outcomes.filter(o => o.to).map(o => (o.sent ? { to: o.to, ok: true, messageId: o.messageId } : { to: o.to, error: o.error || o.skipped }))
 
   const failures = results.filter(r => r.error)
   if (failures.length && failures.length === results.length) {
@@ -1021,7 +962,6 @@ export async function handleTaskNudge(req, res, sql) {
           ) < NOW() - INTERVAL '4 hours'
   `
 
-  const send = taskMailer()
   const todayLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
   for (const task of due) {
@@ -1048,21 +988,24 @@ export async function handleTaskNudge(req, res, sql) {
       ON CONFLICT (recipient_id, event_id) DO NOTHING
     `
 
-    if (send && task.email) {
+    if (task.email) {
       const name = task.name || task.email.split('@')[0]
-      try {
-        await send(task.email, `Still waiting on you: ${task.title}`, taskEmailWrap(
+      const [o] = await notify(sql, {
+        kind: 'task_nudge',
+        to: { email: task.email, name: task.name },
+        subject: `Still waiting on you: ${task.title}`,
+        html: taskEmailWrap(
           'A task is waiting',
           todayLabel,
           `Hi ${name}, this was assigned to you a few hours ago and hasn't been acknowledged. Open it and hit "Got it" so the person who raised it knows you've seen it.`,
           taskCardHtml(task),
-        ))
-        results.push({ type: 'task-nudge', to: task.email, task: task.title })
-      } catch (err) {
-        results.push({ type: 'task-nudge', to: task.email, error: err.message })
-      }
+        ),
+      })
+      results.push(o.sent ? { type: 'task-nudge', to: task.email, task: task.title }
+        : o.error ? { type: 'task-nudge', to: task.email, error: o.error }
+        : { type: 'task-nudge', task: task.title, skipped: o.skipped === 'not_configured' ? 'no mail configured' : o.skipped })
     } else {
-      results.push({ type: 'task-nudge', task: task.title, skipped: 'no mail configured' })
+      results.push({ type: 'task-nudge', task: task.title, skipped: 'no email address' })
     }
   }
 

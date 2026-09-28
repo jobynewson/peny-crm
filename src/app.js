@@ -2342,16 +2342,14 @@ export class App {
           </div>
         </div>`
 
-    const roundupPanel = `
+    // Your own email settings (api/_notify.js). Loaded after render; each
+    // switch saves as soon as it changes.
+    const notificationsPanel = `
         <div class="panel">
-          <div class="panel-header"><span class="panel-title">Reminder roundup</span></div>
-          <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
-            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Receive a daily email listing all the reminder emails sent to your team that day. Not sent at weekends.</div>
-            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;color:var(--text-primary)">
-              <input type="checkbox" id="s-reminder-roundup" ${s.reminder_roundup ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent)" />
-              Send me a reminder roundup email each day
-            </label>
-            <div><button class="btn-primary" id="settings-save-roundup-btn">Save</button></div>
+          <div class="panel-header"><span class="panel-title">Email notifications</span></div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:12px">
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Choose which emails Slate sends you. Leave, expenses and the nudge for an unacknowledged task always send.</div>
+            <div id="notif-settings" class="notif-settings" aria-live="polite"><div style="font-size:12px;color:var(--text-tertiary)">Loading…</div></div>
           </div>
         </div>`
 
@@ -2573,7 +2571,7 @@ export class App {
     const grid = inner => `<div class="panel-grid">${inner}</div>`
     const wide = inner => `<div class="panel-grid-wide">${inner}</div>`
     if (tab === 'account') {
-      mc.innerHTML = grid(`${accountPanel}${roundupPanel}`)
+      mc.innerHTML = grid(`${accountPanel}${notificationsPanel}`)
     } else if (tab === 'company') {
       mc.innerHTML = grid(`${companyDetailsPanel}${timersPanel}`)
     } else if (tab === 'invoicing') {
@@ -2598,7 +2596,7 @@ export class App {
     mc.querySelector('#settings-clear-yt-btn')?.addEventListener('click', () => this._clearYoutubeTicker(mc))
     mc.querySelector('#settings-save-cd-btn')?.addEventListener('click', () => this._saveCountdownTimer(mc))
     mc.querySelector('#settings-clear-cd-btn')?.addEventListener('click', () => this._clearCountdownTimer(mc))
-    mc.querySelector('#settings-save-roundup-btn')?.addEventListener('click', () => this._saveReminderRoundup(mc))
+    if (tab === 'account') this._loadNotificationSettings(mc)
     mc.querySelector('#settings-save-expenses-btn')?.addEventListener('click', () => this._saveExpenseSettings(mc))
     mc.querySelector('#settings-save-fx-btn')?.addEventListener('click', () => this._saveFxSettings(mc))
     mc.querySelector('#settings-save-leave-btn')?.addEventListener('click', () => this._saveLeaveSettings(mc))
@@ -3135,14 +3133,39 @@ export class App {
     catch (e) { console.error(e); this.toast('Error saving settings') }
   }
 
-  async _saveReminderRoundup(mc) {
-    const enabled = mc.querySelector('#s-reminder-roundup')?.checked ?? false
-    const data = { ...this.settings, reminder_roundup: enabled }
+  async _loadNotificationSettings(mc) {
+    const box = mc.querySelector('#notif-settings')
+    if (!box) return
+    const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
+    let list
     try {
-      const [updated] = await upsertSettings(this.userId, data)
-      this.settings = updated
-      this.toast(enabled ? 'Roundup emails enabled' : 'Roundup emails disabled')
-    } catch (e) { console.error(e); this.toast('Error saving preference') }
+      const { getNotificationSettings } = await import('./api/notification-settings.js')
+      list = await getNotificationSettings()
+    } catch (e) {
+      console.error(e)
+      box.innerHTML = `<div style="font-size:12px;color:var(--danger)">Couldn't load your email settings.</div>`
+      return
+    }
+    if (!box.isConnected) return
+    box.innerHTML = list.map(n => `
+      <label class="notif-row">
+        <input type="checkbox" data-notif-kind="${esc(n.kind)}" ${n.email ? 'checked' : ''} />
+        <span><span class="notif-label">${esc(n.label)}</span><span class="notif-desc">${esc(n.description)}</span></span>
+      </label>`).join('')
+    box.querySelectorAll('[data-notif-kind]').forEach(cb => {
+      cb.addEventListener('change', async () => {
+        cb.disabled = true
+        try {
+          const { setNotificationSetting } = await import('./api/notification-settings.js')
+          await setNotificationSetting(cb.dataset.notifKind, cb.checked)
+          this.toast('Saved')
+        } catch (e) {
+          console.error(e)
+          cb.checked = !cb.checked
+          this.toastError("Couldn't save that setting")
+        } finally { cb.disabled = false }
+      })
+    })
   }
 
   async _saveExpenseSettings(mc) {
