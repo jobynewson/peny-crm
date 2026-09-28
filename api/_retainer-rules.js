@@ -69,6 +69,16 @@ export const RESPONSE_LABELS = { pending: 'Awaiting response', approved: 'Approv
 // portal and for a Peny user recording an approval that came by email.
 export const statusAfterResponse = response => (response === 'approved' ? 'approved' : 'changes_requested')
 
+// Taking back a round sent by mistake (only possible while it is the latest
+// and unanswered). The deliverable returns to where the previous round left
+// it — or to in progress if there was none — but only if it is still in the
+// review the mistaken round started; a status someone has set since stands.
+export function statusAfterUnsend({ current, previousResponse = null }) {
+  if (current !== STATUS_AFTER_DELIVERY) return current
+  if (!previousResponse) return 'in_progress'
+  return previousResponse === 'pending' ? STATUS_AFTER_DELIVERY : statusAfterResponse(previousResponse)
+}
+
 // null if fine, else { field, message }.
 export function validateResponse(body) {
   if (!body || !RESPONSES.includes(body.response)) {

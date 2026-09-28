@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  DELIVERABLE_STATUSES, clientStatus, statusPatch, statusAfterResponse, STATUS_AFTER_DELIVERY,
+  DELIVERABLE_STATUSES, clientStatus, statusPatch, statusAfterResponse, statusAfterUnsend, STATUS_AFTER_DELIVERY,
   validateResponse, normaliseDeliveryUrl, isFrameIoUrl, normaliseDue, dueDisplay, isOverdue,
   validateWorkstreamInput, validateDeliverableInput, touchesDue,
 } from './_retainer-rules.js'
@@ -36,6 +36,14 @@ describe('statusPatch (the waiting clock)', () => {
 describe('deliveries and responses', () => {
   it('a new round puts the deliverable in review', () => {
     expect(STATUS_AFTER_DELIVERY).toBe('in_review')
+  })
+  it('taking back a round returns to where the previous round left it', () => {
+    expect(statusAfterUnsend({ current: 'in_review' })).toBe('in_progress')
+    expect(statusAfterUnsend({ current: 'in_review', previousResponse: 'changes_requested' })).toBe('changes_requested')
+    expect(statusAfterUnsend({ current: 'in_review', previousResponse: 'approved' })).toBe('approved')
+    expect(statusAfterUnsend({ current: 'in_review', previousResponse: 'pending' })).toBe('in_review')
+    // someone moved it on since: that stands
+    expect(statusAfterUnsend({ current: 'waiting_on_client', previousResponse: 'approved' })).toBe('waiting_on_client')
   })
   it('a response moves the deliverable', () => {
     expect(statusAfterResponse('approved')).toBe('approved')

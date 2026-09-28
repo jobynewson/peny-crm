@@ -249,7 +249,7 @@ There is no sidebar. The shell is a header over the page:
     a clean URL.
 - Current functions: `ai`, `blob`, `callsheet`, `companies`, `due`,
   `generate-ra`, `google`, `invite`, `maps`, `notification-settings`,
-  `packing`, `portal`, `quote`, `realtime`, `reminders`, `track`.
+  `packing`, `portal`, `quote`, `realtime`, `reminders`, `retainers`, `track`.
 - **JSON API routers** share `api/_api.js`: a route table matched on
   `${method} ${path}` (`:id` segments must be uuids), 404 / 405 + `Allow`,
   errors always `{ error: { code, message, field? } }`, and `dispatch()`,
@@ -864,6 +864,32 @@ always the source of truth and nothing is ever read back from Google.
     because the URL becomes a link in the portal.
 - Dates are 'YYYY-MM-DD' strings and "today" is London time
   (`api/_dates.js`: `londonDate()`, `addDays()`, …), not the server's UTC.
+- **Peny API** (`api/retainers.js` → routes in `api/_retainers.js`; vercel.json
+  rewrites `/api/retainers/*` with `?route=`). Staff only; reads for anyone on
+  the team, writes for non-viewers:
+  - `GET companies` (companies with a worklist or a retainer project, with
+    counts from active workstreams) and `GET companies/:id` (the whole page:
+    workstreams → deliverables → rounds, plus the company's projects).
+  - `POST workstreams`, `PATCH|DELETE workstreams/:id`, `POST deliverables`,
+    `PATCH|DELETE deliverables/:id`. A PATCH writes only the fields sent;
+    due fields are normalised as a set (changing the kind drops the old
+    words); a status change is refused with 409 if the status moved on
+    meanwhile. `waiting_note` only while waiting on the client.
+  - `POST deliverables/:id/deliveries { url, note }` sends the next round in
+    one statement; simultaneous sends retry on the unique round.
+    `POST deliveries/:id/preview` fills the link preview afterwards, so
+    sending never waits on Frame.io; no preview is not an error.
+  - `DELETE deliveries/:id` takes back a round sent by mistake — the latest,
+    unanswered one — and `statusAfterUnsend()` puts the status back.
+  - `POST deliveries/:id/response` records an answer that came another way.
+  - **Nothing with rounds sent can be deleted** (409 `has_rounds`), so a
+    client's approvals can't vanish by accident: mark it approved/complete.
+- **Responses have one writer**: `respondToDelivery(sql, scope, …)` in
+  `api/_worklist.js`, shared by the Peny API and the portal. A scope is made
+  only by that module's constructors (`staffScope(ws)`; the portal's comes
+  from the Clerk session) — a WeakSet brands the exact objects, so copies and
+  look-alikes are refused — and each kind of scope has its own complete SQL
+  with the scope inside the statement that writes.
 
 ### Kanban boards
 There is no shared kanban component — three independent implementations, each
