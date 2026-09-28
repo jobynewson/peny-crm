@@ -25,6 +25,9 @@ const call = async (method, body) => {
 describeDb('companies', () => {
   beforeAll(async () => { sql = await connectTestDb() })
   beforeEach(async () => {
+    // Worklists and requests hold on to their company (ON DELETE RESTRICT).
+    await sql`DELETE FROM requests`
+    await sql`DELETE FROM workstreams`
     await sql`UPDATE contacts SET company_id = NULL`
     await sql`UPDATE projects SET company_id = NULL`
     await sql`DELETE FROM companies`
