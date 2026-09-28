@@ -95,17 +95,9 @@ async function bootstrap() {
   app.mount(document.getElementById('app'))
 }
 
+// /portal is its own page (portal.html), so this never loops.
 function goToPortal() {
-  if (location.pathname !== '/portal') { location.replace('/portal'); return }
-  // Only reachable until the portal page ships: /portal still falls through to
-  // this app, so say where they are rather than redirect in a loop.
-  document.body.innerHTML = `
-    <div class="loading" style="flex-direction:column;gap:12px;text-align:center;padding:24px">
-      <div>This account is for the Peny client portal, which isn't open yet.</div>
-      <button id="portal-signout" style="margin-top:8px;padding:6px 14px;cursor:pointer;">Sign out</button>
-    </div>
-  `
-  document.getElementById('portal-signout')?.addEventListener('click', signOut)
+  location.replace('/portal')
 }
 
 bootstrap().catch(err => {

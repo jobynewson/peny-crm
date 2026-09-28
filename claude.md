@@ -23,10 +23,12 @@ src/
                           # plus the shell's header, menus and shared forms
   app.js                  # Main app shell and router
   main.js                 # Entry point — auth → data load → app mount
+  portal/                 # The client portal page (its own bundle)
   tokens.css              # Theme tokens (Warm Paper / Darkroom)
   theme.js                # System / Light / Dark choice
   style.css               # Global styles
 index.html                # App HTML shell
+portal.html               # Client portal HTML shell (/portal, /portal/<token>)
 ```
 
 ## Key Files
@@ -984,8 +986,33 @@ always the source of truth and nothing is ever read back from Google.
   - The static checks read query text: they catch a missing condition or a
     forbidden column, not a wrong join. The integration suite
     (`_client.integration.test.js`) covers behaviour.
-- The old token endpoint (`GET /api/portal?token=`) still serves the old page
-  until the merged portal page replaces it.
+- The old token endpoint (`GET /api/portal?token=`) and page
+  (`public/portal.html`) are gone; `api/portal.js` answers 404 for anything
+  but its `?view=` routes.
+
+### Client portal page (`portal.html`, `src/portal/`)
+- One page for both ways in, reading one endpoint (`GET /api/client/view`):
+  `/portal/<token>` (a project's link: that project, read-only) and `/portal`
+  (a client signed in with Clerk: their company's worklist). vercel.json
+  sends both to `portal.html`. The page only decides which credential to send
+  (the `X-Portal-Token` header or the Clerk session); what it draws comes
+  from the view.
+- Its own Vite entry (`vite.config.js` builds `index.html` and
+  `portal.html`), so the bundle holds no `db/client.js`, no database URL and
+  no app code; Clerk is only loaded for the signed-in way in.
+  `<meta name="referrer" content="no-referrer">` keeps a link's token out of
+  Referer headers when a client opens Frame.io.
+- Signing in: Clerk's prebuilt sign-in (email code, set in the Clerk
+  dashboard); an invitation link (`__clerk_status=sign_up`) mounts sign-up
+  so the ticket is used. Then the page makes the client's organisation the
+  active one (asking which, if they're in more than one) — the API scopes by
+  it. No organisation → "isn't linked to a client portal"; Slate staff →
+  "you're signed in as Peny". A client who opens Slate (`/`) is sent here.
+- `main.js` boots and handles errors, `render.js` draws the two views and
+  the approve / request-changes flow (approve is two taps; changes need
+  words), `schedule.js` is the post-production grid ported from the old page,
+  `util.js` holds helpers, `portal.css` the styles (Slate's tokens and fonts,
+  so both themes; phone first, 44px targets).
 
 ### Kanban boards
 There is no shared kanban component — three independent implementations, each
