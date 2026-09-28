@@ -16,7 +16,7 @@ export const TABS = [
   { id: 'dashboard', label: 'Dashboard', href: '/',       view: 'dashboard', icon: 'dashboard', views: ['dashboard'] },
   { id: 'tasks',    label: 'Tasks',    href: '#tasks',    view: 'tasks',     icon: 'tasks',    views: ['tasks'] },
   { id: 'calendar', label: 'Calendar', href: '#calendar', view: 'calendar',  icon: 'calendar', views: ['calendar'] },
-  { id: 'projects', label: 'Projects', href: '#projects', view: 'projects',  icon: 'folder',   views: ['projects', 'budgets', 'planning'] },
+  { id: 'projects', label: 'Projects', href: '#projects', view: 'projects',  icon: 'folder',   views: ['projects', 'budgets', 'planning', 'retainers'] },
   { id: 'contacts', label: 'Contacts', href: '#contacts', view: 'contacts',  icon: 'person',   views: ['contacts'] },
 ]
 

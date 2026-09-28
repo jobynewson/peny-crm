@@ -17,10 +17,11 @@
 // NOT a Vercel function — the `_` prefix keeps it out of function detection.
 
 import { UUID, fail, invalid, readBody, workspaceId } from './_api.js'
-import { londonDate } from './_dates.js'
+import { londonDate, daysBetween, formatDay } from './_dates.js'
 import { fetchLinkPreview } from './_preview.js'
 import {
-  STATUS_LABELS, RESPONSE_LABELS, STATUS_AFTER_DELIVERY, TITLE_MAX, TEXT_MAX,
+  DELIVERABLE_STATUSES, STATUS_LABELS, WORKSTREAM_STATUSES, WORKSTREAM_LABELS, RESPONSE_LABELS,
+  DUE_KINDS, CADENCES, CADENCE_LABELS, STATUS_AFTER_DELIVERY, TITLE_MAX, TEXT_MAX,
   clientStatus, statusPatch, statusAfterUnsend, normaliseDeliveryUrl, isFrameIoUrl,
   normaliseDue, dueDisplay, isOverdue, validateWorkstreamInput, validateDeliverableInput,
   touchesDue, isUuid,
@@ -45,6 +46,16 @@ export const ROUTES = [
 
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k)
 const cleanText = v => (typeof v === 'string' && v.trim() ? v.trim() : null)
+
+// The words the page needs to offer choices, from the rules module, so the
+// browser holds no copy of them (and the status menu can say what the client
+// will see).
+export const VOCAB = Object.freeze({
+  statuses: DELIVERABLE_STATUSES.map(key => ({ key, label: STATUS_LABELS[key], client_label: clientStatus(key).label })),
+  workstream_statuses: WORKSTREAM_STATUSES.map(key => ({ key, label: WORKSTREAM_LABELS[key] })),
+  due_kinds: DUE_KINDS,
+  cadences: CADENCES.map(key => ({ key, label: CADENCE_LABELS[key] })),
+})
 
 // ── Shapes ───────────────────────────────────────────────────────────────────
 // What the Retainers page gets for a deliverable: the stored fields plus how
@@ -89,10 +100,12 @@ function deliverableJson(d, deliveries, today) {
     cadence: d.cadence,
     due_display: dueDisplay(d, today),
     overdue: isOverdue(d, today),
+    days_late: isOverdue(d, today) ? daysBetween(d.due_date, today) : 0,
     status: d.status,
     status_label: STATUS_LABELS[d.status],
     client_status: clientStatus(d.status).label,
     waiting_since: d.waiting_since,
+    waiting_days: d.waiting_since ? Math.max(0, daysBetween(londonDate(new Date(d.waiting_since)), today)) : null,
     waiting_note: d.waiting_note,
     client_visible: d.client_visible,
     internal_notes: d.internal_notes,
@@ -142,7 +155,7 @@ async function loadDeliverable(sql, ws, id) {
 }
 
 async function loadWorkstreams(sql, ws, { companyId = null, id = null }) {
-  return sql`
+  const rows = await sql`
     SELECT w.id, w.company_id, w.project_id, p.name AS project_name, w.title, w.brief, w.status,
            w.sort_order, w.created_at, w.updated_at
     FROM workstreams w
@@ -150,6 +163,7 @@ async function loadWorkstreams(sql, ws, { companyId = null, id = null }) {
     WHERE w.user_id = ${ws} AND (w.company_id = ${companyId} OR w.id = ${id})
     ORDER BY w.sort_order, w.created_at
   `
+  return rows.map(w => ({ ...w, status_label: WORKSTREAM_LABELS[w.status] }))
 }
 
 async function projectInWorkspace(sql, ws, id) {
@@ -159,7 +173,8 @@ async function projectInWorkspace(sql, ws, id) {
 
 // ── GET /api/retainers/companies ─────────────────────────────────────────────
 // The Retainers list: every company with a worklist or a retainer project,
-// with counts from its active workstreams.
+// with counts from its active workstreams. next_due is the next deadline still
+// ahead (overdue ones are counted separately).
 async function listCompanies(req, res, { sql }) {
   const ws = await workspaceId(sql)
   const today = londonDate()
@@ -174,7 +189,7 @@ async function listCompanies(req, res, { sql }) {
              count(*) FILTER (WHERE d.status = 'waiting_on_client')::int AS waiting,
              count(*) FILTER (WHERE d.status = 'in_review')::int AS in_review,
              count(*) FILTER (WHERE d.status <> 'approved' AND d.due_date < ${today}::date)::int AS overdue,
-             (min(d.due_date) FILTER (WHERE d.status <> 'approved'))::text AS next_due
+             (min(d.due_date) FILTER (WHERE d.status <> 'approved' AND d.due_date >= ${today}::date))::text AS next_due
       FROM workstreams w
       JOIN deliverables d ON d.workstream_id = w.id
       WHERE w.company_id = c.id AND w.user_id = ${ws} AND w.status = 'active'
@@ -189,7 +204,10 @@ async function listCompanies(req, res, { sql }) {
     WHERE c.user_id = ${ws} AND (wc.workstreams > 0 OR rp.projects IS NOT NULL)
     ORDER BY lower(c.name)
   `
-  return res.status(200).json({ today, companies })
+  return res.status(200).json({
+    today,
+    companies: companies.map(c => ({ ...c, next_due_display: c.next_due ? formatDay(c.next_due, today) : null })),
+  })
 }
 
 // ── GET /api/retainers/companies/:id ─────────────────────────────────────────
@@ -217,6 +235,7 @@ async function getCompanyPage(req, res, { sql, params }) {
 
   return res.status(200).json({
     today: londonDate(),
+    vocab: VOCAB,
     company: { id: company.id, name: company.name, portal: !!company.clerk_org_id },
     workstreams: workstreams.map(w => ({ ...w, deliverables: byWorkstream.get(w.id) })),
     projects,

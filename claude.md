@@ -133,8 +133,8 @@ There is no sidebar. The shell is a header over the page:
   five top tabs and, on the right, search (⌘K / Ctrl K), Log time, New,
   Notes, the notification bell and the avatar. The tabs are real links.
   `TABS` sets which routes light each one: Dashboard = `dashboard`; Tasks =
-  `tasks`; Calendar = `calendar`; Projects = `projects`, `budgets` and
-  `planning`; Contacts = `contacts`. Pages opened from the account menu light
+  `tasks`; Calendar = `calendar`; Projects = `projects`, `budgets`,
+  `planning` and `retainers`; Contacts = `contacts`. Pages opened from the account menu light
   no tab.
 - **Logo**: `public/slate-logo.png`, a black lockup on a transparent ground,
   turned white in Darkroom by `--logo-filter` (the sign-in screen does the
@@ -158,10 +158,11 @@ There is no sidebar. The shell is a header over the page:
   with arrow keys; Log time is a `role="dialog"`. On phones the same call
   opens a bottom sheet instead (see "Phones" below).
 - **Page toolbar**: the first row of each list page (`toolbarHtml()` in
-  `src/app.js`): the view switcher (All projects · Budgets · Planning under
-  the Projects tab) or the page's own tabs, then filters, then primary
-  actions on the right. Pages don't repeat their title. Detail pages (a
-  project, budget, board, plan) hide it and use their own header row. A
+  `src/app.js`): the view switcher (All projects · Budgets · Planning ·
+  Retainers under the Projects tab) or the page's own tabs, then filters,
+  then primary actions on the right. Pages don't repeat their title. Detail
+  pages (a project, budget, board, plan, retainer client) hide it and use
+  their own header row. A
   project's row starts with a "Projects / <name>" breadcrumb.
 - **A page can fill in the toolbar itself**: implement `toolbar()` returning
   `{ tabs, filters, actions }` (HTML, any of them optional) and
@@ -452,6 +453,9 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 - `marketing.js` - Marketing. Its kanban (by status: Ideas → Planning → In
   Progress → Scheduled/Sent → Done) is one of three separate kanban
   implementations — see "Kanban boards" below.
+- `retainers.js` - Projects › Retainers: client companies' worklists
+  (`#retainers`, `#retainers/<companyId>`) over `/api/retainers` — see
+  "Retainer worklists" below.
 - `password-manager.js` - Password management
 - `offload-log.js` - Offload Log (read-only table of backup reports from Fence)
 
@@ -884,6 +888,30 @@ always the source of truth and nothing is ever read back from Google.
   - `POST deliveries/:id/response` records an answer that came another way.
   - **Nothing with rounds sent can be deleted** (409 `has_rounds`), so a
     client's approvals can't vanish by accident: mark it approved/complete.
+- **Peny UI** (`src/views/retainers.js`, Projects › Retainers). `#retainers`
+  lists companies with counts; `#retainers/<companyId>` is a company's page:
+  workstreams (active first, complete ones folded), each with its
+  deliverable rows. Built phone-first: one column, 44px targets, and every
+  form opens through `openFloating()` (popover on desktop, bottom sheet on
+  phones).
+  - One tap: the status chip opens a menu (showing what the client will see)
+    and saves on pick; the eye shows/hides a deliverable from the client
+    (new ones start hidden).
+  - Send: paste the link, Send. If the deliverable is hidden, the form
+    offers to show it first. The preview is filled afterwards.
+  - Tapping a title opens its sheet: the rounds (take back the latest
+    unanswered one; record an answer that came by email), then the details
+    form (title, format, owner, due, visibility, what we're waiting for,
+    internal notes). A viewer gets the same page read-only.
+  - "+ Add client" takes a company (the company field: match or create)
+    and its first workstream.
+  - **The page holds no copy of the rules.** The company payload carries
+    `vocab` (statuses with the client's label, workstream statuses, due
+    kinds, cadences) and computed fields (`status_label`, `due_display`,
+    `overdue`, `days_late`, `waiting_days`, `next_due_display`), all from
+    `_retainer-rules.js`. Nothing in `src/` imports from `api/` — `/api/*`
+    URLs belong to functions, so a module there can't be served to the
+    browser under `vercel dev`.
 - **Responses have one writer**: `respondToDelivery(sql, scope, …)` in
   `api/_worklist.js`, shared by the Peny API and the portal. A scope is made
   only by that module's constructors (`staffScope(ws)`; the portal's comes

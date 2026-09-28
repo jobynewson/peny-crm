@@ -144,8 +144,10 @@ describeDb('/api/retainers', () => {
     expect(waiting.body.deliverable).toMatchObject({ status: 'waiting_on_client', waiting_note: 'Logo files', client_status: 'Waiting on you' })
     expect(waiting.body.deliverable.waiting_since).toBeTruthy()
 
+    expect(waiting.body.deliverable.waiting_days).toBe(0)
+
     const back = await call('PATCH', `retainers/deliverables/${hero.id}`, { status: 'in_progress' })
-    expect(back.body.deliverable).toMatchObject({ status: 'in_progress', waiting_since: null, waiting_note: null })
+    expect(back.body.deliverable).toMatchObject({ status: 'in_progress', waiting_since: null, waiting_note: null, waiting_days: null })
   })
 
   it('writes only what a PATCH sends, and normalises due dates as a set', async () => {
@@ -179,7 +181,23 @@ describeDb('/api/retainers', () => {
     expect(r.statusCode).toBe(200)
     const mine = r.body.companies.find(c => c.id === company.id)
     expect(mine).toMatchObject({ name: 'RetTest DMM', portal: false, open: 2, workstreams: 1, retainer_projects: [] })
+    // Only deadlines still ahead count as "next due".
+    expect(mine.next_due === null || mine.next_due >= r.body.today).toBe(true)
+    expect(Boolean(mine.next_due) === Boolean(mine.next_due_display)).toBe(true)
     expect(r.body.companies.some(c => c.id === otherCompany.id)).toBe(false)
+  })
+
+  it('sends the page the words it needs, so the browser holds no copy of the rules', async () => {
+    as(ana)
+    const r = await call('GET', `retainers/companies/${company.id}`)
+    expect(r.body.vocab.statuses.map(s => s.key)).toEqual(['planned', 'in_progress', 'waiting_on_client', 'in_review', 'changes_requested', 'approved'])
+    expect(r.body.vocab.statuses.find(s => s.key === 'changes_requested')).toMatchObject({ label: 'Changes requested', client_label: 'In progress' })
+    expect(r.body.vocab.workstream_statuses.map(s => s.key)).toEqual(['active', 'paused', 'complete'])
+    expect(r.body.workstreams[0].status_label).toBe('Active')
+    const late = await call('POST', 'retainers/deliverables', { workstream_id: workstream.id, title: 'Late one', due_date: '2020-01-01' })
+    expect(late.body.deliverable).toMatchObject({ overdue: true })
+    expect(late.body.deliverable.days_late).toBeGreaterThan(365)
+    await call('DELETE', `retainers/deliverables/${late.body.deliverable.id}`)
   })
 
   it('lets a viewer read but not write', async () => {
