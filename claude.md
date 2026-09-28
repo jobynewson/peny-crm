@@ -248,7 +248,7 @@ There is no sidebar. The shell is a header over the page:
     `api/portal.js` when `?view=offloads`. `POST /api/offloads` is a
     `vercel.json` rewrite onto `/api/portal?view=offloads`, which gives Fence
     a clean URL.
-- Current functions: `ai`, `blob`, `callsheet`, `companies`, `due`,
+- Current functions: `ai`, `blob`, `callsheet`, `client`, `companies`, `due`,
   `generate-ra`, `google`, `invite`, `maps`, `notification-settings`,
   `packing`, `portal`, `quote`, `realtime`, `reminders`, `retainers`, `track`.
 - **JSON API routers** share `api/_api.js`: a route table matched on
@@ -933,6 +933,59 @@ always the source of truth and nothing is ever read back from Google.
   from the Clerk session) — a WeakSet brands the exact objects, so copies and
   look-alikes are refused — and each kind of scope has its own complete SQL
   with the scope inside the statement that writes.
+
+### Client portal API (`/api/client`)
+- The only endpoints serving people outside Peny (`api/client.js` → routes in
+  `api/_client.js`; vercel.json rewrites `/api/client/*` with `?route=`):
+  `GET /api/client/view` (everything the visitor may see) and
+  `POST /api/client/deliveries/:id/response` (approve / request changes).
+- **Scope first, once.** `dispatchClient()` resolves the route, then
+  `resolveScope(req, sql)` — the only place a portal scope is built from a
+  request — then runs the handler with the scope and nothing else about the
+  visitor:
+  - `X-Portal-Token` header (a project's portal link) → that project,
+    read-only. A token beats a session if both come (the lesser view).
+  - Otherwise a Clerk session: the active organisation from the verified token
+    (`o.id`, v1 `org_id`) → the company with that `clerk_org_id`. Never an id
+    from the body, query or path. Anyone with an `app_users` row is refused
+    (403 `staff`); no organisation → 403 `no_organisation`; an organisation
+    with no company → 403 `no_portal`. An impersonation (`act` claim) can
+    view but not answer.
+  - Stage 2 adds a signed one-time link (POST only) as another scope kind.
+- **Reads**: `readClientView(sql, scope)` in `api/_client-view.js` is the
+  only code reading data for a client. Every query carries the scope itself
+  (`scope.companyId`/`scope.projectId` and `scope.ws`), explicit columns only
+  (never `internal_notes`, `owner_id`, `sent_by`, …), deliverables only if
+  `client_visible`, workstreams only if they have one. Statuses leave as the
+  client's labels; who at Peny sent or recorded something isn't said.
+  `_client-view.test.js` checks those query rules by reading the file, and
+  `_worklist.test.js` does the same for the client's write.
+- **Writes**: answers go through `respondToDelivery()` (`_worklist.js`), whose
+  client branch repeats the company and visibility conditions inside the
+  UPDATE. Another company's round, or a hidden one, reads as 404.
+- **What each scope sees.** Company: its workstreams → visible deliverables →
+  rounds (links, notes, answers, previews), `can_respond` on the latest
+  unanswered round. Project link: the project (name, status, brief, shoot
+  dates, Frame.io link), client, work log and post-production schedule as
+  the old portal did, plus deliverables — from the project's workstreams once
+  it has any, else the JSON on the project (`_legacy-deliverables.js`, the one
+  reader of that JSON, shared with the What's due feed).
+- **Where it isn't structural** (read before relying on it):
+  - The browser still holds `VITE_DATABASE_URL`, so anyone can query the
+    database directly and none of the above is a boundary until the
+    query-proxy fix lands. Hence `PORTAL_INVITES_ENABLED`.
+  - A project link is a bearer secret with no expiry: whoever has it sees
+    that project.
+  - Organisation membership is trusted from Clerk's signed session token;
+    removing someone takes effect when their token refreshes (about a
+    minute).
+  - Slate is single-workspace (`workspaceId()`); the `user_id = ws`
+    conditions are belt and braces, not multi-tenancy.
+  - The static checks read query text: they catch a missing condition or a
+    forbidden column, not a wrong join. The integration suite
+    (`_client.integration.test.js`) covers behaviour.
+- The old token endpoint (`GET /api/portal?token=`) still serves the old page
+  until the merged portal page replaces it.
 
 ### Kanban boards
 There is no shared kanban component — three independent implementations, each

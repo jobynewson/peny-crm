@@ -13,6 +13,7 @@
     { "source": "/api/notifications/(.*)", "destination": "/api/portal?view=tasks&route=notifications/$1" },
     { "source": "/api/retainers/(.*)",     "destination": "/api/retainers?route=retainers/$1" },
     { "source": "/api/companies/(.*)",     "destination": "/api/companies?route=companies/$1" },
+    { "source": "/api/client/(.*)",        "destination": "/api/client?route=client/$1" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/dashboard/(.*)", "destination": "/dashboard.html" },
     { "source": "/track/(.*)", "destination": "/track.html" },

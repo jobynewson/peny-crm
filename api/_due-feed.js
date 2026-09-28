@@ -5,7 +5,7 @@
 // nothing else works out what's due.
 //
 // Sources: worklist deliverables, the older deliverables stored on projects
-// (until they are retired — see legacyProjectDeliverables), marketing
+// (until they are retired — read through _legacy-deliverables.js), marketing
 // sub-tasks and card due dates, canvas checklists, planning-board cards,
 // edit deadlines (post-production blocks and Team Calendar deadlines) and
 // tasks with a due date.
@@ -17,6 +17,7 @@
 
 import { londonDate, addDays, daysBetween, toDateString, isDateString } from './_dates.js'
 import { dueDisplay } from './_retainer-rules.js'
+import { legacyDeliverables } from './_legacy-deliverables.js'
 
 export const TYPE_LABELS = {
   task:                'Task',
@@ -108,24 +109,15 @@ export async function fetchDueSources(sql, { ws, today, to }) {
 
 const list = v => (Array.isArray(v) ? v : [])
 
-// The deliverables stored as JSON on projects. The ONE place anything reads
-// them now; delete this (and its source query) when they are retired into the
-// worklist tables. Monthly deliverables only exist on retainers.
-function legacyProjectDeliverables(projects) {
-  const out = []
-  for (const p of projects) {
-    const sets = [['deliverables', p.deliverables], ...(p.is_retainer ? [['monthly_deliverables', p.monthly_deliverables]] : [])]
-    for (const [src, items] of sets) {
-      list(items).forEach((d, i) => {
-        if (!d?.text || d.done || !d.due) return
-        out.push({
-          type: 'project_deliverable', key: `pd:${p.id}:${src}:${i}`, title: d.text, context: p.name,
-          date: toDateString(d.due), owner_id: d.assignee_id || null, link: `#projects/${p.id}/overview`,
-        })
-      })
-    }
-  }
-  return out
+// The deliverables stored as JSON on projects, until they're retired. Monthly
+// deliverables only exist on retainers.
+function projectDeliverables(projects) {
+  return projects.flatMap(p => legacyDeliverables(p, { monthly: p.is_retainer })
+    .filter(d => !d.done && d.due)
+    .map(d => ({
+      type: 'project_deliverable', key: `pd:${p.id}:${d.source}:${d.index}`, title: d.text, context: p.name,
+      date: d.due, owner_id: d.assignee_id, link: `#projects/${p.id}/overview`,
+    })))
 }
 
 // One line under an item's title: what it is, where it lives and, for work
@@ -151,7 +143,7 @@ export function collectDue(src, { today, to, ownerId = null }) {
       link: `#retainers/${d.company_id}`,
     })
   }
-  raw.push(...legacyProjectDeliverables(list(src.projects)))
+  raw.push(...projectDeliverables(list(src.projects)))
 
   for (const card of list(src.marketing)) {
     if (card.due_date) {

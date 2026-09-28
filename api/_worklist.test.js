@@ -30,3 +30,18 @@ describe('worklist scopes', () => {
     expect((await respondToDelivery(sql, scope, { deliveryId: id, input: { response: 'changes_requested' } })).error).toMatchObject({ status: 422, field: 'comment' })
   })
 })
+
+describe('the client\'s answer', () => {
+  it('keeps the company and visibility inside every statement it runs', async () => {
+    const fs = await import('node:fs')
+    const source = fs.readFileSync(new URL('./_worklist.js', import.meta.url), 'utf8')
+    const body = source.slice(source.indexOf('async function respondAsClient'))
+    const queries = [...body.matchAll(/sql`([\s\S]*?)`/g)].map(m => m[1])
+    expect(queries).toHaveLength(2)                 // the read and the write
+    for (const q of queries) {
+      expect(q).toContain('w.company_id = ${scope.companyId}')
+      expect(q).toContain('w.user_id = ${scope.ws}')
+      expect(q).toContain('d.client_visible')
+    }
+  })
+})
