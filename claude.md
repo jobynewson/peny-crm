@@ -261,7 +261,8 @@ There is no sidebar. The shell is a header over the page:
   (none = any Slate user, `editor` = not a viewer, `superadmin`). The task
   board, `/api/companies` and every router since use it — add routes to a
   table, don't hand-roll a handler.
-- **Integration tests** (`api/*.integration.test.js`) run the real handlers
+- **Integration tests** (`api/*.integration.test.js`, and
+  `scripts/_worklist-apply.integration.test.js`) run the real handlers
   against a real Postgres and skip unless `SLATE_TEST_DATABASE_URL` is set
   (the older tasks suite uses `TASKS_TEST_DATABASE_URL`). Setup is in
   `api/_test-db.js`. Run them one file at a time (`--no-file-parallelism`):
@@ -935,6 +936,27 @@ always the source of truth and nothing is ever read back from Google.
   from the Clerk session) — a WeakSet brands the exact objects, so copies and
   look-alikes are refused — and each kind of scope has its own complete SQL
   with the scope inside the statement that writes.
+
+### Importing a client's worklist (`scripts/import-worklist.js`)
+- `VITE_DATABASE_URL=… node scripts/import-worklist.js Worklists.xlsx --company "DMM"`
+  prints the plan and every assumption and writes nothing; add `--apply` to
+  write. `--year` (default: this year) dates written without one;
+  `--visible` shows the imported deliverables to the client (default hidden);
+  `--approved "<product>"` (repeatable) imports a product's items as approved
+  and its workstream complete.
+- One workstream per product. How the sheet's columns (Products · Brief ·
+  Deliverables · Deadlines) become deliverables is in
+  `scripts/_worklist-sheet.js` (pure, tested with DMM's sheet in
+  `_worklist-sheet.test.js`): "Name – date" deadlines are one deliverable
+  each; a numbered product list is one per product (duplicates once);
+  "N per week" is recurring; other lines each take the product's deadline; a
+  product with none gets one named from its brief; lines ending "?" are the
+  client's notes and join the brief.
+- `scripts/_worklist-apply.js` checks the whole plan with the worklist rules,
+  finds or creates the company, and inserts the workstreams and deliverables
+  in one statement (all or nothing). A workstream the company already has
+  (same title) is skipped, so re-running is safe. `exceljs` (a dev
+  dependency) reads the file.
 
 ### Client portal API (`/api/client`)
 - The only endpoints serving people outside Peny (`api/client.js` → routes in
