@@ -505,6 +505,26 @@ export async function runMigrations() {
   // One notification per recipient per event — makes the dedupe rule a DB
   // guarantee, so a retried write cannot double-notify.
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS notifications_dedupe_uidx ON notifications (recipient_id, event_id)`
+
+  // ── Companies (drizzle/0032_add_companies.sql) ─────────────────────────────
+  // No backfill: existing contacts and projects stay unlinked until someone
+  // links them from their form. Nothing is guessed from contacts.company.
+  await sql`
+    CREATE TABLE IF NOT EXISTS companies (
+      id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id      TEXT NOT NULL,
+      name         TEXT NOT NULL,
+      clerk_org_id TEXT,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS companies_name_uidx ON companies (user_id, lower(name))`
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS companies_clerk_org_uidx ON companies (clerk_org_id)`
+  await sql`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE SET NULL`
+  await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE SET NULL`
+  await sql`CREATE INDEX IF NOT EXISTS contacts_company_idx ON contacts (company_id)`
+  await sql`CREATE INDEX IF NOT EXISTS projects_company_idx ON projects (company_id)`
 }
 
 // One-time demo data so the first visit to Planning isn't an empty screen.

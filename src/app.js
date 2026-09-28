@@ -30,13 +30,14 @@ const PHONE = '(max-width: 768px)'
 const VIEWS = ['dashboard', 'tasks', 'calendar', 'projects', 'budgets', 'planning', 'contacts', 'marketing', 'story-planner', 'leave', 'expenses', 'password-manager', 'offload-log', 'settings', 'timetrack']
 
 export class App {
-  constructor({ userId, clerkUserId, user, appUser, permissions, contacts, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, leaveRequests, publicHolidays, onSignOut }) {
+  constructor({ userId, clerkUserId, user, appUser, permissions, contacts, companies, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, leaveRequests, publicHolidays, onSignOut }) {
     this.userId         = userId
     this.clerkUserId    = clerkUserId
     this.user           = user
     this.appUser        = appUser
     this.permissions    = permissions
     this.contacts       = contacts ?? []
+    this.companies      = companies ?? []   // from /api/companies; see views/company-field.js
     this.projects       = projects ?? []
     this.budgets        = budgets  ?? []
     this.settings       = settings ?? {}

@@ -57,6 +57,19 @@ export const settings = pgTable('settings', {
   ...timestamps,
 })
 
+// ── Companies ─────────────────────────────────────────────────────────────────
+// The organisation a contact works for and a project is for. The retainer
+// worklist, the client portal and its Clerk organization hang off a company.
+// Names are unique ignoring case (companies_name_uidx on lower(name)). Read and
+// written only through /api/companies, never from db/client.js.
+export const companies = pgTable('companies', {
+  id:           uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id:      text('user_id').notNull(),
+  name:         text('name').notNull(),
+  clerk_org_id: text('clerk_org_id'),   // unique; set by the Portal access panel
+  ...timestamps,
+})
+
 // ── Contacts ──────────────────────────────────────────────────────────────────
 export const contacts = pgTable('contacts', {
   id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
@@ -64,6 +77,11 @@ export const contacts = pgTable('contacts', {
   first_name: text('first_name').notNull(),
   last_name:  text('last_name').notNull(),
   role:       text('role'),
+  // Linked company. Existing contacts start unlinked (NULL) and are linked by
+  // hand; nothing is guessed from the free-text `company` below.
+  company_id: uuid('company_id').references(() => companies.id, { onDelete: 'set null' }),
+  // Legacy free text, kept until every contact is linked. The contact form
+  // copies the linked company's name into it, so its readers keep working.
   company:    text('company'),
   email:      text('email'),
   phone:      text('phone'),
@@ -80,6 +98,9 @@ export const projects = pgTable('projects', {
   id:          uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
   user_id:     text('user_id').notNull(),
   client_id:   uuid('client_id').references(() => contacts.id, { onDelete: 'set null' }),
+  // The company the project is for (client_id is the person). Set from the
+  // project form; existing projects start unlinked.
+  company_id:  uuid('company_id').references(() => companies.id, { onDelete: 'set null' }),
   name:        text('name').notNull(),
   status:      text('status').notNull().default('Enquiry'),
   brief:       text('brief'),

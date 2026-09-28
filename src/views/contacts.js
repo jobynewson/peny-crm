@@ -1,6 +1,7 @@
 import {
   createContact, updateContact, deleteContact, logActivity, getActivityLog,
 } from '../db/client.js'
+import { companyFieldHtml, bindCompanyField, resolveCompanyField, companyById } from './company-field.js'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -113,7 +114,7 @@ export class ContactsView {
               <div class="field"><div class="field-label">Last name</div><input id="cf-last" type="text" value="${esc(c?.last_name)}" placeholder="Renfrew" /></div>
             </div>
             <div class="field"><div class="field-label">Role / title</div><input id="cf-role" type="text" value="${esc(c?.role)}" placeholder="Marketing Director" /></div>
-            <div class="field"><div class="field-label">Company<span style="color:var(--text-tertiary);font-weight:400"> — or last name required</span></div><input id="cf-company" type="text" value="${esc(c?.company)}" placeholder="Kinetic Brand Co." /></div>
+            <div class="field"><div class="field-label">Company<span style="color:var(--text-tertiary);font-weight:400"> — or last name required</span></div>${companyFieldHtml({ id: 'cf-company', placeholder: 'Kinetic Brand Co.' })}</div>
             <div class="field-row">
               <div class="field"><div class="field-label">Email</div><input id="cf-email" type="email" value="${esc(c?.email)}" /></div>
               <div class="field"><div class="field-label">Phone</div><input id="cf-phone" type="text" value="${esc(c?.phone)}" /></div>
@@ -160,11 +161,15 @@ export class ContactsView {
     const clientProjects = this.app.projects.filter(p => p.client_id === c.id)
     const clientBudgets  = this.app.budgets.filter(b => b.client_id === c.id)
     const notes = Array.isArray(c.notes) ? c.notes : []
+    const linked = companyById(this.app, c.company_id)
+    const companyLine = linked
+      ? esc(linked.name)
+      : c.company ? `${esc(c.company)} <span style="color:var(--text-tertiary)">(not linked)</span>` : ''
     return `
       <div class="detail-header">
         <div class="detail-avatar ${avc(c)}">${ini(c)}</div>
         <div class="detail-name">${esc(c.first_name)} ${esc(c.last_name)}</div>
-        <div class="detail-role">${esc(c.role)} · ${esc(c.company)}</div>
+        <div class="detail-role">${esc(c.role)} · ${companyLine}</div>
         <div class="detail-tags">
           <span class="tag ${TC[c.type]??'tag-corp'}">${TL[c.type]??c.type}</span>
           <span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary)">${c.status}</span>
@@ -389,6 +394,9 @@ export class ContactsView {
       const el = mc.querySelector(`#cf-${f}`)
       if (el) el.value = ''
     })
+    const companyInput = mc.querySelector('#cf-company')
+    if (companyInput) companyInput.dataset.linked = ''
+    bindCompanyField(companyInput, this.app.companies)
     mc.querySelector('#cf-type').value = 'brand'
     mc.querySelector('#cf-status').value = 'Active'
     mc.querySelector('#contact-modal')?.classList.add('open')
@@ -402,7 +410,11 @@ export class ContactsView {
     mc.querySelector('#cf-first').value  = c.first_name ?? ''
     mc.querySelector('#cf-last').value   = c.last_name  ?? ''
     mc.querySelector('#cf-role').value   = c.role       ?? ''
-    mc.querySelector('#cf-company').value = c.company   ?? ''
+    const companyInput = mc.querySelector('#cf-company')
+    const linked = companyById(this.app, c.company_id)
+    companyInput.value = linked?.name ?? c.company ?? ''
+    companyInput.dataset.linked = linked ? '1' : ''
+    bindCompanyField(companyInput, this.app.companies, { offerLink: true })
     mc.querySelector('#cf-email').value  = c.email      ?? ''
     mc.querySelector('#cf-phone').value  = c.phone      ?? ''
     mc.querySelector('#cf-location').value = c.location ?? ''
@@ -451,6 +463,14 @@ export class ContactsView {
     }
     await this.app.withBusy(mc.querySelector('#contact-save-btn'), async () => {
     try {
+      // undefined = leave the link alone; null = no company; else link to it.
+      // The old text column keeps the linked company's name for its readers.
+      const companyInput = mc.querySelector('#cf-company')
+      const linked = await resolveCompanyField(this.app, companyInput, { isNew: !this.editingId })
+      if (linked !== undefined) {
+        data.company_id = linked?.id ?? null
+        data.company    = linked?.name ?? null
+      }
       if (this.editingId) {
         const existing = this.app.contacts.find(c => c.id === this.editingId)
         const [updated] = await updateContact(this.app.userId, this.editingId, data)

@@ -6,6 +6,7 @@ import {
   getSocialPosts, getMarketingCards, runMigrations, getTeamCalendarEntries,
   getLeaveRequests, getPublicHolidays, seedDemoBoard, seedDemoCanvas,
 } from './db/client.js'
+import { listCompanies } from './api/companies.js'
 
 async function bootstrap() {
   document.body.innerHTML = '<div class="loading">Loading…</div>'
@@ -45,7 +46,8 @@ async function bootstrap() {
   await seedDemoCanvas(workspaceId).catch(e => console.warn('Demo canvas seed failed:', e))
 
   // 4. Load all shared workspace data in parallel
-  const [contactsData, projectsData, budgetsData, settingsData, allUsersData, socialPostsData, marketingCardsData, teamCalendarData, leaveRequestsData, publicHolidaysData] = await Promise.all([
+  //    Companies come through /api (new data never goes through db/client.js).
+  const [contactsData, projectsData, budgetsData, settingsData, allUsersData, socialPostsData, marketingCardsData, teamCalendarData, leaveRequestsData, publicHolidaysData, companiesData] = await Promise.all([
     getContacts(workspaceId),
     getProjects(workspaceId),
     getBudgets(workspaceId),
@@ -56,6 +58,7 @@ async function bootstrap() {
     getTeamCalendarEntries(workspaceId).catch(() => []),
     getLeaveRequests(workspaceId).catch(() => []),
     getPublicHolidays(workspaceId).catch(() => []),
+    listCompanies().catch(e => { console.warn('Companies failed to load:', e); return [] }),
   ])
 
   const { App } = await import('./app.js')
@@ -66,6 +69,7 @@ async function bootstrap() {
     appUser,
     permissions,
     contacts:              contactsData,
+    companies:             companiesData,
     projects:              projectsData,
     budgets:               budgetsData,
     settings:              settingsData,

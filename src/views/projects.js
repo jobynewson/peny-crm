@@ -1,4 +1,5 @@
 import { createProject, updateProject, deleteProject, renumberProjectKanban, linkBudgetToProject, unlinkBudgetFromProject, logActivity, getActivityLog, getTimeEntries, setTrackToken, deleteTimeEntry, getWorkLog, addWorkLogEntry, deleteWorkLogEntry, updateBudget } from '../db/client.js'
+import { companyFieldHtml, bindCompanyField, setCompanyField, resolveCompanyField, companyById } from './company-field.js'
 import { PostProductionView } from './post-production.js'
 import { timeLogFormHtml, bindTimeLogForm } from './time-log.js'
 import { icon } from './icons.js'
@@ -143,6 +144,9 @@ export class ProjectsView {
       m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open') })
     })
     mc.querySelector('#proj-save-btn')?.addEventListener('click', () => this.saveNew(mc))
+    mc.querySelector('#pf-client')?.addEventListener('change', e => {
+      this._fillCompanyFromClient(mc.querySelector('#pf-company'), e.target.value)
+    })
     mc.querySelector('#pf-new-contact-toggle')?.addEventListener('click', () => {
       const panel  = mc.querySelector('#pf-new-contact-panel')
       const client = mc.querySelector('#pf-client')
@@ -222,6 +226,7 @@ export class ProjectsView {
           if (match) {
             const clientEl = mc.querySelector('#pf-client')
             if (clientEl) clientEl.value = match.id
+            this._fillCompanyFromClient(mc.querySelector('#pf-company'), match.id)
             statusEl.textContent = `✓ Matched client: ${match.first_name} ${match.last_name}${match.company ? ' — ' + match.company : ''}`
             statusEl.style.color = 'var(--success)'
           } else {
@@ -236,6 +241,8 @@ export class ProjectsView {
             set('#pf-nc-first',   data.client.first_name)
             set('#pf-nc-last',    data.client.last_name)
             set('#pf-nc-company', data.client.company)
+            // Typed in by the import rather than a person, so it counts as typed.
+            if (data.client.company) setCompanyField(mc.querySelector('#pf-nc-company'), data.client.company)
             set('#pf-nc-email',   data.client.email)
             set('#pf-nc-phone',   data.client.phone)
             statusEl.textContent = `New contact pre-filled — review details below`
@@ -245,6 +252,11 @@ export class ProjectsView {
           statusEl.textContent = '✓ Details extracted — no client identified'
           statusEl.style.color = 'var(--text-tertiary)'
         }
+
+        // A matched contact's linked company wins; otherwise the company the
+        // email names, which resolves (or is created) when the project is saved.
+        const companyEl = mc.querySelector('#pf-company')
+        if (data.client?.company && companyEl && !companyEl.value.trim()) setCompanyField(companyEl, data.client.company)
 
         // Collapse the textarea
         mc.querySelector('#pf-ai-panel').style.display = 'none'
@@ -405,11 +417,16 @@ export class ProjectsView {
                 <div class="field" style="margin:0"><div class="field-label">First name</div><input type="text" id="pf-nc-first" placeholder="First name" /></div>
                 <div class="field" style="margin:0"><div class="field-label">Last name</div><input type="text" id="pf-nc-last" placeholder="Last name" /></div>
               </div>
-              <div class="field" style="margin-bottom:8px"><div class="field-label">Company</div><input type="text" id="pf-nc-company" placeholder="Company name" /></div>
+              <div class="field" style="margin-bottom:8px"><div class="field-label">Company</div>${companyFieldHtml({ id: 'pf-nc-company' })}</div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
                 <div class="field" style="margin:0"><div class="field-label">Email</div><input type="email" id="pf-nc-email" placeholder="email@example.com" /></div>
                 <div class="field" style="margin:0"><div class="field-label">Phone</div><input type="text" id="pf-nc-phone" placeholder="+44..." /></div>
               </div>
+            </div>
+
+            <div class="field">
+              <div class="field-label">Company</div>
+              ${companyFieldHtml({ id: 'pf-company', placeholder: 'Who the project is for' })}
             </div>
 
             <div id="pf-brief-field" style="display:none">
@@ -442,7 +459,12 @@ export class ProjectsView {
     const el = (mc || document.getElementById('main-content'))
     el.querySelector('#pf-name').value   = ''
     el.querySelector('#pf-status').value = stage || 'Enquiry'
-    if (clientId) el.querySelector('#pf-client').value = clientId
+    el.querySelector('#pf-client').value = clientId || ''
+    for (const id of ['#pf-company', '#pf-nc-company']) {
+      const input = el.querySelector(id)
+      if (input) { input.value = ''; bindCompanyField(input, this.app.companies) }
+    }
+    this._fillCompanyFromClient(el.querySelector('#pf-company'), clientId)
     // Reset accordion
     const panel = el.querySelector('#pf-new-contact-panel')
     const client = el.querySelector('#pf-client')
@@ -480,6 +502,18 @@ export class ProjectsView {
     modal?.classList.add('open')
   }
 
+  // Fills an EMPTY company field from a contact's linked company — an explicit
+  // link, not a guess from the old free text, so unlinked contacts fill nothing.
+  // Returns true when it filled the field.
+  _fillCompanyFromClient(input, contactId) {
+    if (!input || input.value.trim()) return false
+    const contact = contactId && this.app.contacts.find(c => c.id === contactId)
+    const company = contact && companyById(this.app, contact.company_id)
+    if (!company) return false
+    setCompanyField(input, company.name)
+    return true
+  }
+
   async saveNew(mc) {
     const name = mc.querySelector('#pf-name')?.value.trim()
     if (!name) { this.app.toast('Please enter a project title'); return }
@@ -488,6 +522,7 @@ export class ProjectsView {
 
     // If new contact accordion is open, create the contact first
     let clientId = mc.querySelector('#pf-client')?.value || null
+    let newContactCompany = null
     const contactPanel = mc.querySelector('#pf-new-contact-panel')
     if (contactPanel?.style.display !== 'none') {
       const firstName = mc.querySelector('#pf-nc-first')?.value.trim()
@@ -501,10 +536,13 @@ export class ProjectsView {
       }
       try {
         const { createContact } = await import('../db/client.js')
+        const contactCompany = await resolveCompanyField(this.app, mc.querySelector('#pf-nc-company'), { isNew: true })
+        newContactCompany = contactCompany
         const [newContact] = await createContact(this.app.userId, {
           first_name: firstName || 'Unknown',
           last_name:  lastName  || '',
-          company:    company   || null,
+          company:    contactCompany?.name ?? (company || null),
+          company_id: contactCompany?.id ?? null,
           email:      email     || null,
           phone:      phone     || null,
           location:   null,
@@ -516,6 +554,12 @@ export class ProjectsView {
       } catch(e) { console.error(e); this.app.toast('Error creating contact'); return }
     }
 
+    // The project's company: what's in its field, else the new contact's.
+    let projectCompany
+    try {
+      projectCompany = await resolveCompanyField(this.app, mc.querySelector('#pf-company'), { isNew: true })
+    } catch (e) { console.error(e); this.app.toast('Error saving the company'); return }
+
     const ai = this._aiExtraction || {}
     const deliverables = ai.deliverables?.length
       ? ai.deliverables.map(d => ({ text: d, done: false }))
@@ -524,6 +568,7 @@ export class ProjectsView {
     const data = {
       name,
       client_id:    clientId,
+      company_id:   projectCompany?.id ?? newContactCompany?.id ?? null,
       status:       isRetainer ? 'Enquiry' : (mc.querySelector('#pf-status')?.value || 'Enquiry'),
       brief:        mc.querySelector('#pf-brief')?.value.trim() || '',
       location:     mc.querySelector('#pf-location')?.value.trim() || '',
@@ -710,6 +755,7 @@ export class ProjectsView {
         <div class="proj-panel-head">Brief &amp; overview</div>
         <div class="proj-panel-body">
           ${field('Client', cl ? `${esc(cl.first_name)} ${esc(cl.last_name)}${cl.company?' · '+esc(cl.company):''}` : '')}
+          ${field('Company', esc(companyById(this.app, p.company_id)?.name || ''))}
           ${field('Brief', p.brief ? esc(p.brief) : '')}
           ${p.shoot_start ? field('Shoot dates', esc(p.shoot_start) + (p.shoot_end && p.shoot_end!==p.shoot_start ? ' → '+esc(p.shoot_end) : '')) : ''}
           ${field('Notes', p.notes ? esc(p.notes) : '')}
@@ -1260,7 +1306,7 @@ export class ProjectsView {
     mc.querySelector('#pv-duplicate')?.addEventListener('click', async () => {
       const copy = {
         name: p.name + ' (copy)', status: 'Enquiry', brief: p.brief, notes: p.notes,
-        client_id: p.client_id, project_type: p.project_type, shoot_start: p.shoot_start, shoot_end: p.shoot_end,
+        client_id: p.client_id, company_id: p.company_id ?? null, project_type: p.project_type, shoot_start: p.shoot_start, shoot_end: p.shoot_end,
         location: p.location, deliverables: JSON.parse(JSON.stringify(p.deliverables||[])),
         crew: JSON.parse(JSON.stringify(p.crew||[])), shots: JSON.parse(JSON.stringify(p.shots||[])),
         approvals: (p.approvals||[]).map(a=>({...a,status:'Pending'})),
@@ -3881,6 +3927,10 @@ export class ProjectsView {
                 </select>
               </div>
               <div>
+                <div class="proj-field-label">Company</div>
+                ${companyFieldHtml({ id: 'pe-company', cls: 'proj-input', value: companyById(this.app, p.company_id)?.name || '', linked: true, placeholder: 'Who the project is for' })}
+              </div>
+              <div>
                 <div class="proj-field-label">Creative brief</div>
                 <textarea class="proj-textarea" id="pe-brief" style="min-height:120px" placeholder="Objectives, audience, tone, key messages...">${esc(p.brief)}</textarea>
               </div>
@@ -4460,7 +4510,28 @@ export class ProjectsView {
     mc.querySelector('#pe-save-close')?.addEventListener('click', exitEdit)
     mc.querySelector('#pe-delete')?.addEventListener('click', () => this.deleteProject(p.id, mc))
     mc.querySelector('#pe-status')?.addEventListener('change', e => { p.status = e.target.value; save() })
-    mc.querySelector('#pe-client')?.addEventListener('change', e => { p.client_id = e.target.value || null; save() })
+    mc.querySelector('#pe-client')?.addEventListener('change', async e => {
+      p.client_id = e.target.value || null
+      // An empty Company follows the new client's linked company.
+      const companyEl = mc.querySelector('#pe-company')
+      if (this._fillCompanyFromClient(companyEl, p.client_id)) await saveCompany(companyEl)
+      save()
+    })
+    const saveCompany = async (companyEl) => {
+      try {
+        const company = await resolveCompanyField(this.app, companyEl, { isNew: false })
+        if (company === undefined) return
+        p.company_id = company?.id ?? null
+        if (company) companyEl.value = company.name
+        delete companyEl.dataset.touched
+      } catch (err) {
+        console.error(err)
+        this.app.toast('Error saving the company')
+      }
+    }
+    const companyEl = mc.querySelector('#pe-company')
+    bindCompanyField(companyEl, this.app.companies)
+    companyEl?.addEventListener('change', async () => { await saveCompany(companyEl); save() })
     mc.querySelector('#pe-brief')?.addEventListener('change',   e => { p.brief    = e.target.value; save() })
     mc.querySelector('#pe-location')?.addEventListener('change',e => { p.location = e.target.value; save() })
     mc.querySelector('#pe-location-addr')?.addEventListener('change',e => {
@@ -4899,6 +4970,7 @@ export class ProjectsView {
     try {
       const data = {
         name: p.name, status: p.status, client_id: p.client_id,
+        company_id: p.company_id ?? null,
         brief: p.brief, location: p.location,
         project_type: p.project_type || 'full_service',
         location_address: p.location_address||null,

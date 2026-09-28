@@ -66,6 +66,13 @@ index.html                # App HTML shell
   convention rather than a security boundary. The tasks API is server-owned so
   its rules live in one place, but it is not an access-control barrier while
   direct DB access remains.
+- **New data goes through the server only.** Everything added from companies
+  onwards (companies, the retainer worklist, notification settings) is read
+  and written through `/api/*`, never through `src/db/client.js`, so it is
+  ready for the planned query proxy that takes the credential out of the
+  browser. That proxy must land before any client is given a portal login.
+- The browser calls Slate's own APIs through `request()` in `src/api/http.js`
+  (Bearer Clerk token, errors thrown with `code` / `field` / `status`).
 
 ### Migrations
 - **`drizzle/*.sql` files are a hand-written record, not a tool output.** There
@@ -221,9 +228,21 @@ There is no sidebar. The shell is a header over the page:
     `api/portal.js` when `?view=offloads`. `POST /api/offloads` is a
     `vercel.json` rewrite onto `/api/portal?view=offloads`, which gives Fence
     a clean URL.
-- Current functions: `ai`, `blob`, `callsheet`, `generate-ra`, `google`,
-  `invite`, `maps`, `packing`, `portal`, `quote`, `realtime`, `reminders`,
-  `track`.
+- Current functions: `ai`, `blob`, `callsheet`, `companies`, `generate-ra`,
+  `google`, `invite`, `maps`, `packing`, `portal`, `quote`, `realtime`,
+  `reminders`, `track`.
+- **JSON API routers** share `api/_api.js`: a route table matched on
+  `${method} ${path}` (`:id` segments must be uuids), 404 / 405 + `Allow`,
+  errors always `{ error: { code, message, field? } }`, and `dispatch()`,
+  which resolves the route before checking the session, requires an
+  `app_users` row (`verifyClerkUser`) and then the route's `access`
+  (none = any Slate user, `editor` = not a viewer, `superadmin`). The task
+  board, `/api/companies` and every router since use it — add routes to a
+  table, don't hand-roll a handler.
+- **Integration tests** (`api/*.integration.test.js`) run the real handlers
+  against a real Postgres and skip unless `SLATE_TEST_DATABASE_URL` is set
+  (the older tasks suite uses `TASKS_TEST_DATABASE_URL`). Setup is in
+  `api/_test-db.js`.
   All Google Calendar work lives behind the single `google` function: shared
   plumbing in `api/_gcal.js`, the Team Calendar entry push in
   `api/_gcal-entries.js` — see "External calendar sync" below.
@@ -347,8 +366,11 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 
 ### Adding a new database table
 1. Add schema to `src/db/schema.js` (Drizzle)
-2. Add raw SQL to `schema.sql`
-3. Add query helpers to `src/db/client.js`
+2. Add the SQL as the next `drizzle/00NN_*.sql` record and, idempotently, to
+   `runMigrations()` in `src/db/client.js` (see "Migrations"). There is no
+   `schema.sql` any more, whatever older notes say.
+3. New tables are read and written through an `/api/*` router (see
+   "Database access"), not through `src/db/client.js`.
 
 ### Adding a new view
 1. Create `src/views/myview.js` with a `render()` function
@@ -676,6 +698,36 @@ always the source of truth and nothing is ever read back from Google.
 - The 12-month window starts at `projects.retainer_year_start`, falling back to
   `retainer_start` when unset. Clearing the date input resets it to that
   fallback.
+
+### Companies
+- `companies` (`drizzle/0032_add_companies.sql`): id, workspace `user_id`,
+  `name` (unique ignoring case: `companies_name_uidx` on `lower(name)`) and
+  `clerk_org_id` (the client portal's Clerk organization, unique). Contacts
+  and projects point at one with `company_id` (`ON DELETE SET NULL`). The
+  retainer worklist, the client portal and its Clerk org hang off a company;
+  a project's `client_id` is still the person.
+- **No guessing.** Existing contacts and projects were left unlinked on
+  purpose and are linked by hand. Nothing ever derives a company from the old
+  free text: a new record always resolves its company field, but an existing
+  one only once someone types in the field or presses **Link** (shown under
+  the field while the old text isn't linked). Saving a contact for any other
+  reason leaves its link alone.
+- `contacts.company` (free text) stays until every contact is linked. When a
+  company is set, the form copies its name into that column, so its ~35
+  readers (call sheets, budget and quote PDFs, the office screen, search, the
+  portal) keep working unchanged. Drop the column only after moving those
+  readers to `company_id`.
+- The field (`src/views/company-field.js`) is a text box with a native
+  `<datalist>` of every company, like the password manager's categories. On
+  save, `resolveCompanyField()` sends the text to `POST /api/companies`, which
+  returns the existing company with that name (ignoring case and spacing) or
+  creates one, in one race-free statement. It's used by the contact form, the
+  new-project form (its own Company field and the inline new contact), the
+  project editor and the AI email import. Choosing a client fills an empty
+  project Company from that contact's *linked* company, never from its text.
+- `app.companies` is loaded at boot from `GET /api/companies`; the field
+  keeps it current as companies are created. There is no rename, merge or
+  delete screen yet, so a typo makes a stray company.
 
 ### Kanban boards
 There is no shared kanban component — three independent implementations, each

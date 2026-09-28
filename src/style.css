@@ -952,6 +952,11 @@ kbd { font-family: var(--font-mono); }
 }
 .field textarea { resize: vertical; min-height: 70px; }
 
+/* ── Company field (src/views/company-field.js) ── */
+.company-hint { font-size: 11px; color: var(--text-tertiary); margin-top: 5px; line-height: 1.4; }
+.company-hint-btn { background: none; border: none; padding: 0; font: inherit; font-weight: 600; color: var(--accent-text); cursor: pointer; }
+.company-hint-btn:hover { text-decoration: underline; }
+
 /* ── Inline form validation ── */
 .is-invalid { border-color: var(--danger) !important; box-shadow: 0 0 0 3px var(--danger-subtle) !important; }
 .field-err { font-size: 11px; color: var(--danger); margin-top: 4px; line-height: 1.4; }
@@ -2508,6 +2513,7 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
   /* 16px fields also stop iOS zooming in on focus. */
   .search-wrap input, .field input, .field select, .field textarea, .tl-field input, .tl-field select { font-size: 16px; }
   .search-wrap input, .field input, .field select, .tl-field input, .tl-field select { min-height: 44px; }
+  .company-hint-btn { min-height: 44px; padding: 0 4px; }
 }
 
 /* ── Feature additions (ported from the former injectGlobalStyles) ──────────── */
