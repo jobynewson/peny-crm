@@ -78,6 +78,7 @@ describe('staff endpoints refuse a client portal account', () => {
     ['retainers.js',   { method: 'POST', query: { route: 'retainers/deliveries/3f2504e0-4f89-11d3-9a0c-0305e82c3301/response' }, body: { response: 'approved' } }],
     ['portal.js',      { method: 'GET', query: { view: 'tasks', route: 'tasks' } }],
     ['realtime.js',    { method: 'GET' }],
+    ['db.js',          { method: 'POST', body: { query: 'SELECT * FROM app_users', params: [] } }],
   ]
   for (const [file, req] of cases) {
     it(`${file} ${req.method} ${req.query?.type || req.query?.action || req.body?.action || ''}`.trim(), async () => {

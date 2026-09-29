@@ -26,12 +26,22 @@ export async function verifyClerkSession(req) {
   }
 }
 
+// With `remember: true` a yes is kept for a minute per warm instance, so the
+// row isn't looked up again for every call: only /api/db asks, because every
+// query the browser makes goes through it. Removing someone from Slate reaches
+// a warm instance within that minute. The token itself is checked every time.
+const REMEMBER_MS = 60_000
+const remembered = new Map()   // Clerk user id → { user, until }
+
 // Returns { user } — their app_users row — or { error: { status, code, message } }.
 // Callers render the error themselves so the response shape stays owned by the
 // route that failed.
-export async function verifyClerkUser(req, sql) {
+export async function verifyClerkUser(req, sql, { remember = false } = {}) {
   const { claims, error } = await verifyClerkSession(req)
   if (error) return { error }
+
+  const known = remember && remembered.get(claims.sub)
+  if (known && known.until > Date.now()) return { user: known.user }
 
   const rows = await sql`
     SELECT id, clerk_id, email, name, role
@@ -46,5 +56,6 @@ export async function verifyClerkUser(req, sql) {
     return { error: { status: 403, code: 'not_provisioned', message: 'This account is not a Slate user' } }
   }
 
+  if (remember) remembered.set(claims.sub, { user: rows[0], until: Date.now() + REMEMBER_MS })
   return { user: rows[0] }
 }

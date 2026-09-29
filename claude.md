@@ -80,18 +80,38 @@ portal.html               # Client portal HTML shell (/portal, /portal/<token>)
   scoping, not per-user multi-tenant isolation.
 
 ### Database access
-- The browser talks to Neon **directly** via `import.meta.env.VITE_DATABASE_URL`
-  (`src/db/client.js`). Most features have no server component at all; `/api/*`
-  exists for work needing server-only secrets.
-- Because the connection string reaches the browser, server-side checks are a
-  convention rather than a security boundary. The tasks API is server-owned so
-  its rules live in one place, but it is not an access-control barrier while
-  direct DB access remains.
-- **New data goes through the server only.** Everything added from companies
-  onwards (companies, the retainer worklist, notification settings) is read
-  and written through `/api/*`, never through `src/db/client.js`, so it is
-  ready for the planned query proxy that takes the credential out of the
-  browser. That proxy must land before any client is given a portal login.
+- **The browser has no database credential.** `src/db/client.js` runs the
+  Neon driver and drizzle as before, but every query goes to `POST /api/db`
+  (`api/db.js`), which checks the caller is a Slate user (`verifyClerkUser`
+  with `remember: true`: the answer is kept for a minute per warm instance)
+  and forwards the query to Neon with `DATABASE_URL`. Neon's answer is
+  streamed back untouched, so the driver can't tell the difference. A
+  client's session or a stranger's gets 403 / 401. The driver starts from a
+  placeholder connection string (`…@database.invalid/…`) that is never sent.
+- **The proxy checks who, not what.** Any Slate user can run any query, as
+  they always could: the app builds its queries in the browser. So the rules
+  in server-owned APIs (the task board, companies, the retainer worklist)
+  hold against clients and the public, not against staff.
+- **New data still goes through its own `/api` routes**, never through
+  `src/db/client.js`: companies, the retainer worklist, notification
+  settings. The rules stay in one place, and it's the path the rest would
+  take if staff queries ever move server-side too.
+- **The build keeps the credential out** (`scripts/_credential-guard.js`, a
+  Vite plugin in `vite.config.js`). It fails when a `VITE_` variable holds a
+  connection string (Vite builds every `VITE_` variable into the public
+  JavaScript), when a Vercel build has no `DATABASE_URL`, or when any built
+  file contains `DATABASE_URL`, its password or a Neon connection string. A
+  failed build leaves the last good deployment serving.
+- **What the hop costs.** Every browser query is a function invocation, and
+  its latency is browser → Vercel function → Neon, so the function region
+  should be the Neon database's region. Vercel refuses a request body over
+  4.5 MB; the answer is streamed rather than buffered, which is how Vercel
+  lets a response go past that size.
+- Your own `app_users` row comes from the server too (`POST /api/me`, above).
+- **Rotating the credential**: reset the role's password in Neon, put the new
+  connection string in Vercel's `DATABASE_URL`, then redeploy (an env change
+  only reaches new deployments). Queries fail between the reset and the
+  redeploy, so do it at a quiet moment.
 - The browser calls Slate's own APIs through `request()` in `src/api/http.js`
   (Bearer Clerk token, errors thrown with `code` / `field` / `status`).
 
@@ -333,7 +353,8 @@ There is no sidebar. The shell is a header over the page:
 
 ```bash
 npm install          # Install dependencies
-npm run dev          # Start Vite dev server (http://localhost:5173)
+npm run dev          # Vite alone: the front end with no /api, so the app can't load.
+                     # Use `vercel dev` (with DATABASE_URL etc. in .env.local) for the app.
 npm run build        # Build for production
 npm run preview      # Preview production build
 ```
@@ -342,10 +363,9 @@ npm run preview      # Preview production build
 Required (set in `.env.local` for local development, Vercel dashboard for production):
 - `VITE_CLERK_PUBLISHABLE_KEY` - Public Clerk API key
 - `DATABASE_URL` - Neon PostgreSQL connection string (use pooled connection).
-  Server-only: every `/api/*` function and `scripts/*` read it. Never give it
-  a `VITE_` name — Vite builds those into the public JavaScript.
-- `VITE_DATABASE_URL` - the same string, read by the browser until the query
-  proxy lands (see "Database access").
+  Server-only: every `/api/*` function (the browser's queries included, via
+  `/api/db`) and `scripts/*` read it. Never give it a `VITE_` name — Vite
+  builds those into the public JavaScript, and the build refuses to run.
 - `DASHBOARD_TOKEN` - Fixed secret token gating the public office-display
   dashboard at `/dashboard/<token>` (served by `public/dashboard.html`, data
   from `/api/portal?view=dashboard`). Unset = the dashboard returns 503.
@@ -361,9 +381,9 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
   Pro plan (see "Serverless Functions"), so the schedule can be tightened.
 - `PORTAL_INVITES_ENABLED` - `true` lets superadmins invite client users to
   the portal (Portal access on a Retainers company page). Unset = invitations
-  are refused. Leave it unset until the query-proxy fix is live: the browser
-  still holds the database credential, and no client may have a login before
-  that.
+  are refused. Leave it unset until the query proxy is live **and** the
+  database password has been reset: the old one was in the public
+  JavaScript, and no client may have a login before both.
 - `FENCE_API_KEY` - Shared secret for the Offload Log ingest endpoint
   (`POST /api/offloads`). Fence sends it as `Authorization: Bearer <key>`.
   Unset = the endpoint returns 500 (so it fails closed rather than open).
@@ -1003,9 +1023,14 @@ always the source of truth and nothing is ever read back from Google.
   it has any, else the JSON on the project (`_legacy-deliverables.js`, the one
   reader of that JSON, shared with the What's due feed).
 - **Where it isn't structural** (read before relying on it):
-  - The browser still holds `VITE_DATABASE_URL`, so anyone can query the
-    database directly and none of the above is a boundary until the
-    query-proxy fix lands. Hence `PORTAL_INVITES_ENABLED`.
+  - Any Slate user can run any query through `/api/db` ("Database
+    access"), so all of the above holds against clients and the public, not
+    against staff.
+  - Who is staff is decided at first sign-in (`api/_me.js`): any signed-in
+    Clerk account in no organisation gets an `app_users` row. So Clerk's
+    sign-up settings decide who can become a Slate user, and a client removed
+    from their company's org (who then belongs to none) would be given a row
+    if they opened Slate.
   - A project link is a bearer secret with no expiry: whoever has it sees
     that project.
   - Organisation membership is trusted from Clerk's signed session token;

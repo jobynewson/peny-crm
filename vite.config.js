@@ -1,7 +1,10 @@
 import { defineConfig } from 'vite'
 import { fileURLToPath } from 'node:url'
+import { credentialGuard } from './scripts/_credential-guard.js'
 
 export default defineConfig({
+  // No database credential in anything the browser downloads, ever.
+  plugins: [credentialGuard()],
   // Ensure client-side routing works on Vercel
   build: {
     outDir: 'dist',

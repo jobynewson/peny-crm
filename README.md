@@ -12,7 +12,9 @@ Copy `.env.local` and fill in your keys:
 
 ```
 VITE_CLERK_PUBLISHABLE_KEY=pk_test_...   # Clerk → API Keys
-VITE_DATABASE_URL=postgresql://...        # Neon → Connection Details (pooled)
+CLERK_SECRET_KEY=sk_test_...             # Clerk → API Keys
+DATABASE_URL=postgresql://...             # Neon → Connection Details (pooled). Server-only:
+                                          # never VITE_, or it's in the public JavaScript
 ```
 
 ### 3. Run the database schema
@@ -21,9 +23,11 @@ In the Neon console SQL editor, run the contents of `schema.sql`.
 
 ### 4. Run locally
 ```bash
-npm run dev
+vercel dev
 ```
-Open http://localhost:5173 — you'll see the Clerk sign-in screen.
+The browser reaches the database only through `/api/db`, so it needs the
+functions as well as the front end (`npm run dev` is Vite alone). Open the URL
+it prints — you'll see the Clerk sign-in screen.
 Sign up with your email, then you're in.
 
 ### 5. Deploy to Vercel
@@ -31,7 +35,8 @@ Sign up with your email, then you're in.
 - Go to vercel.com → New Project → import your repo
 - Add environment variables in Vercel dashboard:
   - `VITE_CLERK_PUBLISHABLE_KEY`
-  - `VITE_DATABASE_URL`
+  - `CLERK_SECRET_KEY`
+  - `DATABASE_URL` (the build refuses a `VITE_` database variable)
 - Deploy
 
 ## Project structure

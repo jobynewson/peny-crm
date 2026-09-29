@@ -1,4 +1,4 @@
-import { neon } from '@neondatabase/serverless'
+import { neon, neonConfig } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
 import { eq, and, desc, inArray, isNull, sql as dsql } from 'drizzle-orm'
 import * as schema from './schema.js'
@@ -14,8 +14,22 @@ import {
   boards, board_columns, board_cards, board_recurrences,
   canvases, canvas_items, canvas_arrows,
 } from './schema.js'
+import { getAuthToken } from '../auth/clerk.js'
 
-const sql = neon(import.meta.env.VITE_DATABASE_URL)
+// The browser never holds the database credential. Every query goes to
+// /api/db (api/db.js), which checks you're a Slate user and forwards it to
+// Neon with the connection string only the server has. The driver still needs
+// a connection string of its own to start: this one names no real host
+// (.invalid never resolves) and no real password, and is never sent.
+neonConfig.fetchEndpoint = '/api/db'
+neonConfig.fetchFunction = async (url, init) => {
+  const { 'Neon-Connection-String': _placeholder, ...headers } = init.headers
+  return fetch(url, {
+    ...init,
+    headers: { ...headers, 'Content-Type': 'application/json', Authorization: `Bearer ${await getAuthToken()}` },
+  })
+}
+const sql = neon('postgresql://slate:none@database.invalid/slate')
 export const db = drizzle(sql, { schema })
 
 // ── Schema migrations ─────────────────────────────────────────────────────────
