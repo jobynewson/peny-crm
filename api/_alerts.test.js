@@ -134,3 +134,67 @@ describe('the wording', () => {
     expect(o.sentence).toContain('7 days')
   })
 })
+
+const { digestApprovalWindow, routeApprovals, approvalsSectionHtml } = await import('./_alerts.js')
+
+describe('the approvals window for the digest', () => {
+  const win = iso => { const w = digestApprovalWindow(new Date(iso)); return [w.from.toISOString(), w.to.toISOString()] }
+  it('is the previous 09:00 UTC to this one on Tuesday to Friday', () => {
+    expect(win('2026-09-29T09:00:05Z')).toEqual(['2026-09-28T09:00:00.000Z', '2026-09-29T09:00:00.000Z'])   // Tuesday
+    expect(win('2026-10-02T09:30:00Z')).toEqual(['2026-10-01T09:00:00.000Z', '2026-10-02T09:00:00.000Z'])   // Friday
+  })
+  it('covers the weekend on a Monday', () => {
+    expect(win('2026-09-28T09:00:05Z')).toEqual(['2026-09-25T09:00:00.000Z', '2026-09-28T09:00:00.000Z'])
+  })
+  it('leaves no gap and no overlap between one digest and the next', () => {
+    const fri = digestApprovalWindow(new Date('2026-10-02T09:00:30Z'))
+    const mon = digestApprovalWindow(new Date('2026-10-05T09:00:03Z'))
+    expect(mon.from.getTime()).toBe(fri.to.getTime())
+  })
+  it('a run before 09:00 reports the last full window, not one that has not ended', () => {
+    expect(win('2026-09-29T06:00:00Z')).toEqual(['2026-09-25T09:00:00.000Z', '2026-09-28T09:00:00.000Z'])
+  })
+})
+
+describe('who reads about an approval', () => {
+  const users = [
+    { id: 'ana', email: 'ana@x.test', role: 'user' }, { id: 'lee', email: 'lee@x.test', role: 'user' },
+    { id: 'boss', email: 'boss@x.test', role: 'superadmin' },
+  ]
+  const approval = over => ({ id: 'a', title: 'Reel', company: 'DMM', company_id: 'c', round: 1, responded_at: '2026-09-28T12:00:00Z', ...over })
+  it('the owner, else the company lead, else the superadmins', () => {
+    const out = routeApprovals([
+      approval({ id: '1', owner_id: 'ana', lead_id: 'lee' }),
+      approval({ id: '2', owner_id: null, lead_id: 'lee' }),
+      approval({ id: '3', owner_id: null, lead_id: null }),
+    ], users)
+    expect(Object.fromEntries(Object.entries(out).map(([k, v]) => [k, v.map(a => a.id)]))).toEqual({ ana: ['1'], lee: ['2'], boss: ['3'] })
+  })
+  it('an approval nobody can be told about is not lost silently for want of a superadmin — there is just no one', () => {
+    expect(routeApprovals([approval({})], [{ id: 'ana', email: 'ana@x.test', role: 'user' }])).toEqual({})
+  })
+})
+
+describe('the digest section', () => {
+  it('is empty when there is nothing to say', () => {
+    expect(approvalsSectionHtml([], 'https://slate.test')).toBe('')
+  })
+  it('names what was approved, for whom, and by whom, and links to the client', () => {
+    const html = approvalsSectionHtml([
+      { title: 'October reel', company: 'DMM', company_id: 'c1', round: 2, responded_at: '2026-09-27T12:00:00Z', responded_by_name: 'Dana Client', recorded: false },
+      { title: 'Stills', company: 'DMM', company_id: 'c1', round: 1, responded_at: '2026-09-28T08:00:00Z', responded_by_name: 'Ana', recorded: true },
+    ], 'https://slate.test')
+    expect(html).toContain('Approved since your last digest')
+    expect(html).toContain('October reel')
+    expect(html).toContain('round 2 · Dana Client')
+    expect(html).toContain('recorded by the team')
+    expect(html).not.toContain('Ana')     // whoever on the team recorded it is not named
+    expect(html).toContain('href="https://slate.test/#retainers/c1"')
+    expect(html).toContain('Approved Sun 27 Sep')
+  })
+  it('escapes what clients typed', () => {
+    const evil = '<img src=x onerror=alert(1)>'
+    const html = approvalsSectionHtml([{ title: evil, company: evil, company_id: 'c', round: 1, responded_at: '2026-09-27T12:00:00Z', responded_by_name: evil, recorded: false }], 'https://slate.test')
+    expect(html).not.toContain('<img')
+  })
+})

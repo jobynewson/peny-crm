@@ -333,3 +333,69 @@ export async function runTimedAlerts(sql, { now = new Date(), env = process.env 
   }
   return summary
 }
+
+// ── Approvals, for the digest ────────────────────────────────────────────────
+// An approval is not urgent: it waits for the daily digest, in an "Approved
+// since your last digest" section. The digest runs at 09:00 UTC on weekdays,
+// so the window is from the previous run to this one — three days on a Monday,
+// which covers the weekend. Windows are fixed at 09:00 UTC on both ends, so
+// nothing is listed twice and nothing falls between two digests.
+
+const DIGEST_HOUR_UTC = 9
+
+// [from, to) for the digest that runs at (or after) `now`.
+export function digestApprovalWindow(now = new Date()) {
+  const anchor = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), DIGEST_HOUR_UTC))
+  if (anchor > now) anchor.setUTCDate(anchor.getUTCDate() - 1)
+  const days = anchor.getUTCDay() === 1 ? 3 : 1
+  return { from: new Date(anchor.getTime() - days * 86400000), to: anchor }
+}
+
+export async function loadApprovals(sql, { ws, from, to }) {
+  return sql`
+    SELECT dv.id, dv.round, dv.responded_at, dv.responded_by_name, d.id AS deliverable_id, d.title, d.owner_id,
+           w.company_id, c.name AS company, c.lead_id,
+           EXISTS (SELECT 1 FROM app_users u WHERE u.clerk_id = dv.responded_by) AS recorded
+    FROM deliveries dv
+    JOIN deliverables d ON d.id = dv.deliverable_id
+    JOIN workstreams w ON w.id = d.workstream_id
+    JOIN companies c ON c.id = w.company_id
+    WHERE w.user_id = ${ws} AND dv.client_response = 'approved'
+      AND dv.responded_at >= ${from.toISOString()}::timestamptz AND dv.responded_at < ${to.toISOString()}::timestamptz
+    ORDER BY dv.responded_at`
+}
+
+// Which digest each approval goes in: the deliverable's owner's, else the
+// company lead's, else every superadmin's (the same routing as the alerts).
+// → { [app_users.id]: approval[] }
+export function routeApprovals(approvals, users) {
+  const byId = new Map(users.map(u => [u.id, u]))
+  const superadmins = users.filter(u => u.role === 'superadmin' && u.email)
+  const out = {}
+  const give = (u, a) => { (out[u.id] ||= []).push(a) }
+  for (const a of approvals) {
+    const owner = a.owner_id ? byId.get(a.owner_id) : null
+    const lead = a.lead_id ? byId.get(a.lead_id) : null
+    const { to } = resolveRecipients({ owner, lead, superadmins })
+    for (const person of to) give(person, a)
+  }
+  return out
+}
+
+// The digest section. `link` is the app's base URL.
+export function approvalsSectionHtml(items, baseUrl) {
+  if (!items.length) return ''
+  const day = d => new Date(d).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: TIME_ZONE })
+  return `
+      <h3 style="margin:24px 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:#999">Approved since your last digest</h3>
+      <table style="width:100%;border-collapse:collapse">
+        <tbody>${items.map(a => `
+          <tr>
+            <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:14px">
+              <a href="${escapeHtml(baseUrl)}/#retainers/${escapeHtml(a.company_id)}" style="color:#1a1a1a;text-decoration:none">${escapeHtml(a.title)}</a>
+              <div style="font-size:11px;color:#999;margin-top:2px">${escapeHtml(a.company)} · round ${a.round}${a.recorded ? ' · recorded by the team' : a.responded_by_name ? ` · ${escapeHtml(a.responded_by_name)}` : ''}</div>
+            </td>
+            <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#16a34a;white-space:nowrap;font-weight:500;vertical-align:top">Approved ${escapeHtml(day(a.responded_at))}</td>
+          </tr>`).join('')}</tbody>
+      </table>`
+}

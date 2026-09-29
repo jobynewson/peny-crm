@@ -5,6 +5,10 @@
 //   expense-digest — 09:00 UTC daily  — monthly expense summary (2nd-to-last working day only)
 //   task-nudge    — 14:00 UTC daily  — unacknowledged task nudge, then archives
 //                                      tasks done for ARCHIVE_AFTER_DAYS
+//   alerts        — hourly, every day — deliverables due within 48 hours and not
+//                                      in review, and client input overdue; once
+//                                      per item, 07:00-20:00 London only
+//                                      (api/_alerts.js)
 // POST ?type=leave-notify — triggered by frontend on leave request/decision
 // POST ?type=expense-submit — triggered by frontend when a user submits their
 //   expenses early ("Submit expenses now"); emails the configured recipients
@@ -17,6 +21,7 @@ import { syncLeaveRequestGoogle } from './google.js'
 import { dueFeed, dueMeta } from './_due-feed.js'
 import { workspaceId } from './_api.js'
 import { taskEmailWrap, taskCardHtml, escapeHtml, appBaseUrl } from './_task-mail.js'
+import { runTimedAlerts, digestApprovalWindow, loadApprovals, routeApprovals, approvalsSectionHtml } from './_alerts.js'
 import { ARCHIVE_AFTER_DAYS } from './_task-rules.js'
 
 export default async function handler(req, res) {
@@ -38,6 +43,26 @@ export default async function handler(req, res) {
   const authHeader = req.headers['authorization']
   if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorised' })
+  }
+
+  // ── Urgent alerts (hourly) ────────────────────────────────────────────────
+  // Before the weekend guard below: a deliverable due on Monday is worth an
+  // email on Saturday. Refuses to run at all without CRON_SECRET, unlike the
+  // other jobs here, so it can't be started by anyone who finds the URL.
+  if (req.query.type === 'alerts') {
+    if (!process.env.CRON_SECRET) {
+      console.error('[alerts] CRON_SECRET is not set, so the alerts job will not run')
+      return res.status(503).json({ error: 'CRON_SECRET is not set' })
+    }
+    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'Unauthorised' })
+    if (!mailConfigured()) return res.status(200).json({ ok: true, skipped: 'email not configured' })
+    try {
+      const result = await runTimedAlerts(neon(process.env.DATABASE_URL))
+      return res.status(200).json({ ok: true, ...result })
+    } catch (err) {
+      console.error('[alerts] run failed:', err)
+      return res.status(500).json({ ok: false, error: 'alerts run failed' })
+    }
   }
 
   // ── Unacknowledged task nudge (daily, 14:00 UTC) ──────────────────────────
@@ -129,13 +154,17 @@ export default async function handler(req, res) {
   if (type === 'deliverables') {
     const ws = await workspaceId(sql)
     const { items } = await dueFeed(sql, { ws, days: 3 })
-    const users = await sql`SELECT id, clerk_id, name, email FROM app_users`
+    const users = await sql`SELECT id, clerk_id, name, email, role FROM app_users`
     const userById = Object.fromEntries(users.map(u => [u.id, u]))
 
     const byOwner = {}
     for (const item of items) if (item.owner) (byOwner[item.owner.id] ||= []).push(item)
     const unackByAssignee = await unacknowledgedByAssignee(sql)
-    const recipients = new Set([...Object.keys(byOwner), ...Object.keys(unackByAssignee)])
+    // Approvals since the last digest ride along (a Monday covers the weekend).
+    // Someone whose only news is an approval still gets the email.
+    const approvalWindow = digestApprovalWindow()
+    const approvalsByPerson = routeApprovals(await loadApprovals(sql, { ws, ...approvalWindow }), users)
+    const recipients = new Set([...Object.keys(byOwner), ...Object.keys(unackByAssignee), ...Object.keys(approvalsByPerson)])
 
     const when = n => n < 0 ? `${Math.abs(n)}d overdue` : n === 0 ? 'due today' : `${n}d left`
     const colour = n => n < 0 ? '#ef4444' : n === 0 ? '#f59e0b' : '#3b82f6'
@@ -156,11 +185,14 @@ export default async function handler(req, res) {
     for (const ownerId of recipients) {
       const mine = byOwner[ownerId] ?? []
       const unack = unackByAssignee[ownerId] ?? []
+      const approved = approvalsByPerson[ownerId] ?? []
       const user = userById[ownerId]
       if (!user?.email) continue
       const overdueCount = mine.filter(i => i.overdue).length
       const plural = n => (n === 1 ? '' : 's')
-      const subject = !mine.length
+      const subject = !mine.length && !unack.length
+        ? `✅ ${approved.length} approved since your last digest`
+        : !mine.length
         ? `👀 ${unack.length} task${plural(unack.length)} waiting on you`
         : overdueCount > 0
         ? `⚠ ${overdueCount} overdue — ${mine.length} thing${plural(mine.length)} need attention`
@@ -168,8 +200,10 @@ export default async function handler(req, res) {
       const name = user.name || user.email.split('@')[0]
       const greeting = mine.length
         ? `Hi ${escapeHtml(name)}, here's what's due for you:`
-        : `Hi ${escapeHtml(name)}, nothing is due — but some tasks are still waiting for you to acknowledge them:`
-      const html = emailWrap("What's due", greeting, unacknowledgedSectionHtml(unack) + (mine.length ? dueTable(mine) : ''))
+        : unack.length
+        ? `Hi ${escapeHtml(name)}, nothing is due — but some tasks are still waiting for you to acknowledge them:`
+        : `Hi ${escapeHtml(name)}, nothing is due. Here's what clients have approved:`
+      const html = emailWrap("What's due", greeting, unacknowledgedSectionHtml(unack) + (mine.length ? dueTable(mine) : '') + approvalsSectionHtml(approved, baseUrl))
       const [outcome] = await notify(sql, { kind: 'due_digest', to: { email: user.email, clerk_id: user.clerk_id, name: user.name }, subject, html })
       record(outcome, { type: 'due', sent: mine.length, unacknowledged: unack.length })
     }
