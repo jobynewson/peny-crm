@@ -27,6 +27,8 @@ import {
   touchesDue, isUuid,
 } from './_retainer-rules.js'
 import { staffScope, respondToDelivery } from './_worklist.js'
+import { REQUEST_ROUTES } from './_requests.js'
+import { sendOwnerAssigned } from './_alerts.js'
 
 const ID = `(?<id>${UUID})`
 export const ROUTES = [
@@ -42,7 +44,19 @@ export const ROUTES = [
   { method: 'DELETE', pattern: new RegExp(`^retainers/deliveries/${ID}$`),                handler: unsendDelivery,    access: 'editor' },
   { method: 'POST',   pattern: new RegExp(`^retainers/deliveries/${ID}/preview$`),        handler: fillPreview,       access: 'editor' },
   { method: 'POST',   pattern: new RegExp(`^retainers/deliveries/${ID}/response$`),       handler: recordResponse,    access: 'editor' },
+  // Client requests: triage (_requests.js).
+  ...REQUEST_ROUTES,
 ]
+
+// Whoever a deliverable is given to hears about it (the "Tasks assigned to
+// you" switch). A failed email never fails the change.
+async function tellOwner(sql, deliverableId, user) {
+  try {
+    await sendOwnerAssigned(sql, { deliverableId, assignedBy: user })
+  } catch (err) {
+    console.error('[retainers] owner email failed:', err?.message)
+  }
+}
 
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k)
 const cleanText = v => (typeof v === 'string' && v.trim() ? v.trim() : null)
@@ -334,7 +348,7 @@ async function deleteWorkstream(req, res, { sql, params }) {
 //   due_label?, cadence?, status?, waiting_note?, client_visible?,
 //   internal_notes? } → added at the end of the workstream. Hidden from the
 // client unless client_visible is sent as true.
-async function createDeliverable(req, res, { sql }) {
+async function createDeliverable(req, res, { sql, user }) {
   const body = readBody(req)
   if (!body) return invalid(res, 'body', 'Request body is not valid JSON')
   if (!isUuid(body.workstream_id)) return invalid(res, 'workstream_id', 'Choose the workstream')
@@ -366,6 +380,7 @@ async function createDeliverable(req, res, { sql }) {
            COALESCE((SELECT max(sort_order) + 1 FROM deliverables WHERE workstream_id = ${workstream.id}), 0)
     RETURNING id
   `
+  if (body.owner_id) await tellOwner(sql, row.id, user)
   return res.status(201).json({ deliverable: await loadDeliverable(sql, ws, row.id) })
 }
 
@@ -374,7 +389,7 @@ async function createDeliverable(req, res, { sql }) {
 // only what's sent is written, so two people changing different things don't
 // undo each other. A status change follows statusPatch (the waiting clock) and
 // is refused with 409 if the status moved on meanwhile.
-async function updateDeliverable(req, res, { sql, params }) {
+async function updateDeliverable(req, res, { sql, user, params }) {
   const body = readBody(req)
   if (!body) return invalid(res, 'body', 'Request body is not valid JSON')
   const userIds = (await sql`SELECT id FROM app_users`).map(u => u.id)
@@ -440,6 +455,7 @@ async function updateDeliverable(req, res, { sql, params }) {
     RETURNING id
   `
   if (!row) return fail(res, 409, 'conflict', 'Someone changed this while you were editing — refresh and try again')
+  if (has(body, 'owner_id') && body.owner_id && body.owner_id !== current.owner_id) await tellOwner(sql, current.id, user)
   return res.status(200).json({ deliverable: await loadDeliverable(sql, ws, current.id) })
 }
 

@@ -4,7 +4,7 @@ import {
   validateResponse, normaliseDeliveryUrl, isFrameIoUrl, normaliseDue, dueDisplay, isOverdue,
   validateWorkstreamInput, validateDeliverableInput, touchesDue,
   requestLabel, validateRequestInput, validateDecline, validateReply, MAX_OPEN_REQUESTS,
-  boardColumn, boardChip, isWithClient, statusAfterBoardDrag, DRAG_REFUSALS, BOARD_COLUMNS,
+  boardColumn, boardChip, isWithClient, statusAfterBoardDrag, DRAG_REFUSALS, BOARD_COLUMNS, validateAccept,
 } from './_retainer-rules.js'
 
 const today = '2026-09-28'
@@ -226,5 +226,29 @@ describe('the task board mapping', () => {
   it('an unknown column is refused, not written', () => {
     expect(statusAfterBoardDrag({ from: 'planned', column: 'nope' }).status).toBeUndefined()
     expect(BOARD_COLUMNS).toEqual(['todo', 'doing', 'done'])
+  })
+})
+
+describe('accepting a request', () => {
+  const users = ['11111111-1111-4111-8111-111111111111']
+  const ws = '22222222-2222-4222-8222-222222222222'
+  const ok = { workstream_id: ws, owner_id: users[0], due_date: '2026-10-09' }
+
+  it('takes an existing workstream or a new one, an owner and a date', () => {
+    expect(validateAccept(ok, { userIds: users })).toBeNull()
+    expect(validateAccept({ ...ok, workstream_id: undefined, new_workstream_title: 'Launch extras' }, { userIds: users })).toBeNull()
+    expect(validateAccept({ ...ok, title: 'A better title' }, { userIds: users })).toBeNull()
+  })
+  it('never lets one sit ownerless or undated', () => {
+    expect(validateAccept({ ...ok, owner_id: null }, { userIds: users })).toMatchObject({ field: 'owner_id' })
+    expect(validateAccept({ ...ok, owner_id: '33333333-3333-4333-8333-333333333333' }, { userIds: users })).toMatchObject({ field: 'owner_id' })
+    expect(validateAccept({ ...ok, due_date: null }, { userIds: users })).toMatchObject({ field: 'due_date' })
+    expect(validateAccept({ ...ok, due_date: '2026-02-30' }, { userIds: users })).toMatchObject({ field: 'due_date' })
+  })
+  it('needs somewhere to put it, and not two places', () => {
+    expect(validateAccept({ ...ok, workstream_id: null }, { userIds: users })).toMatchObject({ field: 'workstream_id' })
+    expect(validateAccept({ ...ok, workstream_id: 'nope' }, { userIds: users })).toMatchObject({ field: 'workstream_id' })
+    expect(validateAccept({ ...ok, new_workstream_title: 'Both' }, { userIds: users })).toMatchObject({ field: 'workstream_id' })
+    expect(validateAccept({ ...ok, workstream_id: null, new_workstream_title: '   ' }, { userIds: users })).toMatchObject({ field: 'workstream_id' })
   })
 })

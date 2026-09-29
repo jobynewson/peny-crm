@@ -257,6 +257,25 @@ export function validateDecline(body) {
   return null
 }
 
+// Accepting a request is where it gets its owner and date, so both are
+// required: nothing accepted sits ownerless or undated. The work goes in an
+// existing workstream of the request's company, or in a new one made in the
+// same step. null if fine, else { field, message }.
+export function validateAccept(body, { userIds = [] } = {}) {
+  if (!body || typeof body !== 'object') return { field: 'body', message: 'Request body is not valid JSON' }
+  const creating = typeof body.new_workstream_title === 'string' && body.new_workstream_title.trim() !== ''
+  if (creating && body.workstream_id) return { field: 'workstream_id', message: 'Pick a workstream or make a new one, not both' }
+  if (creating && body.new_workstream_title.trim().length > TITLE_MAX) return { field: 'new_workstream_title', message: 'That title is too long' }
+  if (!creating && !isUuid(body.workstream_id)) return { field: 'workstream_id', message: 'Choose the workstream, or make a new one' }
+  if (!isUuid(body.owner_id) || !userIds.includes(body.owner_id)) return { field: 'owner_id', message: 'Choose who will do it' }
+  if (!isDateString(body.due_date)) return { field: 'due_date', message: 'Give it a date' }
+  if (body.title != null && body.title !== '') {
+    if (typeof body.title !== 'string' || !body.title.trim()) return { field: 'title', message: 'Give the deliverable a title' }
+    if (body.title.trim().length > TITLE_MAX) return { field: 'title', message: 'That title is too long' }
+  }
+  return null
+}
+
 // A client's reply on a "waiting on you" item: short, not a thread. null if fine.
 export const REPLY_MAX = 1000
 export function validateReply(body) {

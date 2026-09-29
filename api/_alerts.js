@@ -219,6 +219,33 @@ export async function alertClientReply(sql, { deliverableId, reply, by }) {
   return send(sql, { kind: 'alert_client_reply', ownerId: d.owner_id, companyId: d.company_id, email: clientReplyEmail({ d, reply, by }) })
 }
 
+// Not an alert but the same path: telling someone a deliverable is now theirs
+// (accepted from a request, created for them, or handed over). It uses the
+// "Tasks assigned to you" switch. Nothing is sent to the person who did the
+// assigning, or when the deliverable has no owner.
+export async function sendOwnerAssigned(sql, { deliverableId, assignedBy }) {
+  const d = await loadDeliverableContext(sql, deliverableId)
+  if (!d?.owner_id || d.owner_id === assignedBy?.id) return []
+  const [owner] = await sql`SELECT id, clerk_id, name, email FROM app_users WHERE id = ${d.owner_id}`
+  if (!owner?.email) return []
+  const who = assignedBy?.name || assignedBy?.email || 'Someone'
+  const email = {
+    subject: `New deliverable: ${d.title}`,
+    title: 'A deliverable for you',
+    subtitle: `${d.company} · ${d.workstream}`,
+    sentence: `${escapeHtml(who)} has given you a deliverable.`,
+    body: card(d.title, [d.due_date && `Due ${formatDay(d.due_date, today())}`]),
+    href: retainersLink(d.company_id),
+    linkLabel: 'Open the deliverable',
+  }
+  const [r] = await notify(sql, {
+    kind: 'task_assigned', to: { email: owner.email, clerk_id: owner.clerk_id, name: owner.name },
+    subject: email.subject,
+    html: wrap({ title: email.title, subtitle: email.subtitle, greeting: `${hello(owner)}${email.sentence}`, bodyHtml: email.body, href: email.href, linkLabel: email.linkLabel }),
+  })
+  return [r]
+}
+
 // ── The hourly run ───────────────────────────────────────────────────────────
 
 const STATUS_LABEL = {

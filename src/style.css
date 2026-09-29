@@ -1223,6 +1223,16 @@ kbd { font-family: var(--font-mono); }
 .db-due-pill--overdue { background: var(--danger-subtle); color: var(--danger); }
 
 /* ── Projects › Retainers (src/views/retainers.js) ── */
+.rq-tabs { margin-bottom: 14px; }
+.rq-count { margin-left: 4px; padding: 0 6px; border-radius: var(--radius-pill); background: var(--accent-soft); color: var(--accent-text); font-size: 11px; font-weight: 600; }
+.rq-screen { display: flex; flex-direction: column; gap: 16px; max-width: 640px; }
+.rq-card { padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.rq-card p { margin: 0 0 10px; font-size: 14px; line-height: 1.5; }
+.rq-card p:last-child { margin-bottom: 0; }
+.rq-h { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+.rq-detail { white-space: pre-wrap; overflow-wrap: anywhere; }
+.rq-detail a, .rt-summary a { color: var(--accent-text); }
+.rq-card .tl-form { margin-top: 12px; }
 .rt-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; max-width: 520px; padding: 32px 0; font-size: 14px; color: var(--text-muted); }
 .rt-empty p { margin: 0; line-height: 1.5; }
 .rt-error { color: var(--danger); }

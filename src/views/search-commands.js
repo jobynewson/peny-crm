@@ -31,6 +31,8 @@ export function searchCommands(app) {
       keywords: 'boards canvases kanban storyboard moodboard plans' },
     p.projects_view && { label: 'Retainers', hint: 'Projects › Retainers', icon: 'folder', run: go('retainers'),
       keywords: 'retainer clients worklist deliverables rounds approvals review frame.io workstreams send' },
+    p.projects_view && { label: 'Requests', hint: 'Projects › Requests', icon: 'folder', run: go('requests'),
+      keywords: 'client requests inbox triage accept decline asks incoming' },
     p.contacts_view && { label: 'Contacts', hint: 'Clients and crew', icon: 'person', run: go('contacts'),
       keywords: 'clients people crm subcontractors freelancers crew leads' },
     { label: 'Marketing', hint: 'Tools', icon: 'megaphone', run: go('marketing'),
