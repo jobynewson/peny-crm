@@ -5,6 +5,7 @@ import {
   validateWorkstreamInput, validateDeliverableInput, touchesDue,
   requestLabel, validateRequestInput, validateDecline, validateReply, MAX_OPEN_REQUESTS,
   boardColumn, boardChip, isWithClient, statusAfterBoardDrag, DRAG_REFUSALS, BOARD_COLUMNS, validateAccept,
+  boardShows, boardCard, compareBoardCards, BOARD_HORIZON_DAYS,
 } from './_retainer-rules.js'
 
 const today = '2026-09-28'
@@ -250,5 +251,58 @@ describe('accepting a request', () => {
     expect(validateAccept({ ...ok, workstream_id: 'nope' }, { userIds: users })).toMatchObject({ field: 'workstream_id' })
     expect(validateAccept({ ...ok, new_workstream_title: 'Both' }, { userIds: users })).toMatchObject({ field: 'workstream_id' })
     expect(validateAccept({ ...ok, workstream_id: null, new_workstream_title: '   ' }, { userIds: users })).toMatchObject({ field: 'workstream_id' })
+  })
+})
+
+describe('which deliverables have a board card', () => {
+  const today = '2026-09-29'
+  const d = over => ({ id: 'd', title: 'Reel', status: 'planned', owner_id: 'u1', due_kind: 'exact', due_date: '2026-10-05', company: 'DMM', company_id: 'c1', workstream: 'Monthly', ...over })
+
+  it('shows everything that is started', () => {
+    for (const status of ['in_progress', 'waiting_on_client', 'in_review', 'changes_requested']) {
+      expect(boardShows(d({ status, due_date: '2027-01-01' }), today), status).toBe(true)
+    }
+  })
+  it('shows an owned, planned deliverable once it is within four weeks, or has no date at all', () => {
+    expect(boardShows(d({ due_date: '2026-10-27' }), today)).toBe(true)     // day 28
+    expect(boardShows(d({ due_date: '2026-10-28' }), today)).toBe(false)    // day 29: a dated plan
+    expect(boardShows(d({ due_date: null }), today)).toBe(true)             // nothing else would show it
+    expect(boardShows(d({ due_date: '2026-09-01' }), today)).toBe(true)     // late
+    expect(BOARD_HORIZON_DAYS).toBe(28)
+  })
+  it('puts every unowned open deliverable in the tray, whatever its date or status', () => {
+    for (const due_date of [null, '2026-10-05', '2028-01-01']) {
+      for (const status of ['planned', 'in_progress', 'in_review', 'waiting_on_client', 'changes_requested']) {
+        expect(boardShows(d({ owner_id: null, due_date, status }), today), `${status} ${due_date}`).toBe(true)
+        expect(boardCard(d({ owner_id: null, due_date, status }), today).in_tray).toBe(true)
+      }
+    }
+  })
+  it('an approved one is a card only if someone owns it, and is not in the tray', () => {
+    expect(boardShows(d({ status: 'approved' }), today)).toBe(true)
+    expect(boardShows(d({ status: 'approved', owner_id: null }), today)).toBe(false)
+    expect(boardCard(d({ status: 'approved' }), today).in_tray).toBe(false)
+  })
+  it('nothing is invisible: every open deliverable is on the board, or dated, owned and further out than four weeks', () => {
+    const rows = []
+    for (const owner_id of [null, 'u1']) for (const status of DELIVERABLE_STATUSES.filter(s => s !== 'approved')) {
+      for (const due_date of [null, '2026-09-01', '2026-10-05', '2026-11-30']) rows.push(d({ owner_id, status, due_date }))
+    }
+    for (const r of rows.filter(r => !boardShows(r, today))) {
+      expect([r.owner_id, r.status, !!r.due_date, r.due_date > '2026-10-27']).toEqual(['u1', 'planned', true, true])
+    }
+  })
+  it('the card carries the column, muting, chip, due text and a link to the Retainers page', () => {
+    const c = boardCard(d({ status: 'in_review', round: 2, due_date: '2026-09-27' }), today)
+    expect(c).toMatchObject({
+      kind: 'deliverable', column: 'doing', muted: true, chip: { label: 'With client · round 2' },
+      overdue: true, days_late: 2, link: '#retainers/c1', company: 'DMM', workstream: 'Monthly', in_tray: false,
+    })
+    expect(boardCard(d({ due_date: null }), today)).toMatchObject({ undated: true, due_display: 'No date', overdue: false, days_late: null })
+  })
+  it('sorts by deadline with undated last', () => {
+    const cards = [d({ id: 'c', title: 'C', due_date: null }), d({ id: 'b', title: 'B', due_date: '2026-10-05' }), d({ id: 'a', title: 'A', due_date: '2026-09-01' })]
+      .map(x => boardCard(x, today)).sort(compareBoardCards)
+    expect(cards.map(c => c.id)).toEqual(['a', 'b', 'c'])
   })
 })

@@ -93,6 +93,7 @@ export class TasksView {
   constructor(app) {
     this.app = app
     this.tasks       = []
+    this.cards       = []      // deliverables on the board (read-only copies of the deliverables table)
     this.serverTime  = null
     this.loaded      = false
     this.error       = null
@@ -111,6 +112,7 @@ export class TasksView {
     this._writes    = 0        // merges pause while a write is in flight
     this._writeSeq  = 0        // bumped by every write, so a poll can tell one overlapped it
     this._dragId    = null
+    this._dragCardId = null
     this._mq        = null
 
     this.filters = this._loadFilters()
@@ -163,7 +165,28 @@ export class TasksView {
       console.error('Tasks load failed:', err)
       this.error = err.message
     }
+    await this._loadCards()
     this.loaded = true
+  }
+
+  // The deliverable cards. Never fatal: if they can't load the board is still
+  // the task board, and the next poll tries again.
+  async _loadCards() {
+    try {
+      this.cards = await api.listBoardCards()
+      this.cardsError = null
+    } catch (err) {
+      console.warn('Deliverable cards failed to load:', err.message)
+      this.cardsError = err.message
+    }
+  }
+
+  // A poll's fresh cards: true when they differ from what is on screen.
+  async _pollCards() {
+    if (this._dragCardId || this._dragId) return false
+    const before = JSON.stringify(this.cards)
+    await this._loadCards()
+    return JSON.stringify(this.cards) !== before
   }
 
   // Merge by id — never wholesale-replace, or an in-flight drag gets clobbered.
@@ -275,6 +298,8 @@ export class TasksView {
         }
       }
 
+      if (seq === this._writeSeq && this._writes === 0 && await this._pollCards()) this._refreshBoard()
+
       if (this._failures >= FAIL_THRESHOLD) { this._failures = 0; this.startPolling() }
       else this._failures = 0
     } catch (err) {
@@ -315,6 +340,25 @@ export class TasksView {
       .filter(t => t.status === status)
       .filter(t => !(status === 'todo' && !t.assignee_id))   // unassigned live in the tray
       .sort((a, b) => (a.position - b.position) || (new Date(a.created_at) - new Date(b.created_at)))
+  }
+
+  // Deliverable cards obey the same filters, by owner and project.
+  visibleCards() {
+    const me = this.me()
+    return this.cards.filter(c => {
+      if (this.filters.mine && c.owner_id !== me) return false
+      if (this.filters.person && c.owner_id !== this.filters.person) return false
+      if (this.filters.project && c.project_id !== this.filters.project) return false
+      return true
+    })
+  }
+
+  columnCards(column) {
+    return this.visibleCards().filter(c => c.column === column && !c.in_tray)
+  }
+
+  trayCards() {
+    return this.visibleCards().filter(c => c.in_tray)
   }
 
   unassignedTasks() {
@@ -438,27 +482,32 @@ export class TasksView {
 
   _renderDesktop(mc) {
     const unassigned = this.unassignedTasks()
+    const trayCards = this.trayCards()
+    const trayCount = unassigned.length + trayCards.length
     mc.innerHTML = `
       <div class="tk-wrap">
         ${this._quickAddHtml()}
-        <div class="tk-tray ${unassigned.length ? '' : 'tk-tray--empty'}" data-tray="1">
-          <div class="tk-tray-label">Unassigned${unassigned.length ? ` · ${unassigned.length}` : ''}</div>
+        <div class="tk-tray ${trayCount ? '' : 'tk-tray--empty'}" data-tray="1">
+          <div class="tk-tray-label">Unassigned${trayCount ? ` · ${trayCount}` : ''}</div>
           <div class="tk-tray-body" data-drop-tray="1">
-            ${unassigned.length
-              ? unassigned.map(t => this._cardHtml(t, true)).join('')
+            ${trayCount
+              ? trayCards.map(c => this._deliverableCardHtml(c, true)).join('') + unassigned.map(t => this._cardHtml(t, true)).join('')
               : `<div class="tk-tray-empty">Nothing waiting to be picked up.</div>`}
           </div>
         </div>
+        ${this.cardsError ? `<p class="tk-col-note">Deliverables couldn't be loaded just now, so only tasks are shown here.</p>` : ''}
         <div class="tk-cols">
           ${COLUMNS.map(col => {
             const items = this.columnTasks(col.id)
+            const cards = this.columnCards(col.id)
             return `
               <div class="tk-col">
                 <div class="tk-col-head">
                   <span>${col.label}</span>
-                  <span class="kanban-count">${items.length}</span>
+                  <span class="kanban-count">${items.length + cards.length}</span>
                 </div>
                 <div class="tk-col-body" data-drop-col="${col.id}">
+                  ${cards.map(c => this._deliverableCardHtml(c)).join('')}
                   ${items.map(t => this._cardHtml(t)).join('')}
                 </div>
                 ${col.id === 'done' ? `<p class="tk-col-note">Finished tasks leave the board after ${ARCHIVE_AFTER_DAYS} days.</p>` : ''}
@@ -532,11 +581,40 @@ export class TasksView {
       </div>`
   }
 
+  // A deliverable's card: the same record as on the Retainers page, drawn as a
+  // card. It says which client and workstream, and — for the statuses that are
+  // the client's move — where it really is. Clicking opens the Retainers page
+  // rather than a second editor; there is no acknowledgement, no comments.
+  _deliverableCardHtml(card, inTray = false) {
+    const owner = this.userById(card.owner_id)
+    const due = card.undated
+      ? { text: 'No date', undated: true }
+      : { text: card.overdue ? `${card.days_late}d overdue` : card.due_display, overdue: card.overdue }
+    return `
+      <div class="tk-card tk-card--deliverable ${card.muted ? 'tk-card--muted' : ''}" data-card-id="${esc(card.id)}" data-card-link="${esc(card.link)}" data-in-tray="${inTray ? '1' : ''}" draggable="true" title="Opens ${esc(card.company)}'s worklist">
+        <div class="tk-card-title">${esc(card.title)}</div>
+        <div class="tk-card-project">${esc(card.company)} · ${esc(card.workstream)}</div>
+        <div class="tk-card-meta">
+          <span class="tk-pill tk-pill--deliverable">Deliverable</span>
+          ${card.chip ? `<span class="tk-chip-status tk-chip-status--${esc(card.chip.key)}">${esc(card.chip.label)}</span>` : ''}
+          <span class="tk-due ${due.overdue ? 'tk-due--over' : due.undated ? 'tk-due--undated' : ''}">${esc(due.text)}</span>
+          <div style="flex:1"></div>
+          ${owner ? `<span class="tk-avatar" title="${esc(owner.name || owner.email)}">${esc(initials(owner))}</span>` : ''}
+        </div>
+      </div>`
+  }
+
   _bindCards(mc) {
     mc.querySelectorAll('[data-task-id]').forEach(el => {
       el.addEventListener('click', e => {
         if (e.target.closest('button')) return
         this.openDetail(el.dataset.taskId)
+      })
+    })
+    mc.querySelectorAll('[data-card-link]').forEach(el => {
+      el.addEventListener('click', e => {
+        if (e.target.closest('button')) return
+        this.app.openLink(el.dataset.cardLink)
       })
     })
   }
@@ -567,6 +645,9 @@ export class TasksView {
         clear(); card.classList.add('tk-card--over')
       })
       card.addEventListener('drop', e => {
+        // A deliverable dropped on a task lands in that task's column: let the
+        // column's own handler take it.
+        if (this._dragCardId) return
         e.preventDefault(); e.stopPropagation(); clear()
         if (!this._dragId || card.dataset.taskId === this._dragId) return
         const col = card.closest('[data-drop-col]')
@@ -574,14 +655,28 @@ export class TasksView {
       })
     })
 
+    // Deliverable cards drag too — but the server decides what a drag does.
+    mc.querySelectorAll('.tk-card[data-card-id]').forEach(card => {
+      card.addEventListener('dragstart', e => {
+        this._dragCardId = card.dataset.cardId
+        e.dataTransfer.effectAllowed = 'move'
+        e.dataTransfer.setData('text/plain', card.dataset.cardId)
+        setTimeout(() => card.classList.add('tk-card--dragging'), 0)
+      })
+      card.addEventListener('dragend', () => {
+        card.classList.remove('tk-card--dragging'); clear(); this._dragCardId = null
+      })
+    })
+
     mc.querySelectorAll('[data-drop-col]').forEach(zone => {
       zone.addEventListener('dragover', e => {
-        if (!this._dragId) return
+        if (!this._dragId && !this._dragCardId) return
         e.preventDefault(); clear(); zone.classList.add('tk-drop--over')
       })
       zone.addEventListener('drop', e => {
         e.preventDefault(); clear()
-        if (this._dragId) this._moveTask(this._dragId, zone.dataset.dropCol, null)
+        if (this._dragCardId) this._moveCard(this._dragCardId, zone.dataset.dropCol)
+        else if (this._dragId) this._moveTask(this._dragId, zone.dataset.dropCol, null)
       })
     })
   }
@@ -625,6 +720,55 @@ export class TasksView {
     }
   }
 
+  // A deliverable card dropped in a column. Nothing moves until the server has
+  // answered (it owns the mapping), so a refused drag simply doesn't happen —
+  // and says why, where it can't be missed.
+  async _moveCard(cardId, column) {
+    const card = this.cards.find(c => c.id === cardId)
+    if (!card) return
+    const el = this._mc?.querySelector(`[data-card-id="${CSS.escape(cardId)}"]`)
+    el?.classList.add('tk-card--saving')
+    try {
+      const { card: fresh } = await this._write(() => api.moveBoardCard(cardId, column))
+      Object.assign(card, fresh)
+      this._refreshBoard()
+    } catch (err) {
+      el?.classList.remove('tk-card--saving')
+      if (err.code === 'board_refused') {
+        el?.classList.add('tk-card--refused')
+        this._boardNotice(err.message, card.link)
+        return
+      }
+      this.app.toast(err.message || 'Could not move that')
+      if (err.status === 409 || err.status === 404) { await this._loadCards(); this._refreshBoard() }
+    }
+  }
+
+  // The board explaining itself. Not a toast: it stays until dismissed, sits
+  // where the thumb is on a phone, and offers the place to go instead.
+  _boardNotice(message, link) {
+    document.getElementById('tk-notice')?.remove()
+    const host = document.createElement('div')
+    host.id = 'tk-notice'
+    host.className = 'tk-notice'
+    host.setAttribute('role', 'alertdialog')
+    host.setAttribute('aria-live', 'assertive')
+    host.setAttribute('aria-label', 'The board can’t do that')
+    host.innerHTML = `
+      <p class="tk-notice-text">${esc(message)}</p>
+      <div class="tk-notice-actions">
+        <button type="button" class="btn-primary" data-notice-open>Open the Retainers page</button>
+        <button type="button" class="btn-secondary" data-notice-ok>Got it</button>
+      </div>`
+    const close = () => { host.remove(); document.removeEventListener('keydown', onKey); this._refreshBoard() }
+    const onKey = e => { if (e.key === 'Escape') close() }
+    host.querySelector('[data-notice-ok]').addEventListener('click', close)
+    host.querySelector('[data-notice-open]').addEventListener('click', () => { close(); this.app.openLink(link) })
+    document.addEventListener('keydown', onKey)
+    document.body.appendChild(host)
+    host.querySelector('[data-notice-ok]').focus()
+  }
+
   // ── Mobile shell ───────────────────────────────────────────────────────────
   // No columns, no horizontal scroll. One vertical list of MY tasks, grouped so
   // the thing that needs a reply is unmissable at the top.
@@ -645,11 +789,15 @@ export class TasksView {
       return new Date(a.due_at) - new Date(b.due_at)
     }
 
+    // My deliverables sit above my tasks in each group, in the server's order.
+    const mineCards = this.cards.filter(c => c.owner_id === me)
+    const withCards = (column, tasks) => [...mineCards.filter(c => c.column === column), ...tasks]
+
     return [
       { id: 'needs', label: 'Needs a reply', items: needsReply.sort(byDue) },
-      { id: 'doing', label: 'Doing',         items: acked.filter(t => t.status === 'doing').sort(byDue) },
-      { id: 'todo',  label: 'To do',         items: acked.filter(t => t.status === 'todo').sort(byDue) },
-      { id: 'done',  label: 'Done',          items: acked.filter(t => t.status === 'done').sort(byDue), collapsed: true },
+      { id: 'doing', label: 'Doing',         items: withCards('doing', acked.filter(t => t.status === 'doing').sort(byDue)) },
+      { id: 'todo',  label: 'To do',         items: withCards('todo', acked.filter(t => t.status === 'todo').sort(byDue)) },
+      { id: 'done',  label: 'Done',          items: withCards('done', acked.filter(t => t.status === 'done').sort(byDue)), collapsed: true },
     ]
   }
 
@@ -667,14 +815,14 @@ export class TasksView {
             <div class="tk-m-group-head ${g.id === 'needs' ? 'tk-m-group-head--alert' : ''}">
               ${esc(g.label)} <span class="kanban-count">${g.items.length}</span>
             </div>
-            ${g.items.map(t => this._mobileRowHtml(t)).join('')}
+            ${g.items.map(t => t.kind === 'deliverable' ? this._mobileCardHtml(t) : this._mobileRowHtml(t)).join('')}
           </div>`).join('')}
         ${done.items.length ? `
           <div class="tk-m-group">
             <button class="tk-m-disclosure" id="tk-m-done-toggle" aria-expanded="${this.doneOpen}">
               ${this.doneOpen ? '▾' : '▸'} Done <span class="kanban-count">${done.items.length}</span>
             </button>
-            ${this.doneOpen ? done.items.map(t => this._mobileRowHtml(t)).join('') + `<p class="tk-col-note">Finished tasks leave the board after ${ARCHIVE_AFTER_DAYS} days.</p>` : ''}
+            ${this.doneOpen ? done.items.map(t => t.kind === 'deliverable' ? this._mobileCardHtml(t) : this._mobileRowHtml(t)).join('') + `<p class="tk-col-note">Finished tasks leave the board after ${ARCHIVE_AFTER_DAYS} days.</p>` : ''}
           </div>` : ''}
         <button class="tk-m-shell-toggle" id="tk-shell-toggle">Desktop board</button>
       </div>`
@@ -690,6 +838,9 @@ export class TasksView {
         this.openDetail(el.dataset.taskId)
       })
     })
+    mc.querySelectorAll('[data-card-link]').forEach(el => {
+      el.addEventListener('click', () => this.app.openLink(el.dataset.cardLink))
+    })
     // "Got it" is inline on the row — one tap, no navigation.
     mc.querySelectorAll('[data-ack-id]').forEach(btn => {
       btn.addEventListener('click', async e => {
@@ -697,6 +848,23 @@ export class TasksView {
         await this._acknowledge(btn.dataset.ackId)
       })
     })
+  }
+
+  // A deliverable on the phone list: a row that opens the Retainers page, where
+  // the one-tap status lives. Nothing to drag, so nothing to refuse.
+  _mobileCardHtml(card) {
+    const meta = [
+      esc(card.company),
+      card.chip ? esc(card.chip.label) : null,
+      card.undated ? 'No date' : card.overdue ? `${card.days_late}d overdue` : esc(card.due_display),
+    ].filter(Boolean).join(' · ')
+    return `
+      <div class="tk-m-row tk-m-row--deliverable ${card.muted ? 'tk-m-row--muted' : ''}" role="link" tabindex="0" data-card-link="${esc(card.link)}">
+        <div class="tk-m-row-main">
+          <div class="tk-m-row-title">${esc(card.title)}</div>
+          <div class="tk-m-row-meta ${card.overdue ? 'tk-m-row-meta--over' : ''}">${meta}</div>
+        </div>
+      </div>`
   }
 
   _mobileRowHtml(task) {

@@ -1077,6 +1077,55 @@ always the source of truth and nothing is ever read back from Google.
   `util.js` holds helpers, `portal.css` the styles (Slate's tokens and fonts,
   so both themes; phone first, 44px targets).
 
+### Stage 2: client requests, triage, alerts, Approve links, board cards
+
+Migration `drizzle/0036` (also in `runMigrations()`): `companies.lead_id`
+(ON DELETE RESTRICT: staff are removed through the query proxy, so the database
+is the guard), `requests` decision columns, `deliverables.client_reply`,
+`alert_log`, `action_links`. All server-only.
+
+- **Requests** (`POST /api/client/requests`, `submitRequest` in `_worklist.js`):
+  signed-in clients only, company from the session, ten unanswered per company
+  (the cap is in the writing statement). The client sees the company's requests
+  as Submitted / Accepted (date read live from the deliverable, with a link to it
+  in their worklist) / Declined (our note). Nothing about who decided leaves.
+- **Triage** (`api/_requests.js`, `src/views/requests.js`, Projects › Requests):
+  accept = pick or make the workstream + owner + date, creating the deliverable
+  (client-visible, planned) and marking the request accepted in ONE statement;
+  decline = a note. Triage holds no work: after accepting, the deliverable is the
+  only record. The new owner gets the "Tasks assigned to you" email (also on
+  create/reassign in `_retainers.js`).
+- **Waiting on you**: `POST /api/client/deliverables/:id/reply` keeps the latest
+  note (cleared with `waiting_note` by `statusPatch`), never shown on a project
+  link, alerts the owner every time.
+- **Alerts** (`api/_alerts.js`), all through `notify()`: kinds `alert_*`, each
+  mutable, independent of the digest. Routing: deliverable owner, else the
+  company lead, else every superadmin (logged). Immediate: new request, changes
+  requested, client reply. Hourly (`/api/reminders?type=alerts`, needs
+  `CRON_SECRET`, runs every day, sends 07:00–20:00 London only): due within 48 h
+  and not in review; client input older than `CLIENT_INPUT_ALERT_DAYS` (7). Once
+  per item via `alert_log` (cycle = due date / `waiting_since`); a claim is given
+  back if nothing could be sent. Approvals go in the 09:00 digest ("Approved since
+  your last digest", Monday covers the weekend).
+- **Delivery email + Approve link** (`api/_delivery-mail.js`): sending a round
+  emails everyone in the company's Clerk org, each with their own link, and
+  tells the sender who (or why no one). Link = 32 random bytes, stored hashed,
+  carried in the URL fragment of `/portal/approve`, 14 days. It resolves to a
+  `delivery` scope (`X-Action-Token`; one round; approve only; never consults a
+  session). Opening the page only reads (`GET /api/client/link`); the button POSTs
+  (`/api/client/link/approve`), and the link is used up in the same statement that
+  approves. Dies when its round is answered, superseded or taken back, and when
+  its person is removed from the portal. Request changes goes to the portal.
+  Routes declare which scope kinds they serve (`kinds`).
+- **Task board cards** (`api/_board.js`): deliverables are cards read from the
+  deliverables table. The column mapping, which cards appear, and every drag
+  refusal are in `_retainer-rules.js` (`boardColumn`, `boardShows`,
+  `statusAfterBoardDrag`); the browser holds no copy. A drag only moves planned
+  <-> in progress; anything else is refused with a sentence (shown in a notice
+  that stays until dismissed). Unowned open deliverables sit in the tray; dragging
+  one out claims it. No acknowledgement, bell notifications or comments for cards.
+  Not on the Dashboard task widget (What's due already lists them).
+
 ### Kanban boards
 There is no shared kanban component — three independent implementations, each
 with its own card drag-and-drop wiring. Per the cross-feature consistency rule

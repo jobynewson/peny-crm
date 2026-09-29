@@ -28,6 +28,7 @@ import {
 } from './_retainer-rules.js'
 import { staffScope, respondToDelivery } from './_worklist.js'
 import { REQUEST_ROUTES } from './_requests.js'
+import { BOARD_ROUTES } from './_board.js'
 import { sendOwnerAssigned } from './_alerts.js'
 import { emailDelivery } from './_delivery-mail.js'
 
@@ -47,6 +48,8 @@ export const ROUTES = [
   { method: 'POST',   pattern: new RegExp(`^retainers/deliveries/${ID}/response$`),       handler: recordResponse,    access: 'editor' },
   // Client requests: triage (_requests.js).
   ...REQUEST_ROUTES,
+  // The task board's deliverable cards (_board.js).
+  ...BOARD_ROUTES,
 ]
 
 // Whoever a deliverable is given to hears about it (the "Tasks assigned to

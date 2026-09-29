@@ -2841,6 +2841,8 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
   border-top-left-radius: 0; border-bottom-left-radius: 0;
 }
 .tk-m-row-main { flex: 1; min-width: 0; }
+.tk-m-row--deliverable { cursor: pointer; }
+.tk-m-row--muted .tk-m-row-title { color: var(--text-secondary); }
 .tk-m-row-title { font-size: 14.5px; font-weight: 550; line-height: 1.35; color: var(--text-primary); overflow-wrap: anywhere; }
 .tk-m-row-meta { font-size: 12px; color: var(--text-tertiary); margin-top: 3px; overflow-wrap: anywhere; }
 .tk-m-row-meta--over { color: var(--danger); font-weight: 550; }
@@ -3030,3 +3032,31 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
   .tk-activity summary { padding: 15px 0; }
   .tk-qa-input, .tk-qa-select, .tk-dash-input, .tk-title-input, .tk-body-input, .tk-composer textarea { font-size: 16px; }
 }
+
+
+/* Deliverables on the task board: cards read from the deliverables table. */
+.tk-card--deliverable { cursor: pointer; }
+.tk-card--muted { opacity: 0.72; background: var(--surface-2); }
+.tk-card--saving { opacity: 0.5; pointer-events: none; }
+.tk-card--refused { animation: tk-refused 0.35s ease; }
+@keyframes tk-refused { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+.tk-pill--deliverable { background: var(--surface-2); color: var(--text-secondary); }
+.tk-due--undated { font-style: italic; }
+.tk-chip-status { padding: 1px 7px; border-radius: var(--radius-pill); background: var(--surface-2); color: var(--text-secondary); font-size: 11px; font-weight: 550; }
+.tk-chip-status--changes_requested { background: var(--danger-soft, var(--surface-2)); color: var(--danger); }
+.tk-chip-status--waiting_on_client { background: var(--warning-soft, var(--surface-2)); color: var(--warning, var(--text-secondary)); }
+
+/* What the board says when it won't do something: not a toast. It stays until
+   dismissed, sits at the bottom where a thumb is, and says where to go. */
+.tk-notice {
+  position: fixed; z-index: 1000; left: 50%; bottom: 16px; transform: translateX(-50%);
+  width: min(480px, calc(100vw - 24px)); padding: 16px; border: 2px solid var(--accent); border-radius: var(--radius-md);
+  background: var(--surface); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+}
+.tk-notice-text { margin: 0 0 12px; font-size: 16px; font-weight: 550; line-height: 1.4; color: var(--text-primary); }
+.tk-notice-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.tk-notice-actions .btn-primary, .tk-notice-actions .btn-secondary { min-height: 44px; flex: 1 1 140px; }
+@media (max-width: 600px) {
+  .tk-notice { left: 0; right: 0; bottom: 0; width: auto; transform: none; border-radius: var(--radius-md) var(--radius-md) 0 0; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+}
+@media (prefers-reduced-motion: reduce) { .tk-card--refused { animation: none; } }

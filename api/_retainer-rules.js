@@ -7,7 +7,7 @@
 // NOT a Vercel function — the `_` prefix keeps it out of function detection.
 
 import {
-  isDateString, lastDayOfMonth, formatDay, formatShortDay, formatMonth,
+  isDateString, lastDayOfMonth, formatDay, formatShortDay, formatMonth, addDays, daysBetween,
 } from './_dates.js'
 
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
@@ -347,4 +347,59 @@ export function statusAfterBoardDrag({ from, column }) {
   // Everything else is a card in Doing being dragged to To do.
   if (from === 'changes_requested') return refuse('changes')
   return refuse('with_client')
+}
+
+// Which deliverables have a card, so that nothing is invisible:
+//   - unowned and open: in the unassigned tray, whatever its date or status
+//     (it needs someone before anything else)
+//   - owned and started (anything but planned): on the board
+//   - owned, planned and undated: on the board — with no date nothing else
+//     (What's due) would ever show it
+//   - owned, planned and dated: on the board once it is within
+//     BOARD_HORIZON_DAYS; until then it is a dated plan, on the Retainers page
+//     and in What's due
+//   - approved: in Done for BOARD_DONE_DAYS (the server passes only those)
+export const BOARD_HORIZON_DAYS = 28
+export const BOARD_DONE_DAYS = 30
+
+export function boardShows(d, today) {
+  if (d.status === 'approved') return !!d.owner_id
+  if (!d.owner_id) return true
+  if (d.status !== 'planned') return true
+  if (!d.due_date) return true
+  return d.due_date <= addDays(today, BOARD_HORIZON_DAYS)
+}
+
+// The card the board draws for a deliverable. `d` is a row with its company and
+// workstream (and `round`, its latest round, if any).
+export function boardCard(d, today, now = new Date()) {
+  const chip = boardChip(d, now)
+  return {
+    id: d.id,
+    kind: 'deliverable',
+    title: d.title,
+    company: d.company,
+    company_id: d.company_id,
+    workstream: d.workstream,
+    project_id: d.project_id ?? null,
+    owner_id: d.owner_id ?? null,
+    in_tray: !d.owner_id && d.status !== 'approved',
+    status: d.status,
+    status_label: STATUS_LABELS[d.status],
+    column: boardColumn(d.status),
+    muted: isWithClient(d.status),
+    chip,
+    due_date: d.due_date ?? null,
+    due_display: dueDisplay(d, today),
+    undated: !d.due_date,
+    overdue: isOverdue(d, today),
+    days_late: d.due_date && d.due_date < today ? daysBetween(d.due_date, today) : null,
+    link: `#retainers/${d.company_id}`,
+  }
+}
+
+// Overdue first, then by deadline with undated last, then by title.
+export function compareBoardCards(a, b) {
+  if (!a.due_date !== !b.due_date) return a.due_date ? -1 : 1
+  return (a.due_date ?? '').localeCompare(b.due_date ?? '') || a.title.localeCompare(b.title)
 }
