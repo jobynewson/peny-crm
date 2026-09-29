@@ -38,7 +38,39 @@ export const KINDS = {
     description: 'A summary of the reminder emails Slate sent the team that day.',
     switchable: true, default: false, superadmin: true,
   },
+  // Urgent alerts (api/_alerts.js): sent as they happen, or on the next
+  // hourly run, whatever anyone's digest setting is. Each can be muted on its
+  // own. They reach the deliverable's owner, or the company's lead when it has
+  // none.
+  alert_new_request: {
+    label: 'New client requests',
+    description: 'An email as soon as a client raises a request.',
+    switchable: true, default: true,
+  },
+  alert_changes_requested: {
+    label: 'Changes requested',
+    description: 'An email when a client asks for changes to a delivery.',
+    switchable: true, default: true,
+  },
+  alert_client_reply: {
+    label: 'Client replies',
+    description: 'An email when a client replies on an item that is waiting on them.',
+    switchable: true, default: true,
+  },
+  alert_due_soon: {
+    label: 'Due within 48 hours',
+    description: 'An email, once, when a deliverable is due within 48 hours and is not in review yet.',
+    switchable: true, default: true,
+  },
+  alert_input_overdue: {
+    label: 'Client input overdue',
+    description: 'An email, once, when an item has been waiting on a client for over a week.',
+    switchable: true, default: true,
+  },
   task_nudge:        { label: 'Unacknowledged task nudge', switchable: false },
+  // To the client, each with their own Approve link. Clients have no settings
+  // page, so it always sends.
+  delivery_ready:    { label: 'A delivery is ready for review', switchable: false },
   leave:             { label: 'Leave requests and decisions', switchable: false },
   expense_digest:    { label: 'Monthly expense summary', switchable: false },
   expense_submitted: { label: 'Expenses submitted early', switchable: false },
