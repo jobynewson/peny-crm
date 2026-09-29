@@ -67,6 +67,7 @@ export const companies = pgTable('companies', {
   user_id:      text('user_id').notNull(),
   name:         text('name').notNull(),
   clerk_org_id: text('clerk_org_id'),   // unique; set by the Portal access panel
+  lead_id:      uuid('lead_id'),        // app_users.id: who hears when a deliverable has no owner (drizzle/0036)
   ...timestamps,
 })
 
@@ -842,6 +843,8 @@ export const deliverables = pgTable('deliverables', {
   status:         deliverable_status('status').notNull().default('planned'),
   waiting_since:  timestamp('waiting_since', { withTimezone: true }),
   waiting_note:   text('waiting_note'),           // shown to the client
+  client_reply:      text('client_reply'),        // the client's latest reply while waiting (drizzle/0036)
+  client_replied_at: timestamp('client_replied_at', { withTimezone: true }),
   client_visible: boolean('client_visible').notNull().default(false),
   internal_notes: text('internal_notes'),         // never leaves Slate
   sort_order:     integer('sort_order').notNull().default(0),
@@ -867,8 +870,8 @@ export const deliveries = pgTable('deliveries', {
   preview_image:     text('preview_image'),
 })
 
-// Client requests — stage 2 fills this; nothing reads it yet. Accepting one
-// creates a task (task_id) that the task board then carries.
+// Client requests. Triage accepts (creating a deliverable, deliverable_id —
+// the task board shows that deliverable itself) or declines with a note.
 export const requests = pgTable('requests', {
   id:             uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
   user_id:        text('user_id').notNull(),
@@ -878,9 +881,32 @@ export const requests = pgTable('requests', {
   detail:         text('detail'),
   wanted_by:      date('wanted_by'),
   status:         request_status('status').notNull().default('new'),
-  task_id:        uuid('task_id').references(() => tasks.id, { onDelete: 'set null' }),
   deliverable_id: uuid('deliverable_id').references(() => deliverables.id, { onDelete: 'set null' }),
+  submitted_by_name: text('submitted_by_name'),
+  decline_note:   text('decline_note'),
+  decided_by:     uuid('decided_by').references(() => app_users.id, { onDelete: 'set null' }),
+  decided_at:     timestamp('decided_at', { withTimezone: true }),
   ...timestamps,
+})
+
+// Once-per-item bookkeeping for the timed alerts (drizzle/0036).
+export const alert_log = pgTable('alert_log', {
+  kind:       text('kind').notNull(),
+  subject_id: uuid('subject_id').notNull(),
+  cycle:      text('cycle').notNull(),
+  sent_at:    timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// One-time Approve links in the delivery email (drizzle/0036). Token hash only.
+export const action_links = pgTable('action_links', {
+  id:            uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  delivery_id:   uuid('delivery_id').notNull().references(() => deliveries.id, { onDelete: 'cascade' }),
+  clerk_user_id: text('clerk_user_id').notNull(),
+  email:         text('email').notNull(),
+  token_hash:    text('token_hash').notNull().unique(),
+  expires_at:    timestamp('expires_at', { withTimezone: true }).notNull(),
+  used_at:       timestamp('used_at', { withTimezone: true }),
+  created_at:    timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
 // ── Notification settings (drizzle/0034_add_notification_settings.sql) ───────

@@ -49,11 +49,14 @@ export const clientStatus = status => CLIENT_STATUS[status] ?? CLIENT_STATUS.pla
 
 // The status a deliverable should have after a change to `to`, plus the
 // waiting bookkeeping: entering waiting_on_client starts the clock; leaving it
-// clears the clock and the note (which described what we were waiting for).
+// clears the clock, the note (which described what we were waiting for) and
+// the client's reply to it.
 export function statusPatch({ from, to, now = new Date() }) {
   if (to === from) return { status: to }
   if (to === 'waiting_on_client') return { status: to, waiting_since: now }
-  if (from === 'waiting_on_client') return { status: to, waiting_since: null, waiting_note: null }
+  if (from === 'waiting_on_client') {
+    return { status: to, waiting_since: null, waiting_note: null, client_reply: null, client_replied_at: null }
+  }
   return { status: to }
 }
 
@@ -215,3 +218,114 @@ export function validateDeliverableInput(body, { partial = false, userIds = [] }
 // Whether a PATCH body touches the due date at all (and so must be re-normalised).
 export const DUE_FIELDS = ['due_kind', 'due_date', 'due_month', 'due_label', 'cadence']
 export const touchesDue = body => DUE_FIELDS.some(k => has(body, k))
+
+
+// ── Client requests ──────────────────────────────────────────────────────────
+
+export const REQUEST_STATUSES = ['new', 'accepted', 'declined']
+// What the client sees: Submitted / Accepted / Declined. Mapped here, so the
+// portal never shows the internal 'new'.
+export const REQUEST_LABELS = { new: 'Submitted', accepted: 'Accepted', declined: 'Declined' }
+export const requestLabel = status => REQUEST_LABELS[status] ?? REQUEST_LABELS.new
+
+// How many unanswered requests one company may have at a time. A stuck script
+// or a keen client can't flood the inbox: past this, they wait for triage.
+export const MAX_OPEN_REQUESTS = 10
+
+export const NOTE_MAX = 1000
+
+// null if fine, else { field, message }. wanted_by is optional.
+export function validateRequestInput(body) {
+  if (!body || typeof body !== 'object') return { field: 'body', message: 'Request body is not valid JSON' }
+  const title = typeof body.title === 'string' ? body.title.trim() : ''
+  if (!title) return { field: 'title', message: 'Give the request a title' }
+  if (title.length > TITLE_MAX) return { field: 'title', message: 'That title is too long' }
+  if (body.detail != null && (typeof body.detail !== 'string' || body.detail.length > TEXT_MAX)) {
+    return { field: 'detail', message: 'That detail is too long' }
+  }
+  if (body.wanted_by != null && body.wanted_by !== '' && !isDateString(body.wanted_by)) {
+    return { field: 'wanted_by', message: 'That date is not valid' }
+  }
+  return null
+}
+
+// A decline goes back to the client, so it needs words. null if fine.
+export function validateDecline(body) {
+  const note = typeof body?.note === 'string' ? body.note.trim() : ''
+  if (!note) return { field: 'note', message: 'Say why, in a line or two — the client will see this' }
+  if (note.length > NOTE_MAX) return { field: 'note', message: `Keep it under ${NOTE_MAX} characters` }
+  return null
+}
+
+// A client's reply on a "waiting on you" item: short, not a thread. null if fine.
+export const REPLY_MAX = 1000
+export function validateReply(body) {
+  const text = typeof body?.reply === 'string' ? body.reply.trim() : ''
+  if (!text) return { field: 'reply', message: 'Write your reply' }
+  if (text.length > REPLY_MAX) return { field: 'reply', message: `Keep it under ${REPLY_MAX} characters` }
+  return null
+}
+
+// ── The task board ───────────────────────────────────────────────────────────
+// Deliverables sit on the task board as cards read straight from the
+// deliverables table: one record, shown in both places. The board has three
+// columns; this is the whole mapping, both ways. The server decides it and
+// the browser holds no copy.
+//
+//   planned                                   → To do
+//   in_progress                               → Doing
+//   changes_requested                         → Doing (chip: changes requested)
+//   waiting_on_client, in_review              → Doing, muted (with the client)
+//   approved                                  → Done
+//
+// Dragging only ever moves planned <-> in_progress. The rest are the client's
+// moves, or need a note or a link, so they happen on the Retainers page.
+
+export const BOARD_COLUMNS = ['todo', 'doing', 'done']
+
+const BOARD_COLUMN = {
+  planned: 'todo', in_progress: 'doing', changes_requested: 'doing',
+  waiting_on_client: 'doing', in_review: 'doing', approved: 'done',
+}
+export const boardColumn = status => BOARD_COLUMN[status] ?? 'todo'
+
+// A card that is with the client, so the owner isn't the one holding it.
+export const isWithClient = status => status === 'waiting_on_client' || status === 'in_review'
+
+// What a board card says about its deliverable beyond the title, or null.
+export function boardChip(d, now = new Date()) {
+  if (d.status === 'changes_requested') return { key: 'changes_requested', label: 'Changes requested' }
+  if (d.status === 'waiting_on_client') {
+    const days = d.waiting_since ? Math.max(0, Math.floor((now - new Date(d.waiting_since)) / 86400000)) : null
+    return { key: 'waiting_on_client', label: days == null ? 'Waiting on client' : `Waiting on client · ${days}d` }
+  }
+  if (d.status === 'in_review') {
+    return { key: 'in_review', label: d.round ? `With client · round ${d.round}` : 'With client' }
+  }
+  return null
+}
+
+// The board's refusals, worded as the board doing its job: what is true, and
+// where to go instead. Short enough for a phone.
+export const DRAG_REFUSALS = {
+  approve:   'Only the client can approve this — record their answer on the Retainers page.',
+  with_client: 'This is with the client, so it stays in Doing until they answer — the Retainers page has the detail.',
+  changes:   'The client asked for changes, so it stays in Doing until you send the next round.',
+  approved:  'This is approved — reopen it from the Retainers page if it needs more work.',
+}
+
+// A card dropped in `column`. → { status } to write (status may equal the
+// current one: nothing to do), or { refused: <one of DRAG_REFUSALS> }.
+export function statusAfterBoardDrag({ from, column }) {
+  if (!BOARD_COLUMNS.includes(column)) return { refused: DRAG_REFUSALS.with_client, code: 'with_client' }
+  if (boardColumn(from) === column) return { status: from }
+  const refuse = code => ({ refused: DRAG_REFUSALS[code], code })
+
+  if (from === 'approved') return refuse('approved')
+  if (column === 'done') return refuse('approve')
+  if (from === 'planned' && column === 'doing') return { status: 'in_progress' }
+  if (from === 'in_progress' && column === 'todo') return { status: 'planned' }
+  // Everything else is a card in Doing being dragged to To do.
+  if (from === 'changes_requested') return refuse('changes')
+  return refuse('with_client')
+}

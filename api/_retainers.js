@@ -419,6 +419,8 @@ async function updateDeliverable(req, res, { sql, params }) {
       status         = ${nextStatus}::deliverable_status,
       waiting_since  = CASE WHEN ${setSince} THEN ${statusChange.waiting_since ?? null}::timestamptz ELSE waiting_since END,
       waiting_note   = CASE WHEN ${setNote} THEN ${waitingNote ?? null} ELSE waiting_note END,
+      client_reply      = CASE WHEN ${has(statusChange, 'client_reply')} THEN NULL ELSE client_reply END,
+      client_replied_at = CASE WHEN ${has(statusChange, 'client_reply')} THEN NULL ELSE client_replied_at END,
       client_visible = CASE WHEN ${has(body, 'client_visible')} THEN ${body.client_visible === true} ELSE client_visible END,
       internal_notes = CASE WHEN ${has(body, 'internal_notes')} THEN ${cleanText(body.internal_notes)} ELSE internal_notes END,
       sort_order     = CASE WHEN ${has(body, 'sort_order')} THEN ${body.sort_order ?? null}::int ELSE sort_order END,
@@ -490,6 +492,8 @@ async function sendDelivery(req, res, { sql, user, params }) {
           status        = ${patch.status}::deliverable_status,
           waiting_since = CASE WHEN ${'waiting_since' in patch} THEN ${patch.waiting_since ?? null}::timestamptz ELSE waiting_since END,
           waiting_note  = CASE WHEN ${'waiting_note' in patch} THEN ${patch.waiting_note ?? null}::text ELSE waiting_note END,
+      client_reply      = CASE WHEN ${'client_reply' in patch} THEN NULL ELSE client_reply END,
+      client_replied_at = CASE WHEN ${'client_reply' in patch} THEN NULL ELSE client_replied_at END,
           updated_at    = NOW()
         FROM sent WHERE deliverables.id = sent.deliverable_id
         RETURNING sent.id, sent.round
@@ -546,6 +550,8 @@ async function unsendDelivery(req, res, { sql, params }) {
       status        = ${patch.status}::deliverable_status,
       waiting_since = CASE WHEN ${'waiting_since' in patch} THEN ${patch.waiting_since ?? null}::timestamptz ELSE waiting_since END,
       waiting_note  = CASE WHEN ${'waiting_note' in patch} THEN ${patch.waiting_note ?? null}::text ELSE waiting_note END,
+      client_reply      = CASE WHEN ${'client_reply' in patch} THEN NULL ELSE client_reply END,
+      client_replied_at = CASE WHEN ${'client_reply' in patch} THEN NULL ELSE client_replied_at END,
       updated_at    = NOW()
     FROM gone WHERE deliverables.id = gone.deliverable_id
     RETURNING deliverables.id

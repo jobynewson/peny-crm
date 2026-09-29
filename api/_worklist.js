@@ -128,6 +128,8 @@ async function respondAsStaff(sql, scope, { deliveryId, response, comment, by })
       status        = ${patch.status}::deliverable_status,
       waiting_since = CASE WHEN ${'waiting_since' in patch} THEN ${patch.waiting_since ?? null}::timestamptz ELSE waiting_since END,
       waiting_note  = CASE WHEN ${'waiting_note' in patch} THEN ${patch.waiting_note ?? null}::text ELSE waiting_note END,
+      client_reply      = CASE WHEN ${'client_reply' in patch} THEN NULL ELSE client_reply END,
+      client_replied_at = CASE WHEN ${'client_reply' in patch} THEN NULL ELSE client_replied_at END,
       updated_at    = NOW()
     FROM answered WHERE deliverables.id = answered.deliverable_id
     RETURNING answered.id AS delivery_id, deliverables.id AS deliverable_id
@@ -180,6 +182,8 @@ async function respondAsClient(sql, scope, { deliveryId, response, comment, by }
       status        = ${patch.status}::deliverable_status,
       waiting_since = CASE WHEN ${'waiting_since' in patch} THEN ${patch.waiting_since ?? null}::timestamptz ELSE waiting_since END,
       waiting_note  = CASE WHEN ${'waiting_note' in patch} THEN ${patch.waiting_note ?? null}::text ELSE waiting_note END,
+      client_reply      = CASE WHEN ${'client_reply' in patch} THEN NULL ELSE client_reply END,
+      client_replied_at = CASE WHEN ${'client_reply' in patch} THEN NULL ELSE client_replied_at END,
       updated_at    = NOW()
     FROM answered WHERE deliverables.id = answered.deliverable_id
     RETURNING answered.id AS delivery_id, deliverables.id AS deliverable_id

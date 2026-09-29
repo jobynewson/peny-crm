@@ -3,6 +3,8 @@ import {
   DELIVERABLE_STATUSES, clientStatus, statusPatch, statusAfterResponse, statusAfterUnsend, STATUS_AFTER_DELIVERY,
   validateResponse, normaliseDeliveryUrl, isFrameIoUrl, normaliseDue, dueDisplay, isOverdue,
   validateWorkstreamInput, validateDeliverableInput, touchesDue,
+  requestLabel, validateRequestInput, validateDecline, validateReply, MAX_OPEN_REQUESTS,
+  boardColumn, boardChip, isWithClient, statusAfterBoardDrag, DRAG_REFUSALS, BOARD_COLUMNS,
 } from './_retainer-rules.js'
 
 const today = '2026-09-28'
@@ -25,7 +27,9 @@ describe('statusPatch (the waiting clock)', () => {
     expect(statusPatch({ from: 'in_progress', to: 'waiting_on_client', now })).toEqual({ status: 'waiting_on_client', waiting_since: now })
   })
   it('clears the clock and the note on leaving it', () => {
-    expect(statusPatch({ from: 'waiting_on_client', to: 'in_progress', now })).toEqual({ status: 'in_progress', waiting_since: null, waiting_note: null })
+    expect(statusPatch({ from: 'waiting_on_client', to: 'in_progress', now })).toEqual({
+      status: 'in_progress', waiting_since: null, waiting_note: null, client_reply: null, client_replied_at: null,
+    })
   })
   it('leaves the clock alone when nothing changes', () => {
     expect(statusPatch({ from: 'waiting_on_client', to: 'waiting_on_client', now })).toEqual({ status: 'waiting_on_client' })
@@ -149,5 +153,78 @@ describe('input validation', () => {
   it('knows when a patch touches the due date', () => {
     expect(touchesDue({ status: 'approved' })).toBe(false)
     expect(touchesDue({ due_label: '' })).toBe(true)
+  })
+})
+
+describe('client requests', () => {
+  it('reads as Submitted, Accepted or Declined, never "new"', () => {
+    expect(['new', 'accepted', 'declined'].map(requestLabel)).toEqual(['Submitted', 'Accepted', 'Declined'])
+  })
+  it('needs a title; detail and date are optional', () => {
+    expect(validateRequestInput({ title: '  ' })).toMatchObject({ field: 'title' })
+    expect(validateRequestInput({ title: 'Cut-down of the launch film' })).toBeNull()
+    expect(validateRequestInput({ title: 'x', wanted_by: '2026-13-01' })).toMatchObject({ field: 'wanted_by' })
+    expect(validateRequestInput({ title: 'x', wanted_by: '2026-10-30', detail: 'https://example.com/brief' })).toBeNull()
+    expect(validateRequestInput({ title: 'x', detail: 'y'.repeat(6000) })).toMatchObject({ field: 'detail' })
+    expect(MAX_OPEN_REQUESTS).toBeGreaterThan(0)
+  })
+  it('a decline needs a note, because the client reads it', () => {
+    expect(validateDecline({})).toMatchObject({ field: 'note' })
+    expect(validateDecline({ note: 'Outside this retainer — we will quote separately.' })).toBeNull()
+  })
+  it('a reply is short and not empty', () => {
+    expect(validateReply({ reply: ' ' })).toMatchObject({ field: 'reply' })
+    expect(validateReply({ reply: 'The product shipped on Friday.' })).toBeNull()
+    expect(validateReply({ reply: 'x'.repeat(1001) })).toMatchObject({ field: 'reply' })
+  })
+})
+
+describe('the task board mapping', () => {
+  it('puts every status in a column', () => {
+    expect(Object.fromEntries(DELIVERABLE_STATUSES.map(s => [s, boardColumn(s)]))).toEqual({
+      planned: 'todo', in_progress: 'doing', waiting_on_client: 'doing',
+      in_review: 'doing', changes_requested: 'doing', approved: 'done',
+    })
+  })
+  it('mutes the cards that are with the client', () => {
+    expect(DELIVERABLE_STATUSES.filter(isWithClient)).toEqual(['waiting_on_client', 'in_review'])
+  })
+  it('chips say where a card in Doing really is', () => {
+    const now = new Date('2026-09-28T12:00:00Z')
+    expect(boardChip({ status: 'planned' }, now)).toBeNull()
+    expect(boardChip({ status: 'in_progress' }, now)).toBeNull()
+    expect(boardChip({ status: 'changes_requested' }, now).label).toBe('Changes requested')
+    expect(boardChip({ status: 'waiting_on_client', waiting_since: '2026-09-25T09:00:00Z' }, now).label).toBe('Waiting on client · 3d')
+    expect(boardChip({ status: 'in_review', round: 2 }, now).label).toBe('With client · round 2')
+  })
+  it('a drag moves planned <-> in_progress and nothing else', () => {
+    expect(statusAfterBoardDrag({ from: 'planned', column: 'doing' })).toEqual({ status: 'in_progress' })
+    expect(statusAfterBoardDrag({ from: 'in_progress', column: 'todo' })).toEqual({ status: 'planned' })
+    // dropped where it already is: nothing to do, and no complaint
+    for (const s of DELIVERABLE_STATUSES) expect(statusAfterBoardDrag({ from: s, column: boardColumn(s) })).toEqual({ status: s })
+  })
+  it('refuses every other move, saying what to do instead', () => {
+    const cases = [
+      ['planned', 'done', 'approve'], ['in_progress', 'done', 'approve'], ['in_review', 'done', 'approve'],
+      ['waiting_on_client', 'done', 'approve'], ['changes_requested', 'done', 'approve'],
+      ['in_review', 'todo', 'with_client'], ['waiting_on_client', 'todo', 'with_client'],
+      ['changes_requested', 'todo', 'changes'],
+      ['approved', 'todo', 'approved'], ['approved', 'doing', 'approved'],
+    ]
+    for (const [from, column, code] of cases) {
+      const r = statusAfterBoardDrag({ from, column })
+      expect(r.status, `${from} → ${column}`).toBeUndefined()
+      expect(r.refused).toBe(DRAG_REFUSALS[code])
+    }
+  })
+  it('the refusals point at the Retainers page, and are one phone-sized line', () => {
+    for (const msg of Object.values(DRAG_REFUSALS)) {
+      expect(msg).toMatch(/Retainers page|until they answer|until you send/)
+      expect(msg.length).toBeLessThan(120)
+    }
+  })
+  it('an unknown column is refused, not written', () => {
+    expect(statusAfterBoardDrag({ from: 'planned', column: 'nope' }).status).toBeUndefined()
+    expect(BOARD_COLUMNS).toEqual(['todo', 'doing', 'done'])
   })
 })

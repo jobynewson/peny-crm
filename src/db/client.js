@@ -694,6 +694,50 @@ export async function runMigrations() {
     CREATE UNIQUE INDEX IF NOT EXISTS staff_invitations_open_uidx
       ON staff_invitations (lower(email)) WHERE used_at IS NULL
   `
+
+  // ── Client requests, replies, alerts, approve links (drizzle/0036) ─────────
+  // Read and written only through the server (/api/retainers, /api/client).
+  await sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS lead_id UUID REFERENCES app_users(id) ON DELETE SET NULL`
+  await sql`ALTER TABLE requests ADD COLUMN IF NOT EXISTS submitted_by_name TEXT`
+  await sql`ALTER TABLE requests ADD COLUMN IF NOT EXISTS decline_note TEXT`
+  await sql`ALTER TABLE requests ADD COLUMN IF NOT EXISTS decided_by UUID REFERENCES app_users(id) ON DELETE SET NULL`
+  await sql`ALTER TABLE requests ADD COLUMN IF NOT EXISTS decided_at TIMESTAMPTZ`
+  await sql`CREATE INDEX IF NOT EXISTS requests_inbox_idx ON requests (status, created_at)`
+  await sql`
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_name = 'requests' AND column_name = 'task_id') THEN
+        ALTER TABLE requests DROP COLUMN task_id;
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE WARNING 'dropping requests.task_id failed: %', SQLERRM;
+    END $$
+  `
+  await sql`ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS client_reply TEXT`
+  await sql`ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS client_replied_at TIMESTAMPTZ`
+  await sql`
+    CREATE TABLE IF NOT EXISTS alert_log (
+      kind       TEXT NOT NULL,
+      subject_id UUID NOT NULL,
+      cycle      TEXT NOT NULL,
+      sent_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (kind, subject_id, cycle)
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS action_links (
+      id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      delivery_id   UUID NOT NULL REFERENCES deliveries(id) ON DELETE CASCADE,
+      clerk_user_id TEXT NOT NULL,
+      email         TEXT NOT NULL,
+      token_hash    TEXT NOT NULL UNIQUE,
+      expires_at    TIMESTAMPTZ NOT NULL,
+      used_at       TIMESTAMPTZ,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS action_links_delivery_idx ON action_links (delivery_id)`
+  await sql`CREATE INDEX IF NOT EXISTS action_links_user_idx ON action_links (clerk_user_id)`
 }
 
 // One-time demo data so the first visit to Planning isn't an empty screen.
