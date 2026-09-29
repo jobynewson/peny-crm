@@ -158,7 +158,7 @@ function deliverableHtml(d) {
         <span class="pt-chip pt-chip--${esc(d.status)}">${esc(d.status_label)}</span>
       </div>
       ${meta ? `<div class="pt-d-meta">${meta}</div>` : ''}
-      ${d.waiting_for ? `<div class="pt-waiting"><strong>What we need from you:</strong> ${esc(d.waiting_for)}</div>` : ''}
+      ${d.status === 'waiting_on_you' ? waitingHtml(d) : ''}
       ${latest ? roundHtml(latest, d) : ''}
       ${earlier.length ? `
         <details class="pt-earlier">
@@ -169,6 +169,29 @@ function deliverableHtml(d) {
               ${r.comment ? `<div class="pt-quote">“${esc(r.comment)}”</div>` : ''}</li>`).join('')}</ol>
         </details>` : ''}
     </li>`
+}
+
+// An item that is waiting on the client: what we need, the note they last sent
+// us, and a way to send another. A note, not a thread.
+function waitingHtml(d) {
+  const id = esc(d.id)
+  return `
+    <div class="pt-waiting">
+      <h4 class="pt-waiting-h">What we need from you</h4>
+      <p class="pt-waiting-what">${d.waiting_for ? esc(d.waiting_for) : 'We’re waiting on something from you. Reply below to tell us where it’s got to.'}</p>
+      ${d.reply ? `<div class="pt-reply"><span class="pt-muted">Your note${d.reply.at ? `, ${dayMonth(d.reply.at)}` : ''}:</span> <span class="pt-quote">“${esc(d.reply.text)}”</span></div>` : ''}
+      ${d.can_reply ? `
+        <button type="button" class="pt-btn pt-btn--secondary pt-waiting-btn" data-reply-open="${id}">${d.reply ? 'Send another note' : 'Reply to us'}</button>
+        <form class="pt-form pt-form--inline" data-reply-form="${id}" hidden novalidate>
+          <label for="rp-${id}">Your note <span class="pt-muted">— for example, that it has shipped</span></label>
+          <textarea id="rp-${id}" rows="3" maxlength="1000"></textarea>
+          <div class="pt-form-msg" role="alert"></div>
+          <div class="pt-actions">
+            <button type="submit" class="pt-btn pt-btn--primary">Send</button>
+            <button type="button" class="pt-btn" data-reply-cancel="${id}">Cancel</button>
+          </div>
+        </form>` : ''}
+    </div>`
 }
 
 function answerLine(r) {
@@ -276,11 +299,12 @@ function legacyHtml(d, today) {
 
 // ── Behaviour ────────────────────────────────────────────────────────────────
 
-export function bindView(root, view, { respond, submitRequest, rerender, signOut, switchCompany }) {
+export function bindView(root, view, { respond, submitRequest, reply, rerender, signOut, switchCompany }) {
   root.querySelector('[data-sign-out]')?.addEventListener('click', signOut)
   root.querySelector('[data-switch]')?.addEventListener('click', switchCompany)
   if (view.schedule) bindSchedule(root, view.schedule)
   bindRequestForm(root, { submitRequest, rerender })
+  bindReplyForms(root, { reply, rerender })
 
   const part = (attr, id) => root.querySelector(`[${attr}="${CSS.escape(id)}"]`)
   const reset = id => {
@@ -329,6 +353,42 @@ export function bindView(root, view, { respond, submitRequest, rerender, signOut
     const msg = form.querySelector('.pt-form-msg')
     if (!comment) { msg.textContent = 'Say what needs to change'; form.querySelector('textarea').focus(); return }
     send(form.dataset.changesForm, { response: 'changes_requested', comment }, form.querySelector('[type="submit"]'), msg)
+  }))
+}
+
+function bindReplyForms(root, { reply, rerender }) {
+  const form = id => root.querySelector(`[data-reply-form="${CSS.escape(id)}"]`)
+  root.querySelectorAll('[data-reply-open]').forEach(b => b.addEventListener('click', () => {
+    const f = form(b.dataset.replyOpen)
+    b.hidden = true
+    f.hidden = false
+    f.querySelector('textarea').focus()
+  }))
+  root.querySelectorAll('[data-reply-cancel]').forEach(b => b.addEventListener('click', () => {
+    const id = b.dataset.replyCancel
+    const f = form(id)
+    f.hidden = true
+    f.querySelector('.pt-form-msg').textContent = ''
+    const open = root.querySelector(`[data-reply-open="${CSS.escape(id)}"]`)
+    open.hidden = false
+    open.focus()
+  }))
+  root.querySelectorAll('[data-reply-form]').forEach(f => f.addEventListener('submit', async e => {
+    e.preventDefault()
+    const text = f.querySelector('textarea').value.trim()
+    const msg = f.querySelector('.pt-form-msg')
+    if (!text) { msg.textContent = 'Write your note'; f.querySelector('textarea').focus(); return }
+    const button = f.querySelector('[type="submit"]')
+    button.disabled = true
+    try {
+      const fresh = await reply(f.dataset.replyForm, { reply: text })
+      toast('Sent — thank you')
+      rerender(fresh)
+    } catch (err) {
+      button.disabled = false
+      msg.textContent = err.status === 409 ? `${err.message}. Refreshing…` : err.message
+      if (err.status === 409) setTimeout(() => rerender(null), 1500)
+    }
   }))
 }
 

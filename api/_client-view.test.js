@@ -92,6 +92,37 @@ describe('worklistJson', () => {
   })
 })
 
+describe('replies on items waiting on the client', () => {
+  const today = '2026-09-28'
+  const deliverables = [
+    { id: 'd2', workstream_id: 'w1', title: 'Stills', format: null, due_kind: 'exact', due_date: null, due_label: null, cadence: null, status: 'waiting_on_client', waiting_note: 'Logo files', client_reply: 'Shipped on Friday', client_replied_at: 't9' },
+    { id: 'd3', workstream_id: 'w1', title: 'Cutdowns', format: null, due_kind: 'exact', due_date: null, due_label: null, cadence: null, status: 'in_progress', waiting_note: null, client_reply: 'stale', client_replied_at: 't1' },
+  ]
+  const pack = over => worklistJson({ workstreams: [{ id: 'w1', title: 'Launch', brief: null, status: 'active' }], deliverables, rounds: [], today, ...over })[0].deliverables
+
+  it('shows the signed-in client the note they sent, and lets them add to it', () => {
+    const [stills] = pack({ canRespond: true, showReplies: true })
+    expect(stills.reply).toEqual({ text: 'Shipped on Friday', at: 't9' })
+    expect(stills.can_reply).toBe(true)
+    expect(stills.waiting_for).toBe('Logo files')
+  })
+  it('shows nothing for an item that is not waiting, whatever is left in the column', () => {
+    const [, cutdowns] = pack({ canRespond: true, showReplies: true })
+    expect(cutdowns.reply).toBeNull()
+    expect(cutdowns.can_reply).toBe(false)
+  })
+  it('looks but does not reply when viewing as the client', () => {
+    const [stills] = pack({ canRespond: false, showReplies: true })
+    expect(stills.reply).not.toBeNull()
+    expect(stills.can_reply).toBe(false)
+  })
+  it('a project\'s shared link never carries a reply', () => {
+    const [stills] = pack({ canRespond: false })
+    expect(stills.reply).toBeNull()
+    expect(JSON.stringify(stills)).not.toContain('Shipped on Friday')
+  })
+})
+
 describe('requestsJson', () => {
   const today = '2026-09-28'
   const row = over => ({

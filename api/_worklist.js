@@ -17,7 +17,7 @@
 
 import {
   RESPONSES, statusAfterResponse, statusPatch, validateResponse, isUuid,
-  validateRequestInput, MAX_OPEN_REQUESTS,
+  validateRequestInput, validateReply, MAX_OPEN_REQUESTS,
 } from './_retainer-rules.js'
 
 // Only the objects the constructors made count as scopes — not copies
@@ -116,7 +116,41 @@ export async function submitRequest(sql, scope, { input, by }) {
   }
 }
 
-const notFound = () => ({ error: { status: 404, code: 'not_found', message: 'Delivery not found' } })
+// A client's note on an item that is waiting on them — "the product shipped on
+// Friday". One latest reply per item, replaced by the next; not a thread. It
+// leaves the item where it is (still waiting on the client) and the caller
+// tells the owner. Signed-in clients only, and only for an item shown to their
+// company that is waiting on them, checked in the statement that writes.
+//   input — the request body: { reply }
+// { deliverable: { id } } on success, or { error: { status, code, message, field? } }.
+export async function replyToWaiting(sql, scope, { deliverableId, input }) {
+  if (!isScope(scope)) throw new Error('replyToWaiting needs a scope from _worklist.js')
+  if (scope.kind !== 'company') {
+    return { error: { status: 403, code: 'signed_in_only', message: 'Replies can only be sent by clients who are signed in' } }
+  }
+  if (!scope.canRespond) return { error: { status: 403, code: 'read_only', message: 'This view can look but not reply' } }
+  if (!isUuid(deliverableId)) return notFound('Item not found')
+
+  const bad = validateReply(input)
+  if (bad) return { error: { status: 422, code: 'validation_failed', ...bad } }
+
+  const [done] = await sql`
+    UPDATE deliverables d SET client_reply = ${input.reply.trim()}, client_replied_at = NOW(), updated_at = NOW()
+    FROM workstreams w
+    WHERE d.id = ${deliverableId} AND w.id = d.workstream_id
+      AND w.user_id = ${scope.ws} AND w.company_id = ${scope.companyId} AND d.client_visible
+      AND d.status = 'waiting_on_client'
+    RETURNING d.id`
+  if (done) return { deliverable: { id: done.id } }
+
+  const [seen] = await sql`
+    SELECT d.id FROM deliverables d JOIN workstreams w ON w.id = d.workstream_id
+    WHERE d.id = ${deliverableId} AND w.user_id = ${scope.ws} AND w.company_id = ${scope.companyId} AND d.client_visible`
+  if (!seen) return notFound('Item not found')
+  return { error: { status: 409, code: 'not_waiting', message: 'We’re not waiting on anything from you for this any more' } }
+}
+
+const notFound = (message = 'Delivery not found') => ({ error: { status: 404, code: 'not_found', message } })
 
 // Why a response can't be taken, for a delivery the caller can see.
 function refusal(row) {

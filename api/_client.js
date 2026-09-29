@@ -5,6 +5,9 @@
 //   POST /api/client/deliveries/:id/response  { response, comment } — approve
 //                                             or request changes (signed-in
 //                                             clients only)
+//   POST /api/client/deliverables/:id/reply   { reply } — a note on an item
+//                                             that is waiting on them
+//                                             (signed-in clients only)
 //   POST /api/client/requests                 { title, detail?, wanted_by? } — a
 //                                             request for us (signed-in
 //                                             clients only)
@@ -30,13 +33,14 @@ import { createClerkClient } from '@clerk/backend'
 import { UUID, fail, invalid, matchRoute, routePathFrom, readBody, workspaceId } from './_api.js'
 import { verifyClerkSession } from './_auth.js'
 import { isRateLimited, getClientIp } from './_ratelimit.js'
-import { companyScope, projectScope, respondToDelivery, submitRequest } from './_worklist.js'
-import { alertNewRequest } from './_alerts.js'
+import { companyScope, projectScope, respondToDelivery, submitRequest, replyToWaiting } from './_worklist.js'
+import { alertNewRequest, alertChangesRequested, alertClientReply } from './_alerts.js'
 import { readClientView } from './_client-view.js'
 
 export const ROUTES = [
   { method: 'GET',  pattern: /^client\/view$/,                                      handler: getView },
   { method: 'POST', pattern: new RegExp(`^client/deliveries/(?<id>${UUID})/response$`), handler: respond },
+  { method: 'POST', pattern: new RegExp(`^client/deliverables/(?<id>${UUID})/reply$`), handler: reply },
   { method: 'POST', pattern: /^client\/requests$/,                                   handler: raiseRequest },
 ]
 
@@ -114,14 +118,39 @@ async function respond(req, res, { sql, scope, params }) {
   if (!scope.canRespond) return fail(res, 403, 'read_only', 'This view can look but not answer')
   const body = readBody(req)
   if (!body) return invalid(res, 'body', 'Request body is not valid JSON')
-  const result = await respondToDelivery(sql, scope, {
-    deliveryId: params.id,
-    input: body,
-    by: { clerkId: scope.clerkUserId, name: await clientName(scope.clerkUserId) },
-  })
+  const by = { clerkId: scope.clerkUserId, name: await clientName(scope.clerkUserId) }
+  const result = await respondToDelivery(sql, scope, { deliveryId: params.id, input: body, by })
   if (result.error) {
     const { status, code, message, field } = result.error
     return fail(res, status, code, message, field ? { field } : {})
+  }
+  // Changes asked for are urgent; an approval waits for the digest.
+  if (body.response === 'changes_requested') {
+    try {
+      await alertChangesRequested(sql, { deliverableId: result.delivery.deliverable_id, comment: body.comment.trim(), by: by.name })
+    } catch (err) {
+      console.error('[client] changes-requested alert failed:', err?.message)   // the answer is saved either way
+    }
+  }
+  return res.status(200).json({ ok: true, view: await readClientView(sql, scope) })
+}
+
+// ── POST /api/client/deliverables/:id/reply ──────────────────────────────────
+// { reply } — a short note on an item that is waiting on the client. It stays
+// waiting; the owner (or the company's lead) is told each time. Returns the
+// fresh view.
+async function reply(req, res, { sql, scope, params }) {
+  const body = readBody(req)
+  if (!body) return invalid(res, 'body', 'Request body is not valid JSON')
+  const result = await replyToWaiting(sql, scope, { deliverableId: params.id, input: body })
+  if (result.error) {
+    const { status, code, message, field } = result.error
+    return fail(res, status, code, message, field ? { field } : {})
+  }
+  try {
+    await alertClientReply(sql, { deliverableId: result.deliverable.id, reply: body.reply.trim(), by: await clientName(scope.clerkUserId) })
+  } catch (err) {
+    console.error('[client] client-reply alert failed:', err?.message)   // the reply is saved either way
   }
   return res.status(200).json({ ok: true, view: await readClientView(sql, scope) })
 }

@@ -71,7 +71,11 @@ a { color: var(--accent-text); }
 .pt-chip--waiting_on_you { background: var(--cat-amber-soft); color: var(--cat-amber); }
 .pt-chip--ready_for_review { background: var(--cat-purple-soft); color: var(--cat-purple); }
 .pt-chip--approved { background: var(--cat-green-soft); color: var(--cat-green); }
-.pt-waiting { margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--cat-amber-soft); font-size: 14px; }
+.pt-waiting { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--cat-amber-soft); font-size: 14px; }
+.pt-waiting-h { margin: 0; font-size: 14px; font-weight: 600; }
+.pt-waiting-what { margin: 0; white-space: pre-line; }
+.pt-reply { font-size: 14px; }
+.pt-form--inline { width: 100%; padding: 8px 0 0; border-top: none; }
 
 .pt-round { margin-top: 12px; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2); }
 .pt-round-img { display: block; aspect-ratio: 16 / 9; background: var(--bg); }

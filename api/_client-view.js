@@ -52,7 +52,7 @@ async function companyView(sql, scope) {
     `,
     sql`
       SELECT d.id, d.workstream_id, d.title, d.format, d.due_kind, d.due_date::text AS due_date,
-             d.due_label, d.cadence, d.status, d.waiting_note
+             d.due_label, d.cadence, d.status, d.waiting_note, d.client_reply, d.client_replied_at
       FROM deliverables d
       JOIN workstreams w ON w.id = d.workstream_id
       WHERE w.user_id = ${scope.ws} AND w.company_id = ${scope.companyId} AND d.client_visible
@@ -91,7 +91,7 @@ async function companyView(sql, scope) {
     today,
     title: companies[0].name,
     studio: studioJson(studios[0]),
-    workstreams: worklistJson({ workstreams, deliverables, rounds, today, canRespond: scope.canRespond }),
+    workstreams: worklistJson({ workstreams, deliverables, rounds, today, canRespond: scope.canRespond, showReplies: true }),
     requests: requestsJson(requests, today),
   }
 }
@@ -237,7 +237,9 @@ export function requestsJson(rows, today) {
 }
 
 // Workstreams → deliverables → rounds, in the words the client sees.
-export function worklistJson({ workstreams, deliverables, rounds, today, canRespond }) {
+// showReplies: the signed-in company's own worklist shows the note they sent on
+// a waiting item; a project's shared portal link never does.
+export function worklistJson({ workstreams, deliverables, rounds, today, canRespond, showReplies = false }) {
   const roundsByDeliverable = groupBy(rounds, 'deliverable_id')
   const byWorkstream = groupBy(deliverables, 'workstream_id')
   return workstreams.map(w => ({
@@ -258,6 +260,11 @@ export function worklistJson({ workstreams, deliverables, rounds, today, canResp
         status: theirs.key,
         status_label: theirs.label,
         waiting_for: d.status === 'waiting_on_client' ? d.waiting_note || null : null,
+        // What they last told us about it, and whether they can add to it.
+        reply: showReplies && d.status === 'waiting_on_client' && d.client_reply
+          ? { text: d.client_reply, at: d.client_replied_at }
+          : null,
+        can_reply: !!canRespond && showReplies && d.status === 'waiting_on_client',
         rounds: list.map(r => roundJson(r, r === latest, canRespond)),
       }
     }),

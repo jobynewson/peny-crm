@@ -150,6 +150,34 @@ describeDb('/api/retainers', () => {
     expect(back.body.deliverable).toMatchObject({ status: 'in_progress', waiting_since: null, waiting_note: null, waiting_days: null })
   })
 
+  it('clears the client\'s reply with the note, however the item stops waiting — and only then', async () => {
+    as(ana)
+    const reply = () => sql`SELECT client_reply, client_replied_at FROM deliverables WHERE id = ${hero.id}`.then(r => r[0])
+    const waitWithReply = async () => {
+      await call('PATCH', `retainers/deliverables/${hero.id}`, { status: 'waiting_on_client', waiting_note: 'Ship date' })
+      await sql`UPDATE deliverables SET client_reply = 'Shipped Friday', client_replied_at = now() WHERE id = ${hero.id}`
+    }
+
+    // editing the note or the title while it waits leaves the reply
+    await waitWithReply()
+    await call('PATCH', `retainers/deliverables/${hero.id}`, { waiting_note: 'Ship date, please' })
+    await call('PATCH', `retainers/deliverables/${hero.id}`, { title: 'Hero film v2' })
+    expect((await reply()).client_reply).toBe('Shipped Friday')
+
+    // moving it on (a status change) clears it
+    await call('PATCH', `retainers/deliverables/${hero.id}`, { status: 'in_progress' })
+    expect(await reply()).toEqual({ client_reply: null, client_replied_at: null })
+
+    // sending a round for review moves it on too
+    await waitWithReply()
+    await call('POST', `retainers/deliverables/${hero.id}/deliveries`, { url: 'https://f.io/reply-clear' })
+    expect(await reply()).toEqual({ client_reply: null, client_replied_at: null })
+    const [{ id: roundId }] = await sql`SELECT id FROM deliveries WHERE deliverable_id = ${hero.id} AND url = 'https://f.io/reply-clear'`
+    await call('DELETE', `retainers/deliveries/${roundId}`)
+    // put the shared fixture back the way the next test expects it
+    await call('PATCH', `retainers/deliverables/${hero.id}`, { title: 'Hero film', status: 'in_progress' })
+  })
+
   it('writes only what a PATCH sends, and normalises due dates as a set', async () => {
     as(ana)
     const r = await call('PATCH', `retainers/deliverables/${hero.id}`, { title: 'Hero film v2', client_visible: true })

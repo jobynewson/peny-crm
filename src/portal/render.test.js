@@ -59,3 +59,43 @@ describe('the portal: requests', () => {
     expect(project).not.toContain('data-request-form')
   })
 })
+
+describe('the portal: waiting on you', () => {
+  const stills = over => ({
+    id: 'd2', title: 'Stills', format: null, due: 'No date', status: 'waiting_on_you', status_label: 'Waiting on you',
+    waiting_for: 'Ship date for the new product', reply: null, can_reply: true, rounds: [], ...over,
+  })
+  const withStills = d => view({ workstreams: [{ id: 'w1', title: 'Launch', brief: null, status: 'active', status_label: 'Active', deliverables: [d] }] })
+
+  it('says what we need, under its own heading, and offers a reply', () => {
+    const out = html(withStills(stills()))
+    expect(out).toContain('What we need from you</h4>')
+    expect(out).toContain('Ship date for the new product')
+    expect(out).toContain('data-reply-open="d2"')
+    expect(out).toContain('data-reply-form="d2"')
+    expect(out).toContain('Reply to us')
+  })
+  it('shows the note they sent last and offers another', () => {
+    const out = html(withStills(stills({ reply: { text: 'It shipped on Friday', at: '2026-09-25T09:00:00Z' } })))
+    expect(out).toContain('“It shipped on Friday”')
+    expect(out).toContain('Your note, 25 Sep')
+    expect(out).toContain('Send another note')
+  })
+  it('still asks, without a form, when viewing as the client', () => {
+    const out = html(withStills(stills({ can_reply: false })))
+    expect(out).toContain('What we need from you')
+    expect(out).not.toContain('data-reply-form')
+  })
+  it('says something useful when we never wrote down what we need', () => {
+    expect(html(withStills(stills({ waiting_for: null })))).toContain('We’re waiting on something from you')
+  })
+  it('escapes what was written on either side', () => {
+    const evil = '<script>alert(1)</script>'
+    const out = html(withStills(stills({ waiting_for: evil, reply: { text: evil, at: null } })))
+    expect(out).not.toContain('<script>')
+  })
+  it('shows nothing of the kind for an item that is not waiting', () => {
+    const out = html(withStills(stills({ status: 'in_progress', status_label: 'In progress', waiting_for: null, can_reply: false })))
+    expect(out).not.toContain('What we need from you')
+  })
+})

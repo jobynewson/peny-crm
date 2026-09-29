@@ -18,9 +18,13 @@ vi.mock('@clerk/backend', () => ({
   createClerkClient: () => ({ users: { getUser: async id => ({ firstName: id === 'user_cl_dana' ? 'Dana' : 'Someone', lastName: 'Client' }) } }),
 }))
 const newRequestAlerts = []
+const changesAlerts = []
+const replyAlerts = []
 vi.mock('./_alerts.js', async orig => ({
   ...(await orig()),
   alertNewRequest: async (sql, args) => { newRequestAlerts.push(args); return [] },
+  alertChangesRequested: async (sql, args) => { changesAlerts.push(args); return [] },
+  alertClientReply: async (sql, args) => { replyAlerts.push(args); return [] },
 }))
 vi.mock('./_ratelimit.js', () => ({ isRateLimited: () => false, getClientIp: () => '127.0.0.1' }))
 
@@ -303,6 +307,120 @@ describeDb('/api/client', () => {
       expect(byTitle['Declined one']).toMatchObject({ status: 'declined', note: 'Outside this retainer — we will quote separately.' })
       const json = JSON.stringify(view)
       for (const leak of [ids.staff, 'decided', 'Quietly hidden']) expect(json, leak).not.toContain(leak)
+    })
+  })
+
+  describe('replies on items waiting on the client', () => {
+    beforeEach(async () => {
+      await sql`UPDATE deliverables SET client_reply = NULL, client_replied_at = NULL WHERE id = ${ids.waiting}`
+      replyAlerts.length = 0
+    })
+    const reply = (id, body, opts = {}) => call('POST', `client/deliverables/${id}/reply`, { body, ...opts })
+    const stored = async () => (await sql`SELECT client_reply, status, waiting_note FROM deliverables WHERE id = ${ids.waiting}`)[0]
+
+    it('saves the note, leaves the item waiting, shows it back, and tells the owner', async () => {
+      CLAIMS = DANA
+      const r = await reply(ids.waiting, { reply: '  The product shipped on Friday. ' })
+      expect(r.statusCode).toBe(200)
+      expect(await stored()).toEqual({ client_reply: 'The product shipped on Friday.', status: 'waiting_on_client', waiting_note: 'Logo files' })
+      const stills = r.body.view.workstreams[0].deliverables.find(d => d.title === 'Stills')
+      expect(stills).toMatchObject({ status: 'waiting_on_you', waiting_for: 'Logo files', reply: { text: 'The product shipped on Friday.' }, can_reply: true })
+      expect(replyAlerts).toEqual([{ deliverableId: ids.waiting, reply: 'The product shipped on Friday.', by: 'Dana Client' }])
+    })
+
+    it('keeps the latest and tells us every time', async () => {
+      CLAIMS = DANA
+      await reply(ids.waiting, { reply: 'Not yet' })
+      await reply(ids.waiting, { reply: 'Shipped now' })
+      expect((await stored()).client_reply).toBe('Shipped now')
+      expect(replyAlerts.map(a => a.reply)).toEqual(['Not yet', 'Shipped now'])
+    })
+
+    it('needs a note, and a short one', async () => {
+      CLAIMS = DANA
+      for (const body of [{}, { reply: '   ' }, { reply: 'x'.repeat(1001) }]) {
+        const r = await reply(ids.waiting, body)
+        expect([r.statusCode, r.body.error.field]).toEqual([422, 'reply'])
+      }
+      expect((await stored()).client_reply).toBeNull()
+      expect(replyAlerts).toEqual([])
+    })
+
+    it('only for an item that is waiting on them, shown to them, in their company', async () => {
+      CLAIMS = DANA
+      const notWaiting = await reply(ids.hero, { reply: 'hello' })
+      expect([notWaiting.statusCode, notWaiting.body.error.code]).toEqual([409, 'not_waiting'])
+      const [hiddenD] = await sql`SELECT d.id FROM deliverables d WHERE d.title = 'Hidden cut'`
+      const [betaD] = await sql`SELECT d.id FROM deliverables d WHERE d.title = 'Beta film'`
+      await sql`UPDATE deliverables SET status = 'waiting_on_client' WHERE id IN (${hiddenD.id}, ${betaD.id})`
+      for (const id of [hiddenD.id, betaD.id, '11111111-1111-4111-8111-111111111111']) {
+        const r = await reply(id, { reply: 'hello', company_id: 'anything', org_id: 'org_cl_beta' })
+        expect([r.statusCode, r.body.error.code], id).toEqual([404, 'not_found'])
+      }
+      await sql`UPDATE deliverables SET status = 'in_review' WHERE id IN (${hiddenD.id}, ${betaD.id})`
+      const rows = await sql`SELECT client_reply FROM deliverables WHERE id IN (${hiddenD.id}, ${betaD.id}, ${ids.hero})`
+      expect(rows.map(r => r.client_reply)).toEqual([null, null, null])
+      expect(replyAlerts).toEqual([])
+    })
+
+    it('is for signed-in clients only: not a portal link, an impersonation or Slate staff', async () => {
+      CLAIMS = DANA
+      const viaLink = await reply(ids.waiting, { reply: 'hi' }, { token: 'cltestmovedtoken00002' })
+      expect([viaLink.statusCode, viaLink.body.error.code]).toEqual([403, 'signed_in_only'])
+      CLAIMS = { ...DANA, act: { sub: 'user_cl_staff' } }
+      expect((await reply(ids.waiting, { reply: 'hi' })).body.error.code).toBe('read_only')
+      CLAIMS = { sub: 'user_cl_staff', v: 2, o: { id: 'org_cl_alpha' } }
+      expect((await reply(ids.waiting, { reply: 'hi' })).body.error.code).toBe('staff')
+      CLAIMS = null
+      expect((await reply(ids.waiting, { reply: 'hi' })).statusCode).toBe(401)
+      expect((await stored()).client_reply).toBeNull()
+      expect(replyAlerts).toEqual([])
+    })
+
+    it('a project link never sees a reply, and an impersonation sees it but cannot add to it', async () => {
+      CLAIMS = DANA
+      await reply(ids.waiting, { reply: 'PRIVATE-REPLY-TEXT' })
+      CLAIMS = { ...DANA, act: { sub: 'user_cl_staff' } }
+      const seen = (await call('GET', 'client/view')).body.workstreams[0].deliverables.find(d => d.title === 'Stills')
+      expect(seen).toMatchObject({ reply: { text: 'PRIVATE-REPLY-TEXT' }, can_reply: false })
+      const moved = await call('GET', 'client/view', { token: 'cltestmovedtoken00002' })
+      expect(JSON.stringify(moved.body)).not.toContain('PRIVATE-REPLY-TEXT')
+    })
+  })
+
+  describe('changes requested', () => {
+    beforeEach(async () => {
+      changesAlerts.length = 0
+      await sql`UPDATE deliveries SET client_response = 'pending', client_comment = NULL, responded_at = NULL WHERE id = ${ids.hero2}`
+      await sql`UPDATE deliverables SET status = 'in_review' WHERE id = ${ids.hero}`
+    })
+
+    it('tells the owner when a client asks for changes, with what they said', async () => {
+      CLAIMS = DANA
+      const r = await call('POST', `client/deliveries/${ids.hero2}/response`, { body: { response: 'changes_requested', comment: ' Bigger logo, please ' } })
+      expect(r.statusCode).toBe(200)
+      expect(changesAlerts).toEqual([{ deliverableId: ids.hero, comment: 'Bigger logo, please', by: 'Dana Client' }])
+    })
+
+    it('says nothing about an approval (that is for the digest), or about an answer that was refused', async () => {
+      CLAIMS = DANA
+      await call('POST', `client/deliveries/${ids.hero2}/response`, { body: { response: 'changes_requested' } })   // no comment: 422
+      await call('POST', `client/deliveries/${ids.hero1}/response`, { body: { response: 'changes_requested', comment: 'old round' } })   // superseded: 409
+      await call('POST', `client/deliveries/${ids.beta1}/response`, { body: { response: 'changes_requested', comment: 'not ours' } })   // 404
+      expect(changesAlerts).toEqual([])
+      await call('POST', `client/deliveries/${ids.hero2}/response`, { body: { response: 'approved' } })
+      expect(changesAlerts).toEqual([])
+    })
+
+    it('does not fail the answer if the email does', async () => {
+      CLAIMS = DANA
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      changesAlerts.push = () => { throw new Error('Gmail said no') }
+      const r = await call('POST', `client/deliveries/${ids.hero2}/response`, { body: { response: 'changes_requested', comment: 'Brighter' } })
+      delete changesAlerts.push
+      spy.mockRestore()
+      expect(r.statusCode).toBe(200)
+      expect((await sql`SELECT client_response FROM deliveries WHERE id = ${ids.hero2}`)[0].client_response).toBe('changes_requested')
     })
   })
 })
