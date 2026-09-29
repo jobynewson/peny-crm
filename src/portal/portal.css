@@ -92,6 +92,26 @@ a { color: var(--accent-text); }
 .pt-changes label { font-size: 14px; font-weight: 500; }
 .pt-changes textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface); color: var(--text); font: 16px var(--font); resize: vertical; }
 .pt-changes textarea:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15); }
+/* A short form in the worklist: asking for something, replying to us. */
+.pt-form { display: flex; flex-direction: column; gap: 6px; padding: 12px 16px 16px; border-top: 1px solid var(--border-light); }
+.pt-form[hidden] { display: none; }
+.pt-form label { margin-top: 6px; font-size: 14px; font-weight: 500; }
+.pt-form input, .pt-form textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface); color: var(--text); font: 16px var(--font); }
+.pt-form textarea { resize: vertical; }
+.pt-form input:focus, .pt-form textarea:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15); }
+.pt-form .pt-actions { margin-top: 8px; }
+.pt-ws-action { margin-left: auto; min-height: 36px; }
+.pt-requests-empty { margin: 0; padding: 4px 16px 16px; font-size: 14px; }
+.pt-chip--request-submitted { background: var(--cat-blue-soft); color: var(--cat-blue); }
+.pt-chip--request-accepted { background: var(--cat-green-soft); color: var(--cat-green); }
+.pt-chip--request-declined { background: var(--cat-grey-soft); color: var(--cat-grey); }
+.pt-request-detail { margin: 8px 0 0; font-size: 14px; white-space: pre-line; overflow-wrap: anywhere; }
+.pt-request-detail a, .pt-request-declined a { color: var(--accent-text); }
+.pt-request-accepted { margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--cat-green-soft); font-size: 14px; }
+.pt-request-accepted a { margin-left: 4px; color: var(--accent-text); font-weight: 500; }
+.pt-request-declined { margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--surface-2); font-size: 14px; white-space: pre-line; }
+.pt-earlier--requests { padding: 0 16px 12px; }
+.pt-d:target { background: var(--cat-green-soft); }
 .pt-form-msg { font-size: 13px; color: var(--danger); }
 .pt-form-msg:empty { display: none; }
 .pt-earlier { margin-top: 10px; font-size: 14px; }

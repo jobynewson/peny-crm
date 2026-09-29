@@ -5,6 +5,9 @@
 //   POST /api/client/deliveries/:id/response  { response, comment } — approve
 //                                             or request changes (signed-in
 //                                             clients only)
+//   POST /api/client/requests                 { title, detail?, wanted_by? } — a
+//                                             request for us (signed-in
+//                                             clients only)
 //
 // Who sees what is decided once, by resolveScope() — the ONLY place a portal
 // scope is built from a request — before any handler runs:
@@ -27,12 +30,14 @@ import { createClerkClient } from '@clerk/backend'
 import { UUID, fail, invalid, matchRoute, routePathFrom, readBody, workspaceId } from './_api.js'
 import { verifyClerkSession } from './_auth.js'
 import { isRateLimited, getClientIp } from './_ratelimit.js'
-import { companyScope, projectScope, respondToDelivery } from './_worklist.js'
+import { companyScope, projectScope, respondToDelivery, submitRequest } from './_worklist.js'
+import { alertNewRequest } from './_alerts.js'
 import { readClientView } from './_client-view.js'
 
 export const ROUTES = [
   { method: 'GET',  pattern: /^client\/view$/,                                      handler: getView },
   { method: 'POST', pattern: new RegExp(`^client/deliveries/(?<id>${UUID})/response$`), handler: respond },
+  { method: 'POST', pattern: /^client\/requests$/,                                   handler: raiseRequest },
 ]
 
 const TOKEN = /^[A-Za-z0-9_-]{8,128}$/
@@ -119,6 +124,26 @@ async function respond(req, res, { sql, scope, params }) {
     return fail(res, status, code, message, field ? { field } : {})
   }
   return res.status(200).json({ ok: true, view: await readClientView(sql, scope) })
+}
+
+// ── POST /api/client/requests ────────────────────────────────────────────────
+// { title, detail?, wanted_by? }. Tells the company's lead straight away (the
+// request has no deliverable, so no owner, yet). Returns the fresh view.
+async function raiseRequest(req, res, { sql, scope }) {
+  const body = readBody(req)
+  if (!body) return invalid(res, 'body', 'Request body is not valid JSON')
+  const by = scope.kind === 'company' ? { clerkId: scope.clerkUserId, name: await clientName(scope.clerkUserId) } : null
+  const result = await submitRequest(sql, scope, { input: body, by })
+  if (result.error) {
+    const { status, code, message, field } = result.error
+    return fail(res, status, code, message, field ? { field } : {})
+  }
+  try {
+    await alertNewRequest(sql, { request: result.request, companyName: result.request.company_name })
+  } catch (err) {
+    console.error('[client] new-request alert failed:', err?.message)   // the request is saved either way
+  }
+  return res.status(201).json({ ok: true, view: await readClientView(sql, scope) })
 }
 
 // Who answered, as a name the record can show without asking Clerk again.

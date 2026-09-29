@@ -19,7 +19,7 @@
 // NOT a Vercel function — the `_` prefix keeps it out of function detection.
 
 import { londonDate } from './_dates.js'
-import { clientStatus, dueDisplay, isFrameIoUrl, RESPONSE_LABELS, WORKSTREAM_LABELS } from './_retainer-rules.js'
+import { clientStatus, dueDisplay, isFrameIoUrl, requestLabel, RESPONSE_LABELS, WORKSTREAM_LABELS } from './_retainer-rules.js'
 import { legacyDeliverables } from './_legacy-deliverables.js'
 import { isScope } from './_worklist.js'
 
@@ -34,7 +34,7 @@ export async function readClientView(sql, scope) {
 // ── Signed in: the company's whole visible worklist ──────────────────────────
 
 async function companyView(sql, scope) {
-  const [companies, studios, workstreams, deliverables, rounds] = await Promise.all([
+  const [companies, studios, workstreams, deliverables, rounds, requests] = await Promise.all([
     sql`
       SELECT c.name FROM companies c
       WHERE c.id = ${scope.companyId} AND c.user_id = ${scope.ws}
@@ -69,6 +69,20 @@ async function companyView(sql, scope) {
       WHERE w.user_id = ${scope.ws} AND w.company_id = ${scope.companyId} AND d.client_visible
       ORDER BY dv.round
     `,
+    // The company's requests, newest first. An accepted one shows the date we
+    // gave it, read from the deliverable it became (only if that is shown to
+    // the client — otherwise it reads as accepted, without a date).
+    sql`
+      SELECT r.id, r.title, r.detail, r.wanted_by::text AS wanted_by, r.status, r.decline_note,
+             r.submitted_by_name, r.created_at,
+             d.id AS deliverable_id, d.due_kind, d.due_date::text AS due_date, d.due_label, d.cadence,
+             d.status AS deliverable_status
+      FROM requests r
+      LEFT JOIN deliverables d ON d.id = r.deliverable_id AND d.client_visible
+      WHERE r.user_id = ${scope.ws} AND r.company_id = ${scope.companyId}
+      ORDER BY r.created_at DESC
+      LIMIT 50
+    `,
   ])
   if (!companies[0]) return null
   const today = londonDate()
@@ -78,6 +92,7 @@ async function companyView(sql, scope) {
     title: companies[0].name,
     studio: studioJson(studios[0]),
     workstreams: worklistJson({ workstreams, deliverables, rounds, today, canRespond: scope.canRespond }),
+    requests: requestsJson(requests, today),
   }
 }
 
@@ -196,6 +211,29 @@ function groupBy(rows, key) {
     out.get(r[key]).push(r)
   }
   return out
+}
+
+// Requests, in the words the client sees: Submitted, Accepted (with the date
+// we gave it, and where it now sits in their worklist) or Declined (with our
+// note). Who at Peny decided is not said.
+export function requestsJson(rows, today) {
+  return rows.map(r => {
+    const theirs = clientStatus(r.deliverable_status)
+    return {
+      id: r.id,
+      title: r.title,
+      detail: r.detail,
+      wanted_by: r.wanted_by,
+      status: r.status === 'new' ? 'submitted' : r.status,
+      status_label: requestLabel(r.status),
+      sent_at: r.created_at,
+      sent_by: r.submitted_by_name || null,
+      note: r.status === 'declined' ? r.decline_note : null,
+      accepted: r.status === 'accepted' && r.deliverable_id
+        ? { deliverable_id: r.deliverable_id, due: dueDisplay(r, today), status_label: theirs.label }
+        : null,
+    }
+  })
 }
 
 // Workstreams → deliverables → rounds, in the words the client sees.

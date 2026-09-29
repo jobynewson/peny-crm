@@ -11,3 +11,14 @@ const LONDON = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London', yea
 export const dayMonth = iso => { const [, m, d] = LONDON.format(new Date(iso)).split('-').map(Number); return `${d} ${MONTHS[m - 1]}` }
 // "2 Oct 2026" for a 'YYYY-MM-DD' day.
 export const fullDate = ymd => { if (!ymd) return ''; const [y, m, d] = ymd.slice(0, 10).split('-').map(Number); return `${d} ${MONTHS[m - 1]} ${y}` }
+
+// Text with its http(s) links made clickable. The text is escaped first, so
+// nothing but the anchors it adds is ever markup. Trailing punctuation stays
+// outside the link ("see https://x.test/brief." ends the sentence).
+export function linkify(text) {
+  return esc(text).replace(/https?:\/\/[^\s<]+/g, match => {
+    const url = match.replace(/(?:[.,;:!?)]|&amp;)+$/, '')
+    const rest = match.slice(url.length)
+    return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>${rest}`
+  })
+}

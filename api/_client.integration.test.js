@@ -6,7 +6,7 @@
 // nobody may see or change anything outside their own scope, and nothing
 // internal may reach any of them.
 
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import { TEST_DB, connectTestDb, fakeRes } from './_test-db.js'
 
 let CLAIMS = null
@@ -16,6 +16,11 @@ vi.mock('./_auth.js', () => ({
 }))
 vi.mock('@clerk/backend', () => ({
   createClerkClient: () => ({ users: { getUser: async id => ({ firstName: id === 'user_cl_dana' ? 'Dana' : 'Someone', lastName: 'Client' }) } }),
+}))
+const newRequestAlerts = []
+vi.mock('./_alerts.js', async orig => ({
+  ...(await orig()),
+  alertNewRequest: async (sql, args) => { newRequestAlerts.push(args); return [] },
 }))
 vi.mock('./_ratelimit.js', () => ({ isRateLimited: () => false, getClientIp: () => '127.0.0.1' }))
 
@@ -36,6 +41,7 @@ const OLU = { sub: 'user_cl_olu', v: 2, o: { id: 'org_cl_beta', rol: 'org:member
 const SECRET = 'SECRET-INTERNAL-NOTE'
 
 async function wipe() {
+  await sql`DELETE FROM requests WHERE company_id IN (SELECT id FROM companies WHERE name LIKE 'CLTest %')`
   await sql`DELETE FROM workstreams WHERE company_id IN (SELECT id FROM companies WHERE name LIKE 'CLTest %')`
   await sql`DELETE FROM companies WHERE name LIKE 'CLTest %'`
   await sql`DELETE FROM post_production_schedules WHERE project_id IN (SELECT id FROM projects WHERE name LIKE 'CLTest %')`
@@ -204,5 +210,99 @@ describeDb('/api/client', () => {
     expect((await call('GET', 'client/everything')).statusCode).toBe(404)
     expect((await call('DELETE', 'client/view')).statusCode).toBe(405)
     expect((await call('POST', 'client/deliveries/not-a-uuid/response', { body: {} })).statusCode).toBe(404)
+  })
+
+  describe('requests', () => {
+    beforeEach(async () => {
+      await sql`DELETE FROM requests WHERE company_id IN (SELECT id FROM companies WHERE name LIKE 'CLTest %')`
+      newRequestAlerts.length = 0
+    })
+    const raise = (body, opts = {}) => call('POST', 'client/requests', { body, ...opts })
+    const count = async () => (await sql`SELECT count(*)::int AS n FROM requests WHERE company_id IN (SELECT id FROM companies WHERE name LIKE 'CLTest %')`)[0].n
+
+    it('lets a signed-in client raise one, shows it as Submitted, and tells us', async () => {
+      CLAIMS = DANA
+      const r = await raise({ title: '  Cut-down of the film ', detail: 'See https://x.test/brief', wanted_by: '2026-10-30' })
+      expect(r.statusCode).toBe(201)
+      expect(r.body.view.requests).toHaveLength(1)
+      expect(r.body.view.requests[0]).toMatchObject({
+        title: 'Cut-down of the film', detail: 'See https://x.test/brief', wanted_by: '2026-10-30',
+        status: 'submitted', status_label: 'Submitted', sent_by: 'Dana Client', accepted: null, note: null,
+      })
+      const [row] = await sql`SELECT status, submitted_by, submitted_by_name, company_id, user_id FROM requests`
+      expect(row).toEqual({ status: 'new', submitted_by: 'user_cl_dana', submitted_by_name: 'Dana Client', company_id: ids.alpha, user_id: ws })
+      expect(newRequestAlerts).toHaveLength(1)
+      expect(newRequestAlerts[0]).toMatchObject({ companyName: 'CLTest Alpha', request: { title: 'Cut-down of the film', company_id: ids.alpha } })
+    })
+
+    it('needs a title and a real date, and writes nothing otherwise', async () => {
+      CLAIMS = DANA
+      const none = await raise({ title: '   ' })
+      expect([none.statusCode, none.body.error.field]).toEqual([422, 'title'])
+      const bad = await raise({ title: 'x', wanted_by: '2026-02-30' })
+      expect([bad.statusCode, bad.body.error.field]).toEqual([422, 'wanted_by'])
+      expect(await count()).toBe(0)
+      expect(newRequestAlerts).toEqual([])
+    })
+
+    it('is for signed-in clients only: not a portal link, an impersonation or Slate staff', async () => {
+      CLAIMS = DANA   // a session as well: the link still wins
+      const viaLink = await raise({ title: 'x' }, { token: 'cltestlegacytoken0001' })
+      expect([viaLink.statusCode, viaLink.body.error.code]).toEqual([403, 'signed_in_only'])
+      CLAIMS = { ...DANA, act: { sub: 'user_cl_staff' } }
+      const impersonated = await raise({ title: 'x' })
+      expect([impersonated.statusCode, impersonated.body.error.code]).toEqual([403, 'read_only'])
+      CLAIMS = { sub: 'user_cl_staff', v: 2, o: { id: 'org_cl_alpha' } }
+      expect((await raise({ title: 'x' })).body.error.code).toBe('staff')
+      CLAIMS = null
+      expect((await raise({ title: 'x' })).statusCode).toBe(401)
+      expect(await count()).toBe(0)
+      expect(newRequestAlerts).toEqual([])
+    })
+
+    it('files it under the caller\'s own company, whatever the body says, and keeps companies apart', async () => {
+      CLAIMS = DANA
+      await raise({ title: 'Alpha ask', company_id: 'anything', org_id: 'org_cl_beta', user_id: 'someone_else', status: 'accepted' })
+      const [row] = await sql`SELECT company_id, user_id, status FROM requests`
+      expect(row).toEqual({ company_id: ids.alpha, user_id: ws, status: 'new' })
+      CLAIMS = OLU
+      const beta = await call('GET', 'client/view')
+      expect(beta.body.requests).toEqual([])
+      expect(JSON.stringify(beta.body)).not.toContain('Alpha ask')
+    })
+
+    it('stops at ten unanswered, and lets more in once we have answered', async () => {
+      CLAIMS = DANA
+      for (let i = 1; i <= 10; i++) expect((await raise({ title: `Ask ${i}` })).statusCode).toBe(201)
+      const eleventh = await raise({ title: 'Ask 11' })
+      expect([eleventh.statusCode, eleventh.body.error.code]).toEqual([429, 'too_many_open'])
+      expect(await count()).toBe(10)
+      await sql`UPDATE requests SET status = 'declined', decline_note = 'No' WHERE title = 'Ask 1'`
+      expect((await raise({ title: 'Ask 11' })).statusCode).toBe(201)
+      // another company's queue is its own
+      CLAIMS = OLU
+      expect((await raise({ title: 'Beta ask' })).statusCode).toBe(201)
+    })
+
+    it('shows what we decided in the client\'s words, and nothing of who decided', async () => {
+      CLAIMS = DANA
+      const [launch] = await sql`SELECT id FROM workstreams WHERE company_id = ${ids.alpha} AND title = 'Launch'`
+      const [shown] = await sql`INSERT INTO deliverables (workstream_id, title, status, client_visible, due_kind, due_date, owner_id)
+        VALUES (${launch.id}, 'Cut-down of the film', 'in_progress', true, 'exact', '2026-10-09', ${ids.staff}) RETURNING id`
+      const [hiddenD] = await sql`INSERT INTO deliverables (workstream_id, title, status, client_visible, due_kind, due_date)
+        VALUES (${launch.id}, 'Quietly hidden', 'planned', false, 'exact', '2026-10-10') RETURNING id`
+      await sql`INSERT INTO requests (user_id, company_id, submitted_by, submitted_by_name, title, status, deliverable_id, decided_by, decided_at)
+        VALUES (${ws}, ${ids.alpha}, 'user_cl_dana', 'Dana Client', 'Accepted one', 'accepted', ${shown.id}, ${ids.staff}, now()),
+               (${ws}, ${ids.alpha}, 'user_cl_dana', 'Dana Client', 'Accepted but hidden', 'accepted', ${hiddenD.id}, ${ids.staff}, now()),
+               (${ws}, ${ids.alpha}, 'user_cl_dana', 'Dana Client', 'Declined one', 'declined', NULL, ${ids.staff}, now())`
+      await sql`UPDATE requests SET decline_note = 'Outside this retainer — we will quote separately.' WHERE title = 'Declined one'`
+      const view = (await call('GET', 'client/view')).body
+      const byTitle = Object.fromEntries(view.requests.map(r => [r.title, r]))
+      expect(byTitle['Accepted one']).toMatchObject({ status: 'accepted', status_label: 'Accepted', accepted: { deliverable_id: shown.id, due: 'Fri 9 Oct', status_label: 'In progress' } })
+      expect(byTitle['Accepted but hidden']).toMatchObject({ status_label: 'Accepted', accepted: null })
+      expect(byTitle['Declined one']).toMatchObject({ status: 'declined', note: 'Outside this retainer — we will quote separately.' })
+      const json = JSON.stringify(view)
+      for (const leak of [ids.staff, 'decided', 'Quietly hidden']) expect(json, leak).not.toContain(leak)
+    })
   })
 })

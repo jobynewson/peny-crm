@@ -4,14 +4,14 @@
 
 import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
-import { worklistJson } from './_client-view.js'
+import { worklistJson, requestsJson } from './_client-view.js'
 
 const SOURCE = fs.readFileSync(new URL('./_client-view.js', import.meta.url), 'utf8')
 const QUERIES = [...SOURCE.matchAll(/sql`([\s\S]*?)`/g)].map(m => m[1])
 
 describe('_client-view.js queries', () => {
   it('found the queries', () => {
-    expect(QUERIES.length).toBeGreaterThanOrEqual(13)
+    expect(QUERIES.length).toBeGreaterThanOrEqual(14)
   })
 
   it('every query carries the scope itself', () => {
@@ -89,5 +89,42 @@ describe('worklistJson', () => {
   it('says an answer Peny recorded was recorded, without naming who', () => {
     const [w] = worklistJson({ ...base, canRespond: true })
     expect(w.deliverables[2].rounds[0]).toMatchObject({ response: 'changes_requested', comment: 'Brighter', answered_by: null, recorded_by_studio: true })
+  })
+})
+
+describe('requestsJson', () => {
+  const today = '2026-09-28'
+  const row = over => ({
+    id: 'q1', title: 'Cut-down', detail: 'See https://x.test', wanted_by: '2026-10-30', status: 'new', decline_note: null,
+    submitted_by_name: 'Sam', created_at: 't1', deliverable_id: null, due_kind: null, due_date: null, due_label: null,
+    cadence: null, deliverable_status: null, ...over,
+  })
+
+  it('reads Submitted, Accepted and Declined', () => {
+    const [a, b, c] = requestsJson([
+      row(),
+      row({ id: 'q2', status: 'accepted', deliverable_id: 'd9', due_kind: 'exact', due_date: '2026-10-09', deliverable_status: 'in_progress' }),
+      row({ id: 'q3', status: 'declined', decline_note: 'Outside this retainer.' }),
+    ], today)
+    expect([a.status, a.status_label]).toEqual(['submitted', 'Submitted'])
+    expect([b.status, b.status_label]).toEqual(['accepted', 'Accepted'])
+    expect([c.status, c.status_label, c.note]).toEqual(['declined', 'Declined', 'Outside this retainer.'])
+  })
+
+  it('an accepted request carries the date we gave it and where it sits', () => {
+    const [r] = requestsJson([row({ status: 'accepted', deliverable_id: 'd9', due_kind: 'exact', due_date: '2026-10-09', deliverable_status: 'in_progress' })], today)
+    expect(r.accepted).toEqual({ deliverable_id: 'd9', due: 'Fri 9 Oct', status_label: 'In progress' })
+  })
+
+  it('accepted but not shown to the client reads as accepted, with nothing to link to', () => {
+    const [r] = requestsJson([row({ status: 'accepted' })], today)
+    expect(r.status_label).toBe('Accepted')
+    expect(r.accepted).toBeNull()
+  })
+
+  it('only a declined request shows a note, and nothing internal leaves', () => {
+    const [r] = requestsJson([row({ decline_note: 'stale note left over' })], today)
+    expect(r.note).toBeNull()
+    expect(Object.keys(r).sort()).toEqual(['accepted', 'detail', 'id', 'note', 'sent_at', 'sent_by', 'status', 'status_label', 'title', 'wanted_by'])
   })
 })

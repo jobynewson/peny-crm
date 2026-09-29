@@ -4,7 +4,7 @@
 // whether rounds can be answered; this file only draws what it's given.
 
 import { scheduleHtml, bindSchedule } from './schedule.js'
-import { esc, count, dayMonth, fullDate } from './util.js'
+import { esc, count, dayMonth, fullDate, linkify } from './util.js'
 
 export { esc }
 
@@ -61,6 +61,7 @@ function companyHtml(view, { signedIn, canSwitch }) {
     <main class="pt-main">
       ${view.scope.can_respond ? '' : '<p class="pt-notice">You’re viewing this as the client. Answers can only be given by the client.</p>'}
       <p class="pt-summary">${needs.length ? needs.join(' · ') : 'Nothing needs you right now.'}</p>
+      ${requestsHtml(view)}
       ${live.map(w => workstreamHtml(w)).join('') || (done.length ? '' : '<p class="pt-muted">There’s nothing to show yet.</p>')}
       ${done.map(w => `
         <details class="pt-ws pt-ws--done">
@@ -69,6 +70,64 @@ function companyHtml(view, { signedIn, canSwitch }) {
         </details>`).join('')}
     </main>
     ${footerHtml(view)}`
+}
+
+// ── Requests: asking us for something ────────────────────────────────────────
+
+const REQUESTS_SHOWN = 5
+
+function requestsHtml(view) {
+  const list = view.requests || []
+  const canSend = view.scope.can_respond
+  const shown = list.slice(0, REQUESTS_SHOWN)
+  const earlier = list.slice(REQUESTS_SHOWN)
+  return `
+    <section class="pt-ws pt-requests" aria-labelledby="pt-req-h">
+      <div class="pt-ws-head">
+        <h2 class="pt-ws-title" id="pt-req-h">Requests</h2>
+        ${canSend ? '<button type="button" class="pt-btn pt-btn--secondary pt-ws-action" data-new-request>Ask for something</button>' : ''}
+      </div>
+      ${canSend ? `
+        <form class="pt-form" data-request-form hidden novalidate>
+          <label for="rq-title">What do you need?</label>
+          <input id="rq-title" maxlength="300" autocomplete="off" />
+          <label for="rq-detail">More detail <span class="pt-muted">— a link to any files or references is fine</span></label>
+          <textarea id="rq-detail" rows="4"></textarea>
+          <label for="rq-by">When do you need it by? <span class="pt-muted">(optional)</span></label>
+          <input id="rq-by" type="date" />
+          <div class="pt-form-msg" role="alert"></div>
+          <div class="pt-actions">
+            <button type="submit" class="pt-btn pt-btn--primary">Send request</button>
+            <button type="button" class="pt-btn" data-cancel-request>Cancel</button>
+          </div>
+        </form>` : ''}
+      ${list.length
+        ? `<ul class="pt-list">${shown.map(requestHtml).join('')}</ul>
+           ${earlier.length ? `<details class="pt-earlier pt-earlier--requests"><summary>Earlier requests (${earlier.length})</summary><ul class="pt-list">${earlier.map(requestHtml).join('')}</ul></details>` : ''}`
+        : `<p class="pt-muted pt-requests-empty">${canSend ? 'Need something from us? Ask here instead of emailing — you’ll see where it stands.' : 'No requests yet.'}</p>`}
+    </section>`
+}
+
+function requestHtml(r) {
+  const meta = [
+    `Sent ${dayMonth(r.sent_at)}${r.sent_by ? ` by ${esc(r.sent_by)}` : ''}`,
+    r.wanted_by ? `Wanted by ${esc(fullDate(r.wanted_by))}` : null,
+  ].filter(Boolean).join(' · ')
+  return `
+    <li class="pt-d pt-request" id="rq-${esc(r.id)}">
+      <div class="pt-d-head">
+        <h3 class="pt-d-title">${esc(r.title)}</h3>
+        <span class="pt-chip pt-chip--request-${esc(r.status)}">${esc(r.status_label)}</span>
+      </div>
+      <div class="pt-d-meta">${meta}</div>
+      ${r.detail ? `<p class="pt-request-detail">${linkify(r.detail)}</p>` : ''}
+      ${r.accepted ? `
+        <div class="pt-request-accepted">
+          We’ve taken this on${r.accepted.due && r.accepted.due !== 'No date' ? ` — due ${esc(r.accepted.due)}` : ''}.
+          <a href="#d-${esc(r.accepted.deliverable_id)}">See it in your worklist ↓</a>
+        </div>` : ''}
+      ${r.status === 'declined' && r.note ? `<div class="pt-request-declined"><strong>Our note:</strong> ${linkify(r.note)}</div>` : ''}
+    </li>`
 }
 
 function workstreamHtml(w) {
@@ -217,10 +276,11 @@ function legacyHtml(d, today) {
 
 // ── Behaviour ────────────────────────────────────────────────────────────────
 
-export function bindView(root, view, { respond, rerender, signOut, switchCompany }) {
+export function bindView(root, view, { respond, submitRequest, rerender, signOut, switchCompany }) {
   root.querySelector('[data-sign-out]')?.addEventListener('click', signOut)
   root.querySelector('[data-switch]')?.addEventListener('click', switchCompany)
   if (view.schedule) bindSchedule(root, view.schedule)
+  bindRequestForm(root, { submitRequest, rerender })
 
   const part = (attr, id) => root.querySelector(`[${attr}="${CSS.escape(id)}"]`)
   const reset = id => {
@@ -270,6 +330,39 @@ export function bindView(root, view, { respond, rerender, signOut, switchCompany
     if (!comment) { msg.textContent = 'Say what needs to change'; form.querySelector('textarea').focus(); return }
     send(form.dataset.changesForm, { response: 'changes_requested', comment }, form.querySelector('[type="submit"]'), msg)
   }))
+}
+
+function bindRequestForm(root, { submitRequest, rerender }) {
+  const form = root.querySelector('[data-request-form]')
+  if (!form) return
+  const msg = form.querySelector('.pt-form-msg')
+  const open = () => { form.hidden = false; form.querySelector('#rq-title').focus() }
+  const close = () => { form.hidden = true; msg.textContent = '' }
+  root.querySelector('[data-new-request]')?.addEventListener('click', () => (form.hidden ? open() : close()))
+  form.querySelector('[data-cancel-request]').addEventListener('click', () => {
+    close()
+    root.querySelector('[data-new-request]')?.focus()
+  })
+  form.addEventListener('submit', async e => {
+    e.preventDefault()
+    const title = form.querySelector('#rq-title').value.trim()
+    if (!title) { msg.textContent = 'Say what you need'; form.querySelector('#rq-title').focus(); return }
+    const button = form.querySelector('[type="submit"]')
+    button.disabled = true
+    try {
+      const fresh = await submitRequest({
+        title,
+        detail: form.querySelector('#rq-detail').value.trim() || null,
+        wanted_by: form.querySelector('#rq-by').value || null,
+      })
+      toast('Sent — we’ll be in touch')
+      rerender(fresh)
+    } catch (err) {
+      button.disabled = false
+      msg.textContent = err.message
+      form.querySelector(err.field === 'wanted_by' ? '#rq-by' : '#rq-title').focus()
+    }
+  })
 }
 
 function toast(text) {

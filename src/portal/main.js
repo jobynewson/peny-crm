@@ -131,6 +131,7 @@ async function show(view = null) {
       const result = await api(`/api/client/deliveries/${deliveryId}/response`, { method: 'POST', body })
       return result.view
     },
+    submitRequest: async body => (await api('/api/client/requests', { method: 'POST', body })).view,
     rerender: fresh => show(fresh),
     signOut,
     switchCompany: () => chooseCompany(clerk.user.organizationMemberships),

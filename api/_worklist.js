@@ -17,6 +17,7 @@
 
 import {
   RESPONSES, statusAfterResponse, statusPatch, validateResponse, isUuid,
+  validateRequestInput, MAX_OPEN_REQUESTS,
 } from './_retainer-rules.js'
 
 // Only the objects the constructors made count as scopes — not copies
@@ -70,6 +71,49 @@ export async function respondToDelivery(sql, scope, { deliveryId, input, by }) {
   if (scope.kind === 'staff') return respondAsStaff(sql, scope, { deliveryId, response, comment, by })
   if (scope.kind === 'company') return respondAsClient(sql, scope, { deliveryId, response, comment, by })
   throw new Error(`Scope kind ${scope.kind} cannot respond`)
+}
+
+// A client raising a request. Signed-in clients only: a portal link (a
+// project scope) can't, and neither can someone viewing as the client. The cap
+// is in the statement that writes, so it holds for whoever calls.
+//   input — the request body: { title, detail?, wanted_by? }
+//   by    — the client: { clerkId, name }
+// { request } on success — { id, company_id, company_name, title, detail,
+// wanted_by, submitted_by_name } — or { error: { status, code, message, field? } }.
+export async function submitRequest(sql, scope, { input, by }) {
+  if (!isScope(scope)) throw new Error('submitRequest needs a scope from _worklist.js')
+  if (scope.kind !== 'company') {
+    return { error: { status: 403, code: 'signed_in_only', message: 'Requests can only be sent by clients who are signed in' } }
+  }
+  if (!scope.canRespond) return { error: { status: 403, code: 'read_only', message: 'This view can look but not send requests' } }
+
+  const bad = validateRequestInput(input)
+  if (bad) return { error: { status: 422, code: 'validation_failed', ...bad } }
+  const detail = typeof input.detail === 'string' && input.detail.trim() ? input.detail.trim() : null
+  const wantedBy = input.wanted_by || null
+
+  const [request] = await sql`
+    WITH co AS (
+      SELECT id, name FROM companies WHERE id = ${scope.companyId} AND user_id = ${scope.ws}
+    ), made AS (
+      INSERT INTO requests (user_id, company_id, submitted_by, submitted_by_name, title, detail, wanted_by)
+      SELECT ${scope.ws}, co.id, ${scope.clerkUserId}, ${by?.name ?? null}, ${input.title.trim()}, ${detail}, ${wantedBy}::date
+      FROM co
+      WHERE (SELECT count(*) FROM requests r WHERE r.company_id = co.id AND r.status = 'new') < ${MAX_OPEN_REQUESTS}
+      RETURNING id, company_id, title, detail, wanted_by::text AS wanted_by, submitted_by_name
+    )
+    SELECT made.*, co.name AS company_name FROM made, co
+  `
+  if (request) return { request }
+
+  const [company] = await sql`SELECT id FROM companies WHERE id = ${scope.companyId} AND user_id = ${scope.ws}`
+  if (!company) return { error: { status: 404, code: 'not_found', message: 'This portal is no longer available' } }
+  return {
+    error: {
+      status: 429, code: 'too_many_open',
+      message: `There are already ${MAX_OPEN_REQUESTS} requests waiting for us to answer. Once we have, you can send more.`,
+    },
+  }
 }
 
 const notFound = () => ({ error: { status: 404, code: 'not_found', message: 'Delivery not found' } })
