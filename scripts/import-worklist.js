@@ -4,8 +4,8 @@
 // workstream per product, its deliverables, due dates and the client's notes.
 // How the sheet is read is in _worklist-sheet.js.
 //
-//   VITE_DATABASE_URL=… node scripts/import-worklist.js Worklists.xlsx --company "DMM"            # dry run
-//   VITE_DATABASE_URL=… node scripts/import-worklist.js Worklists.xlsx --company "DMM" --apply    # writes
+//   DATABASE_URL=… node scripts/import-worklist.js Worklists.xlsx --company "DMM"            # dry run
+//   DATABASE_URL=… node scripts/import-worklist.js Worklists.xlsx --company "DMM" --apply    # writes
 //
 //   --year 2026              the year for dates written without one (default: this year, London)
 //   --visible                show the imported deliverables to the client (default: hidden)
@@ -13,7 +13,7 @@
 //                            its workstream complete (repeat for more than one)
 //
 // The dry run writes nothing: it prints the plan and every assumption made, so
-// check it before --apply. Without VITE_DATABASE_URL it still prints the plan.
+// check it before --apply. Without DATABASE_URL it still prints the plan.
 // Re-running is safe: a workstream the company already has (same title) is
 // skipped. The company is matched by name (ignoring case) or created.
 
@@ -98,21 +98,21 @@ async function main() {
   const plan = planImport(rows, { year: args.year, visible: args.visible, approved: args.approved, today })
   const problems = checkPlan(plan)
 
-  const url = process.env.VITE_DATABASE_URL
+  const url = process.env.DATABASE_URL
   const sql = url ? neon(url) : null
   const ws = sql ? await workspaceId(sql) : null
   const state = sql ? await currentState(sql, { ws, companyName: args.company }) : { company: null, existing: new Set() }
 
   console.log(`Worklist import — ${clean(args.company)} — ${args.file} (dates in ${args.year})`)
   console.log(args.apply ? 'Writing.' : 'Dry run: nothing is written. Add --apply to write.')
-  if (!sql) console.log('(No VITE_DATABASE_URL: showing the plan without checking what the database already has.)')
+  if (!sql) console.log('(No DATABASE_URL: showing the plan without checking what the database already has.)')
   printPlan(plan, { ...state, today })
   if (problems.length) {
     console.error(`\nThe plan has problems, so nothing can be written:\n  ${problems.join('\n  ')}`)
     process.exit(1)
   }
   if (!args.apply) return
-  if (!sql) throw new Error('--apply needs VITE_DATABASE_URL')
+  if (!sql) throw new Error('--apply needs DATABASE_URL')
 
   const result = await applyPlan(sql, { ws, companyName: args.company, plan })
   console.log(`\nDone: ${result.createdCompany ? 'created' : 'found'} “${result.company.name}”, added ${result.workstreams} workstream(s) and ${result.deliverables} deliverable(s).`)

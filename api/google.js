@@ -114,7 +114,7 @@ export async function syncLeaveRequestGoogle(sql, { action, requestId }) {
 }
 
 export default async function handler(req, res) {
-  const sql = neon(process.env.VITE_DATABASE_URL)
+  const sql = neon(process.env.DATABASE_URL)
   const proto = req.headers['x-forwarded-proto'] || 'https'
   const base  = `${proto}://${req.headers.host}`
 

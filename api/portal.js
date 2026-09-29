@@ -19,7 +19,7 @@ export default async function handler(req, res) {
   // ?view=tasks; _tasks.js does its own Clerk auth, method and path handling, so
   // dispatch before the public-portal CORS/GET guard below.
   if (req.query.view === 'tasks') {
-    return handleTasks(req, res, neon(process.env.VITE_DATABASE_URL))
+    return handleTasks(req, res, neon(process.env.DATABASE_URL))
   }
 
   // The Offload Log ingest (POST /api/offloads → rewritten here as
@@ -27,7 +27,7 @@ export default async function handler(req, res) {
   // limit — see claude.md. It has its own auth and method handling, so dispatch
   // before the GET-only portal guard below.
   if (req.query.view === 'offloads') {
-    return handleOffloadIngest(req, res, neon(process.env.VITE_DATABASE_URL))
+    return handleOffloadIngest(req, res, neon(process.env.DATABASE_URL))
   }
 
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -40,7 +40,7 @@ export default async function handler(req, res) {
     return res.status(429).json({ error: 'Too many requests' })
   }
 
-  const sql = neon(process.env.VITE_DATABASE_URL)
+  const sql = neon(process.env.DATABASE_URL)
 
   // The public office dashboard shares this function (rather than its own file)
   // to stay within Vercel's 12-function limit — see claude.md.

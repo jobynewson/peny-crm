@@ -341,7 +341,11 @@ npm run preview      # Preview production build
 ## Environment Variables
 Required (set in `.env.local` for local development, Vercel dashboard for production):
 - `VITE_CLERK_PUBLISHABLE_KEY` - Public Clerk API key
-- `VITE_DATABASE_URL` - Neon PostgreSQL connection string (use pooled connection)
+- `DATABASE_URL` - Neon PostgreSQL connection string (use pooled connection).
+  Server-only: every `/api/*` function and `scripts/*` read it. Never give it
+  a `VITE_` name — Vite builds those into the public JavaScript.
+- `VITE_DATABASE_URL` - the same string, read by the browser until the query
+  proxy lands (see "Database access").
 - `DASHBOARD_TOKEN` - Fixed secret token gating the public office-display
   dashboard at `/dashboard/<token>` (served by `public/dashboard.html`, data
   from `/api/portal?view=dashboard`). Unset = the dashboard returns 503.
@@ -942,7 +946,7 @@ always the source of truth and nothing is ever read back from Google.
   with the scope inside the statement that writes.
 
 ### Importing a client's worklist (`scripts/import-worklist.js`)
-- `VITE_DATABASE_URL=… node scripts/import-worklist.js Worklists.xlsx --company "DMM"`
+- `DATABASE_URL=… node scripts/import-worklist.js Worklists.xlsx --company "DMM"`
   prints the plan and every assumption and writes nothing; add `--apply` to
   write. `--year` (default: this year) dates written without one;
   `--visible` shows the imported deliverables to the client (default hidden);

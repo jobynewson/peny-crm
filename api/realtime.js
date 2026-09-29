@@ -17,7 +17,7 @@ export default async function handler(req, res) {
   if (error) return res.status(error.status).json({ error: error.message })
   const clerkUserId = claims.sub
   try {
-    const sql = neon(process.env.VITE_DATABASE_URL)
+    const sql = neon(process.env.DATABASE_URL)
     const token = await issueRealtimeToken({ clerkUserId, sql, apiKey: process.env.ABLY_API_KEY })
     return res.status(200).json(token)
   } catch (err) {

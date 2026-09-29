@@ -54,7 +54,7 @@ export default async function handler(req, res) {
   // The same daily run archives finished tasks, rather than taking a cron of
   // its own. A failure there is logged and never stops the nudges.
   if (req.query.type === 'task-nudge') {
-    const sql = neon(process.env.VITE_DATABASE_URL)
+    const sql = neon(process.env.DATABASE_URL)
     try {
       const archived = await archiveDoneTasks(sql)
       if (archived) console.log(`[tasks] archived ${archived} done task(s)`)
@@ -71,7 +71,7 @@ export default async function handler(req, res) {
   }
 
   const type = req.query.type || 'deliverables'
-  const sql = neon(process.env.VITE_DATABASE_URL)
+  const sql = neon(process.env.DATABASE_URL)
 
   const todayLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
@@ -387,7 +387,7 @@ async function handleExpenseDigest(req, res, sql, todayLabel) {
 // ── Leave notifications (POST ?type=leave-notify) ─────────────────────────────
 async function handleLeaveNotify(req, res) {
   // Slate staff only (client portal accounts have Clerk sessions too).
-  const sql = neon(process.env.VITE_DATABASE_URL)
+  const sql = neon(process.env.DATABASE_URL)
   const { error } = await verifyClerkUser(req, sql)
   if (error) return res.status(error.status).json({ error: error.message })
 
@@ -510,7 +510,7 @@ async function handleLeaveApprove(req, res) {
     return res.status(400).json({ error: 'Invalid action' })
   }
 
-  const sql = neon(process.env.VITE_DATABASE_URL)
+  const sql = neon(process.env.DATABASE_URL)
 
   try {
     // Find the leave request by token
@@ -778,7 +778,7 @@ function buildExpenseBreakdownSection(name, ents, mileageRate, submitted, perDie
 // per-recipient outcomes collected, all-failures surfaced as 502.
 async function handleExpenseSubmit(req, res) {
   // Slate staff only (client portal accounts have Clerk sessions too).
-  const sql = neon(process.env.VITE_DATABASE_URL)
+  const sql = neon(process.env.DATABASE_URL)
   const { user, error } = await verifyClerkUser(req, sql)
   if (error) return res.status(error.status).json({ error: error.message })
   const clerkUserId = user.clerk_id

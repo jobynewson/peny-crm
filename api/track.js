@@ -11,7 +11,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
 
   const ip = getClientIp(req)
-  const sql = neon(process.env.VITE_DATABASE_URL)
+  const sql = neon(process.env.DATABASE_URL)
 
   // ── GET ───────────────────────────────────────────────────────────────────
   if (req.method === 'GET') {

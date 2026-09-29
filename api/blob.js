@@ -22,7 +22,7 @@ const CORS = {
 // accounts have one too. Returns the caller's Clerk id, or null once it has
 // answered the request itself.
 async function requireAuth(req, res) {
-  const { user, error } = await verifyClerkUser(req, neon(process.env.VITE_DATABASE_URL))
+  const { user, error } = await verifyClerkUser(req, neon(process.env.DATABASE_URL))
   if (error) { res.status(error.status).json({ error: error.message }); return null }
   return user.clerk_id
 }

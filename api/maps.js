@@ -140,8 +140,8 @@ export default async function handler(req, res) {
     const cap = Number(process.env.GOOGLE_PLACES_MONTHLY_CAP || 4500)
     let dbSql = null
     try {
-      if (process.env.VITE_DATABASE_URL) {
-        dbSql = neon(process.env.VITE_DATABASE_URL)
+      if (process.env.DATABASE_URL) {
+        dbSql = neon(process.env.DATABASE_URL)
         if (await placesUsedThisMonth(dbSql) >= cap) {
           return res.status(200).json({ phone: null, source: null, reason: 'budget' })
         }

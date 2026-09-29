@@ -4,9 +4,9 @@
 // every state the two shells render — unacknowledged, doing, overdue,
 // unassigned, done — so the board isn't an empty screen while building the UI.
 //
-//   VITE_DATABASE_URL=postgres://… node scripts/seed-tasks.js          # dry run (default)
-//   VITE_DATABASE_URL=postgres://… node scripts/seed-tasks.js --apply  # actually writes
-//   VITE_DATABASE_URL=postgres://… node scripts/seed-tasks.js --apply --reset
+//   DATABASE_URL=postgres://… node scripts/seed-tasks.js          # dry run (default)
+//   DATABASE_URL=postgres://… node scripts/seed-tasks.js --apply  # actually writes
+//   DATABASE_URL=postgres://… node scripts/seed-tasks.js --apply --reset
 //
 // --reset deletes every seeded row first (matched by the marker below), so the
 // script is safe to re-run. It never touches tasks you created by hand.
@@ -23,9 +23,9 @@ const RESET = process.argv.includes('--reset')
 // guessing from titles. Real tasks never set this in Phase 1.
 const MARKER = 'seed'
 
-const url = process.env.VITE_DATABASE_URL
+const url = process.env.DATABASE_URL
 if (!url) {
-  console.error('VITE_DATABASE_URL is required')
+  console.error('DATABASE_URL is required')
   process.exit(1)
 }
 const sql = neon(url)

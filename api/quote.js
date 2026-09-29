@@ -15,7 +15,7 @@ export default async function handler(req, res) {
   const { token } = req.query
   if (!token) return res.status(400).json({ error: 'Token required' })
 
-  const sql = neon(process.env.VITE_DATABASE_URL)
+  const sql = neon(process.env.DATABASE_URL)
   const rows = await sql`
     SELECT b.id, b.name, b.sections, b.markup, b.custom_pct, b.vat, b.insurance,
            b.travel_rate, b.prep_rate, b.notes, b.prepared_by,

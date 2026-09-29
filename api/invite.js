@@ -15,7 +15,7 @@ export default async function handler(req, res) {
     }
 
     // Verify the caller is a Slate superadmin
-    const sql = neon(process.env.VITE_DATABASE_URL)
+    const sql = neon(process.env.DATABASE_URL)
     const { user, error } = await verifyClerkUser(req, sql)
     if (error) return res.status(error.status).json({ error: error.message })
     if (user.role !== 'superadmin') {

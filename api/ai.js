@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { error } = await verifyClerkUser(req, neon(process.env.VITE_DATABASE_URL))
+  const { error } = await verifyClerkUser(req, neon(process.env.DATABASE_URL))
   if (error) return res.status(error.status).json({ error: error.message })
 
   const { text } = req.body

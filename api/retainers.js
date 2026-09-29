@@ -18,5 +18,5 @@ import { dispatch } from './_api.js'
 import { ROUTES } from './_retainers.js'
 
 export default function handler(req, res) {
-  return dispatch(req, res, { name: 'retainers', routes: ROUTES, sql: neon(process.env.VITE_DATABASE_URL) })
+  return dispatch(req, res, { name: 'retainers', routes: ROUTES, sql: neon(process.env.DATABASE_URL) })
 }

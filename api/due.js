@@ -22,5 +22,5 @@ async function listDue(req, res, { sql, user }) {
 }
 
 export default function handler(req, res) {
-  return dispatch(req, res, { name: 'due', routes: ROUTES, sql: neon(process.env.VITE_DATABASE_URL) })
+  return dispatch(req, res, { name: 'due', routes: ROUTES, sql: neon(process.env.DATABASE_URL) })
 }

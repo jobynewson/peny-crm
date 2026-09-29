@@ -12,5 +12,5 @@ import { neon } from '@neondatabase/serverless'
 import { dispatchClient } from './_client.js'
 
 export default function handler(req, res) {
-  return dispatchClient(req, res, { sql: neon(process.env.VITE_DATABASE_URL) })
+  return dispatchClient(req, res, { sql: neon(process.env.DATABASE_URL) })
 }

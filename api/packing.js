@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   const { token } = req.query
   if (!token) return res.status(400).json({ error: 'Token required' })
 
-  const sql = neon(process.env.VITE_DATABASE_URL)
+  const sql = neon(process.env.DATABASE_URL)
 
   if (req.method === 'GET') {
     if (isRateLimited(ip, { max: 60 })) return res.status(429).json({ error: 'Too many requests' })

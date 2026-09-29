@@ -21,7 +21,7 @@ export default async function handler(req, res) {
 
   try {
     const result = await slateUserFor({
-      sql: neon(process.env.VITE_DATABASE_URL),
+      sql: neon(process.env.DATABASE_URL),
       clerkUserId: claims.sub,
       clerk: createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY }),
     })
