@@ -40,8 +40,8 @@ export async function verifyClerkUser(req, sql) {
     LIMIT 1
   `
   // Signed in with Clerk but not a Slate user: a client portal account (which
-  // is never given a row), or a new starter whose token predates the row the
-  // SPA creates at boot (getOrCreateAppUser).
+  // is never given a row), or a new starter who hasn't opened Slate yet (POST
+  // /api/me creates their row at their first sign-in — see _me.js).
   if (!rows[0]) {
     return { error: { status: 403, code: 'not_provisioned', message: 'This account is not a Slate user' } }
   }

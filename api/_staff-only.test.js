@@ -18,8 +18,22 @@ vi.mock('./_auth.js', () => ({
 }))
 // No handler may reach the database before refusing — except realtime, whose
 // membership check is itself a query: the workspace row, then no app_users row.
+// Every query is kept so a test can check nothing was written.
+const db = vi.hoisted(() => ({ queries: [] }))
 vi.mock('@neondatabase/serverless', () => ({
-  neon: () => (strings) => Promise.resolve(strings.join('').includes('FROM workspace') ? [{ owner_id: 'user_owner' }] : []),
+  neon: () => (strings) => {
+    db.queries.push(strings.join('?').trim())
+    return Promise.resolve(strings.join('').includes('FROM workspace') ? [{ owner_id: 'user_owner' }] : [])
+  },
+}))
+// The client's Clerk account belongs to their company's organization.
+vi.mock('@clerk/backend', () => ({
+  createClerkClient: () => ({
+    users: {
+      getUser: async (id) => ({ id, primaryEmailAddress: { emailAddress: 'client@example.com' }, fullName: 'A Client' }),
+      getOrganizationMembershipList: async () => ({ data: [{ id: 'orgmem_client' }], totalCount: 1 }),
+    },
+  }),
 }))
 
 beforeAll(() => {
@@ -71,4 +85,14 @@ describe('staff endpoints refuse a client portal account', () => {
       expect(res.statusCode).toBe(403)
     })
   }
+})
+
+describe('a client portal account never becomes a Slate user', () => {
+  it('POST /api/me answers portal_account and writes nothing', async () => {
+    db.queries.length = 0
+    const res = await call('me.js', { method: 'POST' })
+    expect(res.statusCode).toBe(403)
+    expect(res.body.error.code).toBe('portal_account')
+    expect(db.queries.filter(q => !q.startsWith('SELECT'))).toEqual([])
+  })
 })

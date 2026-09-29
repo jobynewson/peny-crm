@@ -2,12 +2,12 @@ import './style.css'
 import { initAuth, getCurrentUserId, signOut } from './auth/clerk.js'
 import {
   getContacts, getProjects, getBudgets, getSettings,
-  getOrCreateAppUser, getOrCreateWorkspace, resolvePermissions, getAllAppUsers,
+  getOrCreateWorkspace, resolvePermissions, getAllAppUsers,
   getSocialPosts, getMarketingCards, runMigrations, getTeamCalendarEntries,
-  getLeaveRequests, getPublicHolidays, seedDemoBoard, seedDemoCanvas, isAppUser,
+  getLeaveRequests, getPublicHolidays, seedDemoBoard, seedDemoCanvas,
 } from './db/client.js'
 import { listCompanies } from './api/companies.js'
-import { landingFor } from './utils/landing.js'
+import { getSlateUser } from './api/me.js'
 
 async function bootstrap() {
   document.body.innerHTML = '<div class="loading">Loading…</div>'
@@ -29,25 +29,23 @@ async function bootstrap() {
 
   const clerkUserId = getCurrentUserId()
 
-  // 0. A client (a member of their company's Clerk org) belongs on the portal.
-  //    Checked before migrations or any workspace data, and they never get an
-  //    app_users row. Only org members pay for the extra lookup.
-  const orgCount = user.organizationMemberships?.length ?? 0
-  if (orgCount && landingFor({ orgCount, isStaff: await isAppUser(clerkUserId) }) === 'portal') {
-    goToPortal()
-    return
+  // 0. Your Slate user, from the server (api/me.js), which creates it on your
+  //    first sign-in (first user = superadmin). A client — a member of their
+  //    company's Clerk org — never gets one and belongs on the portal. Asked
+  //    before migrations or any workspace data.
+  let appUser
+  try {
+    appUser = await getSlateUser()
+  } catch (err) {
+    if (err.code === 'portal_account') { goToPortal(); return }
+    throw err
   }
-
-  // 1. Ensure schema is up to date (idempotent, safe to run every startup).
-  //    Must run before creating the user row so role values match the current
-  //    role CHECK constraint.
-  await runMigrations()
-
-  // 2. Get/create app user record (handles role, first-user = superadmin)
-  const appUser = await getOrCreateAppUser(user)
   const permissions = resolvePermissions(appUser)
 
-  // 3. Get/create workspace — returns the shared owner ID used for all data
+  // 1. Ensure schema is up to date (idempotent, safe to run every startup).
+  await runMigrations()
+
+  // 2. Get/create workspace — returns the shared owner ID used for all data
   //    First user to ever sign in becomes the workspace owner automatically
   const workspaceId = await getOrCreateWorkspace(clerkUserId)
 
@@ -55,7 +53,7 @@ async function bootstrap() {
   await seedDemoBoard(workspaceId).catch(e => console.warn('Demo board seed failed:', e))
   await seedDemoCanvas(workspaceId).catch(e => console.warn('Demo canvas seed failed:', e))
 
-  // 4. Load all shared workspace data in parallel
+  // 3. Load all shared workspace data in parallel
   //    Companies come through /api (new data never goes through db/client.js).
   const [contactsData, projectsData, budgetsData, settingsData, allUsersData, socialPostsData, marketingCardsData, teamCalendarData, leaveRequestsData, publicHolidaysData, companiesData] = await Promise.all([
     getContacts(workspaceId),

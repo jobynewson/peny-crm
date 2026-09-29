@@ -65,11 +65,15 @@ portal.html               # Client portal HTML shell (/portal, /portal/<token>)
     `not_provisioned` when there's no `app_users` row.
     `api/_staff-only.test.js` fails if another file calls `verifyToken`, and
     checks every staff endpoint refuses a client session.
-  - At boot (`src/main.js`), before migrations or any workspace data, a
-    signed-in account that belongs to an org and isn't already a Slate user
-    goes to `/portal` (`landingFor()` in `src/utils/landing.js`).
-    `getOrCreateAppUser()` also refuses to create a row for an org member.
-    Staff who are added to a client's org keep the app.
+  - `app_users` rows are created by the server only: `POST /api/me`
+    (`api/_me.js`), which the app calls first at boot, before migrations or
+    any workspace data. It returns your row, creating it on your first
+    sign-in ('superadmin' for the first Slate user, else 'user'), unless the
+    account belongs to any Clerk org: then it's a client, gets no row, and
+    the 403 `portal_account` sends the browser to `/portal`. Staff who are
+    added to a client's org keep the app (they already have a row).
+    Anyone else who can sign in to Clerk can become a Slate user, so Clerk's
+    sign-up settings decide who that is.
 - `user_id TEXT` on a table means the **workspace owner's Clerk ID**, not the
   row's author. There is one shared workspace (`getOrCreateWorkspace` returns
   the first user's Clerk ID and every query scopes by it) — this is shared-team
