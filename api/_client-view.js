@@ -24,11 +24,63 @@ import { legacyDeliverables } from './_legacy-deliverables.js'
 import { isScope } from './_worklist.js'
 
 // → the view, or null if the scope's company or project no longer exists.
+// (An Approve link's scope has its own reader, readLinkView, below: it is not
+// a view of a worklist.)
 export async function readClientView(sql, scope) {
   if (!isScope(scope)) throw new Error('readClientView needs a scope from _worklist.js')
   if (scope.kind === 'company') return companyView(sql, scope)
   if (scope.kind === 'project') return projectView(sql, scope)
   throw new Error(`No client view for a ${scope.kind} scope`)
+}
+
+export async function readLinkView(sql, scope) {
+  if (!isScope(scope)) throw new Error('readLinkView needs a scope from _worklist.js')
+  if (scope.kind !== 'delivery') throw new Error(`No link view for a ${scope.kind} scope`)
+  return linkView(sql, scope)
+}
+
+// ── An Approve link: the one round it was sent for ───────────────────────────
+// Just enough for the confirm page: which round of what, for which company,
+// where to watch it, and whether it can still be approved. Nothing about the
+// rest of the worklist, and nothing internal.
+async function linkView(sql, scope) {
+  const [rows, studios] = await Promise.all([
+    sql`
+      SELECT dv.round, dv.url, dv.note, dv.client_response, dv.preview_title, dv.preview_image,
+             d.id AS deliverable_id, d.title, d.status, c.name AS company,
+             (SELECT max(x.round) FROM deliveries x WHERE x.deliverable_id = dv.deliverable_id) AS latest_round
+      FROM deliveries dv
+      JOIN deliverables d ON d.id = dv.deliverable_id
+      JOIN workstreams w ON w.id = d.workstream_id
+      JOIN companies c ON c.id = w.company_id
+      WHERE dv.id = ${scope.deliveryId} AND w.user_id = ${scope.ws} AND d.client_visible
+    `,
+    sql`
+      SELECT s.company_name, s.website FROM settings s
+      WHERE s.user_id = ${scope.ws} LIMIT 1
+    `,
+  ])
+  const row = rows[0]
+  if (!row) return null
+  // Why it can't be approved from here, if it can't.
+  const state = row.round !== row.latest_round ? 'superseded'
+    : row.client_response === 'approved' ? 'approved'
+    : row.client_response === 'changes_requested' ? 'answered'
+    : 'open'
+  return {
+    scope: { kind: 'delivery', can_respond: true, approve_only: true },
+    studio: studioJson(studios[0]),
+    company: row.company,
+    title: row.title,
+    deliverable_id: row.deliverable_id,
+    round: row.round,
+    url: httpUrl(row.url),
+    frame_io: isFrameIoUrl(row.url),
+    note: row.note,
+    preview: row.preview_title || row.preview_image ? { title: row.preview_title, image: row.preview_image } : null,
+    state,
+    can_approve: state === 'open',
+  }
 }
 
 // ── Signed in: the company's whole visible worklist ──────────────────────────

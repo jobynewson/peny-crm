@@ -476,12 +476,12 @@ export class RetainersView {
             // Show it first: if sending then fails, a visible deliverable with no
             // new round is harmless; a new round the client can't see is not.
             if (el.querySelector('#rt-send-show')?.checked) this._putDeliverable(await api.updateDeliverable(d.id, { client_visible: true }))
-            const { delivery, deliverable } = await api.sendDelivery(d.id, { url, note: el.querySelector('#rt-send-note').value })
+            const { delivery, deliverable, notified } = await api.sendDelivery(d.id, { url, note: el.querySelector('#rt-send-note').value })
             this._putDeliverable(deliverable)
             close({ restoreFocus: false })
             this._repaint()
             this._main()?.querySelector(`[data-focus-key="open-${d.id}"]`)?.focus()
-            this.app.toast(`Round ${delivery.round} sent`)
+            this.app.toast(`Round ${delivery.round} sent${notified?.message ? ` — ${notified.message}` : ''}`)
             this._fillPreview(delivery.id, d.id)
           } catch (err) {
             submit.disabled = false

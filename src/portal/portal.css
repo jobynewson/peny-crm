@@ -115,7 +115,11 @@ a { color: var(--accent-text); }
 .pt-request-accepted a { margin-left: 4px; color: var(--accent-text); font-weight: 500; }
 .pt-request-declined { margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--surface-2); font-size: 14px; white-space: pre-line; }
 .pt-earlier--requests { padding: 0 16px 12px; }
-.pt-d:target { background: var(--cat-green-soft); }
+.pt-d:target, .pt-d--flash { background: var(--cat-green-soft); }
+.pt-approve-what { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 6px 0 14px; }
+.pt-approve-img { width: 100%; max-width: 360px; aspect-ratio: 16 / 9; margin-bottom: 8px; border-radius: var(--radius-md); object-fit: cover; background: var(--bg); }
+.pt-approve-title { font-size: 17px; font-weight: 600; }
+.pt-approve-note { max-width: 360px; margin: 14px 0 0; font-size: 13px; }
 .pt-form-msg { font-size: 13px; color: var(--danger); }
 .pt-form-msg:empty { display: none; }
 .pt-earlier { margin-top: 10px; font-size: 14px; }

@@ -21,8 +21,12 @@
 //     to answer unless it's an impersonation. The organisation is read from
 //     the verified session token — never from the request's body, query or
 //     path — and Slate staff (anyone with an app_users row) are refused.
-//   - Stage 2 will add a signed one-time link from an alert email as a third
-//     kind of scope here (and POST only: mail scanners open GET links).
+//   - An X-Action-Token header (the Approve link in a delivery email, from the
+//     confirm page — never from the email's own link) → that one round of that
+//     one deliverable, and the only thing it can do is approve it. It stands
+//     for the client the email was sent to, and is used up by the approval. It
+//     never consults a session. Reading it (GET client/link) changes nothing;
+//     approving is a POST, because mail scanners open every link in a message.
 // Handlers get the scope and nothing else about the visitor; what they read
 // comes from _client-view.js and what they write goes through _worklist.js,
 // both of which take only a scope.
@@ -33,11 +37,18 @@ import { createClerkClient } from '@clerk/backend'
 import { UUID, fail, invalid, matchRoute, routePathFrom, readBody, workspaceId } from './_api.js'
 import { verifyClerkSession } from './_auth.js'
 import { isRateLimited, getClientIp } from './_ratelimit.js'
-import { companyScope, projectScope, respondToDelivery, submitRequest, replyToWaiting } from './_worklist.js'
+import { companyScope, projectScope, deliveryScope, respondToDelivery, submitRequest, replyToWaiting } from './_worklist.js'
+import { hashToken } from './_delivery-mail.js'
 import { alertNewRequest, alertChangesRequested, alertClientReply } from './_alerts.js'
-import { readClientView } from './_client-view.js'
+import { readClientView, readLinkView } from './_client-view.js'
 
+// `kinds` is which scopes a route serves (checked before its handler runs):
+// the worklist routes serve a signed-in company or a project link; the two
+// link routes serve only an Approve link.
+const WORKLIST = ['company', 'project']
 export const ROUTES = [
+  { method: 'GET',  pattern: /^client\/link$/,                                      handler: getLink, kinds: ['delivery'] },
+  { method: 'POST', pattern: /^client\/link\/approve$/,                              handler: approveViaLink, kinds: ['delivery'] },
   { method: 'GET',  pattern: /^client\/view$/,                                      handler: getView },
   { method: 'POST', pattern: new RegExp(`^client/deliveries/(?<id>${UUID})/response$`), handler: respond },
   { method: 'POST', pattern: new RegExp(`^client/deliverables/(?<id>${UUID})/reply$`), handler: reply },
@@ -45,6 +56,7 @@ export const ROUTES = [
 ]
 
 const TOKEN = /^[A-Za-z0-9_-]{8,128}$/
+const ACTION_TOKEN = /^[A-Za-z0-9_-]{43}$/   // 32 random bytes, base64url
 const refuse = (status, code, message) => ({ error: { status, code, message } })
 
 // → { scope } or { error: { status, code, message } }.
@@ -56,6 +68,9 @@ export async function resolveScope(req, sql) {
     if (!project) return refuse(404, 'not_found', 'Portal link not found')
     return { scope: projectScope({ ws: project.user_id, projectId: project.id }) }
   }
+
+  const action = req.headers?.['x-action-token']
+  if (action !== undefined) return resolveLink(sql, action)
 
   const { claims, error } = await verifyClerkSession(req)
   if (error) return { error }
@@ -72,6 +87,23 @@ export async function resolveScope(req, sql) {
   if (!company) return refuse(403, 'no_portal', 'There’s no portal for this organisation')
 
   return { scope: companyScope({ ws, companyId: company.id, clerkUserId: claims.sub, impersonated: !!claims.act }) }
+}
+
+// An Approve link → its delivery scope, or why not. Unknown reads as not
+// found; a link that has been used or has expired says so, so the page can.
+async function resolveLink(sql, token) {
+  if (typeof token !== 'string' || !ACTION_TOKEN.test(token)) return refuse(404, 'not_found', 'This link is not valid')
+  const [link] = await sql`
+    SELECT l.id, l.delivery_id, l.clerk_user_id, l.email, l.used_at, l.expires_at < NOW() AS expired, w.user_id AS ws
+    FROM action_links l
+    JOIN deliveries dv ON dv.id = l.delivery_id
+    JOIN deliverables d ON d.id = dv.deliverable_id
+    JOIN workstreams w ON w.id = d.workstream_id
+    WHERE l.token_hash = ${hashToken(token)}`
+  if (!link) return refuse(404, 'not_found', 'This link is not valid')
+  if (link.used_at) return refuse(410, 'link_used', 'This link has already been used')
+  if (link.expired) return refuse(410, 'link_expired', 'This link has expired')
+  return { scope: deliveryScope({ ws: link.ws, deliveryId: link.delivery_id, linkId: link.id, clerkUserId: link.clerk_user_id, email: link.email }) }
 }
 
 // Like dispatch() in _api.js, but for portal visitors: the route is resolved
@@ -91,6 +123,11 @@ export async function dispatchClient(req, res, { routes = ROUTES, sql }) {
 
   const { scope, error } = await resolveScope(req, sql)
   if (error) return fail(res, error.status, error.code, error.message)
+  if (!(match.route.kinds ?? WORKLIST).includes(scope.kind)) {
+    return scope.kind === 'delivery'
+      ? fail(res, 403, 'link_only', 'This link only opens the one delivery it was sent for')
+      : fail(res, 404, 'not_found', 'Unknown route')
+  }
 
   try {
     return await match.route.handler(req, res, { sql, scope, params: match.params })
@@ -153,6 +190,27 @@ async function reply(req, res, { sql, scope, params }) {
     console.error('[client] client-reply alert failed:', err?.message)   // the reply is saved either way
   }
   return res.status(200).json({ ok: true, view: await readClientView(sql, scope) })
+}
+
+// ── GET /api/client/link ─────────────────────────────────────────────────────
+// What the confirm page shows: the round the link is for, and whether it can
+// still be approved. Reads only. Never approves.
+async function getLink(req, res, { sql, scope }) {
+  const link = await readLinkView(sql, scope)
+  if (!link) return fail(res, 404, 'not_found', 'This link is not valid')
+  return res.status(200).json(link)
+}
+
+// ── POST /api/client/link/approve ────────────────────────────────────────────
+// Approves the round, as the person the email went to, and uses the link up.
+async function approveViaLink(req, res, { sql, scope }) {
+  const by = { clerkId: scope.clerkUserId, name: (await clientName(scope.clerkUserId)) || scope.email }
+  const result = await respondToDelivery(sql, scope, { deliveryId: scope.deliveryId, input: { response: 'approved' }, by })
+  if (result.error) {
+    const { status, code, message, field } = result.error
+    return fail(res, status, code, message, field ? { field } : {})
+  }
+  return res.status(200).json({ ok: true, link: await readLinkView(sql, scope) })
 }
 
 // ── POST /api/client/requests ────────────────────────────────────────────────

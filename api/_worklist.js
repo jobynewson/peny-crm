@@ -48,6 +48,20 @@ export function companyScope({ ws, companyId, clerkUserId, impersonated = false 
   })
 }
 
+// The Approve link in a delivery email: ONE round of one deliverable, and the
+// one thing that can be done with it is approve it (there's no way to ask for
+// changes without a comment, so that means signing in). It stands for the
+// client the email went to. Made only by api/_client.js from an unused,
+// unexpired action_links row; `linkId` is what the approval uses up, in the
+// same statement that records it.
+export function deliveryScope({ ws, deliveryId, linkId, clerkUserId, email }) {
+  return made({
+    kind: 'delivery', ws: need(ws, 'the workspace id'), deliveryId: need(deliveryId, 'the delivery id'),
+    linkId: need(linkId, 'the link id'), clerkUserId: need(clerkUserId, 'the client the link was sent to'),
+    email: need(email, 'the address the link was sent to'), canRespond: true,
+  })
+}
+
 // A portal token link: one project, read-only.
 export function projectScope({ ws, projectId }) {
   return made({ kind: 'project', ws: need(ws, 'the workspace id'), projectId: need(projectId, 'the project id'), canRespond: false })
@@ -68,6 +82,13 @@ export async function respondToDelivery(sql, scope, { deliveryId, input, by }) {
   const comment = typeof input.comment === 'string' && input.comment.trim() ? input.comment.trim() : null
   if (!RESPONSES.includes(response)) return notFound()   // unreachable after validation
 
+  if (scope.kind === 'delivery') {
+    if (response !== 'approved') {
+      return { error: { status: 403, code: 'approve_only', message: 'To ask for changes, sign in to the portal so you can say what needs to change' } }
+    }
+    if (deliveryId !== scope.deliveryId) return notFound()
+    return respondViaLink(sql, scope, { by })
+  }
   if (scope.kind === 'staff') return respondAsStaff(sql, scope, { deliveryId, response, comment, by })
   if (scope.kind === 'company') return respondAsClient(sql, scope, { deliveryId, response, comment, by })
   throw new Error(`Scope kind ${scope.kind} cannot respond`)
@@ -267,5 +288,73 @@ async function respondAsClient(sql, scope, { deliveryId, response, comment, by }
     RETURNING answered.id AS delivery_id, deliverables.id AS deliverable_id
   `
   if (!done) return conflict()
+  return { delivery: { id: done.delivery_id, deliverable_id: done.deliverable_id } }
+}
+
+// An approval from an emailed link. The link is used up by the very statement
+// that records the approval, and only if that statement approves something: the
+// round must still be the latest, still unanswered, on a deliverable still
+// shown to the client, and the link unused and unexpired. Any of those failing
+// leaves the link as it was. (A data-modifying CTE always runs, so the link's
+// UPDATE joins the target and the approval joins the link.)
+async function respondViaLink(sql, scope, { by }) {
+  const [row] = await sql`
+    SELECT dv.id, dv.round, dv.client_response, d.status, d.client_visible,
+           (SELECT max(x.round) FROM deliveries x WHERE x.deliverable_id = dv.deliverable_id) AS latest_round
+    FROM deliveries dv
+    JOIN deliverables d ON d.id = dv.deliverable_id
+    JOIN workstreams w ON w.id = d.workstream_id
+    WHERE dv.id = ${scope.deliveryId} AND w.user_id = ${scope.ws}
+  `
+  if (!row || !row.client_visible) return notFound()
+  const refused = refusal(row)
+  if (refused) return { error: refused }
+
+  const patch = statusPatch({ from: row.status, to: statusAfterResponse('approved') })
+  const [done] = await sql`
+    WITH target AS (
+      SELECT dv.id
+      FROM deliveries dv
+      JOIN deliverables d ON d.id = dv.deliverable_id
+      JOIN workstreams w ON w.id = d.workstream_id
+      WHERE dv.id = ${scope.deliveryId}
+        AND w.user_id = ${scope.ws} AND d.client_visible
+        AND dv.client_response = 'pending'
+        AND d.status = ${row.status}::deliverable_status
+        AND dv.round = (SELECT max(x.round) FROM deliveries x WHERE x.deliverable_id = dv.deliverable_id)
+      FOR UPDATE OF dv, d
+    ), used AS (
+      UPDATE action_links l SET used_at = NOW()
+      FROM target
+      WHERE l.id = ${scope.linkId} AND l.delivery_id = target.id AND l.used_at IS NULL AND l.expires_at > NOW()
+      RETURNING l.id
+    ), answered AS (
+      UPDATE deliveries SET
+        client_response   = 'approved'::delivery_response,
+        client_comment    = NULL,
+        responded_at      = NOW(),
+        responded_by      = ${scope.clerkUserId},
+        responded_by_name = ${by.name}
+      FROM target, used WHERE deliveries.id = target.id
+      RETURNING deliveries.id, deliveries.deliverable_id
+    )
+    UPDATE deliverables SET
+      status        = ${patch.status}::deliverable_status,
+      waiting_since = CASE WHEN ${'waiting_since' in patch} THEN ${patch.waiting_since ?? null}::timestamptz ELSE waiting_since END,
+      waiting_note  = CASE WHEN ${'waiting_note' in patch} THEN ${patch.waiting_note ?? null}::text ELSE waiting_note END,
+      client_reply      = CASE WHEN ${'client_reply' in patch} THEN NULL ELSE client_reply END,
+      client_replied_at = CASE WHEN ${'client_reply' in patch} THEN NULL ELSE client_replied_at END,
+      updated_at    = NOW()
+    FROM answered WHERE deliverables.id = answered.deliverable_id
+    RETURNING answered.id AS delivery_id, deliverables.id AS deliverable_id
+  `
+  if (!done) {
+    // Nothing was written. Say why if it was the link; otherwise the round moved.
+    const [link] = await sql`SELECT used_at, expires_at < NOW() AS expired FROM action_links WHERE id = ${scope.linkId}`
+    if (!link) return { error: { status: 404, code: 'not_found', message: 'This link is no longer valid' } }
+    if (link.used_at) return { error: { status: 410, code: 'link_used', message: 'This link has already been used' } }
+    if (link.expired) return { error: { status: 410, code: 'link_expired', message: 'This link has expired' } }
+    return conflict()
+  }
   return { delivery: { id: done.delivery_id, deliverable_id: done.deliverable_id } }
 }

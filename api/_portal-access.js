@@ -164,12 +164,22 @@ async function revokeInvitation(req, res, { sql, params }) {
 
 // ── DELETE companies/:id/portal/members/:userId ──────────────────────────────
 // Their next session token no longer carries the organisation, so the portal
-// stops answering them within a minute.
+// stops answering them within a minute, and their unused Approve links from
+// delivery emails are deleted straight away.
 async function removeMember(req, res, { sql, params }) {
   const company = await loadCompany(sql, params.id)
   if (!company?.clerk_org_id) return fail(res, 404, 'not_found', 'Company not found')
   try {
     await clerk().organizations.deleteOrganizationMembership({ organizationId: company.clerk_org_id, userId: params.userId })
+    // Their unused Approve links in delivery emails for this company stop
+    // working with their access: a link is only as good as the person's place
+    // in the portal.
+    await sql`
+      DELETE FROM action_links l
+      USING deliveries dv, deliverables d, workstreams w
+      WHERE l.clerk_user_id = ${params.userId} AND l.used_at IS NULL
+        AND dv.id = l.delivery_id AND d.id = dv.deliverable_id AND w.id = d.workstream_id
+        AND w.company_id = ${company.id}`
     return res.status(200).json({ ok: true })
   } catch (err) {
     return clerkFailure(res, err, 'Could not remove them')

@@ -99,3 +99,60 @@ describe('the portal: waiting on you', () => {
     expect(out).not.toContain('What we need from you')
   })
 })
+
+import fs from 'node:fs'
+import { approveHtml } from './render.js'
+
+describe('the Approve link\'s confirm page', () => {
+  const link = over => ({
+    scope: { kind: 'delivery', can_respond: true, approve_only: true }, studio: { name: 'Peny' }, company: 'DMM',
+    title: 'October reel', deliverable_id: '11111111-1111-4111-8111-111111111111', round: 2, url: 'https://f.io/abc',
+    frame_io: true, note: 'Colour fixed', preview: null, state: 'open', can_approve: true, ...over,
+  })
+
+  it('asks first: an Approve button, and a way to request changes that goes to the portal', () => {
+    const out = approveHtml(link())
+    expect(out).toContain('Approve this?')
+    expect(out).toContain('data-approve-now')
+    expect(out).toContain('Yes, approve round 2')
+    expect(out).toContain('href="/portal#d-11111111-1111-4111-8111-111111111111"')
+    expect(out).toContain('Request changes instead')
+    expect(out).toContain('Nothing is approved until you press the button')
+    expect(out).toContain('Watch it in Frame.io')
+  })
+
+  it('says how things stand when it can no longer be approved', () => {
+    expect(approveHtml(link({ state: 'approved', can_approve: false }))).toContain('Already approved')
+    expect(approveHtml(link({ state: 'superseded', can_approve: false }))).toContain('There’s a newer round')
+    expect(approveHtml(link({ state: 'answered', can_approve: false }))).toContain('Already answered')
+    for (const state of ['approved', 'superseded', 'answered']) {
+      expect(approveHtml(link({ state, can_approve: false }))).not.toContain('data-approve-now')
+    }
+  })
+
+  it('thanks them after approving, and says so on failure without offering the button', () => {
+    expect(approveHtml(link({ state: 'approved' }), { done: true })).toContain('Approved — thank you')
+    const failed = approveHtml(null, { failure: { title: 'This link has already been used', detail: 'It approves once.' } })
+    expect(failed).toContain('This link has already been used')
+    expect(failed).not.toContain('data-approve-now')
+  })
+
+  it('escapes what people typed', () => {
+    const evil = '<img src=x onerror=alert(1)>'
+    const out = approveHtml(link({ title: evil, note: evil, company: evil }))
+    expect(out).not.toContain('<img src=x')
+  })
+
+  it('never approves anything by opening the page: the only POST is inside the button\'s click handler', () => {
+    const source = fs.readFileSync(new URL('./main.js', import.meta.url), 'utf8')
+    const posts = [...source.matchAll(/api\('\/api\/client\/link\/approve'/g)]
+    expect(posts).toHaveLength(1)
+    const before = source.slice(0, posts[0].index)
+    expect(before.lastIndexOf("addEventListener('click'")).toBeGreaterThan(before.lastIndexOf('async function showApprove'))
+    // and the page's own load only reads
+    const start = source.indexOf('async function showApprove')
+    const load = source.slice(start, source.indexOf("addEventListener('click'", start))
+    expect(load).toContain("api('/api/client/link')")
+    expect(load).not.toContain("method: 'POST'")
+  })
+})

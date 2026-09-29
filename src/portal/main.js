@@ -2,6 +2,10 @@
 // The client portal: one page for both ways in, and one data source.
 //   /portal/<token>  a project's portal link → that project, read-only
 //   /portal          a client signed in with Clerk → their company's worklist
+//   /portal/approve#<token>  the Approve button in a delivery email → a confirm
+//                    page for that one round (approve_only: no sign-in). The
+//                    token rides in the fragment, so it never reaches a server
+//                    log or a Referer header; opening the page changes nothing.
 // The page only decides which credential to send. What to show comes from
 // GET /api/client/view, which scopes everything on the server
 // (api/_client.js); the page renders whatever view comes back.
@@ -10,16 +14,18 @@
 // only loaded for the signed-in way in.
 
 import './portal.css'
-import { renderView, bindView, message, esc } from './render.js'
+import { renderView, bindView, approveHtml, message, esc } from './render.js'
 
 const root = document.getElementById('portal')
-const token = location.pathname.match(/^\/portal\/([A-Za-z0-9_-]+)\/?$/)?.[1] ?? null
+const approving = /^\/portal\/approve\/?$/.test(location.pathname)
+const token = approving ? null : location.pathname.match(/^\/portal\/([A-Za-z0-9_-]+)\/?$/)?.[1] ?? null
 let clerk = null
 
 // ── The API ──────────────────────────────────────────────────────────────────
 
 async function headers() {
   if (token) return { 'X-Portal-Token': token }
+  if (approving) return { 'X-Action-Token': location.hash.slice(1) }
   const jwt = await clerk?.session?.getToken()
   return jwt ? { Authorization: `Bearer ${jwt}` } : {}
 }
@@ -56,7 +62,9 @@ async function signIn() {
     const el = root.querySelector('#pt-clerk')
     // An invitation link arrives with a ticket; a new person signs up with it.
     const signingUp = new URLSearchParams(location.search).get('__clerk_status') === 'sign_up'
-    const stay = { routing: 'virtual', forceRedirectUrl: '/portal', signUpForceRedirectUrl: '/portal', signInForceRedirectUrl: '/portal' }
+    // A link from an email can name the item (/portal#d-<id>): keep it through signing in.
+    const back = /^#d-[0-9a-fA-F-]{36}$/.test(location.hash) ? `/portal${location.hash}` : '/portal'
+    const stay = { routing: 'virtual', forceRedirectUrl: back, signUpForceRedirectUrl: back, signInForceRedirectUrl: back }
     if (signingUp) clerk.mountSignUp(el, stay)
     else clerk.mountSignIn(el, stay)
     return false
@@ -139,9 +147,61 @@ async function show(view = null) {
   })
 }
 
+// ── The Approve link's confirm page ──────────────────────────────────────────
+
+const LINK_PROBLEMS = {
+  link_used:    ['This link has already been used', 'It approves once. If you need to see the delivery again, open the portal.'],
+  link_expired: ['This link has expired', 'Links stop working after two weeks. You can still approve or ask for changes in the portal.'],
+  not_found:    ['This link isn’t working', 'It may have been copied incompletely. You can still respond in the portal.'],
+}
+const linkFailure = err => {
+  const [title, detail] = LINK_PROBLEMS[err.code] ?? ['Something went wrong', err.message]
+  return { title, detail }
+}
+
+async function showApprove() {
+  let link
+  try {
+    link = await api('/api/client/link')
+  } catch (err) {
+    root.innerHTML = approveHtml(null, { failure: linkFailure(err) })
+    return
+  }
+  document.title = `Approve ${link.title} — ${link.studio?.name || 'Client portal'}`
+  root.innerHTML = approveHtml(link)
+  const button = root.querySelector('[data-approve-now]')
+  button?.addEventListener('click', async () => {
+    button.disabled = true
+    try {
+      const result = await api('/api/client/link/approve', { method: 'POST', body: {} })
+      root.innerHTML = approveHtml(result.link, { done: true })
+    } catch (err) {
+      if (err.status === 409 || err.status === 410) {
+        // Someone answered, or the link was used, while this page was open: show how things stand.
+        try { root.innerHTML = approveHtml(await api('/api/client/link')); return } catch { /* used up: say so below */ }
+        root.innerHTML = approveHtml(link, { failure: linkFailure(err) })
+        return
+      }
+      button.disabled = false
+      root.querySelector('[data-approve-msg]').textContent = err.message
+    }
+  })
+}
+
+// An email can point at one item (/portal#d-<id>): scroll to it once it's drawn.
+function scrollToItem() {
+  const id = /^#(d-[0-9a-fA-F-]{36})$/.exec(location.hash)?.[1]
+  const el = id && document.getElementById(id)
+  if (!el) return
+  el.scrollIntoView({ block: 'start' })
+  el.classList.add('pt-d--flash')
+}
+
 async function boot() {
+  if (approving) return showApprove()
   if (!token && !(await signIn())) return
   await show()
+  scrollToItem()
 }
 
 boot().catch(err => {

@@ -23,7 +23,8 @@ export const createDeliverable = body => post('deliverables', body).then(r => r.
 export const updateDeliverable = (id, body) => patch(`deliverables/${id}`, body).then(r => r.deliverable)
 export const deleteDeliverable = id => del(`deliverables/${id}`)
 
-// → { delivery: { id, round }, deliverable }
+// → { delivery: { id, round }, deliverable, notified: { sent, reason?, message } } — the client is
+// emailed as part of sending; `message` says who, or why no one.
 export const sendDelivery = (deliverableId, body) => post(`deliverables/${deliverableId}/deliveries`, body)
 export const unsendDelivery = id => del(`deliveries/${id}`).then(r => r.deliverable)
 // → { preview: { title, image } | null, reason? }

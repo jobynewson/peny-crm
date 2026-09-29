@@ -44,6 +44,63 @@ function footerHtml(view) {
   return `<footer class="pt-footer">${esc(studio.name || 'Peny')}${studio.website ? ` · <a href="${esc(studio.website)}" target="_blank" rel="noopener noreferrer">${esc(studio.website.replace(/^https?:\/\//, ''))}</a>` : ''} · Powered by Slate</footer>`
 }
 
+// ── The Approve link: a confirm page ─────────────────────────────────────────
+// Opening the link only ever shows this page; approving is a button that POSTs.
+// (Mail scanners open every link in a message, so a link that acted on GET
+// would approve things nobody looked at.)
+
+export function approveHtml(link, { done = false, failure = null } = {}) {
+  const portal = link ? `/portal#d-${encodeURIComponent(link.deliverable_id)}` : '/portal'
+  const shell = body => `
+    <div class="pt-signin pt-approve">
+      <img class="pt-logo" src="/peny-logo.png" alt="${esc(link?.studio?.name || 'Peny')}" />
+      ${body}
+    </div>`
+  if (failure) {
+    return shell(`
+      <h1 class="pt-signin-title">${esc(failure.title)}</h1>
+      <p class="pt-muted">${esc(failure.detail)}</p>
+      <div class="pt-message-actions"><a class="pt-btn" href="${esc(portal)}">Open the portal</a></div>`)
+  }
+  const what = `
+      <div class="pt-approve-what">
+        ${link.preview?.image ? `<img class="pt-approve-img" src="${esc(link.preview.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" />` : ''}
+        <div class="pt-approve-title">${esc(link.title)}</div>
+        <div class="pt-muted">Round ${link.round} · ${esc(link.company)}</div>
+        ${link.note ? `<p class="pt-round-note">${esc(link.note)}</p>` : ''}
+        ${link.url ? `<a class="pt-link" href="${esc(link.url)}" target="_blank" rel="noopener noreferrer">${link.frame_io ? 'Watch it in Frame.io' : 'Watch it'} ↗</a>` : ''}
+      </div>`
+  if (done || link.state === 'approved') {
+    return shell(`
+      <h1 class="pt-signin-title">${done ? 'Approved — thank you' : 'Already approved'}</h1>
+      ${what}
+      <div class="pt-message-actions"><a class="pt-btn" href="${esc(portal)}">Open the portal</a></div>`)
+  }
+  if (link.state === 'superseded') {
+    return shell(`
+      <h1 class="pt-signin-title">There’s a newer round</h1>
+      <p class="pt-muted">A newer round of this has been sent since the email, so this link can’t approve it. Sign in to see the latest.</p>
+      ${what}
+      <div class="pt-message-actions"><a class="pt-btn pt-btn--primary" href="${esc(portal)}">Open the portal</a></div>`)
+  }
+  if (link.state === 'answered') {
+    return shell(`
+      <h1 class="pt-signin-title">Already answered</h1>
+      <p class="pt-muted">Changes have already been requested on this round.</p>
+      ${what}
+      <div class="pt-message-actions"><a class="pt-btn" href="${esc(portal)}">Open the portal</a></div>`)
+  }
+  return shell(`
+      <h1 class="pt-signin-title">Approve this?</h1>
+      ${what}
+      <div class="pt-form-msg" role="alert" data-approve-msg></div>
+      <div class="pt-message-actions">
+        <button type="button" class="pt-btn pt-btn--primary" data-approve-now>Yes, approve round ${link.round}</button>
+        <a class="pt-btn" href="${esc(portal)}">Request changes instead</a>
+      </div>
+      <p class="pt-muted pt-approve-note">Nothing is approved until you press the button. To ask for changes you sign in to the portal, so you can say what needs to change.</p>`)
+}
+
 // ── Signed in: the company's worklist ────────────────────────────────────────
 
 function companyHtml(view, { signedIn, canSwitch }) {

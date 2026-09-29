@@ -160,6 +160,34 @@ describeDb('portal access', () => {
     expect(clerk.members.map(m => m.userId)).toEqual(['user_olu'])
   })
 
+  it('takes away a removed person\'s unused Approve links for this company — and only theirs', async () => {
+    const [{ clerk_org_id }] = await sql`SELECT clerk_org_id FROM companies WHERE id = ${company.id}`
+    clerk.members.push({ org: clerk_org_id, userId: 'user_dana', email: 'dana@client.test' })
+    const round = async (companyId, title) => {
+      const [w] = await sql`INSERT INTO workstreams (user_id, company_id, title) VALUES (${ws}, ${companyId}, ${title}) RETURNING id`
+      const [d] = await sql`INSERT INTO deliverables (workstream_id, title, status, client_visible) VALUES (${w.id}, ${title}, 'in_review', true) RETURNING id`
+      const [dv] = await sql`INSERT INTO deliveries (deliverable_id, url, round) VALUES (${d.id}, 'https://f.io/x', 1) RETURNING id`
+      return dv.id
+    }
+    const mine = await round(company.id, 'PA mine')
+    const mineToo = await round(company.id, 'PA mine too')
+    const theirs = await round(other.id, 'PA theirs')
+    const link = (delivery, user, hash, used = false) => sql`
+      INSERT INTO action_links (delivery_id, clerk_user_id, email, token_hash, expires_at, used_at)
+      VALUES (${delivery}, ${user}, ${user + '@x.test'}, ${hash}, now() + interval '7 days', ${used ? new Date() : null})`
+    await link(mine, 'user_dana', 'pa-hash-1')
+    await link(mineToo, 'user_dana', 'pa-hash-2')
+    await link(mineToo, 'user_dana', 'pa-hash-used', true)   // a spent one is history: it stays
+    await link(mine, 'user_kim', 'pa-hash-kim')              // someone else in this company
+    await link(theirs, 'user_dana', 'pa-hash-other-co')      // the same person, another company
+
+    expect((await call('DELETE', `companies/${company.id}/portal/members/user_dana`)).statusCode).toBe(200)
+    const left = (await sql`SELECT token_hash FROM action_links WHERE token_hash LIKE 'pa-hash-%' ORDER BY token_hash`).map(r => r.token_hash)
+    expect(left).toEqual(['pa-hash-kim', 'pa-hash-other-co', 'pa-hash-used'])
+
+    await sql`DELETE FROM workstreams WHERE title IN ('PA mine', 'PA mine too', 'PA theirs')`
+  })
+
   it('treats a company without a portal, or another workspace\'s, as not found', async () => {
     const [bare] = await sql`INSERT INTO companies (user_id, name) VALUES (${ws}, 'PATest Bare') RETURNING id`
     expect((await call('DELETE', `companies/${bare.id}/portal/members/user_dana`)).statusCode).toBe(404)

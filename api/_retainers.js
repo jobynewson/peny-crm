@@ -29,6 +29,7 @@ import {
 import { staffScope, respondToDelivery } from './_worklist.js'
 import { REQUEST_ROUTES } from './_requests.js'
 import { sendOwnerAssigned } from './_alerts.js'
+import { emailDelivery } from './_delivery-mail.js'
 
 const ID = `(?<id>${UUID})`
 export const ROUTES = [
@@ -529,9 +530,13 @@ async function sendDelivery(req, res, { sql, user, params }) {
       throw err
     }
     if (!sent) return fail(res, 409, 'conflict', 'Someone changed this while you were sending — refresh and try again')
+    // The client is emailed as part of sending — there is no separate step to
+    // forget. `notified` says who, so the page can say it, and why not if not.
+    const notified = await emailDelivery(sql, { deliveryId: sent.id })
     return res.status(201).json({
       delivery: { id: sent.id, round: sent.round },
       deliverable: await loadDeliverable(sql, ws, current.id),
+      notified,
     })
   }
   return fail(res, 409, 'conflict', 'Someone sent a round at the same moment — refresh and try again')

@@ -91,6 +91,9 @@ describeDb('/api/retainers', () => {
     expect(r1.statusCode).toBe(201)
     expect(r1.body.delivery.round).toBe(1)
     expect(r1.body.deliverable).toMatchObject({ status: 'in_review', client_status: 'Ready for review' })
+    // sending is where the client is emailed; a hidden deliverable has no one to tell, and it says so
+    expect(r1.body.notified).toMatchObject({ sent: 0, reason: 'hidden' })
+    expect(r1.body.notified.message).toMatch(/isn't shown to/)
     expect(r1.body.deliverable.deliveries[0]).toMatchObject({
       round: 1, url: 'https://f.io/abc', frame_io: true, note: 'First cut', sent_by: ana.id, sent_by_name: 'Ana',
       client_response: 'pending', response_label: 'Awaiting response', latest: true,

@@ -11,7 +11,7 @@ const QUERIES = [...SOURCE.matchAll(/sql`([\s\S]*?)`/g)].map(m => m[1])
 
 describe('_client-view.js queries', () => {
   it('found the queries', () => {
-    expect(QUERIES.length).toBeGreaterThanOrEqual(14)
+    expect(QUERIES.length).toBeGreaterThanOrEqual(15)
   })
 
   it('every query carries the scope itself', () => {
@@ -19,9 +19,9 @@ describe('_client-view.js queries', () => {
       expect(q, q).toMatch(/\$\{scope\.ws\}/)
       // Worklist, project and company data is always tied to the company or
       // the project; only the studio's own name and website are workspace-wide.
-      if (!/FROM settings s/.test(q)) expect(q, q).toMatch(/\$\{scope\.(companyId|projectId)\}/)
+      if (!/FROM settings s/.test(q)) expect(q, q).toMatch(/\$\{scope\.(companyId|projectId|deliveryId)\}/)
       // Nothing from outside the scope is interpolated.
-      for (const [, expr] of q.matchAll(/\$\{([^}]*)\}/g)) expect(expr, q).toMatch(/^scope\.(ws|companyId|projectId)$/)
+      for (const [, expr] of q.matchAll(/\$\{([^}]*)\}/g)) expect(expr, q).toMatch(/^scope\.(ws|companyId|projectId|deliveryId)$/)
     }
   })
 
