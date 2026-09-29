@@ -677,6 +677,23 @@ export async function runMigrations() {
       RAISE WARNING 'carrying over the reminder roundup failed: %', SQLERRM;
     END $$
   `
+
+  // ── Staff invitations (drizzle/0035_add_staff_invitations.sql) ─────────────
+  // Written by /api/invite, used up by /api/me: who may become a Slate user.
+  await sql`
+    CREATE TABLE IF NOT EXISTS staff_invitations (
+      id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      email      TEXT NOT NULL,
+      invited_by TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      used_at    TIMESTAMPTZ,
+      used_by    TEXT
+    )
+  `
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS staff_invitations_open_uidx
+      ON staff_invitations (lower(email)) WHERE used_at IS NULL
+  `
 }
 
 // One-time demo data so the first visit to Planning isn't an empty screen.

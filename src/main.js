@@ -30,14 +30,15 @@ async function bootstrap() {
   const clerkUserId = getCurrentUserId()
 
   // 0. Your Slate user, from the server (api/me.js), which creates it on your
-  //    first sign-in (first user = superadmin). A client — a member of their
-  //    company's Clerk org — never gets one and belongs on the portal. Asked
-  //    before migrations or any workspace data.
+  //    first sign-in if a superadmin invited you (first user = superadmin).
+  //    A client — a member of their company's Clerk org — never gets one and
+  //    belongs on the portal. Asked before migrations or any workspace data.
   let appUser
   try {
     appUser = await getSlateUser()
   } catch (err) {
     if (err.code === 'portal_account') { goToPortal(); return }
+    if (err.code === 'not_invited') { showNotInvited(err.message); return }
     throw err
   }
   const permissions = resolvePermissions(appUser)
@@ -96,6 +97,18 @@ async function bootstrap() {
 // /portal is its own page (portal.html), so this never loops.
 function goToPortal() {
   location.replace('/portal')
+}
+
+// Signed in, but nobody has invited this account to Slate (api/_me.js).
+function showNotInvited(message) {
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+  document.body.innerHTML = `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;height:100vh;padding:0 16px;text-align:center;font-size:13px;color:var(--text-tertiary);">
+      <div>${esc(message)}</div>
+      <button id="not-invited-sign-out" style="margin-top:8px;padding:6px 14px;cursor:pointer;">Sign out</button>
+    </div>
+  `
+  document.getElementById('not-invited-sign-out').addEventListener('click', () => signOut())
 }
 
 bootstrap().catch(err => {

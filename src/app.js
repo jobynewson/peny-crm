@@ -2936,7 +2936,7 @@ export class App {
       if (!res.ok) throw new Error(data.error || 'Invite failed')
 
       if (emailEl) emailEl.value = ''
-      this.toast(`Invitation sent to ${email}`)
+      this.toast(data.message || `Invitation sent to ${email}`)
     } catch (e) {
       console.error(e)
       this.toast(e.message || 'Error sending invite')

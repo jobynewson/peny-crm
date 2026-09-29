@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { slateUserFor, publicUser } from './_me.js'
+import { slateUserFor, publicUser, verifiedEmails } from './_me.js'
 
 // A stand-in for the Neon tagged template: answers by what the query says and
 // records every query, so a test can check nothing was written.
@@ -15,11 +15,20 @@ function fakeSql(answers) {
   return sql
 }
 
+const ACCOUNT = {
+  primaryEmailAddress: { emailAddress: 'New@Peny.test' },
+  emailAddresses: [
+    { emailAddress: 'New@Peny.test', verification: { status: 'verified' } },
+    { emailAddress: 'maybe@peny.test', verification: { status: 'unverified' } },
+  ],
+  fullName: 'New Starter',
+  username: 'newbie',
+}
 const clerkFor = ({ orgs = 0, fail = false } = {}) => ({
   users: {
     getUser: vi.fn(async id => {
       if (fail) throw new Error('Clerk is down')
-      return { id, primaryEmailAddress: { emailAddress: 'new@peny.test' }, fullName: 'New Starter', username: 'newbie' }
+      return { id, ...ACCOUNT }
     }),
     getOrganizationMembershipList: vi.fn(async () => ({ data: Array(orgs).fill({}), totalCount: orgs })),
   },
@@ -44,19 +53,29 @@ describe('slateUserFor', () => {
     expect(sql.writes()).toEqual([])
   })
 
-  it('creates anyone else\'s row from what Clerk says about them', async () => {
+  it('creates a row only with an invitation, which it uses up in the same statement', async () => {
     const created = { ...ROW, id: 'u2', clerk_id: 'newbie', google_tokens: null }
-    const sql = fakeSql([['INSERT INTO app_users', [[created]]]])
+    const sql = fakeSql([['WITH invite AS', [[created]]]])
     const { user } = await slateUserFor({ sql, clerkUserId: 'newbie', clerk: clerkFor() })
     expect(user.id).toBe('u2')
-    const [insert] = sql.writes()
-    expect(insert.values).toEqual(['newbie', 'new@peny.test', 'New Starter'])
-    expect(insert.text).toContain("CASE WHEN EXISTS (SELECT 1 FROM app_users) THEN 'user' ELSE 'superadmin' END")
-    expect(insert.text).toContain('ON CONFLICT (clerk_id) DO NOTHING')
+    const [write] = sql.writes()
+    expect(write.values).toEqual([['new@peny.test'], 'newbie', 'New@Peny.test', 'New Starter', 'newbie'])
+    expect(write.text).toContain('FROM staff_invitations WHERE used_at IS NULL AND lower(email) = ANY(?::text[])')
+    expect(write.text).toContain('WHERE EXISTS (SELECT 1 FROM invite) OR NOT EXISTS (SELECT 1 FROM app_users)')
+    expect(write.text).toContain('UPDATE staff_invitations SET used_at = NOW(), used_by = ?')
+  })
+
+  it('turns away anyone without one', async () => {
+    const sql = fakeSql([])
+    const result = await slateUserFor({ sql, clerkUserId: 'stranger', clerk: clerkFor() })
+    expect(result.error).toEqual({
+      status: 403, code: 'not_invited',
+      message: 'New@Peny.test hasn’t been invited to Slate. Ask a Slate admin to invite that address.',
+    })
   })
 
   it('reads back the row another tab created at the same moment', async () => {
-    const sql = fakeSql([['SELECT * FROM app_users', [[], [ROW]]], ['INSERT INTO app_users', [[]]]])
+    const sql = fakeSql([['SELECT * FROM app_users', [[], [ROW]]]])
     const { user } = await slateUserFor({ sql, clerkUserId: 'user_a', clerk: clerkFor() })
     expect(user.id).toBe('u1')
   })
@@ -68,6 +87,13 @@ describe('slateUserFor', () => {
     quiet.mockRestore()
     expect(result.error).toMatchObject({ status: 502, code: 'clerk_unavailable' })
     expect(sql.writes()).toEqual([])
+  })
+})
+
+describe('verifiedEmails', () => {
+  it('only the addresses Clerk has verified, lower case', () => {
+    expect(verifiedEmails(ACCOUNT)).toEqual(['new@peny.test'])
+    expect(verifiedEmails({})).toEqual([])
   })
 })
 

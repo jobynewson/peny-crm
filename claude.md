@@ -68,12 +68,21 @@ portal.html               # Client portal HTML shell (/portal, /portal/<token>)
   - `app_users` rows are created by the server only: `POST /api/me`
     (`api/_me.js`), which the app calls first at boot, before migrations or
     any workspace data. It returns your row, creating it on your first
-    sign-in ('superadmin' for the first Slate user, else 'user'), unless the
-    account belongs to any Clerk org: then it's a client, gets no row, and
-    the 403 `portal_account` sends the browser to `/portal`. Staff who are
-    added to a client's org keep the app (they already have a row).
-    Anyone else who can sign in to Clerk can become a Slate user, so Clerk's
-    sign-up settings decide who that is.
+    sign-in **only if you were invited**: Settings › Users › Send invite
+    (`POST /api/invite`, superadmins) records a staff invitation
+    (`staff_invitations`, `drizzle/0035`), and the first sign-in by an
+    account with that address *verified* uses it up and gets a 'user' row.
+    The very first Slate user needs no invitation ('superadmin').
+    - A member of any Clerk org is a client: no row, invited or not, and
+      the 403 `portal_account` sends the browser to `/portal`. Staff who are
+      added to a client's org keep the app (they already have a row).
+      `/api/invite` refuses a client's address up front.
+    - Anyone else gets 403 `not_invited` and a sign-out screen. Signing up to
+      Clerk is never enough.
+    - An invitation works once, so removing someone from Slate (deleting
+      their row) keeps them out until they're invited again.
+    - Someone who already has a Clerk account is invited the same way; Clerk
+      just doesn't email them (they sign in as they are).
 - `user_id TEXT` on a table means the **workspace owner's Clerk ID**, not the
   row's author. There is one shared workspace (`getOrCreateWorkspace` returns
   the first user's Clerk ID and every query scopes by it) — this is shared-team
@@ -1026,11 +1035,10 @@ always the source of truth and nothing is ever read back from Google.
   - Any Slate user can run any query through `/api/db` ("Database
     access"), so all of the above holds against clients and the public, not
     against staff.
-  - Who is staff is decided at first sign-in (`api/_me.js`): any signed-in
-    Clerk account in no organisation gets an `app_users` row. So Clerk's
-    sign-up settings decide who can become a Slate user, and a client removed
-    from their company's org (who then belongs to none) would be given a row
-    if they opened Slate.
+  - Who is staff is decided at first sign-in (`api/_me.js`): an open staff
+    invitation for one of the account's verified addresses. So an invitation
+    is a grant to whoever controls that address, and it doesn't expire until
+    it's used.
   - A project link is a bearer secret with no expiry: whoever has it sees
     that project.
   - Organisation membership is trusted from Clerk's signed session token;
