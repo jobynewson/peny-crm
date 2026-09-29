@@ -2730,7 +2730,7 @@ export class App {
             this.allUsers = (this.allUsers ?? []).filter(x => x.id !== uid)
             this.toast('User removed')
             this._loadUsersPanel(mc)
-          } catch(e) { console.error(e); this.toast('Error removing user') }
+          } catch(e) { console.error(e); this.toast(e.code === 'is_lead' ? e.message : 'Error removing user') }
         })
       })
       // Google Calendar — connect

@@ -67,7 +67,7 @@ export const companies = pgTable('companies', {
   user_id:      text('user_id').notNull(),
   name:         text('name').notNull(),
   clerk_org_id: text('clerk_org_id'),   // unique; set by the Portal access panel
-  lead_id:      uuid('lead_id'),        // app_users.id: who hears when a deliverable has no owner (drizzle/0036)
+  lead_id:      uuid('lead_id').references(() => app_users.id, { onDelete: 'restrict' }),   // who hears when a deliverable has no owner (drizzle/0036)
   ...timestamps,
 })
 

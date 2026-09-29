@@ -20,7 +20,7 @@ import * as api from '../api/retainers.js'
 import { openFloating, closeFloating } from './popover.js'
 import { icon } from './icons.js'
 import { companyFieldHtml, bindCompanyField, resolveCompanyField } from './company-field.js'
-import { getPortalAccess, setUpPortal, inviteToPortal, revokePortalInvitation, removePortalMember } from '../api/companies.js'
+import { setCompanyLead, getPortalAccess, setUpPortal, inviteToPortal, revokePortalInvitation, removePortalMember } from '../api/companies.js'
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 const count = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
@@ -112,6 +112,7 @@ export class RetainersView {
       c.overdue && `<span class="rt-pill rt-pill--late">${c.overdue} overdue</span>`,
       c.waiting && `<span class="rt-pill rt-pill--waiting">${c.waiting} waiting on client</span>`,
       c.in_review && `<span class="rt-pill rt-pill--review">${c.in_review} in review</span>`,
+      !c.lead_id && `<span class="rt-pill rt-pill--late">No lead</span>`,
       `<span class="rt-pill">${count(c.open, 'open item')}</span>`,
     ].filter(Boolean).join('')
     const meta = [
@@ -184,6 +185,7 @@ export class RetainersView {
         <div class="rt-head-main">
           <h1 class="rt-title">${esc(company.name)}</h1>
           <div class="rt-summary">${summary}${company.portal ? ' · <span class="rt-chip">Portal on</span>' : ''}</div>
+          ${this._leadHtml(company)}
         </div>
         <div class="rt-head-actions">
           ${this.isSuperadmin ? '<button class="btn-secondary" data-rt-portal data-focus-key="portal">Portal access</button>' : ''}
@@ -195,6 +197,61 @@ export class RetainersView {
         : `<div class="rt-empty"><p>No workstreams yet. A workstream groups the deliverables for one piece of work.</p>
             ${this.canEdit ? '<button class="btn-primary" data-rt-add-ws>+ Add a workstream</button>' : ''}</div>`}`
     this._bindCompany(mc)
+  }
+
+  // Who hears about this company's work when a deliverable has no owner. A
+  // company without one is flagged: its alerts fall back to every superadmin.
+  _leadHtml(company) {
+    const label = company.lead_id
+      ? `Lead: <strong>${esc(company.lead_name || 'Unknown')}</strong>`
+      : '<span class="rt-late">No lead set — alerts for this client go to every superadmin.</span> Choose one'
+    return this.canEdit
+      ? `<button type="button" class="rt-link-btn rt-lead" data-rt-lead data-focus-key="lead" aria-haspopup="dialog">${label}</button>`
+      : `<div class="rt-summary rt-lead">${company.lead_id ? label : '<span class="rt-late">No lead set</span>'}</div>`
+  }
+
+  _leadForm(anchor) {
+    const { company } = this.page
+    const users = this.app.allUsers || []
+    const html = `
+      <div class="lt-head"><h2 class="lt-title" id="rt-lead-title">Who leads ${esc(company.name)}?</h2></div>
+      <form class="tl-form" id="rt-lead-form" novalidate>
+        <p class="tl-hint">They hear about this client's work — a new request, changes asked for, a reply — when a deliverable has no owner.</p>
+        <div class="tl-field"><label for="rt-lead-pick">Lead</label>
+          <select id="rt-lead-pick"><option value="">Choose someone</option>${users.map(u => `<option value="${u.id}"${u.id === company.lead_id ? ' selected' : ''}>${esc(u.name || u.email)}</option>`).join('')}</select></div>
+        <div class="tl-msg" id="rt-lead-msg" role="alert"></div>
+        <button type="submit" class="btn-primary tl-submit">Save</button>
+      </form>`
+    openFloating({
+      anchor, id: 'rt-lead', role: 'dialog', className: 'lt-pop rt-pop', html,
+      onReady: (el, close) => {
+        el.setAttribute('aria-labelledby', 'rt-lead-title')
+        const form = el.querySelector('#rt-lead-form')
+        form.addEventListener('submit', async e => {
+          e.preventDefault()
+          const pick = form.querySelector('#rt-lead-pick').value
+          const msg = form.querySelector('#rt-lead-msg')
+          if (!pick) { msg.dataset.tone = 'error'; msg.textContent = 'Choose someone'; return }
+          const submit = form.querySelector('[type="submit"]')
+          submit.disabled = true
+          try {
+            await setCompanyLead(company.id, pick)
+            const user = users.find(u => u.id === pick)
+            company.lead_id = pick
+            company.lead_name = user?.name || user?.email || null
+            const known = (this.app.companies || []).find(c => c.id === company.id)
+            if (known) known.lead_id = pick
+            this.list = null
+            close({ restoreFocus: false })
+            this._repaint()
+            this.app.toast('Lead saved')
+          } catch (err) {
+            submit.disabled = false
+            msg.dataset.tone = 'error'; msg.textContent = err.message || 'Could not save'
+          }
+        })
+      },
+    })
   }
 
   _workstreamHtml(w) {
@@ -275,6 +332,7 @@ export class RetainersView {
     }))
     mc.querySelectorAll('[data-rt-add-ws]').forEach(b => b.addEventListener('click', () => this._workstreamForm(b, null)))
     mc.querySelector('[data-rt-portal]')?.addEventListener('click', e => this._portalPanel(e.currentTarget))
+    mc.querySelector('[data-rt-lead]')?.addEventListener('click', e => this._leadForm(e.currentTarget))
     mc.querySelectorAll('[data-rt-ws-edit]').forEach(b => b.addEventListener('click', () => this._workstreamForm(b, this._workstream(b.dataset.rtWsEdit))))
     mc.querySelectorAll('[data-rt-ws-status]').forEach(b => b.addEventListener('click', () => this._workstreamStatusMenu(b, this._workstream(b.dataset.rtWsStatus))))
     mc.querySelectorAll('[data-rt-toggle-ws]').forEach(b => b.addEventListener('click', () => {

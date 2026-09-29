@@ -179,11 +179,12 @@ async function listCompanies(req, res, { sql }) {
   const ws = await workspaceId(sql)
   const today = londonDate()
   const companies = await sql`
-    SELECT c.id, c.name, (c.clerk_org_id IS NOT NULL) AS portal,
+    SELECT c.id, c.name, (c.clerk_org_id IS NOT NULL) AS portal, c.lead_id, lu.name AS lead_name, lu.email AS lead_email,
            COALESCE(s.open, 0) AS open, COALESCE(s.waiting, 0) AS waiting,
            COALESCE(s.in_review, 0) AS in_review, COALESCE(s.overdue, 0) AS overdue, s.next_due,
            wc.workstreams, COALESCE(rp.projects, '[]'::json) AS retainer_projects
     FROM companies c
+    LEFT JOIN app_users lu ON lu.id = c.lead_id
     LEFT JOIN LATERAL (
       SELECT count(*) FILTER (WHERE d.status <> 'approved')::int AS open,
              count(*) FILTER (WHERE d.status = 'waiting_on_client')::int AS waiting,
@@ -206,7 +207,11 @@ async function listCompanies(req, res, { sql }) {
   `
   return res.status(200).json({
     today,
-    companies: companies.map(c => ({ ...c, next_due_display: c.next_due ? formatDay(c.next_due, today) : null })),
+    companies: companies.map(({ lead_name, lead_email, ...c }) => ({
+      ...c,
+      lead_name: lead_name || lead_email || null,
+      next_due_display: c.next_due ? formatDay(c.next_due, today) : null,
+    })),
   })
 }
 
@@ -217,7 +222,9 @@ async function listCompanies(req, res, { sql }) {
 async function getCompanyPage(req, res, { sql, params }) {
   const ws = await workspaceId(sql)
   const [company] = await sql`
-    SELECT id, name, clerk_org_id FROM companies WHERE id = ${params.id} AND user_id = ${ws}
+    SELECT c.id, c.name, c.clerk_org_id, c.lead_id, u.name AS lead_name, u.email AS lead_email
+    FROM companies c LEFT JOIN app_users u ON u.id = c.lead_id
+    WHERE c.id = ${params.id} AND c.user_id = ${ws}
   `
   if (!company) return fail(res, 404, 'not_found', 'Company not found')
 
@@ -236,7 +243,10 @@ async function getCompanyPage(req, res, { sql, params }) {
   return res.status(200).json({
     today: londonDate(),
     vocab: VOCAB,
-    company: { id: company.id, name: company.name, portal: !!company.clerk_org_id },
+    company: {
+      id: company.id, name: company.name, portal: !!company.clerk_org_id,
+      lead_id: company.lead_id, lead_name: company.lead_name || company.lead_email || null,
+    },
     workstreams: workstreams.map(w => ({ ...w, deliverables: byWorkstream.get(w.id) })),
     projects,
   })

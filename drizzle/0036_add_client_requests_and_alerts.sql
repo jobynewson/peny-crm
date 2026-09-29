@@ -4,8 +4,11 @@
 --
 --   companies.lead_id      who hears about a company's work when a deliverable
 --                          has no owner. Nullable in the database (existing
---                          companies have none); the API requires it on create
---                          and update, and the Companies page flags a gap.
+--                          companies have none); a new company gets its
+--                          creator, it can't be cleared, and the Retainers page
+--                          flags a gap. RESTRICT, not SET NULL: staff are
+--                          removed through the query proxy, so the database
+--                          itself refuses to delete a lead.
 --   requests               what triage records: who decided, when, the note a
 --                          declined client is sent. task_id goes: accepting a
 --                          request creates a DELIVERABLE (deliverable_id), and
@@ -23,7 +26,7 @@
 -- Read and written ONLY through the server, never from src/db/client.js.
 -- Applied idempotently on every boot by runMigrations() in src/db/client.js.
 
-ALTER TABLE companies ADD COLUMN IF NOT EXISTS lead_id UUID REFERENCES app_users(id) ON DELETE SET NULL;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS lead_id UUID REFERENCES app_users(id) ON DELETE RESTRICT;
 
 ALTER TABLE requests ADD COLUMN IF NOT EXISTS submitted_by_name TEXT;
 ALTER TABLE requests ADD COLUMN IF NOT EXISTS decline_note      TEXT;

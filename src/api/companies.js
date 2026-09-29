@@ -11,6 +11,11 @@ export const listCompanies = () => request('/api/companies').then(r => r.compani
 export const findOrCreateCompany = (name) =>
   request('/api/companies', { method: 'POST', body: { name } }).then(r => r.company)
 
+// Who leads a company: hears about its work when a deliverable has no owner.
+// Resolves to the company.
+export const setCompanyLead = (id, leadId) =>
+  request(`/api/companies/${id}`, { method: 'PATCH', body: { lead_id: leadId } }).then(r => r.company)
+
 // A company's client portal access (superadmin; api/_portal-access.js).
 // → { portal: null | { members, invitations }, invites_enabled }
 const portal = id => `/api/companies/${id}/portal`
