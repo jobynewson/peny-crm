@@ -167,8 +167,14 @@ describe('who reads about an approval', () => {
       approval({ id: '1', owner_id: 'ana', lead_id: 'lee' }),
       approval({ id: '2', owner_id: null, lead_id: 'lee' }),
       approval({ id: '3', owner_id: null, lead_id: null }),
-    ], users)
+    ], users, { showLeads: true })
     expect(Object.fromEntries(Object.entries(out).map(([k, v]) => [k, v.map(a => a.id)]))).toEqual({ ana: ['1'], lee: ['2'], boss: ['3'] })
+  })
+  it('ignores the lead unless leads are on (they are off by default)', () => {
+    const items = [approval({ id: '2', owner_id: null, lead_id: 'lee' })]
+    for (const opts of [undefined, { showLeads: false }]) {
+      expect(Object.keys(routeApprovals(items, users, opts))).toEqual(['boss'])
+    }
   })
   it('an approval nobody can be told about is not lost silently for want of a superadmin — there is just no one', () => {
     expect(routeApprovals([approval({})], [{ id: 'ana', email: 'ana@x.test', role: 'user' }])).toEqual({})

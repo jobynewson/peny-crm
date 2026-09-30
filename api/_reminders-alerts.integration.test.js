@@ -4,7 +4,7 @@
 // replaced by the test database; notify() is a recorder.
 
 import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest'
-import { TEST_DB, connectTestDb, fakeRes } from './_test-db.js'
+import { TEST_DB, connectTestDb, fakeRes, setShowLeads } from './_test-db.js'
 
 let DB = null
 vi.mock('@neondatabase/serverless', () => ({ neon: () => DB }))
@@ -49,6 +49,7 @@ describeDb('the alerts job and the digest', () => {
     DB = sql
     await sql`INSERT INTO workspace (owner_id) SELECT 'user_rm_ws' WHERE NOT EXISTS (SELECT 1 FROM workspace)`
     ws = await workspaceId(sql)
+    await setShowLeads(sql, true)   // the digest test is about lead routing
     await sql`DELETE FROM workstreams WHERE company_id IN (SELECT id FROM companies WHERE name LIKE 'RmTest %')`
     await sql`DELETE FROM companies WHERE name LIKE 'RmTest %'`
     await sql`DELETE FROM app_users WHERE clerk_id LIKE 'rm_%'`
@@ -69,6 +70,7 @@ describeDb('the alerts job and the digest', () => {
   afterEach(() => { vi.useRealTimers() })
   afterAll(async () => {
     delete process.env.CRON_SECRET
+    await setShowLeads(sql, false)
     await sql`DELETE FROM alert_log`
     await sql`DELETE FROM workstreams WHERE company_id IN (SELECT id FROM companies WHERE name LIKE 'RmTest %')`
     await sql`DELETE FROM companies WHERE name LIKE 'RmTest %'`

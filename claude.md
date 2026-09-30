@@ -1100,7 +1100,9 @@ is the guard), `requests` decision columns, `deliverables.client_reply`,
   link, alerts the owner every time.
 - **Alerts** (`api/_alerts.js`), all through `notify()`: kinds `alert_*`, each
   mutable, independent of the digest. Routing: deliverable owner, else the
-  company lead, else every superadmin (logged). Immediate: new request, changes
+  company lead — only while `settings.show_leads` is on (off by default; it
+  hides the lead in the UI, stops new companies getting one, and lets a lead be
+  removed; `api/_leads.js`) — else every superadmin (logged). Immediate: new request, changes
   requested, client reply. Hourly (`/api/reminders?type=alerts`, needs
   `CRON_SECRET`, runs every day, sends 07:00–20:00 London only): due within 48 h
   and not in review; client input older than `CLIENT_INPUT_ALERT_DAYS` (7). Once

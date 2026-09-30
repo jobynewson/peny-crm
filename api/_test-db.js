@@ -41,3 +41,11 @@ export function fakeRes() {
   r.end = () => r
   return r
 }
+
+// Switches company leads on or off for the workspace (settings.show_leads,
+// default off). Suites that exercise lead routing turn it on, and back off after.
+export async function setShowLeads(sql, on) {
+  const [w] = await sql`SELECT owner_id FROM workspace LIMIT 1`
+  await sql`INSERT INTO settings (user_id, show_leads) VALUES (${w.owner_id}, ${on})
+            ON CONFLICT (user_id) DO UPDATE SET show_leads = ${on}`
+}

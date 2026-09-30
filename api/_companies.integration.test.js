@@ -2,7 +2,7 @@
 // SLATE_TEST_DATABASE_URL is set — see _test-db.js for setup.
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
-import { TEST_DB, connectTestDb, fakeRes } from './_test-db.js'
+import { TEST_DB, connectTestDb, fakeRes, setShowLeads } from './_test-db.js'
 
 let CURRENT = null
 vi.mock('./_auth.js', () => ({
@@ -94,6 +94,18 @@ describeDb('companies', () => {
   })
 
   describe('the lead', () => {
+    beforeEach(() => setShowLeads(sql, true))
+    afterAll(() => setShowLeads(sql, false))
+
+    it('with leads hidden, a new company is not given one', async () => {
+      await setShowLeads(sql, false)
+      const a = await call('POST', { name: 'Unled Ltd' })
+      expect(a.body.company.lead_id).toBeNull()
+      await setShowLeads(sql, true)
+      const b = await call('POST', { name: 'Led Again Ltd' })
+      expect(b.body.company.lead_id).toBe(ana.id)
+    })
+
     it('a new company starts led by whoever created it, and matching it changes nothing', async () => {
       const a = await call('POST', { name: 'Led Ltd' })
       expect(a.body.company.lead_id).toBe(ana.id)

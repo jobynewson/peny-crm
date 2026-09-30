@@ -40,8 +40,8 @@ export const KINDS = {
   },
   // Urgent alerts (api/_alerts.js): sent as they happen, or on the next
   // hourly run, whatever anyone's digest setting is. Each can be muted on its
-  // own. They reach the deliverable's owner, or the company's lead when it has
-  // none.
+  // own. They reach the deliverable's owner, or else the company's lead (when
+  // leads are switched on) or the superadmins.
   alert_new_request: {
     label: 'New client requests',
     description: 'An email as soon as a client raises a request.',

@@ -2406,6 +2406,17 @@ export class App {
           </div>
         </div>` : ''
 
+    const leadsPanel = isAdmin ? `
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Client leads</span></div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:12px">
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">A company can have a lead: the person who hears about its work when a deliverable has no owner. They're hidden for now. With this off, those alerts go to every superadmin, companies aren't given a lead, and removing a team member is never held up by one. Anything already set is kept.</div>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+              <input type="checkbox" id="s-show-leads" ${s.show_leads ? 'checked' : ''} /> Show company leads
+            </label>
+          </div>
+        </div>` : ''
+
     const budgetPanel = isAdmin ? `
         <div class="panel">
           <div class="panel-header"><span class="panel-title">Budget template</span></div>
@@ -2428,7 +2439,7 @@ export class App {
     if (tab === 'account') {
       mc.innerHTML = grid(`${accountPanel}${notificationsPanel}`)
     } else if (tab === 'company') {
-      mc.innerHTML = grid(`${companyDetailsPanel}${timersPanel}`)
+      mc.innerHTML = grid(`${companyDetailsPanel}${timersPanel}${leadsPanel}`)
     } else if (tab === 'invoicing') {
       mc.innerHTML = grid(`${invoicingDefaultsPanel}${expenseFxPanels}`)
     } else if (tab === 'budget') {
@@ -2454,6 +2465,7 @@ export class App {
     if (tab === 'account') this._loadNotificationSettings(mc)
     mc.querySelector('#settings-save-expenses-btn')?.addEventListener('click', () => this._saveExpenseSettings(mc))
     mc.querySelector('#settings-save-fx-btn')?.addEventListener('click', () => this._saveFxSettings(mc))
+    mc.querySelector('#s-show-leads')?.addEventListener('change', e => this._saveShowLeads(e.target))
     mc.querySelector('#settings-save-leave-btn')?.addEventListener('click', () => this._saveLeaveSettings(mc))
 
     if (isAdmin && tab === 'users') {
@@ -3033,6 +3045,18 @@ export class App {
       this.settings = updated
       this.toast('Expense settings saved')
     } catch (e) { console.error(e); this.toast('Error saving expense settings') }
+  }
+
+  // Saves as soon as it's ticked. A superadmin setting; like the rest of the
+  // settings it is guarded here, not by the query proxy (which checks who, not what).
+  async _saveShowLeads(box) {
+    if (this.appUser?.role !== 'superadmin') { box.checked = !!this.settings?.show_leads; return }
+    const show = box.checked
+    try {
+      const [updated] = await upsertSettings(this.userId, { show_leads: show })
+      this.settings = updated
+      this.toast(show ? 'Company leads are on' : 'Company leads are hidden')
+    } catch (e) { console.error(e); box.checked = !show; this.toast('Error saving the setting') }
   }
 
   async _saveFxSettings(mc) {

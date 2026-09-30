@@ -1084,12 +1084,19 @@ export async function updateAppUser(id, data) {
 export async function deleteAppUser(id) {
   // A company's lead is who hears when its work has no owner, so removing them
   // would leave alerts with no one. The database refuses too (lead_id is ON
-  // DELETE RESTRICT); this is so the message says why.
-  const led = await sql`SELECT name FROM companies WHERE lead_id = ${id} ORDER BY lower(name)`
-  if (led.length) {
-    const err = new Error(`They lead ${led.map(c => c.name).join(', ')}. Choose a new lead on the Retainers page first.`)
-    err.code = 'is_lead'
-    throw err
+  // DELETE RESTRICT); this is so the message says why. While leads are hidden
+  // (settings.show_leads is off) nothing acts on them, so they're cleared
+  // instead and the removal goes ahead.
+  const [shown] = await sql`SELECT bool_or(show_leads) AS on FROM settings`
+  if (shown?.on) {
+    const led = await sql`SELECT name FROM companies WHERE lead_id = ${id} ORDER BY lower(name)`
+    if (led.length) {
+      const err = new Error(`They lead ${led.map(c => c.name).join(', ')}. Choose a new lead on the company first.`)
+      err.code = 'is_lead'
+      throw err
+    }
+  } else {
+    await sql`UPDATE companies SET lead_id = NULL WHERE lead_id = ${id}`
   }
   // Their tasks outlive them (assignee and creator fall back to NULL), but a
   // foreign key's SET NULL leaves updated_at alone, so the task board's

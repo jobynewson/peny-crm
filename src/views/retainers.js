@@ -202,6 +202,7 @@ export class RetainersView {
   // Who hears about this company's work when a deliverable has no owner. A
   // company without one is flagged: its alerts fall back to every superadmin.
   _leadHtml(company) {
+    if (!this.app.settings?.show_leads) return ''   // hidden unless a superadmin turns leads on
     const label = company.lead_id
       ? `Lead: <strong>${esc(company.lead_name || 'Unknown')}</strong>`
       : '<span class="rt-late">No lead set — alerts for this client go to every superadmin.</span> Choose one'

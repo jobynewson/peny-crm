@@ -7,6 +7,7 @@
 import { UUID, fail, invalid, readBody, workspaceId } from './_api.js'
 import { isUuid } from './_retainer-rules.js'
 import { PORTAL_ROUTES } from './_portal-access.js'
+import { leadsShown } from './_leads.js'
 
 export const NAME_MAX = 200
 
@@ -56,12 +57,12 @@ async function findOrCreateCompany(req, res, { sql, user }) {
   const ws = await workspaceId(sql)
 
   // The unique index makes match-or-create one race-free step: two people
-  // saving the same new name at once still end up with one company. A new
-  // company's lead is whoever created it, so no company starts without one
-  // (alerts for an unowned deliverable go to its lead); change it on the
-  // Retainers page.
+  // saving the same new name at once still end up with one company. While
+  // leads are switched on a new company's lead is whoever created it, so none
+  // starts without one; with them off it isn't given one (api/_leads.js).
+  const leadId = (await leadsShown(sql)) ? user.id : null
   const [created] = await sql`
-    INSERT INTO companies (user_id, name, lead_id) VALUES (${ws}, ${name}, ${user.id})
+    INSERT INTO companies (user_id, name, lead_id) VALUES (${ws}, ${name}, ${leadId})
     ON CONFLICT (user_id, lower(name)) DO NOTHING
     RETURNING id, name, clerk_org_id, lead_id, created_at, updated_at
   `

@@ -3,7 +3,7 @@
 // replaced by a recorder, so nothing is sent.
 
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest'
-import { TEST_DB, connectTestDb } from './_test-db.js'
+import { TEST_DB, connectTestDb, setShowLeads } from './_test-db.js'
 
 const sent = []
 let outcome = r => ({ to: r.email, sent: true })
@@ -44,6 +44,7 @@ describeDb('urgent alerts', () => {
     sql = await connectTestDb()
     await sql`INSERT INTO workspace (owner_id) SELECT 'user_alert_ws' WHERE NOT EXISTS (SELECT 1 FROM workspace)`
     ws = await workspaceId(sql)
+    await setShowLeads(sql, true)   // these tests are about lead routing
     await sql`DELETE FROM workstreams WHERE company_id IN (SELECT id FROM companies WHERE name LIKE 'AlertTest %')`
     await sql`DELETE FROM companies WHERE name LIKE 'AlertTest %'`
     await sql`DELETE FROM app_users WHERE clerk_id LIKE 'alert_%'`
@@ -62,6 +63,7 @@ describeDb('urgent alerts', () => {
     await sql`UPDATE companies SET lead_id = ${lee.id} WHERE id = ${co.id}`
   })
   afterAll(async () => {
+    await setShowLeads(sql, false)
     await sql`DELETE FROM alert_log`
     await sql`DELETE FROM workstreams WHERE company_id IN (SELECT id FROM companies WHERE name LIKE 'AlertTest %')`
     await sql`DELETE FROM companies WHERE name LIKE 'AlertTest %'`
@@ -79,6 +81,22 @@ describeDb('urgent alerts', () => {
       expect(r.to.map(p => p.email)).toContain('boss@alert.test')
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('no owner or lead'))
       warn.mockRestore()
+    })
+
+    it('with leads off, a lead is ignored and the superadmins hear instead', async () => {
+      await setShowLeads(sql, false)
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        const r = await loadRecipients(sql, { ownerId: null, companyId: co.id })
+        expect(r.via).toBe('superadmins')
+        expect(r.to.map(p => p.email)).toContain('boss@alert.test')
+        expect(r.to.map(p => p.email)).not.toContain('lee@alert.test')
+        // The owner still comes first.
+        expect((await loadRecipients(sql, { ownerId: ana.id, companyId: co.id })).to.map(p => p.email)).toEqual(['ana@alert.test'])
+        // Nothing was cleared: turning leads back on brings Lee back.
+        await setShowLeads(sql, true)
+        expect((await loadRecipients(sql, { ownerId: null, companyId: co.id })).to.map(p => p.email)).toEqual(['lee@alert.test'])
+      } finally { await setShowLeads(sql, true); warn.mockRestore() }
     })
   })
 

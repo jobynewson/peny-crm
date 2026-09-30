@@ -8,9 +8,10 @@
 // apply and there is one sender. The kinds are the alert_* entries in KINDS;
 // each can be muted, and none depends on the digest setting.
 //
-// Who hears: the deliverable's owner. If it has none, the company's lead. If
-// the company has no lead either (a gap the Retainers page flags), every
-// superadmin — and the log says so. Nothing is ever sent to no one.
+// Who hears: the deliverable's owner. If it has none, the company's lead — but
+// only while leads are switched on (Settings › Company; api/_leads.js). With
+// leads off, or no lead with an email, every superadmin — and the log says so.
+// Nothing is ever sent to no one.
 //
 // The timed alerts are once per item: alert_log has one row per (kind, item,
 // cycle). The cycle re-arms an item that changes — a new due date, or going
@@ -22,6 +23,7 @@
 import { notify } from './_notify.js'
 import { escapeHtml, appBaseUrl } from './_task-mail.js'
 import { workspaceId } from './_api.js'
+import { leadsShown } from './_leads.js'
 import { TIME_ZONE, londonDate, addDays, formatDay } from './_dates.js'
 
 // ── Who, and when ────────────────────────────────────────────────────────────
@@ -37,7 +39,8 @@ export function resolveRecipients({ owner = null, lead = null, superadmins = [] 
 
 export async function loadRecipients(sql, { ownerId = null, companyId = null }) {
   const [owner] = ownerId ? await sql`SELECT id, clerk_id, name, email FROM app_users WHERE id = ${ownerId}` : []
-  const [lead] = companyId
+  const showLeads = await leadsShown(sql)
+  const [lead] = companyId && showLeads
     ? await sql`
         SELECT u.id, u.clerk_id, u.name, u.email
         FROM companies c JOIN app_users u ON u.id = c.lead_id
@@ -47,7 +50,7 @@ export async function loadRecipients(sql, { ownerId = null, companyId = null }) 
   if (first.via !== 'superadmins') return first
   const superadmins = await sql`SELECT id, clerk_id, name, email FROM app_users WHERE role = 'superadmin' AND email IS NOT NULL`
   const out = resolveRecipients({ owner, lead, superadmins })
-  console.warn(`[alerts] no owner or lead with an email for company ${companyId ?? '?'}; sending to ${out.to.length} superadmin(s)`)
+  console.warn(`[alerts] no owner${showLeads ? ' or lead' : ''} with an email for company ${companyId ?? '?'}; sending to ${out.to.length} superadmin(s)`)
   return out
 }
 
@@ -203,7 +206,8 @@ export async function loadDeliverableContext(sql, id) {
 
 export async function alertNewRequest(sql, { request, companyName }) {
   const email = newRequestEmail({ request, company: companyName })
-  // A request has no deliverable yet, so no owner: it goes to the company's lead.
+  // A request has no deliverable yet, so no owner: it goes to the company's
+  // lead when leads are on, else to the superadmins.
   return send(sql, { kind: 'alert_new_request', companyId: request.company_id, email })
 }
 
@@ -366,16 +370,16 @@ export async function loadApprovals(sql, { ws, from, to }) {
 }
 
 // Which digest each approval goes in: the deliverable's owner's, else the
-// company lead's, else every superadmin's (the same routing as the alerts).
-// → { [app_users.id]: approval[] }
-export function routeApprovals(approvals, users) {
+// company lead's (only when leads are on), else every superadmin's — the same
+// routing as the alerts. → { [app_users.id]: approval[] }
+export function routeApprovals(approvals, users, { showLeads = false } = {}) {
   const byId = new Map(users.map(u => [u.id, u]))
   const superadmins = users.filter(u => u.role === 'superadmin' && u.email)
   const out = {}
   const give = (u, a) => { (out[u.id] ||= []).push(a) }
   for (const a of approvals) {
     const owner = a.owner_id ? byId.get(a.owner_id) : null
-    const lead = a.lead_id ? byId.get(a.lead_id) : null
+    const lead = showLeads && a.lead_id ? byId.get(a.lead_id) : null
     const { to } = resolveRecipients({ owner, lead, superadmins })
     for (const person of to) give(person, a)
   }

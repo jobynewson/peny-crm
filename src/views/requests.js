@@ -83,7 +83,7 @@ export class RequestsView {
     const tabs = TABS.map(([key, label]) => `
       <button type="button" class="seg-btn" data-rq-tab="${key}"${key === this.status ? ' aria-current="page"' : ''}>${label}${counts[key] ? ` <span class="rq-count">${counts[key]}</span>` : ''}</button>`).join('')
     const empty = {
-      new: 'Nothing waiting. A new request from a client shows here, and reaches the company’s lead by email.',
+      new: `Nothing waiting. A new request from a client shows here, and reaches ${this.app.settings?.show_leads ? 'the company’s lead' : 'the superadmins'} by email.`,
       accepted: 'No accepted requests yet.',
       declined: 'No declined requests.',
     }[this.status]
@@ -178,7 +178,7 @@ export class RequestsView {
   _decideHtml() {
     const { request: r, workstreams } = this.detail
     const users = this.app.allUsers || []
-    const lead = r.lead_id && users.some(u => u.id === r.lead_id) ? r.lead_id : ''
+    const lead = this.app.settings?.show_leads && r.lead_id && users.some(u => u.id === r.lead_id) ? r.lead_id : ''
     return `
       <section class="rq-card" aria-labelledby="rq-accept-h">
         <h2 class="rq-h" id="rq-accept-h">Accept</h2>

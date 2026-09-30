@@ -21,6 +21,7 @@ import { syncLeaveRequestGoogle } from './google.js'
 import { dueFeed, dueMeta } from './_due-feed.js'
 import { workspaceId } from './_api.js'
 import { taskEmailWrap, taskCardHtml, escapeHtml, appBaseUrl } from './_task-mail.js'
+import { leadsShown } from './_leads.js'
 import { runTimedAlerts, digestApprovalWindow, loadApprovals, routeApprovals, approvalsSectionHtml } from './_alerts.js'
 import { ARCHIVE_AFTER_DAYS } from './_task-rules.js'
 
@@ -163,7 +164,7 @@ export default async function handler(req, res) {
     // Approvals since the last digest ride along (a Monday covers the weekend).
     // Someone whose only news is an approval still gets the email.
     const approvalWindow = digestApprovalWindow()
-    const approvalsByPerson = routeApprovals(await loadApprovals(sql, { ws, ...approvalWindow }), users)
+    const approvalsByPerson = routeApprovals(await loadApprovals(sql, { ws, ...approvalWindow }), users, { showLeads: await leadsShown(sql) })
     const recipients = new Set([...Object.keys(byOwner), ...Object.keys(unackByAssignee), ...Object.keys(approvalsByPerson)])
 
     const when = n => n < 0 ? `${Math.abs(n)}d overdue` : n === 0 ? 'due today' : `${n}d left`
