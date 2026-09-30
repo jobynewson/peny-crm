@@ -1332,7 +1332,7 @@ export class ProjectsView {
         history.pushState({ view: 'projects' }, '', '#projects')
         this.renderKanban(mc); this.app.updateTitle()
         this.app.toast('Project deleted')
-      } catch (e) { console.error(e); this.app.toast('Error deleting project') }
+      } catch (e) { console.error(e); this.app.toast(e.code === 'has_worklist' ? e.message : 'Error deleting project') }
     })
   }
 
@@ -5143,6 +5143,6 @@ export class ProjectsView {
       this.render(mc)
       this.app.updateTitle()
       this.app.toast('Project deleted')
-    } catch (e) { console.error(e); this.app.toast('Error deleting project') }
+    } catch (e) { console.error(e); this.app.toast(e.code === 'has_worklist' ? e.message : 'Error deleting project') }
   }
 }

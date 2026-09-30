@@ -4,6 +4,7 @@ import {
   validateResponse, normaliseDeliveryUrl, isFrameIoUrl, normaliseDue, dueDisplay, isOverdue,
   validateWorkstreamInput, validateDeliverableInput, touchesDue,
   requestLabel, validateRequestInput, validateDecline, validateReply, MAX_OPEN_REQUESTS,
+  requestSourceLabel, validateSenderName, COMPANY_TYPES, companyTypeLabel, validateCompanyType, normalisePortalEmails,
   boardColumn, boardChip, isWithClient, statusAfterBoardDrag, DRAG_REFUSALS, BOARD_COLUMNS, validateAccept,
   boardShows, boardCard, compareBoardCards, BOARD_HORIZON_DAYS,
 } from './_retainer-rules.js'
@@ -304,5 +305,45 @@ describe('which deliverables have a board card', () => {
     const cards = [d({ id: 'c', title: 'C', due_date: null }), d({ id: 'b', title: 'B', due_date: '2026-10-05' }), d({ id: 'a', title: 'A', due_date: '2026-09-01' })]
       .map(x => boardCard(x, today)).sort(compareBoardCards)
     expect(cards.map(c => c.id)).toEqual(['a', 'b', 'c'])
+  })
+})
+
+
+describe('request sources', () => {
+  it('names where a request came from', () => {
+    expect(requestSourceLabel('link')).toBe('Sent via project link')
+    expect(requestSourceLabel('login')).toBe('Signed in')
+    expect(requestSourceLabel('nonsense')).toBe('Signed in')
+  })
+  it('needs a name from someone using a project link', () => {
+    expect(validateSenderName({})).toMatchObject({ field: 'name' })
+    expect(validateSenderName({ name: '   ' })).toMatchObject({ field: 'name' })
+    expect(validateSenderName({ name: 'x'.repeat(101) })).toMatchObject({ field: 'name' })
+    expect(validateSenderName({ name: ' Sam  Lee ' })).toBeNull()
+  })
+})
+
+describe('company types', () => {
+  it('offers the agreed list', () => {
+    expect(COMPANY_TYPES).toEqual(['client', 'prospect', 'subcontractor', 'supplier', 'other'])
+    expect(companyTypeLabel('subcontractor')).toBe('Subcontractor')
+    expect(companyTypeLabel('x')).toBe('Other')
+  })
+  it('refuses a type outside the list and an over-long sector', () => {
+    expect(validateCompanyType({ type: 'brand' })).toMatchObject({ field: 'type' })
+    expect(validateCompanyType({ type: 'client', sector: 'x'.repeat(61) })).toMatchObject({ field: 'sector' })
+    expect(validateCompanyType({ type: 'client', sector: 'Sport' })).toBeNull()
+    expect(validateCompanyType({ type: 'supplier' })).toBeNull()
+  })
+})
+
+describe('portal emails', () => {
+  it('lower-cases, trims, drops blanks and duplicates', () => {
+    expect(normalisePortalEmails([' A@x.com ', 'a@X.com', '', 'b@y.org'])).toEqual({ emails: ['a@x.com', 'b@y.org'] })
+  })
+  it('refuses a non-list, a bad address and too many', () => {
+    expect(normalisePortalEmails('a@x.com').error.field).toBe('portal_emails')
+    expect(normalisePortalEmails(['nope']).error.message).toContain('nope')
+    expect(normalisePortalEmails(Array.from({ length: 11 }, (_, i) => `p${i}@x.com`)).error.message).toContain('Up to 10')
   })
 })

@@ -738,6 +738,61 @@ export async function runMigrations() {
   `
   await sql`CREATE INDEX IF NOT EXISTS action_links_delivery_idx ON action_links (delivery_id)`
   await sql`CREATE INDEX IF NOT EXISTS action_links_user_idx ON action_links (clerk_user_id)`
+
+  // ── Project-first worklists (drizzle/0037) ─────────────────────────────────
+  // See the file for what each change is for. Every statement is safe to re-run.
+  await sql`ALTER TABLE workstreams ALTER COLUMN company_id DROP NOT NULL`
+  await sql`
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM pg_constraint
+                  WHERE conname = 'workstreams_project_id_projects_id_fk' AND confdeltype <> 'r') THEN
+        ALTER TABLE workstreams DROP CONSTRAINT workstreams_project_id_projects_id_fk;
+        ALTER TABLE workstreams ADD CONSTRAINT workstreams_project_id_projects_id_fk
+          FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT;
+      END IF;
+    END $$
+  `
+  await sql`
+    DO $$ BEGIN
+      ALTER TABLE workstreams ADD CONSTRAINT workstreams_owner_chk
+        CHECK (company_id IS NOT NULL OR project_id IS NOT NULL);
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$
+  `
+  await sql`ALTER TABLE requests ALTER COLUMN company_id DROP NOT NULL`
+  await sql`ALTER TABLE requests ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES projects(id) ON DELETE CASCADE`
+  await sql`ALTER TABLE requests ADD COLUMN IF NOT EXISTS submitted_via TEXT NOT NULL DEFAULT 'login'`
+  await sql`
+    DO $$ BEGIN
+      ALTER TABLE requests ADD CONSTRAINT requests_source_chk CHECK (submitted_via IN ('login', 'link'));
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$
+  `
+  await sql`
+    DO $$ BEGIN
+      ALTER TABLE requests ADD CONSTRAINT requests_owner_chk CHECK (company_id IS NOT NULL OR project_id IS NOT NULL);
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$
+  `
+  await sql`CREATE INDEX IF NOT EXISTS requests_project_status_idx ON requests (project_id, status)`
+  await sql`
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                      WHERE table_name = 'companies' AND column_name = 'type') THEN
+        ALTER TABLE companies ADD COLUMN type TEXT NOT NULL DEFAULT 'client';
+        ALTER TABLE companies ADD COLUMN sector TEXT;
+        ALTER TABLE companies ADD COLUMN type_reviewed BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE companies ADD CONSTRAINT companies_type_chk
+          CHECK (type IN ('client', 'prospect', 'subcontractor', 'supplier', 'other'));
+        UPDATE companies c SET type = 'subcontractor'
+         WHERE EXISTS (SELECT 1 FROM contacts k WHERE k.company_id = c.id)
+           AND NOT EXISTS (SELECT 1 FROM contacts k WHERE k.company_id = c.id AND k.type <> 'subcontractor');
+      END IF;
+    END $$
+  `
+  await sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS show_leads BOOLEAN NOT NULL DEFAULT FALSE`
+  await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS portal_emails JSONB NOT NULL DEFAULT '[]'`
+  await sql`ALTER TABLE action_links ALTER COLUMN clerk_user_id DROP NOT NULL`
 }
 
 // One-time demo data so the first visit to Planning isn't an empty screen.
@@ -863,6 +918,20 @@ export async function updateProject(workspaceId, id, data) {
     .returning()
 }
 export async function deleteProject(workspaceId, id) {
+  // A project's worklist (workstreams, deliverables, the rounds sent) can't be
+  // reached once the project is gone, and the database refuses too
+  // (workstreams.project_id is ON DELETE RESTRICT); this is so the message says why.
+  const [held] = await sql`
+    SELECT count(DISTINCT w.id)::int AS workstreams, count(d.id)::int AS deliverables
+    FROM workstreams w LEFT JOIN deliverables d ON d.workstream_id = w.id
+    WHERE w.project_id = ${id}
+  `
+  if (held?.workstreams > 0) {
+    const n = held.deliverables
+    const err = new Error(`This project has a worklist (${held.workstreams} workstream${held.workstreams === 1 ? '' : 's'}, ${n} deliverable${n === 1 ? '' : 's'}). Delete those on its Worklist tab first, or mark the project complete instead.`)
+    err.code = 'has_worklist'
+    throw err
+  }
   return db.delete(projects)
     .where(and(eq(projects.id, id), eq(projects.user_id, workspaceId)))
 }

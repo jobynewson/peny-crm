@@ -54,6 +54,8 @@ export const settings = pgTable('settings', {
   per_diem_rate: numeric('per_diem_rate', { precision: 8, scale: 2 }).notNull().default('0'),
   // FX margin added to live exchange rates when showing budgets in USD/EUR (percent)
   fx_markup_pct: numeric('fx_markup_pct', { precision: 5, scale: 2 }).notNull().default('3'),
+  // Company leads are hidden until a superadmin turns this on (drizzle/0037).
+  show_leads: boolean('show_leads').notNull().default(false),
   ...timestamps,
 })
 
@@ -68,6 +70,11 @@ export const companies = pgTable('companies', {
   name:         text('name').notNull(),
   clerk_org_id: text('clerk_org_id'),   // unique; set by the Portal access panel
   lead_id:      uuid('lead_id').references(() => app_users.id, { onDelete: 'restrict' }),   // who hears when a deliverable has no owner (drizzle/0036)
+  // client | prospect | subcontractor | supplier | other (drizzle/0037).
+  // type_reviewed is false until a person has confirmed the backfilled type.
+  type:          text('type').notNull().default('client'),
+  sector:        text('sector'),
+  type_reviewed: boolean('type_reviewed').notNull().default(false),
   ...timestamps,
 })
 
@@ -116,6 +123,9 @@ export const projects = pgTable('projects', {
   notes:       text('notes'),
   track_token:  text('track_token'),
   portal_token: text('portal_token'),
+  // Extra addresses that get the delivery email and its Approve link, beyond
+  // the client contact (drizzle/0037).
+  portal_emails: jsonb('portal_emails').notNull().default([]),
   frame_io_link: text('frame_io_link'),
   is_retainer:      boolean('is_retainer').notNull().default(false),
   retainer_fee:     numeric('retainer_fee',   { precision: 10, scale: 2 }),
@@ -817,10 +827,12 @@ export const request_status      = pgEnum('request_status', ['new', 'accepted', 
 export const workstreams = pgTable('workstreams', {
   id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
   user_id:    text('user_id').notNull(),
-  // The client. Deleting a company with a worklist is refused (RESTRICT).
-  company_id: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'restrict' }),
-  // Optional project; a portal token link for it shows its workstreams only.
-  project_id: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
+  // Optional since drizzle/0037: the company is read from the project. Deleting
+  // a company with a worklist is refused (RESTRICT).
+  company_id: uuid('company_id').references(() => companies.id, { onDelete: 'restrict' }),
+  // The project the worklist is for; its portal link shows these workstreams.
+  // RESTRICT: a project with a worklist can't be deleted until the worklist is.
+  project_id: uuid('project_id').references(() => projects.id, { onDelete: 'restrict' }),
   title:      text('title').notNull(),
   brief:      text('brief'),                       // shown to the client
   status:     workstream_status('status').notNull().default('active'),
@@ -875,7 +887,9 @@ export const deliveries = pgTable('deliveries', {
 export const requests = pgTable('requests', {
   id:             uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
   user_id:        text('user_id').notNull(),
-  company_id:     uuid('company_id').notNull().references(() => companies.id, { onDelete: 'restrict' }),
+  company_id:     uuid('company_id').references(() => companies.id, { onDelete: 'restrict' }),
+  project_id:     uuid('project_id').references(() => projects.id, { onDelete: 'cascade' }),   // drizzle/0037
+  submitted_via:  text('submitted_via').notNull().default('login'),   // 'login' | 'link'
   submitted_by:   text('submitted_by'),           // Clerk id
   title:          text('title').notNull(),
   detail:         text('detail'),
@@ -901,7 +915,7 @@ export const alert_log = pgTable('alert_log', {
 export const action_links = pgTable('action_links', {
   id:            uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
   delivery_id:   uuid('delivery_id').notNull().references(() => deliveries.id, { onDelete: 'cascade' }),
-  clerk_user_id: text('clerk_user_id').notNull(),
+  clerk_user_id: text('clerk_user_id'),           // null for a client with no login
   email:         text('email').notNull(),
   token_hash:    text('token_hash').notNull().unique(),
   expires_at:    timestamp('expires_at', { withTimezone: true }).notNull(),

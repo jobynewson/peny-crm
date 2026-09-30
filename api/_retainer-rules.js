@@ -249,6 +249,23 @@ export function validateRequestInput(body) {
   return null
 }
 
+// Where a request came from. A signed-in client is identified by their login;
+// someone holding a project link typed their name, so triage says so.
+export const REQUEST_SOURCES = ['login', 'link']
+export const REQUEST_SOURCE_LABELS = { login: 'Signed in', link: 'Sent via project link' }
+export const requestSourceLabel = source => REQUEST_SOURCE_LABELS[source] ?? REQUEST_SOURCE_LABELS.login
+
+export const SENDER_NAME_MAX = 100
+
+// A project link can't say who is holding it, so a request sent through one
+// must carry a name. It is never verified. null if fine, else { field, message }.
+export function validateSenderName(body) {
+  const name = typeof body?.name === 'string' ? body.name.replace(/\s+/g, ' ').trim() : ''
+  if (!name) return { field: 'name', message: 'Tell us who you are' }
+  if (name.length > SENDER_NAME_MAX) return { field: 'name', message: 'That name is too long' }
+  return null
+}
+
 // A decline goes back to the client, so it needs words. null if fine.
 export function validateDecline(body) {
   const note = typeof body?.note === 'string' ? body.note.trim() : ''
@@ -402,4 +419,48 @@ export function boardCard(d, today, now = new Date()) {
 export function compareBoardCards(a, b) {
   if (!a.due_date !== !b.due_date) return a.due_date ? -1 : 1
   return (a.due_date ?? '').localeCompare(b.due_date ?? '') || a.title.localeCompare(b.title)
+}
+
+
+// ── Companies and project contacts ───────────────────────────────────────────
+
+// What a company is to us. The Contacts page groups and filters by it.
+export const COMPANY_TYPES = ['client', 'prospect', 'subcontractor', 'supplier', 'other']
+export const COMPANY_TYPE_LABELS = {
+  client: 'Client', prospect: 'Prospect', subcontractor: 'Subcontractor', supplier: 'Supplier', other: 'Other',
+}
+export const companyTypeLabel = type => COMPANY_TYPE_LABELS[type] ?? COMPANY_TYPE_LABELS.other
+
+export const SECTOR_MAX = 60
+
+// null if fine, else { field, message }. `type` must be one of COMPANY_TYPES;
+// `sector` is optional free text.
+export function validateCompanyType(body) {
+  if (!COMPANY_TYPES.includes(body?.type)) return { field: 'type', message: 'Choose what kind of company this is' }
+  if (body.sector != null && (typeof body.sector !== 'string' || body.sector.trim().length > SECTOR_MAX)) {
+    return { field: 'sector', message: 'That sector is too long' }
+  }
+  return null
+}
+
+// Extra addresses that get the delivery email and its Approve link, beyond the
+// project's client contact. Lower-cased, de-duplicated, at most PORTAL_EMAILS_MAX.
+// { emails } when every entry is an address, else { error: { field, message } }.
+export const PORTAL_EMAILS_MAX = 10
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+export function normalisePortalEmails(input) {
+  if (!Array.isArray(input)) return { error: { field: 'portal_emails', message: 'Send a list of email addresses' } }
+  const emails = []
+  for (const raw of input) {
+    const email = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
+    if (!email) continue
+    if (email.length > 200 || !EMAIL_RE.test(email)) {
+      return { error: { field: 'portal_emails', message: `${String(raw).trim().slice(0, 60)} is not an email address` } }
+    }
+    if (!emails.includes(email)) emails.push(email)
+  }
+  if (emails.length > PORTAL_EMAILS_MAX) {
+    return { error: { field: 'portal_emails', message: `Up to ${PORTAL_EMAILS_MAX} addresses` } }
+  }
+  return { emails }
 }
