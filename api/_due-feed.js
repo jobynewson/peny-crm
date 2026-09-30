@@ -16,7 +16,7 @@
 // NOT a Vercel function — the `_` prefix keeps it out of function detection.
 
 import { londonDate, addDays, daysBetween, toDateString, isDateString } from './_dates.js'
-import { dueDisplay } from './_retainer-rules.js'
+import { dueDisplay, worklistLink } from './_retainer-rules.js'
 import { legacyDeliverables } from './_legacy-deliverables.js'
 
 export const TYPE_LABELS = {
@@ -43,10 +43,12 @@ export async function fetchDueSources(sql, { ws, today, to }) {
     // is not chasing anyone).
     sql`
       SELECT d.id, d.title, d.due_kind, d.due_date::text AS due_date, d.due_label, d.cadence, d.status,
-             d.owner_id, w.title AS workstream, w.company_id, c.name AS company
+             d.owner_id, w.title AS workstream, w.project_id, wc.company_id, COALESCE(c.name, p.name) AS company
       FROM deliverables d
       JOIN workstreams w ON w.id = d.workstream_id
-      JOIN companies c ON c.id = w.company_id
+      JOIN workstream_company wc ON wc.workstream_id = w.id
+      LEFT JOIN companies c ON c.id = wc.company_id
+      LEFT JOIN projects p ON p.id = w.project_id
       WHERE w.user_id = ${ws} AND w.status = 'active' AND d.status <> 'approved'
         AND d.due_date IS NOT NULL AND d.due_date <= ${to}::date
     `,
@@ -140,7 +142,7 @@ export function collectDue(src, { today, to, ownerId = null }) {
       // the client's own words ("1st week of October").
       date: toDateString(d.due_date), due_label: d.due_kind === 'exact' && !d.due_label ? null : dueDisplay(d, today),
       owner_id: d.owner_id,
-      link: `#retainers/${d.company_id}`,
+      link: worklistLink({ project_id: d.project_id, company_id: d.company_id, id: d.id }),
     })
   }
   raw.push(...projectDeliverables(list(src.projects)))

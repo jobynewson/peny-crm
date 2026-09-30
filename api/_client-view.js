@@ -47,12 +47,14 @@ async function linkView(sql, scope) {
   const [rows, studios] = await Promise.all([
     sql`
       SELECT dv.round, dv.url, dv.note, dv.client_response, dv.preview_title, dv.preview_image,
-             d.id AS deliverable_id, d.title, d.status, c.name AS company,
+             d.id AS deliverable_id, d.title, d.status, COALESCE(c.name, p.name) AS company,
              (SELECT max(x.round) FROM deliveries x WHERE x.deliverable_id = dv.deliverable_id) AS latest_round
       FROM deliveries dv
       JOIN deliverables d ON d.id = dv.deliverable_id
       JOIN workstreams w ON w.id = d.workstream_id
-      JOIN companies c ON c.id = w.company_id
+      JOIN workstream_company wc ON wc.workstream_id = w.id
+      LEFT JOIN companies c ON c.id = wc.company_id
+      LEFT JOIN projects p ON p.id = w.project_id
       WHERE dv.id = ${scope.deliveryId} AND w.user_id = ${scope.ws} AND d.client_visible
     `,
     sql`
@@ -98,7 +100,7 @@ async function companyView(sql, scope) {
     sql`
       SELECT w.id, w.title, w.brief, w.status
       FROM workstreams w
-      WHERE w.user_id = ${scope.ws} AND w.company_id = ${scope.companyId}
+      WHERE w.user_id = ${scope.ws} AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${scope.companyId})
         AND EXISTS (SELECT 1 FROM deliverables d WHERE d.workstream_id = w.id AND d.client_visible)
       ORDER BY w.sort_order, w.created_at
     `,
@@ -107,7 +109,7 @@ async function companyView(sql, scope) {
              d.due_label, d.cadence, d.status, d.waiting_note, d.client_reply, d.client_replied_at
       FROM deliverables d
       JOIN workstreams w ON w.id = d.workstream_id
-      WHERE w.user_id = ${scope.ws} AND w.company_id = ${scope.companyId} AND d.client_visible
+      WHERE w.user_id = ${scope.ws} AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${scope.companyId}) AND d.client_visible
       ORDER BY d.sort_order, d.created_at
     `,
     sql`
@@ -118,7 +120,7 @@ async function companyView(sql, scope) {
       FROM deliveries dv
       JOIN deliverables d ON d.id = dv.deliverable_id
       JOIN workstreams w ON w.id = d.workstream_id
-      WHERE w.user_id = ${scope.ws} AND w.company_id = ${scope.companyId} AND d.client_visible
+      WHERE w.user_id = ${scope.ws} AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${scope.companyId}) AND d.client_visible
       ORDER BY dv.round
     `,
     // The company's requests, newest first. An accepted one shows the date we

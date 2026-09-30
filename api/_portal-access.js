@@ -179,7 +179,7 @@ async function removeMember(req, res, { sql, params }) {
       USING deliveries dv, deliverables d, workstreams w
       WHERE l.clerk_user_id = ${params.userId} AND l.used_at IS NULL
         AND dv.id = l.delivery_id AND d.id = dv.deliverable_id AND w.id = d.workstream_id
-        AND w.company_id = ${company.id}`
+        AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${company.id})`
     return res.status(200).json({ ok: true })
   } catch (err) {
     return clerkFailure(res, err, 'Could not remove them')

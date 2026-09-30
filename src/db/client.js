@@ -793,6 +793,14 @@ export async function runMigrations() {
   await sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS show_leads BOOLEAN NOT NULL DEFAULT FALSE`
   await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS portal_emails JSONB NOT NULL DEFAULT '[]'`
   await sql`ALTER TABLE action_links ALTER COLUMN clerk_user_id DROP NOT NULL`
+
+  // ── Which company a workstream is for (drizzle/0038) ───────────────────────
+  await sql`
+    CREATE OR REPLACE VIEW workstream_company AS
+      SELECT w.id AS workstream_id, COALESCE(p.company_id, w.company_id) AS company_id
+      FROM workstreams w
+      LEFT JOIN projects p ON p.id = w.project_id
+  `
 }
 
 // One-time demo data so the first visit to Planning isn't an empty screen.

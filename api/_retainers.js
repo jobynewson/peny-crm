@@ -36,6 +36,10 @@ const ID = `(?<id>${UUID})`
 export const ROUTES = [
   { method: 'GET',    pattern: /^retainers\/companies$/,                                 handler: listCompanies },
   { method: 'GET',    pattern: new RegExp(`^retainers/companies/${ID}$`),                 handler: getCompanyPage },
+  // A project's worklist: what the project page's Worklist tab shows.
+  { method: 'GET',    pattern: /^retainers\/project-counts$/,                            handler: projectCounts },
+  { method: 'GET',    pattern: new RegExp(`^retainers/projects/${ID}$`),                  handler: getProjectPage },
+  { method: 'POST',   pattern: new RegExp(`^retainers/projects/${ID}/attach$`),           handler: attachWorkstreams, access: 'editor' },
   { method: 'POST',   pattern: /^retainers\/workstreams$/,                               handler: createWorkstream,  access: 'editor' },
   { method: 'PATCH',  pattern: new RegExp(`^retainers/workstreams/${ID}$`),               handler: updateWorkstream,  access: 'editor' },
   { method: 'DELETE', pattern: new RegExp(`^retainers/workstreams/${ID}$`),               handler: deleteWorkstream,  access: 'editor' },
@@ -172,13 +176,13 @@ async function loadDeliverable(sql, ws, id) {
   return d ?? null
 }
 
-async function loadWorkstreams(sql, ws, { companyId = null, id = null }) {
+async function loadWorkstreams(sql, ws, { companyId = null, projectId = null, id = null }) {
   const rows = await sql`
     SELECT w.id, w.company_id, w.project_id, p.name AS project_name, w.title, w.brief, w.status,
            w.sort_order, w.created_at, w.updated_at
     FROM workstreams w
     LEFT JOIN projects p ON p.id = w.project_id
-    WHERE w.user_id = ${ws} AND (w.company_id = ${companyId} OR w.id = ${id})
+    WHERE w.user_id = ${ws} AND (w.company_id = ${companyId} OR w.project_id = ${projectId} OR w.id = ${id})
     ORDER BY w.sort_order, w.created_at
   `
   return rows.map(w => ({ ...w, status_label: WORKSTREAM_LABELS[w.status] }))
@@ -270,27 +274,114 @@ async function getCompanyPage(req, res, { sql, params }) {
   })
 }
 
+// ── GET /api/retainers/projects/:id ──────────────────────────────────────────
+// A project's whole worklist in one payload: its workstreams, each with its
+// deliverables and their rounds; who the project is for (if anyone) and whether
+// they have a portal login; the project's link and extra addresses; and any
+// workstreams the company has with no project yet, which can be attached.
+async function getProjectPage(req, res, { sql, params }) {
+  const ws = await workspaceId(sql)
+  const [project] = await sql`
+    SELECT p.id, p.name, p.status, p.is_retainer, p.company_id, p.portal_token IS NOT NULL AS has_link, p.portal_emails,
+           c.name AS company_name, c.clerk_org_id, c.lead_id, u.name AS lead_name, u.email AS lead_email
+    FROM projects p
+    LEFT JOIN companies c ON c.id = p.company_id
+    LEFT JOIN app_users u ON u.id = c.lead_id
+    WHERE p.id = ${params.id} AND p.user_id = ${ws}`
+  if (!project) return fail(res, 404, 'not_found', 'Project not found')
+
+  const workstreams = await loadWorkstreams(sql, ws, { projectId: project.id })
+  const deliverables = await loadDeliverables(sql, ws, { workstreamIds: workstreams.map(w => w.id) })
+  const byWorkstream = new Map(workstreams.map(w => [w.id, []]))
+  for (const d of deliverables) byWorkstream.get(d.workstream_id)?.push(d)
+
+  const unattached = project.company_id ? await sql`
+    SELECT id, title FROM workstreams
+    WHERE user_id = ${ws} AND project_id IS NULL AND company_id = ${project.company_id}
+    ORDER BY sort_order, created_at` : []
+
+  return res.status(200).json({
+    today: londonDate(),
+    vocab: VOCAB,
+    project: {
+      id: project.id, name: project.name, status: project.status, is_retainer: project.is_retainer,
+      has_link: project.has_link, portal_emails: project.portal_emails ?? [],
+    },
+    company: project.company_id ? {
+      id: project.company_id, name: project.company_name, portal: !!project.clerk_org_id,
+      lead_id: project.lead_id, lead_name: project.lead_name || project.lead_email || null,
+    } : null,
+    workstreams: workstreams.map(w => ({ ...w, deliverables: byWorkstream.get(w.id) })),
+    unattached,
+  })
+}
+
+// ── GET /api/retainers/project-counts ────────────────────────────────────────
+// { counts: { [projectId]: { open, overdue, waiting } } } for every project
+// with a worklist: the number on the Worklist tab, and the dashboard's.
+async function projectCounts(req, res, { sql }) {
+  const ws = await workspaceId(sql)
+  const today = londonDate()
+  const rows = await sql`
+    SELECT w.project_id,
+           count(*) FILTER (WHERE d.status <> 'approved')::int AS open,
+           count(*) FILTER (WHERE d.status <> 'approved' AND d.due_date < ${today}::date)::int AS overdue,
+           count(*) FILTER (WHERE d.status = 'waiting_on_client')::int AS waiting
+    FROM workstreams w
+    JOIN deliverables d ON d.workstream_id = w.id
+    WHERE w.user_id = ${ws} AND w.project_id IS NOT NULL AND w.status = 'active'
+    GROUP BY w.project_id`
+  return res.status(200).json({ counts: Object.fromEntries(rows.map(({ project_id, ...c }) => [project_id, c])) })
+}
+
+// ── POST /api/retainers/projects/:id/attach ──────────────────────────────────
+// Brings the project's company's older workstreams (made before worklists
+// belonged to projects, so with no project) into this project. Only those with
+// no project; each keeps its deliverables and rounds. → { attached }
+async function attachWorkstreams(req, res, { sql, params }) {
+  const ws = await workspaceId(sql)
+  const [project] = await sql`SELECT id, company_id FROM projects WHERE id = ${params.id} AND user_id = ${ws}`
+  if (!project) return fail(res, 404, 'not_found', 'Project not found')
+  if (!project.company_id) return invalid(res, 'project_id', 'Give this project a company first — it says whose worklists to bring in')
+  const moved = await sql`
+    UPDATE workstreams SET project_id = ${project.id}, updated_at = NOW()
+    WHERE user_id = ${ws} AND project_id IS NULL AND company_id = ${project.company_id}
+    RETURNING id`
+  return res.status(200).json({ attached: moved.length })
+}
+
 // ── POST /api/retainers/workstreams ──────────────────────────────────────────
-// { company_id, title, brief?, project_id?, status? } → added at the end.
+// { project_id, title, brief?, status? } → added at the end of the project's
+// worklist. The company is the project's, read when needed, so none is stored.
+// (Until the Retainers page is gone a { company_id, title } with no project
+// still makes the older company-level kind.)
 async function createWorkstream(req, res, { sql }) {
   const body = readBody(req)
   if (!body) return invalid(res, 'body', 'Request body is not valid JSON')
-  if (!isUuid(body.company_id)) return invalid(res, 'company_id', 'Choose the company')
+  if (!body.project_id && !body.company_id) return invalid(res, 'project_id', 'Choose the project')
+  if (body.project_id && !isUuid(body.project_id)) return invalid(res, 'project_id', 'Choose the project')
+  if (!body.project_id && !isUuid(body.company_id)) return invalid(res, 'company_id', 'Choose the company')
   const bad = validateWorkstreamInput(body)
   if (bad) return invalid(res, bad.field, bad.message)
 
   const ws = await workspaceId(sql)
-  const [company] = await sql`SELECT id FROM companies WHERE id = ${body.company_id} AND user_id = ${ws}`
-  if (!company) return invalid(res, 'company_id', 'That company does not exist')
-  if (body.project_id && !(await projectInWorkspace(sql, ws, body.project_id))) {
-    return invalid(res, 'project_id', 'That project does not exist')
+  let companyId = null
+  if (body.project_id) {
+    if (!(await projectInWorkspace(sql, ws, body.project_id))) return invalid(res, 'project_id', 'That project does not exist')
+  } else {
+    const [company] = await sql`SELECT id FROM companies WHERE id = ${body.company_id} AND user_id = ${ws}`
+    if (!company) return invalid(res, 'company_id', 'That company does not exist')
+    companyId = company.id
   }
 
+  const projectId = body.project_id || null
   const [row] = await sql`
     INSERT INTO workstreams (user_id, company_id, project_id, title, brief, status, sort_order)
-    SELECT ${ws}, ${company.id}, ${body.project_id || null}, ${body.title.trim()}, ${cleanText(body.brief)},
+    SELECT ${ws}, ${companyId}::uuid, ${projectId}::uuid, ${body.title.trim()}, ${cleanText(body.brief)},
            ${body.status || 'active'}::workstream_status,
-           COALESCE((SELECT max(sort_order) + 1 FROM workstreams WHERE company_id = ${company.id}), 0)
+           COALESCE((SELECT max(sort_order) + 1 FROM workstreams
+                      WHERE (${projectId}::uuid IS NOT NULL AND project_id = ${projectId}::uuid)
+                         OR (${projectId}::uuid IS NULL AND company_id = ${companyId}::uuid)), 0)
     RETURNING id
   `
   const [workstream] = await loadWorkstreams(sql, ws, { id: row.id })
@@ -309,6 +400,11 @@ async function updateWorkstream(req, res, { sql, params }) {
   const ws = await workspaceId(sql)
   if (body.project_id && !(await projectInWorkspace(sql, ws, body.project_id))) {
     return invalid(res, 'project_id', 'That project does not exist')
+  }
+  if (has(body, 'project_id') && !body.project_id) {
+    // A worklist made for a project has no company of its own to fall back on.
+    const [w] = await sql`SELECT company_id FROM workstreams WHERE id = ${params.id} AND user_id = ${ws}`
+    if (w && !w.company_id) return invalid(res, 'project_id', 'This worklist belongs to a project, so it can’t be taken out of it')
   }
 
   const [row] = await sql`

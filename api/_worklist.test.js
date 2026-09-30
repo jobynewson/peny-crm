@@ -49,7 +49,7 @@ describe('the client\'s answer', () => {
     const queries = await queriesOf('respondAsClient')
     expect(queries).toHaveLength(2)                 // the read and the write
     for (const q of queries) {
-      expect(q).toContain('w.company_id = ${scope.companyId}')
+      expect(q).toContain('workstream_company WHERE company_id = ${scope.companyId}')
       expect(q).toContain('w.user_id = ${scope.ws}')
       expect(q).toContain('d.client_visible')
     }
@@ -84,7 +84,7 @@ describe('a client\'s request and reply', () => {
   })
   it('a reply is written only to an item of the scope\'s company that is shown and waiting', async () => {
     const [write] = await queriesOf('replyToWaiting')
-    expect(write).toContain('w.company_id = ${scope.companyId}')
+    expect(write).toContain('workstream_company WHERE company_id = ${scope.companyId}')
     expect(write).toContain('w.user_id = ${scope.ws}')
     expect(write).toContain('d.client_visible')
     expect(write).toContain("d.status = 'waiting_on_client'")

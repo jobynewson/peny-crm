@@ -24,6 +24,7 @@ import { notify } from './_notify.js'
 import { escapeHtml, appBaseUrl } from './_task-mail.js'
 import { workspaceId } from './_api.js'
 import { leadsShown } from './_leads.js'
+import { worklistLink } from './_retainer-rules.js'
 import { TIME_ZONE, londonDate, addDays, formatDay } from './_dates.js'
 
 // ── Who, and when ────────────────────────────────────────────────────────────
@@ -102,7 +103,8 @@ const card = (heading, lines = [], quote = null) => `
       ${quote ? `<div style="font-size:14px;color:#333;margin-top:10px;white-space:pre-wrap">${escapeHtml(quote)}</div>` : ''}
     </div>`
 
-const retainersLink = companyId => `${appBaseUrl()}/#retainers/${companyId}`
+// A deliverable's page: its project's Worklist tab (worklistLink), absolute for email.
+const retainersLink = d => `${appBaseUrl()}/${worklistLink({ project_id: d.project_id, company_id: d.company_id, id: d.id })}`
 const hello = person => `Hi ${escapeHtml(person.name || (person.email || '').split('@')[0])}, `
 const today = () => londonDate()
 
@@ -128,7 +130,7 @@ export function changesRequestedEmail({ d, comment, by }) {
     subtitle: `${d.company} · ${d.workstream}`,
     sentence: `${escapeHtml(by || 'The client')} has asked for changes to a delivery.`,
     body: card(d.title, [d.due_date && `Due ${formatDay(d.due_date, today())}`], comment),
-    href: retainersLink(d.company_id),
+    href: retainersLink(d),
     linkLabel: 'Open the deliverable',
   }
 }
@@ -140,7 +142,7 @@ export function clientReplyEmail({ d, reply, by }) {
     subtitle: `${d.company} · ${d.workstream}`,
     sentence: `${escapeHtml(by || 'The client')} has replied on an item that was waiting on them.`,
     body: card(d.title, [d.waiting_note && `We asked for: ${d.waiting_note}`], reply),
-    href: retainersLink(d.company_id),
+    href: retainersLink(d),
     linkLabel: 'Open the deliverable',
   }
 }
@@ -152,7 +154,7 @@ export function dueSoonEmail({ d, now = today() }) {
     subtitle: `${d.company} · ${d.workstream}`,
     sentence: `This is due ${escapeHtml(formatDay(d.due_date, now))} and isn't in review yet.`,
     body: card(d.title, [`Status: ${d.status_label}`]),
-    href: retainersLink(d.company_id),
+    href: retainersLink(d),
     linkLabel: 'Open the deliverable',
   }
 }
@@ -164,7 +166,7 @@ export function inputOverdueEmail({ d, days }) {
     subtitle: `${d.company} · ${d.workstream}`,
     sentence: `This has been waiting on ${escapeHtml(d.company)} for ${days} days or more.`,
     body: card(d.title, [d.due_date && `Due ${formatDay(d.due_date, today())}`], d.waiting_note && `We asked for: ${d.waiting_note}`),
-    href: retainersLink(d.company_id),
+    href: retainersLink(d),
     linkLabel: 'Open the deliverable',
   }
 }
@@ -193,10 +195,12 @@ async function send(sql, { kind, ownerId = null, companyId, email }) {
 export async function loadDeliverableContext(sql, id) {
   const [d] = await sql`
     SELECT d.id, d.title, d.owner_id, d.status, d.due_date::text AS due_date, d.waiting_note,
-           w.title AS workstream, w.company_id, c.name AS company
+           w.title AS workstream, w.project_id, wc.company_id, COALESCE(c.name, p.name) AS company
     FROM deliverables d
     JOIN workstreams w ON w.id = d.workstream_id
-    JOIN companies c ON c.id = w.company_id
+    JOIN workstream_company wc ON wc.workstream_id = w.id
+    LEFT JOIN companies c ON c.id = wc.company_id
+    LEFT JOIN projects p ON p.id = w.project_id
     WHERE d.id = ${id}`
   return d ?? null
 }
@@ -239,7 +243,7 @@ export async function sendOwnerAssigned(sql, { deliverableId, assignedBy }) {
     subtitle: `${d.company} · ${d.workstream}`,
     sentence: `${escapeHtml(who)} has given you a deliverable.`,
     body: card(d.title, [d.due_date && `Due ${formatDay(d.due_date, today())}`]),
-    href: retainersLink(d.company_id),
+    href: retainersLink(d),
     linkLabel: 'Open the deliverable',
   }
   const [r] = await notify(sql, {
@@ -298,10 +302,12 @@ export async function runTimedAlerts(sql, { now = new Date(), env = process.env 
   // review. Already-late items are the digest's business, not an alert.
   const soon = await sql`
     SELECT d.id, d.title, d.owner_id, d.status, d.due_date::text AS due_date, d.waiting_note,
-           w.title AS workstream, w.company_id, c.name AS company
+           w.title AS workstream, w.project_id, wc.company_id, COALESCE(c.name, p.name) AS company
     FROM deliverables d
     JOIN workstreams w ON w.id = d.workstream_id
-    JOIN companies c ON c.id = w.company_id
+    JOIN workstream_company wc ON wc.workstream_id = w.id
+    LEFT JOIN companies c ON c.id = wc.company_id
+    LEFT JOIN projects p ON p.id = w.project_id
     WHERE w.user_id = ${ws} AND w.status = 'active'
       AND d.status NOT IN ('in_review', 'approved')
       AND d.due_date BETWEEN ${day}::date AND ${addDays(day, 2)}::date
@@ -320,10 +326,12 @@ export async function runTimedAlerts(sql, { now = new Date(), env = process.env 
   const stale = await sql`
     SELECT d.id, d.title, d.owner_id, d.status, d.due_date::text AS due_date, d.waiting_note,
            d.waiting_since::text AS cycle,
-           w.title AS workstream, w.company_id, c.name AS company
+           w.title AS workstream, w.project_id, wc.company_id, COALESCE(c.name, p.name) AS company
     FROM deliverables d
     JOIN workstreams w ON w.id = d.workstream_id
-    JOIN companies c ON c.id = w.company_id
+    JOIN workstream_company wc ON wc.workstream_id = w.id
+    LEFT JOIN companies c ON c.id = wc.company_id
+    LEFT JOIN projects p ON p.id = w.project_id
     WHERE w.user_id = ${ws} AND w.status = 'active'
       AND d.status = 'waiting_on_client' AND d.waiting_since <= ${cutoff}::timestamptz
       AND NOT EXISTS (SELECT 1 FROM alert_log a WHERE a.kind = 'alert_input_overdue' AND a.subject_id = d.id AND a.cycle = d.waiting_since::text)
@@ -358,12 +366,14 @@ export function digestApprovalWindow(now = new Date()) {
 export async function loadApprovals(sql, { ws, from, to }) {
   return sql`
     SELECT dv.id, dv.round, dv.responded_at, dv.responded_by_name, d.id AS deliverable_id, d.title, d.owner_id,
-           w.company_id, c.name AS company, c.lead_id,
+           w.project_id, wc.company_id, COALESCE(c.name, p.name) AS company, c.lead_id,
            EXISTS (SELECT 1 FROM app_users u WHERE u.clerk_id = dv.responded_by) AS recorded
     FROM deliveries dv
     JOIN deliverables d ON d.id = dv.deliverable_id
     JOIN workstreams w ON w.id = d.workstream_id
-    JOIN companies c ON c.id = w.company_id
+    JOIN workstream_company wc ON wc.workstream_id = w.id
+    LEFT JOIN companies c ON c.id = wc.company_id
+    LEFT JOIN projects p ON p.id = w.project_id
     WHERE w.user_id = ${ws} AND dv.client_response = 'approved'
       AND dv.responded_at >= ${from.toISOString()}::timestamptz AND dv.responded_at < ${to.toISOString()}::timestamptz
     ORDER BY dv.responded_at`
@@ -396,7 +406,7 @@ export function approvalsSectionHtml(items, baseUrl) {
         <tbody>${items.map(a => `
           <tr>
             <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:14px">
-              <a href="${escapeHtml(baseUrl)}/#retainers/${escapeHtml(a.company_id)}" style="color:#1a1a1a;text-decoration:none">${escapeHtml(a.title)}</a>
+              <a href="${escapeHtml(baseUrl)}/${escapeHtml(worklistLink({ project_id: a.project_id, company_id: a.company_id, id: a.deliverable_id }))}" style="color:#1a1a1a;text-decoration:none">${escapeHtml(a.title)}</a>
               <div style="font-size:11px;color:#999;margin-top:2px">${escapeHtml(a.company)} · round ${a.round}${a.recorded ? ' · recorded by the team' : a.responded_by_name ? ` · ${escapeHtml(a.responded_by_name)}` : ''}</div>
             </td>
             <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#16a34a;white-space:nowrap;font-weight:500;vertical-align:top">Approved ${escapeHtml(day(a.responded_at))}</td>

@@ -97,12 +97,14 @@ export async function emailDelivery(sql, { deliveryId, members = portalMembers, 
   try {
     const [dv] = await sql`
       SELECT dv.id, dv.round, dv.url, dv.note, d.id AS deliverable_id, d.title, d.client_visible,
-             w.company_id, c.name AS company, c.clerk_org_id,
+             w.project_id, wc.company_id, COALESCE(c.name, p.name) AS company, c.clerk_org_id,
              (SELECT s.company_name FROM settings s WHERE s.user_id = w.user_id LIMIT 1) AS studio
       FROM deliveries dv
       JOIN deliverables d ON d.id = dv.deliverable_id
       JOIN workstreams w ON w.id = d.workstream_id
-      JOIN companies c ON c.id = w.company_id
+      JOIN workstream_company wc ON wc.workstream_id = w.id
+      LEFT JOIN companies c ON c.id = wc.company_id
+      LEFT JOIN projects p ON p.id = w.project_id
       WHERE dv.id = ${deliveryId}`
     if (!dv) return outcome(0, 'not_found')
     if (!dv.client_visible) return outcome(0, 'hidden', dv.company)

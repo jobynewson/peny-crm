@@ -159,14 +159,14 @@ export async function replyToWaiting(sql, scope, { deliverableId, input }) {
     UPDATE deliverables d SET client_reply = ${input.reply.trim()}, client_replied_at = NOW(), updated_at = NOW()
     FROM workstreams w
     WHERE d.id = ${deliverableId} AND w.id = d.workstream_id
-      AND w.user_id = ${scope.ws} AND w.company_id = ${scope.companyId} AND d.client_visible
+      AND w.user_id = ${scope.ws} AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${scope.companyId}) AND d.client_visible
       AND d.status = 'waiting_on_client'
     RETURNING d.id`
   if (done) return { deliverable: { id: done.id } }
 
   const [seen] = await sql`
     SELECT d.id FROM deliverables d JOIN workstreams w ON w.id = d.workstream_id
-    WHERE d.id = ${deliverableId} AND w.user_id = ${scope.ws} AND w.company_id = ${scope.companyId} AND d.client_visible`
+    WHERE d.id = ${deliverableId} AND w.user_id = ${scope.ws} AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${scope.companyId}) AND d.client_visible`
   if (!seen) return notFound('Item not found')
   return { error: { status: 409, code: 'not_waiting', message: 'We’re not waiting on anything from you for this any more' } }
 }
@@ -248,7 +248,7 @@ async function respondAsClient(sql, scope, { deliveryId, response, comment, by }
     JOIN deliverables d ON d.id = dv.deliverable_id
     JOIN workstreams w ON w.id = d.workstream_id
     WHERE dv.id = ${deliveryId}
-      AND w.user_id = ${scope.ws} AND w.company_id = ${scope.companyId} AND d.client_visible
+      AND w.user_id = ${scope.ws} AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${scope.companyId}) AND d.client_visible
   `
   if (!row) return notFound()
   const refused = refusal(row)
@@ -262,7 +262,7 @@ async function respondAsClient(sql, scope, { deliveryId, response, comment, by }
       JOIN deliverables d ON d.id = dv.deliverable_id
       JOIN workstreams w ON w.id = d.workstream_id
       WHERE dv.id = ${deliveryId}
-        AND w.user_id = ${scope.ws} AND w.company_id = ${scope.companyId} AND d.client_visible
+        AND w.user_id = ${scope.ws} AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${scope.companyId}) AND d.client_visible
         AND dv.client_response = 'pending'
         AND d.status = ${row.status}::deliverable_status
         AND dv.round = (SELECT max(x.round) FROM deliveries x WHERE x.deliverable_id = dv.deliverable_id)

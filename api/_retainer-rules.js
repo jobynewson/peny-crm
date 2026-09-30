@@ -281,6 +281,7 @@ export function validateDecline(body) {
 export function validateAccept(body, { userIds = [] } = {}) {
   if (!body || typeof body !== 'object') return { field: 'body', message: 'Request body is not valid JSON' }
   const creating = typeof body.new_workstream_title === 'string' && body.new_workstream_title.trim() !== ''
+  if (body.project_id != null && body.project_id !== '' && !isUuid(body.project_id)) return { field: 'project_id', message: 'Choose the project' }
   if (creating && body.workstream_id) return { field: 'workstream_id', message: 'Pick a workstream or make a new one, not both' }
   if (creating && body.new_workstream_title.trim().length > TITLE_MAX) return { field: 'new_workstream_title', message: 'That title is too long' }
   if (!creating && !isUuid(body.workstream_id)) return { field: 'workstream_id', message: 'Choose the workstream, or make a new one' }
@@ -387,8 +388,19 @@ export function boardShows(d, today) {
   return d.due_date <= addDays(today, BOARD_HORIZON_DAYS)
 }
 
-// The card the board draws for a deliverable. `d` is a row with its company and
-// workstream (and `round`, its latest round, if any).
+// Where a deliverable lives in the app: its project's Worklist tab, with the
+// deliverable opened. Emails and feeds link here. A deliverable whose workstream
+// has no project yet (older ones) goes to its company's old address, which the
+// app redirects to that company's project; with neither, the project list.
+export function worklistLink({ project_id = null, company_id = null, id = null }) {
+  if (project_id) return `#projects/${project_id}/worklist${id ? `/${id}` : ''}`
+  if (company_id) return `#retainers/${company_id}`
+  return '#projects'
+}
+
+// The card the board draws for a deliverable. `d` is a row with its company,
+// project and workstream (and `round`, its latest round, if any). `company` is
+// who it is for: the company's name, or the project's when it has no company.
 export function boardCard(d, today, now = new Date()) {
   const chip = boardChip(d, now)
   return {
@@ -396,8 +408,9 @@ export function boardCard(d, today, now = new Date()) {
     kind: 'deliverable',
     title: d.title,
     company: d.company,
-    company_id: d.company_id,
+    company_id: d.company_id ?? null,
     workstream: d.workstream,
+    project: d.project ?? null,
     project_id: d.project_id ?? null,
     owner_id: d.owner_id ?? null,
     in_tray: !d.owner_id && d.status !== 'approved',
@@ -411,7 +424,7 @@ export function boardCard(d, today, now = new Date()) {
     undated: !d.due_date,
     overdue: isOverdue(d, today),
     days_late: d.due_date && d.due_date < today ? daysBetween(d.due_date, today) : null,
-    link: `#retainers/${d.company_id}`,
+    link: worklistLink(d),
   }
 }
 
