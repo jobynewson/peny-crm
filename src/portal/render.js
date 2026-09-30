@@ -134,48 +134,114 @@ export function approveHtml(link, { done = false, changed = false, commentsSent 
       <p class="pt-muted pt-approve-note">Nothing is approved until you press the button. ${link.can_sign_in === false ? 'Asking for changes works from this page too — there is nothing to sign in to.' : 'You can also ask for changes here, or sign in to the portal.'}</p>`)
 }
 
+// ── The board: Requests · In progress · Approved ─────────────────────────────
+// One picture for a signed-in client and for a project link. Three columns you
+// can read at a glance: what they've asked for (and what hasn't started) on the
+// left, the work itself in the middle (the widest), and what is finished on the
+// right, narrower and quieter. Anything that is the client's move (a round to
+// review, something we are waiting on, something delivered to approve) sits at
+// the top of the middle column, marked. On a phone it stacks with that first.
+// The server says which status each item has; this only places it.
+
+const CLIENTS_MOVE = {
+  ready_for_review: 'Ready for your review',
+  waiting_on_you: 'Waiting on you',
+  delivered: 'Delivered — over to you',
+}
+const APPROVED_SHOWN = 6
+
+// Pure, so it is tested without a page. `view.workstreams[].deliverables` and
+// `view.requests` as the server sends them.
+export function portalColumns(view) {
+  const items = (view.workstreams || []).flatMap(w => w.deliverables.map(d => ({ ...d, workstream: w.title })))
+  const needs = items.filter(d => d.status in CLIENTS_MOVE)
+  const planned = items.filter(d => d.status === 'planned')
+  const approved = items.filter(d => d.status === 'approved')
+  const progress = items.filter(d => !(d.status in CLIENTS_MOVE) && d.status !== 'planned' && d.status !== 'approved')
+  const requests = view.requests || []
+  return {
+    needs, progress, planned, approved,
+    asked: requests.filter(r => r.status === 'submitted'),
+    answered: requests.filter(r => r.status !== 'submitted'),
+  }
+}
+
+function boardHtml(view) {
+  const c = portalColumns(view)
+  const canSend = view.scope.can_request ?? view.scope.can_respond
+  const jump = [
+    [c.needs.length, 'Needs you', 'pt-col-progress'],
+    [c.progress.length, 'In progress', 'pt-col-progress'],
+    [c.asked.length + c.planned.length, 'Requests', 'pt-col-requests'],
+    [c.approved.length, 'Approved', 'pt-col-approved'],
+  ]
+  const summary = c.needs.length
+    ? [c.needs.filter(d => d.status === 'ready_for_review').length && `${count(c.needs.filter(d => d.status === 'ready_for_review').length, 'thing')} ready for your review`,
+       c.needs.filter(d => d.status === 'waiting_on_you').length && `${c.needs.filter(d => d.status === 'waiting_on_you').length} waiting on you`,
+       c.needs.filter(d => d.status === 'delivered').length && `${c.needs.filter(d => d.status === 'delivered').length} delivered to approve`].filter(Boolean).join(' · ')
+    : 'Nothing needs you right now.'
+  return `
+    ${view.scope.kind === 'company' && !view.scope.can_respond ? '<p class="pt-notice">You’re viewing this as the client. Answers can only be given by the client.</p>' : ''}
+    <p class="pt-summary">${summary}</p>
+    <nav class="pt-jump" aria-label="Jump to">${jump.map(([n, label, id]) => `<a href="#${id}" class="pt-jump-link${label === 'Needs you' && n ? ' pt-jump-link--alert' : ''}">${label}<span>${n}</span></a>`).join('')}</nav>
+    <div class="pt-board">
+      ${requestsColumnHtml(view, c, canSend)}
+      <section class="pt-col pt-col--progress" id="pt-col-progress" aria-labelledby="pt-progress-h">
+        <h2 class="pt-col-title" id="pt-progress-h">In progress</h2>
+        ${c.needs.length ? `
+          <div class="pt-needs">
+            <h3 class="pt-needs-h">Needs you · ${c.needs.length}</h3>
+            <ul class="pt-list">${c.needs.map(d => deliverableHtml(d, { needs: CLIENTS_MOVE[d.status] })).join('')}</ul>
+          </div>` : ''}
+        ${c.progress.length ? `<ul class="pt-list">${c.progress.map(d => deliverableHtml(d)).join('')}</ul>` : ''}
+        ${!c.needs.length && !c.progress.length ? '<p class="pt-muted">Nothing in progress right now.</p>' : ''}
+      </section>
+      <details class="pt-col pt-col--approved" id="pt-col-approved" open data-collapse-mobile>
+        <summary class="pt-col-title pt-col-summary">Approved <span class="pt-muted">${c.approved.length}</span></summary>
+        ${c.approved.length
+          ? `<ul class="pt-list pt-list--quiet">${c.approved.slice(0, APPROVED_SHOWN).map(approvedHtml).join('')}</ul>
+             ${c.approved.length > APPROVED_SHOWN ? `<details class="pt-earlier"><summary>Earlier (${c.approved.length - APPROVED_SHOWN})</summary><ul class="pt-list pt-list--quiet">${c.approved.slice(APPROVED_SHOWN).map(approvedHtml).join('')}</ul></details>` : ''}`
+          : '<p class="pt-muted">Approved work will collect here.</p>'}
+      </details>
+    </div>`
+}
+
+// A finished one, small and quiet: what it was, where, and when it was approved.
+function approvedHtml(d) {
+  const latest = d.rounds[d.rounds.length - 1]
+  const when = latest?.response === 'approved' && latest.answered_at ? `Approved ${dayMonth(latest.answered_at)}` : 'Approved'
+  return `
+    <li class="pt-d pt-d--quiet" id="d-${esc(d.id)}">
+      <div class="pt-d-title">${esc(d.title)}</div>
+      <div class="pt-d-meta">${esc(d.workstream)} · ${when}</div>
+    </li>`
+}
+
 // ── Signed in: the company's worklist ────────────────────────────────────────
 
 function companyHtml(view, { signedIn, canSwitch }) {
-  const all = view.workstreams.flatMap(w => w.deliverables)
-  const review = all.filter(d => d.rounds.some(r => r.can_respond)).length
-  const waiting = all.filter(d => d.status === 'waiting_on_you').length
-  const needs = [review && `${count(review, 'thing')} ready for your review`, waiting && `${waiting} waiting on you`].filter(Boolean)
-  const live = view.workstreams.filter(w => w.status !== 'complete')
-  const done = view.workstreams.filter(w => w.status === 'complete')
   const actions = signedIn
     ? `${canSwitch ? '<button type="button" class="pt-link" data-switch>Switch company</button>' : ''}<button type="button" class="pt-link" data-sign-out>Sign out</button>`
     : ''
   return `
     ${headerHtml(view, { sub: 'Client portal', actions })}
-    <main class="pt-main">
-      ${view.scope.can_respond ? '' : '<p class="pt-notice">You’re viewing this as the client. Answers can only be given by the client.</p>'}
-      <p class="pt-summary">${needs.length ? needs.join(' · ') : 'Nothing needs you right now.'}</p>
-      ${requestsHtml(view)}
-      ${live.map(w => workstreamHtml(w)).join('') || (done.length ? '' : '<p class="pt-muted">There’s nothing to show yet.</p>')}
-      ${done.map(w => `
-        <details class="pt-ws pt-ws--done">
-          <summary><span class="pt-ws-title">${esc(w.title)}</span> <span class="pt-muted">Complete · ${count(w.deliverables.length, 'item')}</span></summary>
-          ${workstreamBody(w)}
-        </details>`).join('')}
+    <main class="pt-main pt-main--board">
+      ${boardHtml(view)}
     </main>
     ${footerHtml(view)}`
 }
 
 // ── Requests: asking us for something ────────────────────────────────────────
+// The left column: what they've asked for and is still waiting, what has not
+// started yet, and (folded) what we've answered.
 
-const REQUESTS_SHOWN = 5
-
-function requestsHtml(view) {
-  const list = view.requests || []
-  const canSend = view.scope.can_request ?? view.scope.can_respond
+function requestsColumnHtml(view, c, canSend) {
   const asksName = view.scope.kind === 'project'   // a link can't say who is holding it
-  const shown = list.slice(0, REQUESTS_SHOWN)
-  const earlier = list.slice(REQUESTS_SHOWN)
+  const nothing = !c.asked.length && !c.planned.length && !c.answered.length
   return `
-    <section class="pt-ws pt-requests" aria-labelledby="pt-req-h">
+    <section class="pt-col pt-col--requests pt-requests" id="pt-col-requests" aria-labelledby="pt-req-h">
       <div class="pt-ws-head">
-        <h2 class="pt-ws-title" id="pt-req-h">Requests</h2>
+        <h2 class="pt-col-title" id="pt-req-h">Requests</h2>
         ${canSend ? '<button type="button" class="pt-btn pt-btn--secondary pt-ws-action" data-new-request>Ask for something</button>' : ''}
       </div>
       ${canSend ? `
@@ -194,10 +260,12 @@ function requestsHtml(view) {
             <button type="button" class="pt-btn" data-cancel-request>Cancel</button>
           </div>
         </form>` : ''}
-      ${list.length
-        ? `<ul class="pt-list">${shown.map(requestHtml).join('')}</ul>
-           ${earlier.length ? `<details class="pt-earlier pt-earlier--requests"><summary>Earlier requests (${earlier.length})</summary><ul class="pt-list">${earlier.map(requestHtml).join('')}</ul></details>` : ''}`
-        : `<p class="pt-muted pt-requests-empty">${canSend ? 'Need something from us? Ask here instead of emailing — you’ll see where it stands.' : (view.scope.kind === 'project' ? 'This project has been delivered, so it isn’t taking new requests here.' : 'No requests yet.')}</p>`}
+      ${c.asked.length ? `<ul class="pt-list">${c.asked.map(requestHtml).join('')}</ul>` : ''}
+      ${c.planned.length ? `
+        <h3 class="pt-sub-h">Up next</h3>
+        <ul class="pt-list">${c.planned.map(d => deliverableHtml(d)).join('')}</ul>` : ''}
+      ${c.answered.length ? `<details class="pt-earlier pt-earlier--requests"><summary>Answered requests (${c.answered.length})</summary><ul class="pt-list">${c.answered.map(requestHtml).join('')}</ul></details>` : ''}
+      ${nothing ? `<p class="pt-muted pt-requests-empty">${canSend ? 'Need something from us? Ask here instead of emailing — you’ll see where it stands.' : (view.scope.kind === 'project' ? 'This project has been delivered, so it isn’t taking new requests here.' : 'No requests yet.')}</p>` : ''}
     </section>`
 }
 
@@ -217,35 +285,20 @@ function requestHtml(r) {
       ${r.accepted ? `
         <div class="pt-request-accepted">
           We’ve taken this on${r.accepted.due && r.accepted.due !== 'No date' ? ` — due ${esc(r.accepted.due)}` : ''}.
-          <a href="#d-${esc(r.accepted.deliverable_id)}">See it in your worklist ↓</a>
+          <a href="#d-${esc(r.accepted.deliverable_id)}">See it on the board ↗</a>
         </div>` : ''}
       ${r.status === 'declined' && r.note ? `<div class="pt-request-declined"><strong>Our note:</strong> ${linkify(r.note)}</div>` : ''}
     </li>`
 }
 
-function workstreamHtml(w) {
-  return `
-    <section class="pt-ws" aria-labelledby="ws-${esc(w.id)}">
-      <div class="pt-ws-head">
-        <h2 class="pt-ws-title" id="ws-${esc(w.id)}">${esc(w.title)}</h2>
-        ${w.status === 'paused' ? '<span class="pt-chip">Paused</span>' : ''}
-      </div>
-      ${workstreamBody(w)}
-    </section>`
-}
-
-function workstreamBody(w) {
-  return `
-    ${w.brief ? `<p class="pt-ws-brief">${esc(w.brief)}</p>` : ''}
-    <ul class="pt-list">${w.deliverables.map(deliverableHtml).join('')}</ul>`
-}
-
-function deliverableHtml(d) {
+function deliverableHtml(d, { needs = null } = {}) {
   const latest = d.rounds[d.rounds.length - 1]
   const earlier = d.rounds.slice(0, -1).reverse()
   const meta = [d.format, d.due && d.due !== 'No date' ? `Due ${d.due}` : null].filter(Boolean).map(esc).join(' · ')
   return `
-    <li class="pt-d" id="d-${esc(d.id)}">
+    <li class="pt-d${needs ? ' pt-d--needs' : ''}" id="d-${esc(d.id)}">
+      ${needs ? `<div class="pt-needs-tag">${esc(needs)}</div>` : ''}
+      ${d.workstream ? `<div class="pt-d-ws">${esc(d.workstream)}</div>` : ''}
       <div class="pt-d-head">
         <h3 class="pt-d-title">${esc(d.title)}</h3>
         <span class="pt-chip pt-chip--${esc(d.status)}">${esc(d.status_label)}</span>
@@ -388,23 +441,19 @@ function projectHtml(view) {
   const today = view.today
   return `
     ${headerHtml(view, { sub, chip: p.status ? `<span class="pt-chip">${esc(p.status)}</span>` : '' })}
-    <main class="pt-main pt-main--project">
-      <div class="pt-col">
-        ${p.brief || dates ? `<section class="pt-card">${p.brief ? `<p class="pt-brief">${esc(p.brief)}</p>` : ''}${dates}</section>` : ''}
-        ${p.frame_io_link ? `<a class="pt-btn pt-btn--secondary pt-open" href="${esc(p.frame_io_link)}" target="_blank" rel="noopener noreferrer">Open in Frame.io <span aria-hidden="true">↗</span></a>` : ''}
-        <section>
-          <h2 class="pt-section-title">Deliverables</h2>
-          ${view.workstreams.length ? view.workstreams.map(workstreamHtml).join('') : '<p class="pt-muted">No deliverables listed.</p>'}
-        </section>
-        ${requestsHtml(view)}
-        <section>
+    <main class="pt-main pt-main--board">
+      ${p.brief || dates ? `<section class="pt-card">${p.brief ? `<p class="pt-brief">${esc(p.brief)}</p>` : ''}${dates}</section>` : ''}
+      ${p.frame_io_link ? `<a class="pt-btn pt-btn--secondary pt-open" href="${esc(p.frame_io_link)}" target="_blank" rel="noopener noreferrer">Open in Frame.io <span aria-hidden="true">↗</span></a>` : ''}
+      ${boardHtml(view)}
+      <div class="pt-below">
+        <section class="pt-col">
           <h2 class="pt-section-title">Work log</h2>
           ${view.work_log.length ? `<ul class="pt-log">${view.work_log.map(e => `
             <li><p>${esc(e.note)}</p><div class="pt-muted">${fullDate(e.date)}${e.by ? ` · ${esc(e.by)}` : ''}</div></li>`).join('')}</ul>` : '<p class="pt-muted">No updates yet.</p>'}
         </section>
-      </div>
-      <div class="pt-col pt-col--wide">
-        ${view.schedule ? scheduleHtml(view.schedule, today) : '<p class="pt-muted">No post-production schedule yet.</p>'}
+        <div class="pt-col pt-col--wide">
+          ${view.schedule ? scheduleHtml(view.schedule, today) : '<p class="pt-muted">No post-production schedule yet.</p>'}
+        </div>
       </div>
     </main>
     ${footerHtml(view)}`
@@ -416,6 +465,10 @@ export function bindView(root, view, { respond, respondDelivered = respond, undo
   root.querySelector('[data-sign-out]')?.addEventListener('click', signOut)
   root.querySelector('[data-switch]')?.addEventListener('click', switchCompany)
   if (view.schedule) bindSchedule(root, view.schedule)
+  // On a phone the approved column is history: folded away until asked for.
+  if (typeof matchMedia === 'function' && matchMedia('(max-width: 959px)').matches) {
+    root.querySelectorAll('details[data-collapse-mobile]').forEach(d => { d.open = false })
+  }
   bindRequestForm(root, { submitRequest, rerender })
   bindReplyForms(root, { reply, rerender })
 

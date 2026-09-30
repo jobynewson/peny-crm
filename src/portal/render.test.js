@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { renderView, approveHtml } from './render.js'
+import { renderView, approveHtml, portalColumns } from './render.js'
 
 const view = (over = {}) => ({
   scope: { kind: 'company', can_respond: true },
@@ -43,10 +43,13 @@ describe('the portal: requests', () => {
     expect(out).toContain('&lt;img')
   })
 
-  it('folds older requests away', () => {
-    const many = Array.from({ length: 7 }, (_, i) => ({ id: `q${i}`, title: `Ask ${i}`, detail: null, wanted_by: null, status: 'submitted', status_label: 'Submitted', sent_at: '2026-09-28T10:00:00Z', sent_by: null, note: null, accepted: null }))
-    const out = html(view({ requests: many }))
-    expect(out).toContain('Earlier requests (2)')
+  it('keeps every waiting request in view and folds the answered ones away', () => {
+    const mk = (i, status = 'submitted') => ({ id: `q${i}`, title: `Ask ${i}`, detail: null, wanted_by: null, status, status_label: status, sent_at: '2026-09-28T10:00:00Z', sent_by: null, note: null, accepted: null })
+    const out = html(view({ requests: [...Array.from({ length: 7 }, (_, i) => mk(i)), mk(8, 'declined'), mk(9, 'accepted')] }))
+    expect(out).not.toContain('Earlier requests')
+    for (let i = 0; i < 7; i++) expect(out).toContain(`Ask ${i}`)
+    expect(out).toContain('Answered requests (2)')
+    expect(out.indexOf('Answered requests (2)')).toBeLessThan(out.indexOf('Ask 8'))   // inside the fold
   })
 
   it('can\'t ask while viewing as the client, nor on a link that says it is not taking requests', () => {
@@ -275,5 +278,76 @@ describe('the Approve link page: comments are in', () => {
     const sent = approveHtml(link({ state: 'comments_in', can_undo: true }), { commentsSent: true })
     expect(sent).toContain('Thank you — we’ll take it from here')
     expect(sent).not.toContain('data-approve-now')
+  })
+})
+
+describe('the portal board: Requests · In progress · Approved', () => {
+  const d = (id, status, over = {}) => ({ id, title: `Item ${id}`, format: null, due: 'No date', status, status_label: status, waiting_for: null, reply: null, can_reply: false, rounds: [], ...over })
+  const board = (ds, over = {}) => view({ workstreams: [{ id: 'w1', title: 'Launch <films>', brief: 'Brief text', status: 'active', status_label: 'Active', deliverables: ds }], ...over })
+
+  it('places each status in its column, with the client\'s moves together', () => {
+    const c = portalColumns(board([
+      d('a', 'planned'), d('b', 'in_progress'), d('c', 'comments_received'), d('e', 'ready_for_review'),
+      d('f', 'waiting_on_you'), d('g', 'delivered'), d('h', 'approved'),
+    ]))
+    expect(c.planned.map(x => x.id)).toEqual(['a'])
+    expect(c.progress.map(x => x.id)).toEqual(['b', 'c'])
+    expect(c.needs.map(x => x.id)).toEqual(['e', 'f', 'g'])
+    expect(c.approved.map(x => x.id)).toEqual(['h'])
+    expect(c.needs[0].workstream).toBe('Launch <films>')
+  })
+  it('splits requests into what is waiting and what has been answered', () => {
+    const c = portalColumns(board([], { requests: [{ id: 'q1', status: 'submitted' }, { id: 'q2', status: 'accepted' }, { id: 'q3', status: 'declined' }] }))
+    expect(c.asked.map(r => r.id)).toEqual(['q1'])
+    expect(c.answered.map(r => r.id)).toEqual(['q2', 'q3'])
+  })
+  it('draws three columns with what needs the client at the top of the middle one, marked', () => {
+    const out = html(board([d('b', 'in_progress'), d('e', 'ready_for_review'), d('f', 'waiting_on_you'), d('g', 'delivered', { can_answer: true }), d('a', 'planned'), d('h', 'approved')]))
+    expect(out).toContain('id="pt-col-requests"')
+    expect(out).toContain('id="pt-col-progress"')
+    expect(out).toContain('id="pt-col-approved"')
+    expect(out.indexOf('pt-col--requests')).toBeLessThan(out.indexOf('pt-col--progress'))
+    expect(out.indexOf('pt-col--progress')).toBeLessThan(out.indexOf('pt-col--approved'))
+    const middle = out.slice(out.indexOf('id="pt-col-progress"'), out.indexOf('id="pt-col-approved"'))
+    expect(middle).toContain('Needs you · 3')
+    expect(middle.indexOf('Needs you · 3')).toBeLessThan(middle.indexOf('Item b'))
+    expect(middle).toContain('Ready for your review')
+    expect(middle).toContain('Waiting on you')
+    expect(middle).toContain('Delivered — over to you')
+    expect(middle).not.toContain('Item a')                      // not started: on the left
+    expect(out.slice(out.indexOf('id="pt-col-requests"'), out.indexOf('id="pt-col-progress"'))).toContain('Item a')
+    expect(out.slice(out.indexOf('id="pt-col-approved"'))).toContain('Item h')
+  })
+  it('leads with a summary and jump links that say how many need them', () => {
+    const out = html(board([d('e', 'ready_for_review'), d('f', 'waiting_on_you'), d('b', 'in_progress')]))
+    expect(out).toContain('1 thing ready for your review · 1 waiting on you')
+    expect(out).toContain('pt-jump-link pt-jump-link--alert')
+    expect(html(board([d('b', 'in_progress')]))).toContain('Nothing needs you right now.')
+  })
+  it('keeps the approved column quiet: title, where and when, folded past six, and no buttons', () => {
+    const ds = Array.from({ length: 8 }, (_, i) => d(`x${i}`, 'approved', { rounds: [{ response: 'approved', answered_at: '2026-09-20T10:00:00Z' }] }))
+    const out = html(board(ds))
+    const col = out.slice(out.indexOf('id="pt-col-approved"'))
+    expect(col).toContain('Approved 20 Sep')
+    expect(col).toContain('Earlier (2)')
+    expect(col).not.toContain('data-approve')
+    expect(col).toContain('data-collapse-mobile')
+  })
+  it('keeps every anchor an email can point at, and escapes the workstream name', () => {
+    const out = html(board([d('e', 'ready_for_review'), d('h', 'approved'), d('a', 'planned')]))
+    for (const id of ['e', 'h', 'a']) expect(out).toContain(`id="d-${id}"`)
+    expect(out).toContain('Launch &lt;films&gt;')
+    expect(out).not.toContain('Launch <films>')
+  })
+  it('uses the same board for a project link, with the log and schedule below it', () => {
+    const out = renderView({
+      scope: { kind: 'project', can_respond: false, can_request: true }, today: '2026-09-29', title: 'Film', studio: {}, project: { name: 'Film', status: 'Post' },
+      client: null, workstreams: [{ id: 'w1', title: 'Edits', brief: null, status: 'active', status_label: 'Active', deliverables: [d('e', 'ready_for_review')] }],
+      requests: [], work_log: [{ note: 'Graded', date: '2026-09-20', by: 'Ana' }], schedule: null,
+    }, { signedIn: false, canSwitch: false })
+    expect(out).toContain('pt-board')
+    expect(out).toContain('Needs you · 1')
+    expect(out.indexOf('pt-board')).toBeLessThan(out.indexOf('Work log'))
+    expect(out).not.toContain('data-approve')                       // a link can look but not answer
   })
 })

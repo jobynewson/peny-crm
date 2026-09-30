@@ -194,3 +194,57 @@ a { color: var(--accent-text); }
 @media (min-width: 960px) {
   .pt-main--project { grid-template-columns: 340px minmax(0, 1fr); align-items: start; }
 }
+
+/* ── The board: Requests · In progress · Approved ── */
+.pt-main--board { max-width: 1280px; }
+.pt-board { display: grid; gap: 16px; }
+.pt-board > .pt-col { display: block; min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); scroll-margin-top: 64px; }
+.pt-col-title { margin: 0; padding: 14px 16px 6px; font-size: 16px; font-weight: 600; }
+.pt-board > .pt-col > .pt-ws-head { padding: 0 16px 0 0; }
+.pt-board > .pt-col > .pt-ws-head .pt-col-title { flex: 1; }
+.pt-board > .pt-col > .pt-muted, .pt-board > .pt-col > .pt-form { margin: 0; padding: 4px 16px 14px; }
+.pt-board .pt-list { border-top: 1px solid var(--border); }
+.pt-board .pt-form { padding: 4px 16px 14px; }
+.pt-sub-h { margin: 0; padding: 12px 16px 6px; font-family: var(--font-mono, inherit); font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+.pt-col--requests .pt-earlier { padding: 0 16px 12px; }
+
+/* The middle column is the work, and is the widest. What is the client's move
+   sits at its top, marked. */
+.pt-col--progress { box-shadow: var(--shadow-card, none); }
+.pt-needs { border-top: 1px solid var(--border); background: var(--cat-amber-soft); }
+.pt-needs-h { margin: 0; padding: 10px 16px 6px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--cat-amber); }
+.pt-needs .pt-list { border-top: none; }
+.pt-d--needs { border-left: 4px solid var(--cat-amber); background: var(--surface); margin: 0 0 1px; }
+.pt-needs-tag { margin-bottom: 4px; font-size: 12px; font-weight: 600; color: var(--cat-amber); }
+.pt-d-ws { margin-bottom: 2px; font-size: 12px; color: var(--text-muted); }
+
+/* Approved is history: narrower, quieter. */
+.pt-col--approved { opacity: 0.92; }
+.pt-col-summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; }
+.pt-col-summary::-webkit-details-marker { display: none; }
+.pt-col-summary::after { content: '▾'; margin-left: auto; font-size: 11px; color: var(--text-muted); }
+.pt-col--approved:not([open]) .pt-col-summary::after { content: '▸'; }
+.pt-list--quiet .pt-d { padding: 10px 16px; }
+.pt-d--quiet .pt-d-title { font-size: 14px; font-weight: 500; color: var(--text-muted); }
+
+/* Jump links: how a phone gets around; on a desktop the three columns are all in view. */
+.pt-jump { position: sticky; top: 0; z-index: 2; display: flex; gap: 6px; margin: 0 -16px 14px; padding: 8px 16px; overflow-x: auto; background: var(--bg); border-bottom: 1px solid var(--border-light); }
+.pt-jump-link { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border: 1px solid var(--border); border-radius: 999px; font-size: 13px; color: var(--text); text-decoration: none; white-space: nowrap; background: var(--surface); }
+.pt-jump-link span { font-weight: 600; }
+.pt-jump-link--alert { border-color: var(--cat-amber); background: var(--cat-amber-soft); color: var(--cat-amber); }
+
+.pt-below { display: grid; gap: 20px; margin-top: 24px; }
+
+/* A phone: the middle column first (what needs you is at its top), then requests, then approved. */
+.pt-col--progress { order: 1; }
+.pt-col--requests { order: 2; }
+.pt-col--approved { order: 3; }
+
+@media (min-width: 960px) {
+  .pt-board { grid-template-columns: minmax(0, 1fr) minmax(0, 1.75fr) minmax(0, 0.8fr); align-items: start; }
+  .pt-col--requests { order: 1; }
+  .pt-col--progress { order: 2; }
+  .pt-col--approved { order: 3; }
+  .pt-jump { position: static; margin: 0 0 12px; padding: 0; border: 0; background: none; }
+  .pt-below { grid-template-columns: 340px minmax(0, 1fr); align-items: start; }
+}

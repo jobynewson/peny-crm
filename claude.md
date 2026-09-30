@@ -1248,9 +1248,21 @@ always the source of truth and nothing is ever read back from Google.
   active one (asking which, if they're in more than one) — the API scopes by
   it. No organisation → "isn't linked to a client portal"; Slate staff →
   "you're signed in as Peny". A client who opens Slate (`/`) is sent here.
+- **The board** (`boardHtml`, `portalColumns` in `render.js`; both views use it):
+  three columns. **Requests** on the left (submitted requests, not-started
+  client-visible deliverables as "Up next", and answered requests folded),
+  **In progress** in the middle and widest, **Approved** on the right, narrower
+  and quieter (six shown, the rest folded; closed by default on a phone).
+  Ready for review, waiting on you and delivered-to-approve sit at the top of the
+  middle column under "Needs you", marked with an amber edge and what to do. A
+  summary line and jump links lead the page. On a phone the columns stack in
+  the order Needs you, In progress, Requests, Approved (CSS `order`, no
+  duplicated markup). Grouping is by status, not workstream: each card carries
+  its workstream's name and workstream briefs are no longer shown. Every
+  `#d-<id>` anchor still exists.
 - `main.js` boots and handles errors, `render.js` draws the two views and
-  the approve / request-changes flow (approve is two taps; changes need
-  words), `schedule.js` is the post-production grid ported from the old page,
+  the approve / comments-are-in / request-changes flow (approve is two taps;
+  changes need words), `schedule.js` is the post-production grid ported from the old page,
   `util.js` holds helpers, `portal.css` the styles (Slate's tokens and fonts,
   so both themes; phone first, 44px targets).
 
