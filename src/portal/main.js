@@ -3,7 +3,7 @@
 //   /portal/<token>  a project's portal link → that project, read-only
 //   /portal          a client signed in with Clerk → their company's worklist
 //   /portal/approve#<token>  the Approve button in a delivery email → a confirm
-//                    page for that one round (approve_only: no sign-in). The
+//                    page for that one round (no sign-in). The
 //                    token rides in the fragment, so it never reaches a server
 //                    log or a Referer header; opening the page changes nothing.
 // The page only decides which credential to send. What to show comes from
@@ -168,7 +168,21 @@ async function showApprove() {
     return
   }
   document.title = `Approve ${link.title} — ${link.studio?.name || 'Client portal'}`
-  root.innerHTML = approveHtml(link)
+  // "Request changes" in an email for someone with no login opens the same page
+  // with the box for changes already open.
+  const wantsChanges = new URLSearchParams(location.search).get('changes') === '1'
+  root.innerHTML = approveHtml(link, { openChanges: wantsChanges })
+  bindApprove(link)
+}
+
+// Either answer can meet a 409/410 (someone answered, or the link was used,
+// while the page was open): show how things stand instead.
+async function showCurrent(link, err) {
+  try { root.innerHTML = approveHtml(await api('/api/client/link')); return } catch { /* used up: say so below */ }
+  root.innerHTML = approveHtml(link, { failure: linkFailure(err) })
+}
+
+function bindApprove(link) {
   const button = root.querySelector('[data-approve-now]')
   button?.addEventListener('click', async () => {
     button.disabled = true
@@ -176,14 +190,30 @@ async function showApprove() {
       const result = await api('/api/client/link/approve', { method: 'POST', body: {} })
       root.innerHTML = approveHtml(result.link, { done: true })
     } catch (err) {
-      if (err.status === 409 || err.status === 410) {
-        // Someone answered, or the link was used, while this page was open: show how things stand.
-        try { root.innerHTML = approveHtml(await api('/api/client/link')); return } catch { /* used up: say so below */ }
-        root.innerHTML = approveHtml(link, { failure: linkFailure(err) })
-        return
-      }
+      if (err.status === 409 || err.status === 410) return showCurrent(link, err)
       button.disabled = false
       root.querySelector('[data-approve-msg]').textContent = err.message
+    }
+  })
+
+  const actions = root.querySelector('[data-approve-actions]')
+  const form = root.querySelector('[data-changes-now]')
+  root.querySelector('[data-open-changes]')?.addEventListener('click', () => { actions.hidden = true; form.hidden = false; form.querySelector('#ap-comment').focus() })
+  root.querySelector('[data-cancel-changes]')?.addEventListener('click', () => { form.hidden = true; actions.hidden = false; root.querySelector('[data-open-changes]').focus() })
+  form?.addEventListener('submit', async e => {
+    e.preventDefault()
+    const msg = form.querySelector('[data-changes-msg]')
+    const comment = form.querySelector('#ap-comment').value.trim()
+    if (!comment) { msg.textContent = 'Say what needs to change'; form.querySelector('#ap-comment').focus(); return }
+    const submit = form.querySelector('[type="submit"]')
+    submit.disabled = true
+    try {
+      const result = await api('/api/client/link/changes', { method: 'POST', body: { comment } })
+      root.innerHTML = approveHtml(result.link, { changed: true })
+    } catch (err) {
+      if (err.status === 409 || err.status === 410) return showCurrent(link, err)
+      submit.disabled = false
+      msg.textContent = err.message
     }
   })
 }

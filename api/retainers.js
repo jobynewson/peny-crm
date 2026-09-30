@@ -1,7 +1,11 @@
 // api/retainers.js
-// The Peny side of the retainer worklist:
-//   GET    /api/retainers/companies                        companies with a worklist or a retainer project
-//   GET    /api/retainers/companies/:id                    the whole company page
+// The Peny side of a project's worklist:
+//   GET    /api/retainers/projects/:id                     a project's whole worklist (the Worklist tab)
+//   GET    /api/retainers/project-counts                   open / overdue / waiting per project
+//   POST   /api/retainers/projects/:id/attach              bring a company's older workstreams into it
+//   POST   /api/retainers/projects/:id/link                { action: create | replace | off } the client link
+//   PUT    /api/retainers/projects/:id/portal-emails       extra addresses for the delivery email
+//   GET    /api/retainers/request-count                    new requests, for the header tab
 //   POST   /api/retainers/workstreams                      PATCH | DELETE /api/retainers/workstreams/:id
 //   POST   /api/retainers/deliverables                     PATCH | DELETE /api/retainers/deliverables/:id
 //   POST   /api/retainers/deliverables/:id/deliveries      { url, note } → next round, in review

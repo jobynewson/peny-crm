@@ -49,8 +49,10 @@ function footerHtml(view) {
 // (Mail scanners open every link in a message, so a link that acted on GET
 // would approve things nobody looked at.)
 
-export function approveHtml(link, { done = false, failure = null } = {}) {
+export function approveHtml(link, { done = false, changed = false, failure = null, openChanges = false } = {}) {
   const portal = link ? `/portal#d-${encodeURIComponent(link.deliverable_id)}` : '/portal'
+  // Someone with no login has no portal to open: the link is all they have.
+  const portalButton = (primary = false) => link?.can_sign_in === false ? '' : `<a class="pt-btn${primary ? ' pt-btn--primary' : ''}" href="${esc(portal)}">Open the portal</a>`
   const shell = body => `
     <div class="pt-signin pt-approve">
       <img class="pt-logo" src="/peny-logo.png" alt="${esc(link?.studio?.name || 'Peny')}" />
@@ -60,7 +62,7 @@ export function approveHtml(link, { done = false, failure = null } = {}) {
     return shell(`
       <h1 class="pt-signin-title">${esc(failure.title)}</h1>
       <p class="pt-muted">${esc(failure.detail)}</p>
-      <div class="pt-message-actions"><a class="pt-btn" href="${esc(portal)}">Open the portal</a></div>`)
+      <div class="pt-message-actions">${portalButton()}</div>`)
   }
   const what = `
       <div class="pt-approve-what">
@@ -70,35 +72,51 @@ export function approveHtml(link, { done = false, failure = null } = {}) {
         ${link.note ? `<p class="pt-round-note">${esc(link.note)}</p>` : ''}
         ${link.url ? `<a class="pt-link" href="${esc(link.url)}" target="_blank" rel="noopener noreferrer">${link.frame_io ? 'Watch it in Frame.io' : 'Watch it'} ↗</a>` : ''}
       </div>`
+  if (changed) {
+    return shell(`
+      <h1 class="pt-signin-title">Thank you — we’ve got your changes</h1>
+      <p class="pt-muted">We’ll make them and send you the next round.</p>
+      ${what}
+      <div class="pt-message-actions">${portalButton()}</div>`)
+  }
   if (done || link.state === 'approved') {
     return shell(`
       <h1 class="pt-signin-title">${done ? 'Approved — thank you' : 'Already approved'}</h1>
       ${what}
-      <div class="pt-message-actions"><a class="pt-btn" href="${esc(portal)}">Open the portal</a></div>`)
+      <div class="pt-message-actions">${portalButton()}</div>`)
   }
   if (link.state === 'superseded') {
     return shell(`
       <h1 class="pt-signin-title">There’s a newer round</h1>
-      <p class="pt-muted">A newer round of this has been sent since the email, so this link can’t approve it. Sign in to see the latest.</p>
+      <p class="pt-muted">A newer round of this has been sent since the email, so this link can’t answer it. ${link.can_sign_in === false ? 'Look out for the email for the newer round.' : 'Sign in to see the latest.'}</p>
       ${what}
-      <div class="pt-message-actions"><a class="pt-btn pt-btn--primary" href="${esc(portal)}">Open the portal</a></div>`)
+      <div class="pt-message-actions">${portalButton(true)}</div>`)
   }
   if (link.state === 'answered') {
     return shell(`
       <h1 class="pt-signin-title">Already answered</h1>
       <p class="pt-muted">Changes have already been requested on this round.</p>
       ${what}
-      <div class="pt-message-actions"><a class="pt-btn" href="${esc(portal)}">Open the portal</a></div>`)
+      <div class="pt-message-actions">${portalButton()}</div>`)
   }
   return shell(`
       <h1 class="pt-signin-title">Approve this?</h1>
       ${what}
       <div class="pt-form-msg" role="alert" data-approve-msg></div>
-      <div class="pt-message-actions">
+      <div class="pt-message-actions" data-approve-actions${openChanges ? ' hidden' : ''}>
         <button type="button" class="pt-btn pt-btn--primary" data-approve-now>Yes, approve round ${link.round}</button>
-        <a class="pt-btn" href="${esc(portal)}">Request changes instead</a>
+        <button type="button" class="pt-btn" data-open-changes>Ask for changes instead</button>
       </div>
-      <p class="pt-muted pt-approve-note">Nothing is approved until you press the button. To ask for changes you sign in to the portal, so you can say what needs to change.</p>`)
+      <form class="pt-form pt-approve-changes" data-changes-now${openChanges ? '' : ' hidden'} novalidate>
+        <label for="ap-comment">What needs to change?</label>
+        <textarea id="ap-comment" rows="4"></textarea>
+        <div class="pt-form-msg" role="alert" data-changes-msg></div>
+        <div class="pt-actions">
+          <button type="submit" class="pt-btn pt-btn--primary">Send to us</button>
+          <button type="button" class="pt-btn" data-cancel-changes>Back</button>
+        </div>
+      </form>
+      <p class="pt-muted pt-approve-note">Nothing is approved until you press the button. ${link.can_sign_in === false ? 'Asking for changes works from this page too — there is nothing to sign in to.' : 'You can also ask for changes here, or sign in to the portal.'}</p>`)
 }
 
 // ── Signed in: the company's worklist ────────────────────────────────────────

@@ -66,11 +66,11 @@ describe('the Approve link\'s answer', () => {
       expect(q).toContain('client_visible')
     }
     const write = queries.find(q => /UPDATE deliveries SET/.test(q))
-    expect(write).toContain('UPDATE action_links l SET used_at = NOW()')
+    expect(write).toContain("UPDATE action_links l SET used_at = CASE WHEN ${response === 'approved'} THEN NOW() ELSE l.used_at END")   // only an approval uses the link up
     expect(write).toContain('l.id = ${scope.linkId}')
     expect(write).toContain('l.used_at IS NULL AND l.expires_at > NOW()')
     expect(write).toMatch(/FROM target, used WHERE deliveries\.id = target\.id/)   // no link, no approval
-    expect(write).toContain("client_response   = 'approved'")                       // it can only approve
+    expect(write).toContain('client_response   = ${response}::delivery_response')    // approve or ask for changes, nothing else
   })
 })
 

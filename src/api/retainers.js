@@ -20,6 +20,9 @@ export const attachWorkstreams = id => post(`projects/${id}/attach`, {})
 // The project's client link: action 'create' | 'replace' | 'off'. → { has_link, token }
 export const setProjectLink = (id, action) => post(`projects/${id}/link`, { action })
 
+// Replaces the extra addresses that get the delivery email. → the cleaned list
+export const setPortalEmails = (id, emails) => request(`${base}/projects/${id}/portal-emails`, { method: 'PUT', body: { portal_emails: emails } }).then(r => r.portal_emails)
+
 export const createWorkstream = body => post('workstreams', body).then(r => r.workstream)
 export const updateWorkstream = (id, body) => patch(`workstreams/${id}`, body).then(r => r.workstream)
 export const deleteWorkstream = id => del(`workstreams/${id}`)

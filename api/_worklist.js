@@ -48,17 +48,20 @@ export function companyScope({ ws, companyId, clerkUserId, impersonated = false 
   })
 }
 
-// The Approve link in a delivery email: ONE round of one deliverable, and the
-// one thing that can be done with it is approve it (there's no way to ask for
-// changes without a comment, so that means signing in). It stands for the
-// client the email went to. Made only by api/_client.js from an unused,
-// unexpired action_links row; `linkId` is what the approval uses up, in the
+// The Approve link in a delivery email: ONE round of one deliverable, and it
+// can answer that round two ways: approve it (which uses the link up), or ask
+// for changes with a comment (which doesn't — the round is answered either
+// way, so there is nothing left for the link to do). It stands for whoever the
+// email went to: someone with a login (`clerkUserId`), or someone without (a
+// client contact or an address on the project), who is known by their address
+// and `name`. Made only by api/_client.js from an unused, unexpired
+// action_links row; `linkId` is what the answer is checked against, in the
 // same statement that records it.
-export function deliveryScope({ ws, deliveryId, linkId, clerkUserId, email }) {
+export function deliveryScope({ ws, deliveryId, linkId, clerkUserId = null, email, name = null }) {
   return made({
     kind: 'delivery', ws: need(ws, 'the workspace id'), deliveryId: need(deliveryId, 'the delivery id'),
-    linkId: need(linkId, 'the link id'), clerkUserId: need(clerkUserId, 'the client the link was sent to'),
-    email: need(email, 'the address the link was sent to'), canRespond: true,
+    linkId: need(linkId, 'the link id'), clerkUserId: clerkUserId || null,
+    email: need(email, 'the address the link was sent to'), name: name || null, canRespond: true,
   })
 }
 
@@ -83,11 +86,8 @@ export async function respondToDelivery(sql, scope, { deliveryId, input, by }) {
   if (!RESPONSES.includes(response)) return notFound()   // unreachable after validation
 
   if (scope.kind === 'delivery') {
-    if (response !== 'approved') {
-      return { error: { status: 403, code: 'approve_only', message: 'To ask for changes, sign in to the portal so you can say what needs to change' } }
-    }
     if (deliveryId !== scope.deliveryId) return notFound()
-    return respondViaLink(sql, scope, { by })
+    return respondViaLink(sql, scope, { response, comment, by })
   }
   if (scope.kind === 'staff') return respondAsStaff(sql, scope, { deliveryId, response, comment, by })
   if (scope.kind === 'company') return respondAsClient(sql, scope, { deliveryId, response, comment, by })
@@ -335,13 +335,15 @@ async function respondAsClient(sql, scope, { deliveryId, response, comment, by }
   return { delivery: { id: done.delivery_id, deliverable_id: done.deliverable_id } }
 }
 
-// An approval from an emailed link. The link is used up by the very statement
-// that records the approval, and only if that statement approves something: the
-// round must still be the latest, still unanswered, on a deliverable still
-// shown to the client, and the link unused and unexpired. Any of those failing
-// leaves the link as it was. (A data-modifying CTE always runs, so the link's
-// UPDATE joins the target and the approval joins the link.)
-async function respondViaLink(sql, scope, { by }) {
+// An answer from an emailed link: approve (the link is used up by the very
+// statement that records it) or ask for changes (the link is checked the same
+// way but left as it is; the round is answered, so it can't be used again
+// anyway). Either only happens if the round is still the latest, still
+// unanswered, on a deliverable still shown to the client, and the link unused
+// and unexpired. Any of those failing leaves the link as it was. (A
+// data-modifying CTE always runs, so the link's UPDATE joins the target and the
+// answer joins the link.)
+async function respondViaLink(sql, scope, { response, comment, by }) {
   const [row] = await sql`
     SELECT dv.id, dv.round, dv.client_response, d.status, d.client_visible,
            (SELECT max(x.round) FROM deliveries x WHERE x.deliverable_id = dv.deliverable_id) AS latest_round
@@ -354,7 +356,9 @@ async function respondViaLink(sql, scope, { by }) {
   const refused = refusal(row)
   if (refused) return { error: refused }
 
-  const patch = statusPatch({ from: row.status, to: statusAfterResponse('approved') })
+  const patch = statusPatch({ from: row.status, to: statusAfterResponse(response) })
+  // Someone with no login is recorded by their address.
+  const respondedBy = scope.clerkUserId ?? 'email:' + scope.email
   const [done] = await sql`
     WITH target AS (
       SELECT dv.id
@@ -368,16 +372,16 @@ async function respondViaLink(sql, scope, { by }) {
         AND dv.round = (SELECT max(x.round) FROM deliveries x WHERE x.deliverable_id = dv.deliverable_id)
       FOR UPDATE OF dv, d
     ), used AS (
-      UPDATE action_links l SET used_at = NOW()
+      UPDATE action_links l SET used_at = CASE WHEN ${response === 'approved'} THEN NOW() ELSE l.used_at END
       FROM target
       WHERE l.id = ${scope.linkId} AND l.delivery_id = target.id AND l.used_at IS NULL AND l.expires_at > NOW()
       RETURNING l.id
     ), answered AS (
       UPDATE deliveries SET
-        client_response   = 'approved'::delivery_response,
-        client_comment    = NULL,
+        client_response   = ${response}::delivery_response,
+        client_comment    = ${response === 'changes_requested' ? comment : null},
         responded_at      = NOW(),
-        responded_by      = ${scope.clerkUserId},
+        responded_by      = ${respondedBy},
         responded_by_name = ${by.name}
       FROM target, used WHERE deliveries.id = target.id
       RETURNING deliveries.id, deliveries.deliverable_id

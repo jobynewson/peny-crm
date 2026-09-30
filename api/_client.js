@@ -49,6 +49,7 @@ const WORKLIST = ['company', 'project']
 export const ROUTES = [
   { method: 'GET',  pattern: /^client\/link$/,                                      handler: getLink, kinds: ['delivery'] },
   { method: 'POST', pattern: /^client\/link\/approve$/,                              handler: approveViaLink, kinds: ['delivery'] },
+  { method: 'POST', pattern: /^client\/link\/changes$/,                              handler: changesViaLink, kinds: ['delivery'] },
   { method: 'GET',  pattern: /^client\/view$/,                                      handler: getView },
   { method: 'POST', pattern: new RegExp(`^client/deliveries/(?<id>${UUID})/response$`), handler: respond },
   { method: 'POST', pattern: new RegExp(`^client/deliverables/(?<id>${UUID})/reply$`), handler: reply },
@@ -94,7 +95,7 @@ export async function resolveScope(req, sql) {
 async function resolveLink(sql, token) {
   if (typeof token !== 'string' || !ACTION_TOKEN.test(token)) return refuse(404, 'not_found', 'This link is not valid')
   const [link] = await sql`
-    SELECT l.id, l.delivery_id, l.clerk_user_id, l.email, l.used_at, l.expires_at < NOW() AS expired, w.user_id AS ws
+    SELECT l.id, l.delivery_id, l.clerk_user_id, l.email, l.name, l.used_at, l.expires_at < NOW() AS expired, w.user_id AS ws
     FROM action_links l
     JOIN deliveries dv ON dv.id = l.delivery_id
     JOIN deliverables d ON d.id = dv.deliverable_id
@@ -103,7 +104,7 @@ async function resolveLink(sql, token) {
   if (!link) return refuse(404, 'not_found', 'This link is not valid')
   if (link.used_at) return refuse(410, 'link_used', 'This link has already been used')
   if (link.expired) return refuse(410, 'link_expired', 'This link has expired')
-  return { scope: deliveryScope({ ws: link.ws, deliveryId: link.delivery_id, linkId: link.id, clerkUserId: link.clerk_user_id, email: link.email }) }
+  return { scope: deliveryScope({ ws: link.ws, deliveryId: link.delivery_id, linkId: link.id, clerkUserId: link.clerk_user_id, email: link.email, name: link.name }) }
 }
 
 // Like dispatch() in _api.js, but for portal visitors: the route is resolved
@@ -201,14 +202,43 @@ async function getLink(req, res, { sql, scope }) {
   return res.status(200).json(link)
 }
 
+// Who a link stands for, as a name the record can show: the Clerk account's
+// name if they have one, else the name we have for them, else their address.
+async function linkPerson(scope) {
+  const name = (scope.clerkUserId ? await clientName(scope.clerkUserId) : null) || scope.name || scope.email
+  return { clerkId: scope.clerkUserId, name }
+}
+
 // ── POST /api/client/link/approve ────────────────────────────────────────────
 // Approves the round, as the person the email went to, and uses the link up.
 async function approveViaLink(req, res, { sql, scope }) {
-  const by = { clerkId: scope.clerkUserId, name: (await clientName(scope.clerkUserId)) || scope.email }
+  const by = await linkPerson(scope)
   const result = await respondToDelivery(sql, scope, { deliveryId: scope.deliveryId, input: { response: 'approved' }, by })
   if (result.error) {
     const { status, code, message, field } = result.error
     return fail(res, status, code, message, field ? { field } : {})
+  }
+  return res.status(200).json({ ok: true, link: await readLinkView(sql, scope) })
+}
+
+// ── POST /api/client/link/changes ────────────────────────────────────────────
+// { comment } — asks for changes to the round, as the person the email went to.
+// The comment is needed. The link isn't used up (the round is answered, which is
+// what stops it). Tells the owner straight away, like the portal does.
+async function changesViaLink(req, res, { sql, scope }) {
+  const body = readBody(req)
+  if (!body) return invalid(res, 'body', 'Request body is not valid JSON')
+  const by = await linkPerson(scope)
+  const input = { response: 'changes_requested', comment: body.comment }
+  const result = await respondToDelivery(sql, scope, { deliveryId: scope.deliveryId, input, by })
+  if (result.error) {
+    const { status, code, message, field } = result.error
+    return fail(res, status, code, message, field ? { field } : {})
+  }
+  try {
+    await alertChangesRequested(sql, { deliverableId: result.delivery.deliverable_id, comment: body.comment.trim(), by: by.name })
+  } catch (err) {
+    console.error('[client] changes-requested alert failed:', err?.message)   // the answer is saved either way
   }
   return res.status(200).json({ ok: true, link: await readLinkView(sql, scope) })
 }

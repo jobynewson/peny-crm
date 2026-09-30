@@ -21,6 +21,7 @@ import { UUID, fail, invalid, readBody, workspaceId } from './_api.js'
 import { londonDate, daysBetween, formatDay } from './_dates.js'
 import { fetchLinkPreview } from './_preview.js'
 import {
+  normalisePortalEmails,
   DELIVERABLE_STATUSES, STATUS_LABELS, WORKSTREAM_STATUSES, WORKSTREAM_LABELS, RESPONSE_LABELS,
   DUE_KINDS, CADENCES, CADENCE_LABELS, STATUS_AFTER_DELIVERY, TITLE_MAX, TEXT_MAX,
   clientStatus, statusPatch, statusAfterUnsend, normaliseDeliveryUrl, isFrameIoUrl,
@@ -40,6 +41,7 @@ export const ROUTES = [
   { method: 'GET',    pattern: new RegExp(`^retainers/projects/${ID}$`),                  handler: getProjectPage },
   { method: 'POST',   pattern: new RegExp(`^retainers/projects/${ID}/attach$`),           handler: attachWorkstreams, access: 'editor' },
   { method: 'POST',   pattern: new RegExp(`^retainers/projects/${ID}/link$`),             handler: setLink,           access: 'editor' },
+  { method: 'PUT',    pattern: new RegExp(`^retainers/projects/${ID}/portal-emails$`),    handler: setPortalEmails,   access: 'editor' },
   { method: 'POST',   pattern: /^retainers\/workstreams$/,                               handler: createWorkstream,  access: 'editor' },
   { method: 'PATCH',  pattern: new RegExp(`^retainers/workstreams/${ID}$`),               handler: updateWorkstream,  access: 'editor' },
   { method: 'DELETE', pattern: new RegExp(`^retainers/workstreams/${ID}$`),               handler: deleteWorkstream,  access: 'editor' },
@@ -202,8 +204,10 @@ async function getProjectPage(req, res, { sql, params }) {
   const ws = await workspaceId(sql)
   const [project] = await sql`
     SELECT p.id, p.name, p.status, p.is_retainer, p.company_id, p.portal_token IS NOT NULL AS has_link, p.portal_emails,
+           k.email AS contact_email, k.first_name AS contact_first, k.last_name AS contact_last,
            c.name AS company_name, c.clerk_org_id, c.lead_id, u.name AS lead_name, u.email AS lead_email
     FROM projects p
+    LEFT JOIN contacts k ON k.id = p.client_id
     LEFT JOIN companies c ON c.id = p.company_id
     LEFT JOIN app_users u ON u.id = c.lead_id
     WHERE p.id = ${params.id} AND p.user_id = ${ws}`
@@ -225,6 +229,9 @@ async function getProjectPage(req, res, { sql, params }) {
     project: {
       id: project.id, name: project.name, status: project.status, is_retainer: project.is_retainer,
       has_link: project.has_link, portal_emails: project.portal_emails ?? [],
+      // The project's client contact: who the delivery email goes to besides the
+      // extra addresses (and the company's login people).
+      client_contact: project.contact_email ? { name: [project.contact_first, project.contact_last].filter(Boolean).join(' ') || null, email: project.contact_email } : null,
     },
     company: project.company_id ? {
       id: project.company_id, name: project.company_name, portal: !!project.clerk_org_id,
@@ -291,6 +298,35 @@ async function setLink(req, res, { sql, params }) {
     return fail(res, 409, 'has_link', 'This project already has a link — replace it instead')
   }
   return res.status(200).json({ has_link: !!token, token })
+}
+
+// ── PUT /api/retainers/projects/:id/portal-emails ────────────────────────────
+// { portal_emails: [address, …] } — the addresses, beyond the project's client
+// contact and the company's login people, that get the delivery email and its
+// one-time Approve link. Replaces the list. An address taken off stops working
+// at once: its unused links on this project's deliveries are deleted.
+// → { portal_emails }
+async function setPortalEmails(req, res, { sql, params }) {
+  const body = readBody(req)
+  if (!body) return invalid(res, 'body', 'Request body is not valid JSON')
+  const checked = normalisePortalEmails(body.portal_emails)
+  if (checked.error) return invalid(res, checked.error.field, checked.error.message)
+
+  const ws = await workspaceId(sql)
+  const [before] = await sql`SELECT portal_emails FROM projects WHERE id = ${params.id} AND user_id = ${ws}`
+  if (!before) return fail(res, 404, 'not_found', 'Project not found')
+  const removed = (before.portal_emails ?? []).map(e => String(e).toLowerCase()).filter(e => !checked.emails.includes(e))
+
+  await sql`UPDATE projects SET portal_emails = ${JSON.stringify(checked.emails)}::jsonb, updated_at = NOW() WHERE id = ${params.id} AND user_id = ${ws}`
+  if (removed.length) {
+    await sql`
+      DELETE FROM action_links l
+      USING deliveries dv, deliverables d, workstreams w
+      WHERE l.used_at IS NULL AND lower(l.email) = ANY(${removed}::text[]) AND l.clerk_user_id IS NULL
+        AND dv.id = l.delivery_id AND d.id = dv.deliverable_id AND w.id = d.workstream_id
+        AND w.project_id = ${params.id} AND w.user_id = ${ws}`
+  }
+  return res.status(200).json({ portal_emails: checked.emails })
 }
 
 // ── POST /api/retainers/workstreams ──────────────────────────────────────────

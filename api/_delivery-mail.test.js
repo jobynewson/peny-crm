@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest'
 vi.mock('@clerk/backend', () => ({ createClerkClient: () => ({}) }))
 vi.mock('./_notify.js', async orig => ({ ...(await orig()), notify: vi.fn() }))
 
-const { hashToken, newToken, deliveryEmail, approveUrl, changesUrl, notifiedMessage, LINK_DAYS } = await import('./_delivery-mail.js')
+const { hashToken, newToken, deliveryEmail, approveUrl, changesUrl, changesLinkUrl, deliveryRecipients, notifiedMessage, LINK_DAYS } = await import('./_delivery-mail.js')
 
 describe('the tokens', () => {
   it('are 256 random bits in URL-safe form, never the same twice', () => {
@@ -79,11 +79,53 @@ describe('telling the sender who was emailed', () => {
   it('names the number, or why nobody', () => {
     expect(notifiedMessage({ sent: 1 }, 'DMM')).toBe('emailed 1 person at DMM')
     expect(notifiedMessage({ sent: 3 }, 'DMM')).toBe('emailed 3 people at DMM')
-    for (const reason of ['hidden', 'no_portal', 'no_members', 'not_sent']) {
+    for (const reason of ['hidden', 'no_one', 'no_members', 'not_sent']) {
       const m = notifiedMessage({ sent: 0, reason }, 'DMM')
       expect(m).not.toMatch(/emailed \d/)
       expect(m.length).toBeGreaterThan(10)
     }
     expect(notifiedMessage({ sent: 0, reason: 'never-heard-of-it' })).toBe('no one was emailed')
+  })
+})
+
+describe('the changes link for someone with no login', () => {
+  it('is the same confirm page with the box open, and the token in the fragment only', () => {
+    const url = new URL(changesLinkUrl('abc'))
+    expect(url.pathname).toBe('/portal/approve')
+    expect(url.search).toBe('?changes=1')
+    expect(url.hash).toBe('#abc')
+  })
+  it('replaces the sign-in wording in the email', () => {
+    const base = { company: 'DMM', title: 'Reel', round: 1, url: 'https://f.io/x', approve: 'https://s/approve#t', changes: 'https://s/portal' }
+    expect(deliveryEmail({ ...base }).html).toContain('where you sign in and say what needs to change')
+    const noLogin = deliveryEmail({ ...base, noLogin: true, changes: changesLinkUrl('t') }).html
+    expect(noLogin).toContain('nothing to sign in to')
+    expect(noLogin).not.toContain('where you sign in')
+    expect(noLogin).toContain('portal/approve?changes=1#t')
+  })
+})
+
+describe('who gets a round\'s email', () => {
+  const dana = { clerk_id: 'u_dana', email: 'Dana@DMM.test', name: 'Dana Client', first: 'Dana' }
+  const none = { clerkIds: new Set(), emails: new Set() }
+  it('is the login people, then the client contact, then the extra addresses', () => {
+    const out = deliveryRecipients({
+      members: [dana], contact: { email: 'sam@x.test', name: 'Sam Lee', first: 'Sam' }, extras: ['ops@x.test'], staff: none,
+    })
+    expect(out.map(p => [p.email, p.source, p.clerk_id])).toEqual([['Dana@DMM.test', 'login', 'u_dana'], ['sam@x.test', 'contact', null], ['ops@x.test', 'extra', null]])
+    expect(out[1]).toMatchObject({ name: 'Sam Lee', first: 'Sam' })
+  })
+  it('gives one person one email, the login winning over a bare address, whatever the case', () => {
+    const out = deliveryRecipients({ members: [dana], contact: { email: 'dana@dmm.test' }, extras: ['DANA@dmm.test', 'ops@x.test', 'Ops@x.test'], staff: none })
+    expect(out.map(p => [p.email, p.source])).toEqual([['Dana@DMM.test', 'login'], ['ops@x.test', 'extra']])
+  })
+  it('never includes Slate staff, by login or by address', () => {
+    const staff = { clerkIds: new Set(['u_dana']), emails: new Set(['ops@x.test', 'sam@x.test']) }
+    const out = deliveryRecipients({ members: [dana], contact: { email: 'sam@x.test' }, extras: ['ops@x.test', 'ok@x.test'], staff })
+    expect(out.map(p => p.email)).toEqual(['ok@x.test'])
+  })
+  it('skips anything that is not an address, and copes with nothing at all', () => {
+    expect(deliveryRecipients({ members: [{ clerk_id: 'u', email: null }], contact: { email: 'nope' }, extras: ['also nope', 7, null], staff: none })).toEqual([])
+    expect(deliveryRecipients({})).toEqual([])
   })
 })

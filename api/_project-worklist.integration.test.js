@@ -34,6 +34,7 @@ async function wipe() {
   await sql`DELETE FROM workstreams WHERE user_id = ${ws} AND title LIKE 'PW %'`
   await sql`DELETE FROM projects WHERE user_id = ${ws} AND name LIKE 'PW %'`
   await sql`DELETE FROM companies WHERE name LIKE 'PW %'`
+  await sql`DELETE FROM contacts WHERE last_name = 'PWLee'`
 }
 const project = async (name, companyId = null, extra = {}) =>
   (await sql`INSERT INTO projects (user_id, name, company_id, is_retainer) VALUES (${ws}, ${name}, ${companyId}, ${!!extra.retainer}) RETURNING id`)[0]
@@ -187,6 +188,63 @@ describeDb('worklists that belong to a project', () => {
       const v = await call('POST', `retainers/projects/${p.id}/link`, { action: 'create' })
       expect([v.statusCode, v.body.error.code]).toEqual([403, 'read_only'])
       expect(await tokenOf(p.id)).toBeNull()
+    })
+  })
+
+  describe('extra delivery addresses', () => {
+    const emailsOf = async id => (await sql`SELECT portal_emails FROM projects WHERE id = ${id}`)[0].portal_emails
+    it('cleans and stores the list, and shows the client contact on the page', async () => {
+      const [k] = await sql`INSERT INTO contacts (user_id, first_name, last_name, email) VALUES (${ws}, 'Sam', 'PWLee', 'sam@pw.test') RETURNING id`
+      const p = await project('PW Emails')
+      await sql`UPDATE projects SET client_id = ${k.id} WHERE id = ${p.id}`
+      const r = await call('PUT', `retainers/projects/${p.id}/portal-emails`, { portal_emails: [' Ops@PW.test ', 'ops@pw.test', '', 'fin@pw.test'] })
+      expect(r.body).toEqual({ portal_emails: ['ops@pw.test', 'fin@pw.test'] })
+      expect(await emailsOf(p.id)).toEqual(['ops@pw.test', 'fin@pw.test'])
+      const page = await call('GET', `retainers/projects/${p.id}`)
+      expect(page.body.project).toMatchObject({ portal_emails: ['ops@pw.test', 'fin@pw.test'], client_contact: { name: 'Sam PWLee', email: 'sam@pw.test' } })
+      await sql`UPDATE projects SET client_id = NULL WHERE id = ${p.id}`
+      await sql`DELETE FROM contacts WHERE id = ${k.id}`
+    })
+
+    it('refuses anything that is not an address, too many, a viewer and another workspace\'s project — and stores nothing', async () => {
+      const p = await project('PW Emails 2')
+      for (const portal_emails of ['a@b.test', ['nope'], Array.from({ length: 11 }, (_, i) => `p${i}@x.test`)]) {
+        const r = await call('PUT', `retainers/projects/${p.id}/portal-emails`, { portal_emails })
+        expect([r.statusCode, r.body.error.field]).toEqual([422, 'portal_emails'])
+      }
+      const [foreign] = await sql`INSERT INTO projects (user_id, name) VALUES ('someone_else', 'PW Foreign emails') RETURNING id`
+      expect((await call('PUT', `retainers/projects/${foreign.id}/portal-emails`, { portal_emails: ['a@b.test'] })).statusCode).toBe(404)
+      await sql`DELETE FROM projects WHERE id = ${foreign.id}`
+      CURRENT = { ...ana, role: 'viewer' }
+      expect((await call('PUT', `retainers/projects/${p.id}/portal-emails`, { portal_emails: ['a@b.test'] })).statusCode).toBe(403)
+      expect(await emailsOf(p.id)).toEqual([])
+    })
+
+    it('takes an address off: its unused links on this project stop working, and nothing else is touched', async () => {
+      const p = await project('PW Emails 3')
+      const other = await project('PW Emails 3b')
+      const round = async (proj, email, { clerk = null, used = false } = {}) => {
+        const [w] = await sql`INSERT INTO workstreams (user_id, project_id, title) VALUES (${ws}, ${proj.id}, 'PW Links') RETURNING id`
+        const [d] = await sql`INSERT INTO deliverables (workstream_id, title) VALUES (${w.id}, 'Film') RETURNING id`
+        const [dv] = await sql`INSERT INTO deliveries (deliverable_id, url, round) VALUES (${d.id}, 'https://f.io/x', 1) RETURNING id`
+        const [l] = await sql`INSERT INTO action_links (delivery_id, clerk_user_id, email, token_hash, expires_at, used_at)
+          VALUES (${dv.id}, ${clerk}, ${email}, ${`pwhash-${Math.random()}`}, now() + interval '1 day', ${used ? new Date() : null}) RETURNING id`
+        return l.id
+      }
+      await call('PUT', `retainers/projects/${p.id}/portal-emails`, { portal_emails: ['ops@pw.test', 'fin@pw.test'] })
+      const ops = await round(p, 'ops@pw.test')
+      const opsUsed = await round(p, 'ops@pw.test', { used: true })
+      const opsLogin = await round(p, 'ops@pw.test', { clerk: 'user_pw_ops' })
+      const fin = await round(p, 'fin@pw.test')
+      const opsElsewhere = await round(other, 'ops@pw.test')
+      await call('PUT', `retainers/projects/${p.id}/portal-emails`, { portal_emails: ['fin@pw.test'] })
+      const left = new Set((await sql`SELECT id FROM action_links WHERE id = ANY(${[ops, opsUsed, opsLogin, fin, opsElsewhere]}::uuid[])`).map(r => r.id))
+      expect(left.has(ops)).toBe(false)             // unused, this project, taken off → gone
+      expect(left.has(opsUsed)).toBe(true)          // already used: the record stays
+      expect(left.has(opsLogin)).toBe(true)         // a login's link isn't this list's business
+      expect(left.has(fin)).toBe(true)              // still on the list
+      expect(left.has(opsElsewhere)).toBe(true)     // another project
+      await sql`DELETE FROM workstreams WHERE user_id = ${ws} AND title = 'PW Links'`
     })
   })
 

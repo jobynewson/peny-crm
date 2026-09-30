@@ -917,6 +917,7 @@ export const action_links = pgTable('action_links', {
   delivery_id:   uuid('delivery_id').notNull().references(() => deliveries.id, { onDelete: 'cascade' }),
   clerk_user_id: text('clerk_user_id'),           // null for a client with no login
   email:         text('email').notNull(),
+  name:          text('name'),                    // for the approval record when there is no Clerk account
   token_hash:    text('token_hash').notNull().unique(),
   expires_at:    timestamp('expires_at', { withTimezone: true }).notNull(),
   used_at:       timestamp('used_at', { withTimezone: true }),

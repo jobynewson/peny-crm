@@ -110,15 +110,32 @@ describe('the Approve link\'s confirm page', () => {
     frame_io: true, note: 'Colour fixed', preview: null, state: 'open', can_approve: true, ...over,
   })
 
-  it('asks first: an Approve button, and a way to request changes that goes to the portal', () => {
+  it('asks first: an Approve button, and a way to ask for changes on the same page', () => {
     const out = approveHtml(link())
     expect(out).toContain('Approve this?')
     expect(out).toContain('data-approve-now')
     expect(out).toContain('Yes, approve round 2')
-    expect(out).toContain('href="/portal#d-11111111-1111-4111-8111-111111111111"')
-    expect(out).toContain('Request changes instead')
+    expect(out).toContain('data-open-changes')
+    expect(out).toContain('Ask for changes instead')
+    expect(out).toContain('data-changes-now')
     expect(out).toContain('Nothing is approved until you press the button')
     expect(out).toContain('Watch it in Frame.io')
+  })
+
+  it('opens with the box for changes showing when the email\'s "Request changes" brought them here', () => {
+    const out = approveHtml(link(), { openChanges: true })
+    expect(out).toMatch(/data-approve-actions hidden/)
+    expect(out).not.toMatch(/data-changes-now hidden/)
+  })
+
+  it('thanks them for their changes, and for someone with no login offers no portal to open', () => {
+    const out = approveHtml(link({ can_sign_in: true }), { changed: true })
+    expect(out).toContain('we’ve got your changes')
+    expect(out).toContain('Open the portal')
+    for (const page of [approveHtml(link({ can_sign_in: false }), { changed: true }), approveHtml(link({ can_sign_in: false }), { done: true }), approveHtml(link({ can_sign_in: false, state: 'answered', can_approve: false }))]) {
+      expect(page).not.toContain('Open the portal')
+    }
+    expect(approveHtml(link({ can_sign_in: false }))).toContain('there is nothing to sign in to')
   })
 
   it('says how things stand when it can no longer be approved', () => {

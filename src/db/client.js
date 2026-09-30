@@ -794,6 +794,9 @@ export async function runMigrations() {
   await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS portal_emails JSONB NOT NULL DEFAULT '[]'`
   await sql`ALTER TABLE action_links ALTER COLUMN clerk_user_id DROP NOT NULL`
 
+  // ── Who an Approve link was sent to, when they have no login (drizzle/0039) ─
+  await sql`ALTER TABLE action_links ADD COLUMN IF NOT EXISTS name TEXT`
+
   // ── Which company a workstream is for (drizzle/0038) ───────────────────────
   await sql`
     CREATE OR REPLACE VIEW workstream_company AS

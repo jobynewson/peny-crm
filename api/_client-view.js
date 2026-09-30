@@ -70,7 +70,7 @@ async function linkView(sql, scope) {
     : row.client_response === 'changes_requested' ? 'answered'
     : 'open'
   return {
-    scope: { kind: 'delivery', can_respond: true, approve_only: true },
+    scope: { kind: 'delivery', can_respond: true, link_only: true },
     studio: studioJson(studios[0]),
     company: row.company,
     title: row.title,
@@ -82,6 +82,9 @@ async function linkView(sql, scope) {
     preview: row.preview_title || row.preview_image ? { title: row.preview_title, image: row.preview_image } : null,
     state,
     can_approve: state === 'open',
+    can_request_changes: state === 'open',
+    // Someone the email went to with no login has nowhere to "sign in".
+    can_sign_in: !!scope.clerkUserId,
   }
 }
 

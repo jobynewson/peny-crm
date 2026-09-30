@@ -793,6 +793,10 @@ export class Worklist {
             <p class="tl-hint">There is no link for this project.</p>
             <div class="tl-msg" id="rt-link-msg" role="alert"></div>
             <button type="button" class="btn-primary tl-submit" data-link-act="create">Create a link</button>`}
+        </div>
+        <div class="tl-form rt-emails" data-emails>
+          <h3 class="rt-sheet-label section-label">Delivery emails</h3>
+          <p class="tl-hint" data-emails-who>Loading…</p>
         </div>`
     }
     openFloating({
@@ -817,6 +821,7 @@ export class Worklist {
               const body = el.classList.contains('sheet') ? el.querySelector('.sheet-body') : el
               body.innerHTML = render()
               bind()
+              this._loadDeliveryEmails(el, projectId)
               this.app.toast({ create: 'Link created', replace: 'New link made — the old one no longer works', off: 'Link turned off' }[act])
             } catch (err) {
               b.disabled = false
@@ -826,7 +831,48 @@ export class Worklist {
           }))
         }
         bind()
+        this._loadDeliveryEmails(el, projectId)
       },
+    })
+  }
+
+  // Who gets the email when a round is sent, and the extra addresses. Each
+  // person gets their own one-time Approve link, so a client with no login can
+  // approve (and ask for changes) from the email.
+  async _loadDeliveryEmails(el, projectId) {
+    const box = el.querySelector('[data-emails]')
+    if (!box) return
+    let page = this.page?.project.id === projectId ? this.page : null
+    try { page ??= await api.getProjectPage(projectId) } catch (err) {
+      box.querySelector('[data-emails-who]').textContent = err.message || 'Could not load this'
+      return
+    }
+    const { project, company } = page
+    const people = [
+      company?.portal && 'everyone who has joined the company’s portal',
+      project.client_contact && `${esc(project.client_contact.name || project.client_contact.email)} (the project’s client contact, ${esc(project.client_contact.email)})`,
+    ].filter(Boolean)
+    box.innerHTML = `
+      <h3 class="rt-sheet-label section-label">Delivery emails</h3>
+      <p class="tl-hint">When you send a round, these people each get an email with their own Approve link:
+        ${people.length ? people.join('; ') : 'nobody yet'}${project.portal_emails.length ? `, and the addresses below` : ''}.
+        A link lets them approve, or ask for changes, without signing in.</p>
+      <div class="tl-field"><label for="rt-emails-extra">Also email these addresses <span class="tl-optional">(one per line)</span></label>
+        <textarea id="rt-emails-extra" rows="3" ${this.canEdit ? '' : 'disabled'} placeholder="name@example.com">${esc(project.portal_emails.join('\n'))}</textarea></div>
+      <div class="tl-msg" id="rt-emails-msg" role="alert"></div>
+      ${this.canEdit ? '<button type="button" class="btn-secondary tl-submit" data-emails-save>Save addresses</button>' : ''}`
+    box.querySelector('[data-emails-save]')?.addEventListener('click', async e => {
+      const button = e.currentTarget
+      const msg = box.querySelector('#rt-emails-msg')
+      const list = box.querySelector('#rt-emails-extra').value.split(/[\n,;]+/).map(x => x.trim()).filter(Boolean)
+      button.disabled = true
+      msg.textContent = ''
+      try {
+        project.portal_emails = await api.setPortalEmails(projectId, list)
+        box.querySelector('#rt-emails-extra').value = project.portal_emails.join('\n')
+        msg.dataset.tone = 'ok'; msg.textContent = project.portal_emails.length ? `Saved — ${count(project.portal_emails.length, 'address', 'addresses')}` : 'Saved'
+      } catch (err) { msg.dataset.tone = 'error'; msg.textContent = err.message || 'Could not save' }
+      button.disabled = false
     })
   }
 

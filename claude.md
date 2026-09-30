@@ -1141,15 +1141,29 @@ is the guard), `requests` decision columns, `deliverables.client_reply`,
   back if nothing could be sent. Approvals go in the 09:00 digest ("Approved since
   your last digest", Monday covers the weekend).
 - **Delivery email + Approve link** (`api/_delivery-mail.js`): sending a round
-  emails everyone in the company's Clerk org, each with their own link, and
-  tells the sender who (or why no one). Link = 32 random bytes, stored hashed,
-  carried in the URL fragment of `/portal/approve`, 14 days. It resolves to a
-  `delivery` scope (`X-Action-Token`; one round; approve only; never consults a
-  session). Opening the page only reads (`GET /api/client/link`); the button POSTs
-  (`/api/client/link/approve`), and the link is used up in the same statement that
-  approves. Dies when its round is answered, superseded or taken back, and when
-  its person is removed from the portal. Request changes goes to the portal.
-  Routes declare which scope kinds they serve (`kinds`).
+  emails, each with their own link: everyone in the company's Clerk org, the
+  project's client contact (`projects.client_id`), and any extra addresses on
+  the project (`projects.portal_emails`, edited in the project's Client link
+  panel via `PUT retainers/projects/:id/portal-emails`). One address = one
+  email (a login wins over a bare address); Slate staff never get one
+  (`deliveryRecipients`). So a client with **no login** can approve and ask
+  for changes; a Clerk failure doesn't stop them being emailed. The sender is
+  told who, or why no one. Link = 32 random bytes, stored hashed, carried in
+  the URL fragment of `/portal/approve`, 14 days. It resolves to a `delivery`
+  scope (`X-Action-Token`; one round; never consults a session). Opening the
+  page only reads (`GET /api/client/link`); the buttons POST. **Approve**
+  (`/api/client/link/approve`) uses the link up in the same statement that
+  approves. **Ask for changes** (`/api/client/link/changes { comment }`, the
+  comment required) answers the round the same way but leaves the link unused
+  (the answered round is what stops it), and alerts the owner. The email's
+  "Request changes" goes to the portal for someone with a login, and to the
+  same confirm page with the box open (`?changes=1`) for someone without one.
+  The record says who: `responded_by` is a Clerk id, or `email:<address>` for
+  someone without a login, with `action_links.name` (or the address) as the
+  name. A link dies when its round is answered, superseded or taken back, when
+  its person is removed from the portal, or when its address is taken off the
+  project's list. (An address changed on the contact itself isn't caught: its
+  links expire in 14 days.) Routes declare which scope kinds they serve (`kinds`).
 - **Task board cards** (`api/_board.js`): deliverables are cards read from the
   deliverables table. The column mapping, which cards appear, and every drag
   refusal are in `_retainer-rules.js` (`boardColumn`, `boardShows`,

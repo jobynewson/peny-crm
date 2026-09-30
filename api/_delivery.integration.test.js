@@ -28,6 +28,12 @@ vi.mock('./_notify.js', async orig => ({
   },
 }))
 
+const changesAlerts = []
+vi.mock('./_alerts.js', async orig => ({
+  ...(await orig()),
+  alertChangesRequested: async (sql, args) => { changesAlerts.push(args); return [] },
+}))
+
 const { workspaceId } = await import('./_api.js')
 const { dispatchClient } = await import('./_client.js')
 const { emailDelivery, hashToken } = await import('./_delivery-mail.js')
@@ -57,7 +63,9 @@ async function newRound(deliverableId, round, { people = [DANA, OLU], sendVia = 
 }
 
 async function wipe() {
-  await sql`DELETE FROM workstreams WHERE company_id IN (SELECT id FROM companies WHERE name LIKE 'DlTest %')`
+  await sql`DELETE FROM workstreams WHERE company_id IN (SELECT id FROM companies WHERE name LIKE 'DlTest %') OR project_id IN (SELECT id FROM projects WHERE name LIKE 'DlTest %')`
+  await sql`DELETE FROM projects WHERE name LIKE 'DlTest %'`
+  await sql`DELETE FROM contacts WHERE email = 'sam@dl.test'`
   await sql`DELETE FROM companies WHERE name LIKE 'DlTest %'`
   await sql`DELETE FROM app_users WHERE clerk_id = 'user_dl_staff'`
 }
@@ -114,7 +122,7 @@ describeDb('the delivery email and Approve links', () => {
       expect((await newRound(hero.id, 1)).result).toMatchObject({ sent: 0, reason: 'hidden' })
       await sql`UPDATE deliverables SET client_visible = true WHERE id = ${hero.id}`
       await sql`UPDATE companies SET clerk_org_id = NULL WHERE id = ${alpha.id}`
-      expect((await newRound(hero.id, 2)).result).toMatchObject({ sent: 0, reason: 'no_portal' })
+      expect((await newRound(hero.id, 2)).result).toMatchObject({ sent: 0, reason: 'no_one' })
       await sql`UPDATE companies SET clerk_org_id = 'org_dl_alpha' WHERE id = ${alpha.id}`
       expect((await newRound(hero.id, 3, { people: [] })).result).toMatchObject({ sent: 0, reason: 'no_members' })
       expect((await sql`SELECT count(*)::int AS n FROM action_links`)[0].n).toBe(0)
@@ -131,7 +139,7 @@ describeDb('the delivery email and Approve links', () => {
       const [dv] = await sql`SELECT id FROM deliveries LIMIT 1`
       const failed = await emailDelivery(sql, { deliveryId: dv.id, members: async () => { throw new Error('Clerk is down') } })
       spy.mockRestore()
-      expect(failed).toMatchObject({ sent: 0, reason: 'error' })
+      expect(failed).toMatchObject({ sent: 0, reason: 'no_members' })   // a Clerk failure means no login people, not no email
     })
   })
 
@@ -143,8 +151,8 @@ describeDb('the delivery email and Approve links', () => {
         const r = await call('GET', 'client/link', { token })
         expect(r.statusCode).toBe(200)
         expect(r.body).toMatchObject({
-          scope: { kind: 'delivery', approve_only: true }, company: 'DlTest Alpha', title: 'October reel', round: 1,
-          url: 'https://f.io/r1', state: 'open', can_approve: true, deliverable_id: hero.id,
+          scope: { kind: 'delivery', link_only: true }, company: 'DlTest Alpha', title: 'October reel', round: 1,
+          url: 'https://f.io/r1', state: 'open', can_approve: true, can_request_changes: true, can_sign_in: true, deliverable_id: hero.id,
         })
       }
       expect((await linkRow(token)).used_at).toBeNull()
@@ -191,7 +199,9 @@ describeDb('the delivery email and Approve links', () => {
     it('two at the same moment approve once', async () => {
       const { tokens } = await newRound(hero.id, 1)
       const both = await Promise.all([1, 2].map(() => call('POST', 'client/link/approve', { token: tokens[DANA.email], body: {} })))
-      expect(both.map(r => r.statusCode).sort()).toEqual([200, 410])
+      // One approves. The other is refused: 410 if it reached the write while the link was still being used up, 409 if it arrived after the round was answered.
+      expect(both.map(r => r.statusCode).sort()[0]).toBe(200)
+      expect([409, 410]).toContain(both.map(r => r.statusCode).sort()[1])
       expect((await sql`SELECT count(*)::int AS n FROM deliveries WHERE client_response = 'approved'`)[0].n).toBe(1)
     })
 
@@ -273,15 +283,19 @@ describeDb('the delivery email and Approve links', () => {
       expect((await linkRow(token)).used_at).toBeNull()
     })
 
-    it('cannot ask for changes even if it reaches the writer directly: that needs a sign-in and a comment', async () => {
+    it('can ask for changes, but only with a comment, and only for its own round', async () => {
       const { tokens, id } = await newRound(hero.id, 1)
       const row = await linkRow(tokens[DANA.email])
       const scope = deliveryScope({ ws, deliveryId: id, linkId: row.id, clerkUserId: row.clerk_user_id, email: row.email })
-      const r = await respondToDelivery(sql, scope, { deliveryId: id, input: { response: 'changes_requested', comment: 'Brighter' }, by: { clerkId: row.clerk_user_id, name: 'Dana' } })
-      expect([r.error.status, r.error.code]).toEqual([403, 'approve_only'])
+      const by = { clerkId: row.clerk_user_id, name: 'Dana' }
+      const none = await respondToDelivery(sql, scope, { deliveryId: id, input: { response: 'changes_requested', comment: '  ' }, by })
+      expect([none.error.status, none.error.field]).toEqual([422, 'comment'])
       const other = await respondToDelivery(sql, scope, { deliveryId: '11111111-1111-4111-8111-111111111111', input: { response: 'approved' }, by: { clerkId: 'x', name: 'x' } })
       expect(other.error.code).toBe('not_found')
       expect((await sql`SELECT client_response FROM deliveries WHERE id = ${id}`)[0].client_response).toBe('pending')
+      const ok = await respondToDelivery(sql, scope, { deliveryId: id, input: { response: 'changes_requested', comment: 'Brighter' }, by })
+      expect(ok.delivery.id).toBe(id)
+      expect((await sql`SELECT client_response, client_comment FROM deliveries WHERE id = ${id}`)[0]).toEqual({ client_response: 'changes_requested', client_comment: 'Brighter' })
     })
 
     it('the write itself refuses a link that was used or expired after it was looked up', async () => {
@@ -323,6 +337,117 @@ describeDb('the delivery email and Approve links', () => {
       const res = fakeRes()
       await dispatchClient({ method: 'GET', url: '/api/client/link', query: { route: 'client/link', token: tokens[DANA.email], action: tokens[DANA.email] }, headers: {} }, res, { sql })
       expect(res.statusCode).toBe(401)   // no credential: a session is asked for, and there is none
+    })
+  })
+
+  describe('people with no login', () => {
+    let project, contact, pStream, pHero
+    beforeEach(async () => {
+      changesAlerts.length = 0
+      await sql`DELETE FROM workstreams WHERE project_id IN (SELECT id FROM projects WHERE name LIKE 'DlTest %')`
+      await sql`DELETE FROM projects WHERE name LIKE 'DlTest %'`
+      await sql`DELETE FROM contacts WHERE email = 'sam@dl.test'`
+      ;[contact] = await sql`INSERT INTO contacts (user_id, first_name, last_name, email) VALUES (${ws}, 'Sam', 'Lee', 'sam@dl.test') RETURNING id`
+      ;[project] = await sql`INSERT INTO projects (user_id, name, client_id, portal_emails) VALUES (${ws}, 'DlTest Riverside', ${contact.id}, ${JSON.stringify(['ops@dl.test', 'OPS@dl.test', 'staff@dl.test'])}::jsonb) RETURNING id`
+      ;[pStream] = await sql`INSERT INTO workstreams (user_id, project_id, title) VALUES (${ws}, ${project.id}, 'Edit') RETURNING id`
+      ;[pHero] = await sql`INSERT INTO deliverables (workstream_id, title, status, client_visible, owner_id) VALUES (${pStream.id}, 'Launch film', 'in_progress', true, ${staff.id}) RETURNING id`
+    })
+    const send = (round = 1, people = []) => newRound(pHero.id, round, { people })
+
+    it('emails the project\'s client contact and the extra addresses, each with their own link, and never staff', async () => {
+      const round = await send()
+      expect(round.result.sent).toBe(2)
+      expect(mails.map(m => m.to).sort()).toEqual(['ops@dl.test', 'sam@dl.test'])   // staff@ was an extra address and is left out; OPS@ was a duplicate
+      const rows = await sql`SELECT email, name, clerk_user_id FROM action_links ORDER BY email`
+      expect(rows).toEqual([{ email: 'ops@dl.test', name: null, clerk_user_id: null }, { email: 'sam@dl.test', name: 'Sam Lee', clerk_user_id: null }])
+      expect(round.tokens['sam@dl.test']).not.toBe(round.tokens['ops@dl.test'])
+      const mail = mails.find(m => m.to === 'sam@dl.test')
+      expect(mail.html).toContain('nothing to sign in to')
+      expect(mail.html).toMatch(/\/portal\/approve\?changes=1#[A-Za-z0-9_-]{43}/)
+    })
+
+    it('one person who is in the portal and on the project gets one email, as a login', async () => {
+      await sql`UPDATE projects SET company_id = ${alpha.id} WHERE id = ${project.id}`   // so the company's portal people are included
+      const round = await send(1, [{ clerk_id: 'user_dl_sam', email: 'SAM@dl.test', name: 'Sam Lee', first: 'Sam' }])
+      expect(mails.filter(m => m.to.toLowerCase() === 'sam@dl.test')).toHaveLength(1)
+      expect((await sql`SELECT clerk_user_id FROM action_links WHERE lower(email) = 'sam@dl.test'`)[0].clerk_user_id).toBe('user_dl_sam')
+      expect(round.result.sent).toBe(2)
+    })
+
+    it('still emails them when Clerk is down', async () => {
+      const [dv] = await sql`INSERT INTO deliveries (deliverable_id, url, round, sent_by) VALUES (${pHero.id}, 'https://f.io/x', 1, ${staff.id}) RETURNING id`
+      await sql`UPDATE companies SET clerk_org_id = 'org_dl_alpha' WHERE id = ${alpha.id}`
+      await sql`UPDATE projects SET company_id = ${alpha.id} WHERE id = ${project.id}`
+      mails.length = 0
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const r = await emailDelivery(sql, { deliveryId: dv.id, members: async () => { throw new Error('Clerk is down') } })
+      spy.mockRestore()
+      expect(r.sent).toBe(2)
+      expect(mails.map(m => m.to).sort()).toEqual(['ops@dl.test', 'sam@dl.test'])
+    })
+
+    it('says why nobody was emailed when the project has no contact, no address and no portal', async () => {
+      await sql`UPDATE projects SET client_id = NULL, portal_emails = '[]' WHERE id = ${project.id}`
+      const r = (await send()).result
+      expect(r).toMatchObject({ sent: 0, reason: 'no_one' })
+      expect(r.message).toMatch(/no client contact or address/)
+      expect((await sql`SELECT count(*)::int AS n FROM action_links`)[0].n).toBe(0)
+    })
+
+    describe('answering from the link', () => {
+      it('approves as the address the email went to, records that, and uses the link up', async () => {
+        const { tokens, id } = await send()
+        const r = await call('POST', 'client/link/approve', { token: tokens['sam@dl.test'], body: {} })
+        expect(r.statusCode).toBe(200)
+        const [dv] = await sql`SELECT client_response, responded_by, responded_by_name FROM deliveries WHERE id = ${id}`
+        expect(dv).toEqual({ client_response: 'approved', responded_by: 'email:sam@dl.test', responded_by_name: 'Sam Lee' })
+        expect((await linkRow(tokens['sam@dl.test'])).used_at).not.toBeNull()
+        expect((await sql`SELECT status FROM deliverables WHERE id = ${pHero.id}`)[0].status).toBe('approved')
+        // the person with only an address is named by it
+        const second = await send(2)
+        await call('POST', 'client/link/approve', { token: second.tokens['ops@dl.test'], body: {} })
+        expect((await sql`SELECT responded_by_name FROM deliveries WHERE id = ${second.id}`)[0].responded_by_name).toBe('ops@dl.test')
+      })
+
+      it('shows the page for someone with no login: no portal to sign in to', async () => {
+        const { tokens } = await send()
+        const view = await call('GET', 'client/link', { token: tokens['sam@dl.test'] })
+        expect(view.body).toMatchObject({ state: 'open', can_approve: true, can_request_changes: true, can_sign_in: false, company: 'DlTest Riverside' })
+      })
+
+      it('asks for changes with a comment, records who, leaves the round answered — and tells the owner', async () => {
+        const { tokens, id } = await send()
+        const token = tokens['sam@dl.test']
+        const none = await call('POST', 'client/link/changes', { token, body: { comment: '   ' } })
+        expect([none.statusCode, none.body.error.field]).toEqual([422, 'comment'])
+        const r = await call('POST', 'client/link/changes', { token, body: { comment: ' Brighter grade, please ' } })
+        expect(r.statusCode).toBe(200)
+        expect(r.body.link).toMatchObject({ state: 'answered', can_approve: false })
+        const [dv] = await sql`SELECT client_response, client_comment, responded_by, responded_by_name FROM deliveries WHERE id = ${id}`
+        expect(dv).toEqual({ client_response: 'changes_requested', client_comment: 'Brighter grade, please', responded_by: 'email:sam@dl.test', responded_by_name: 'Sam Lee' })
+        expect((await sql`SELECT status FROM deliverables WHERE id = ${pHero.id}`)[0].status).toBe('changes_requested')
+        expect(changesAlerts).toHaveLength(1)
+        expect(changesAlerts[0]).toMatchObject({ deliverableId: pHero.id, comment: 'Brighter grade, please', by: 'Sam Lee' })
+        // The link is not "used" — but it can't approve any more: the round is answered.
+        expect((await linkRow(token)).used_at).toBeNull()
+        const again = await call('POST', 'client/link/approve', { token, body: {} })
+        expect([again.statusCode, again.body.error.code]).toEqual([409, 'already_answered'])
+        expect((await sql`SELECT client_response FROM deliveries WHERE id = ${id}`)[0].client_response).toBe('changes_requested')
+      })
+
+      it('cannot ask for changes once the round is approved, or after a newer round', async () => {
+        const first = await send()
+        await call('POST', 'client/link/approve', { token: first.tokens['sam@dl.test'], body: {} })
+        const late = await call('POST', 'client/link/changes', { token: first.tokens['ops@dl.test'], body: { comment: 'Too late' } })
+        expect([late.statusCode, late.body.error.code]).toEqual([409, 'already_answered'])
+        expect(changesAlerts).toHaveLength(0)
+
+        await sql`UPDATE deliverables SET status = 'in_review' WHERE id = ${pHero.id}`
+        const older = await send(2)
+        await sql`INSERT INTO deliveries (deliverable_id, url, round, sent_by) VALUES (${pHero.id}, 'https://f.io/r3', 3, ${staff.id})`
+        const stale = await call('POST', 'client/link/changes', { token: older.tokens['sam@dl.test'], body: { comment: 'Old round' } })
+        expect([stale.statusCode, stale.body.error.code]).toEqual([409, 'superseded'])
+      })
     })
   })
 })
