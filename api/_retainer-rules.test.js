@@ -6,7 +6,7 @@ import {
   requestLabel, validateRequestInput, validateDecline, validateReply, MAX_OPEN_REQUESTS,
   requestSourceLabel, worklistLink, validateSenderName, COMPANY_TYPES, companyTypeLabel, validateCompanyType, normalisePortalEmails,
   boardColumn, boardChip, isWithClient, statusAfterBoardDrag, DRAG_REFUSALS, BOARD_COLUMNS, validateAccept,
-  boardShows, boardCard, compareBoardCards, BOARD_HORIZON_DAYS,
+  boardShows, boardCard, compareBoardCards, BOARD_HORIZON_DAYS, owedList,
 } from './_retainer-rules.js'
 
 const today = '2026-09-28'
@@ -367,5 +367,42 @@ describe('where a deliverable lives', () => {
   it('falls back to the company\'s old address (the app redirects it), then to Projects', () => {
     expect(worklistLink({ company_id: 'c1', id: 'd9' })).toBe('#retainers/c1')
     expect(worklistLink({})).toBe('#projects')
+  })
+})
+
+describe('a project\'s Owed list', () => {
+  const today = '2026-09-30'
+  const row = over => ({ id: 'x', title: 'Reel', status: 'planned', owner_id: 'u1', owner_name: 'Ana', due_kind: 'exact', due_date: '2026-10-05', workstream: 'Edits', project_id: 'p1', ...over })
+
+  it('puts overdue first, then by date, undated last, and stops at five', () => {
+    const rows = [
+      row({ id: 'a', title: 'Undated', due_date: null }),
+      row({ id: 'b', title: 'Later', due_date: '2026-10-20' }),
+      row({ id: 'c', title: 'Late', due_date: '2026-09-20' }),
+      row({ id: 'd', title: 'Soon', due_date: '2026-10-02' }),
+      row({ id: 'e', title: 'Also soon', due_date: '2026-10-03' }),
+      row({ id: 'f', title: 'Sixth', due_date: '2026-10-25' }),
+    ]
+    const o = owedList(rows, today)
+    expect(o.items.map(i => i.title)).toEqual(['Late', 'Soon', 'Also soon', 'Later', 'Sixth'])
+    expect(o).toMatchObject({ total: 6, later: 0, overdue: 1 })
+    expect(owedList(rows, today, 30, { limit: 10 }).items.at(-1).title).toBe('Undated')
+  })
+  it('leaves out dated work beyond the window but counts it, and always keeps overdue and undated', () => {
+    const rows = [row({ id: 'a', due_date: '2026-12-01' }), row({ id: 'b', due_date: null }), row({ id: 'c', due_date: '2026-08-01' })]
+    const o = owedList(rows, today, 7)
+    expect(o.items.map(i => i.id)).toEqual(['c', 'b'])
+    expect(o).toMatchObject({ total: 3, later: 1, days: 7 })
+    expect(owedList(rows, today, 60).later).toBe(1)   // 2 Dec is day 62
+    expect(owedList([row({ due_date: '2026-11-29' })], today, 60).later).toBe(0)
+  })
+  it('keeps waiting-on-client work in, muted and with its chip, and drops approved', () => {
+    const o = owedList([row({ id: 'w', status: 'waiting_on_client' }), row({ id: 'r', status: 'in_review', round: 2 }), row({ id: 'ok', status: 'approved' })], today)
+    expect(o.items.map(i => i.id).sort()).toEqual(['r', 'w'])
+    expect(o.items.find(i => i.id === 'w')).toMatchObject({ muted: true, chip: { key: 'waiting_on_client' } })
+    expect(o).toMatchObject({ total: 2, waiting: 1 })
+  })
+  it('links each row to its deliverable on the project\'s Worklist tab', () => {
+    expect(owedList([row({ id: 'd9' })], today).items[0].link).toBe('#projects/p1/worklist/d9')
   })
 })

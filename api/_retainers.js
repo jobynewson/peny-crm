@@ -26,7 +26,7 @@ import {
   DUE_KINDS, CADENCES, CADENCE_LABELS, STATUS_AFTER_DELIVERY, TITLE_MAX, TEXT_MAX,
   clientStatus, statusPatch, statusAfterUnsend, normaliseDeliveryUrl, isFrameIoUrl,
   normaliseDue, dueDisplay, isOverdue, validateWorkstreamInput, validateDeliverableInput,
-  touchesDue, isUuid,
+  touchesDue, isUuid, owedList, parseWindowDays, BOARD_HORIZON_DAYS,
 } from './_retainer-rules.js'
 import { staffScope, respondToDelivery } from './_worklist.js'
 import { REQUEST_ROUTES } from './_requests.js'
@@ -41,6 +41,7 @@ export const ROUTES = [
   { method: 'GET',    pattern: /^retainers\/dashboard-deliverables$/,                    handler: dashboardDeliverables },
   { method: 'POST',   pattern: new RegExp(`^retainers/projects/${ID}/copy-worklist$`),    handler: copyWorklist,      access: 'editor' },
   { method: 'GET',    pattern: new RegExp(`^retainers/projects/${ID}$`),                  handler: getProjectPage },
+  { method: 'GET',    pattern: new RegExp(`^retainers/projects/${ID}/owed$`),             handler: getOwed },
   { method: 'POST',   pattern: new RegExp(`^retainers/projects/${ID}/attach$`),           handler: attachWorkstreams, access: 'editor' },
   { method: 'POST',   pattern: new RegExp(`^retainers/projects/${ID}/link$`),             handler: setLink,           access: 'editor' },
   { method: 'PUT',    pattern: new RegExp(`^retainers/projects/${ID}/portal-emails$`),    handler: setPortalEmails,   access: 'editor' },
@@ -242,6 +243,25 @@ async function getProjectPage(req, res, { sql, params }) {
     workstreams: workstreams.map(w => ({ ...w, deliverables: byWorkstream.get(w.id) })),
     unattached,
   })
+}
+
+// ── GET /api/retainers/projects/:id/owed?days= ───────────────────────────────
+// The Overview's "Owed" list: the project's open deliverables from active
+// workstreams, most urgent first, the first few (see owedList in the rules).
+async function getOwed(req, res, { sql, params }) {
+  const ws = await workspaceId(sql)
+  if (!(await projectInWorkspace(sql, ws, params.id))) return fail(res, 404, 'not_found', 'Project not found')
+  const today = londonDate()
+  const rows = await sql`
+    SELECT d.id, d.title, d.status, d.owner_id, d.due_kind, d.due_date::text AS due_date, d.due_label, d.cadence, d.waiting_since,
+           w.title AS workstream, w.project_id, u.name AS owner_name,
+           (SELECT max(dv.round) FROM deliveries dv WHERE dv.deliverable_id = d.id) AS round
+    FROM deliverables d
+    JOIN workstreams w ON w.id = d.workstream_id
+    LEFT JOIN app_users u ON u.id = d.owner_id
+    WHERE w.user_id = ${ws} AND w.project_id = ${params.id} AND w.status = 'active' AND d.status <> 'approved'`
+  const days = parseWindowDays(req.query?.days, BOARD_HORIZON_DAYS)
+  return res.status(200).json({ today, ...owedList(rows, today, days) })
 }
 
 // ── GET /api/retainers/project-counts ────────────────────────────────────────

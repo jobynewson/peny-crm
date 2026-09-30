@@ -402,6 +402,42 @@ export function boardShows(d, today, days = BOARD_HORIZON_DAYS) {
 // Rows without a workstream_status (older callers) count as live.
 const isLiveWorkstream = d => !d.workstream_status || d.workstream_status === 'active'
 
+// A project's "Owed" list on its Overview: what is still open, most urgent
+// first. Overdue and undated work is always in; dated work is in once it is
+// within the window. Waiting-on-client work stays in (it is still owed), muted.
+// `rows` are open deliverables (approved ones are dropped here too) with
+// workstream, project_id, owner_name; returns the first `limit` plus counts,
+// so the screen can say "See all N" and how many sit beyond the window.
+export const OWED_LIMIT = 5
+export function owedList(rows, today, days = BOARD_HORIZON_DAYS, { limit = OWED_LIMIT, now = new Date() } = {}) {
+  const open = rows.filter(d => d.status !== 'approved')
+  const inWindow = open.filter(d => !d.due_date || d.due_date <= addDays(today, days))
+  const items = inWindow.map(d => ({
+    id: d.id,
+    title: d.title,
+    workstream: d.workstream,
+    status: d.status,
+    status_label: STATUS_LABELS[d.status],
+    chip: boardChip(d, now),
+    muted: isWithClient(d.status),
+    owner_name: d.owner_name ?? null,
+    due_date: d.due_date ?? null,
+    due_display: dueDisplay(d, today),
+    undated: !d.due_date,
+    overdue: isOverdue(d, today),
+    days_late: d.due_date && d.due_date < today ? daysBetween(d.due_date, today) : null,
+    link: worklistLink(d),
+  })).sort(compareBoardCards)
+  return {
+    days,
+    total: open.length,
+    later: open.length - inWindow.length,
+    overdue: open.filter(d => isOverdue(d, today)).length,
+    waiting: open.filter(d => d.status === 'waiting_on_client').length,
+    items: items.slice(0, limit),
+  }
+}
+
 // Where a deliverable lives in the app: its project's Worklist tab, with the
 // deliverable opened. Emails and feeds link here. A deliverable whose workstream
 // has no project yet (older ones) goes to its company's old address, which the

@@ -3,6 +3,7 @@ import { companyFieldHtml, bindCompanyField, setCompanyField, resolveCompanyFiel
 import { PostProductionView } from './post-production.js'
 import { Worklist } from './worklist.js'
 import { isSubcontractor } from '../utils/contact-kind.js'
+import { mountOwed } from './owed.js'
 import { getProjectCounts, copyWorklist, createWorkstream, createDeliverable } from '../api/retainers.js'
 import { timeLogFormHtml, bindTimeLogForm } from './time-log.js'
 import { icon } from './icons.js'
@@ -743,15 +744,6 @@ export class ProjectsView {
     if (mc.isConnected) this._showWorklistCount(p.id)
   }
 
-  // The Overview's line about a project's deliverables, from the counts.
-  _worklistSummary(p) {
-    const c = this._worklistCounts?.[p.id]
-    if (!this._worklistCounts) return 'Deliverables, rounds and approvals are on the Worklist tab.'
-    if (!c?.open && c?.open !== 0) return 'No deliverables yet. Add them on the Worklist tab.'
-    const parts = [`${c.open} open`, c.overdue ? `${c.overdue} overdue` : '', c.waiting ? `${c.waiting} waiting on the client` : ''].filter(Boolean)
-    return parts.join(' · ')
-  }
-
   // The open count on each project card on the Projects board.
   async _loadKanbanCounts(mc) {
     try { this._worklistCounts = await getProjectCounts() } catch { return }
@@ -773,9 +765,6 @@ export class ProjectsView {
     const tab = document.querySelector('#proj-tab-bar [data-tab="worklist"]')
     const open = this._worklistCounts?.[projectId]?.open
     if (tab) tab.textContent = `Worklist${open ? ` (${open})` : ''}`
-    const p = this.app.projects.find(x => x.id === projectId)
-    const summary = document.getElementById('pv-worklist-summary')
-    if (summary && p) summary.textContent = this._worklistSummary(p)
   }
 
   _renderTab(tab, p, cl, linked) {
@@ -816,11 +805,8 @@ export class ProjectsView {
       </div>
 
       <div class="proj-panel">
-        <div class="proj-panel-head">Deliverables</div>
-        <div style="padding:12px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-          <span style="font-size:13px;color:var(--text-secondary);flex:1;min-width:180px" id="pv-worklist-summary">${this._worklistSummary(p)}</span>
-          <button class="btn-secondary" id="pv-open-worklist" style="font-size:12px">Open the Worklist</button>
-        </div>
+        <div class="proj-panel-head">Owed</div>
+        <div id="pv-owed" class="owed"></div>
       </div>
 
       ${crew.length ? `
@@ -1106,7 +1092,7 @@ export class ProjectsView {
           try { await updateProject(this.app.userId, p.id, { shots: p.shots }) } catch(e) { console.error(e) }
         })
       })
-      mc.querySelector('#pv-open-worklist')?.addEventListener('click', () => mc.querySelector('#proj-tab-bar [data-tab="worklist"]')?.click())
+      mountOwed(this.app, mc.querySelector('#pv-owed'), p.id, { openWorklist: () => mc.querySelector('#proj-tab-bar [data-tab="worklist"]')?.click() })
     }
     if (tab === 'shoots') {
       mc.querySelector('#pv-add-shoot')?.addEventListener('click', () => this._createShoot(mc, p))

@@ -45,3 +45,7 @@ export const unsendDelivery = id => del(`deliveries/${id}`).then(r => r.delivera
 // → { preview: { title, image } | null, reason? }
 export const fillPreview = id => post(`deliveries/${id}/preview`)
 export const recordResponse = (id, body) => post(`deliveries/${id}/response`, body).then(r => r.deliverable)
+
+// The Overview's "Owed" list (api/_retainers.js getOwed): the first few open
+// deliverables within `days` (overdue and undated always), most urgent first.
+export const getProjectOwed = (projectId, days) => request(`${base}/projects/${projectId}/owed${days ? `?days=${days}` : ''}`)

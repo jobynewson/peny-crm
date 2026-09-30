@@ -130,6 +130,24 @@ describeDb('worklists that belong to a project', () => {
     expect((await call('POST', `retainers/projects/${q.id}/attach`, {})).statusCode).toBe(403)
   })
 
+  it('lists what a project owes: open, in active workstreams, most urgent first, in the chosen window', async () => {
+    const p = await project('PW Owed')
+    const live = (await call('POST', 'retainers/workstreams', { project_id: p.id, title: 'PW Live' })).body.workstream
+    const paused = (await call('POST', 'retainers/workstreams', { project_id: p.id, title: 'PW Parked' })).body.workstream
+    await sql`UPDATE workstreams SET status = 'paused' WHERE id = ${paused.id}`
+    const iso = n => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10)
+    const add = (ws_, title, due, status = 'planned') => sql`INSERT INTO deliverables (workstream_id, title, due_date, status) VALUES (${ws_}, ${title}, ${due}, ${status}::deliverable_status)`
+    await add(live.id, 'Soon', iso(3)); await add(live.id, 'Far', iso(45)); await add(live.id, 'Nodate', null)
+    await add(live.id, 'Waiting', iso(10), 'waiting_on_client'); await add(live.id, 'Done', iso(1), 'approved'); await add(paused.id, 'Parked', iso(2))
+    const r = await call('GET', `retainers/projects/${p.id}/owed`)
+    expect(r.statusCode).toBe(200)
+    expect(r.body.items.map(i => i.title)).toEqual(['Soon', 'Waiting', 'Nodate'])
+    expect(r.body).toMatchObject({ total: 4, later: 1, days: 30, waiting: 1 })
+    const wide = await call('GET', `retainers/projects/${p.id}/owed`, undefined, { days: '60' })
+    expect(wide.body.items.map(i => i.title)).toEqual(['Soon', 'Waiting', 'Far', 'Nodate'])
+    expect((await call('GET', 'retainers/projects/11111111-1111-4111-8111-111111111111/owed')).statusCode).toBe(404)
+  })
+
   it('counts open, overdue and waiting items per project', async () => {
     const p = await project('PW Counted')
     const { body } = await call('POST', 'retainers/workstreams', { project_id: p.id, title: 'PW Counts' })

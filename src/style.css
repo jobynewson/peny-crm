@@ -3127,3 +3127,15 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
   .co-empty { padding-left: 14px; }
   .co-banner, .co-suggest { margin-left: 14px; margin-right: 14px; }
 }
+
+/* Owed — a project's Overview list of open deliverables */
+.owed-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 14px; }
+.owed-summary { font-size: 13px; color: var(--text-secondary); }
+.owed .due-list { border-top: 1px solid var(--border-light); }
+.owed-row--muted .due-title { color: var(--text-secondary); }
+.owed-status { font-size: 11px; color: var(--text-secondary); white-space: nowrap; }
+.owed-due { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); white-space: nowrap; min-width: 84px; text-align: right; }
+.owed-due--late { color: var(--danger); }
+.owed-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--border-light); }
+.owed-later { font-size: 12px; color: var(--text-tertiary); }
+.tk-window { display: inline-flex; }
