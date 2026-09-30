@@ -49,3 +49,10 @@ export const recordResponse = (id, body) => post(`deliveries/${id}/response`, bo
 // The Overview's "Owed" list (api/_retainers.js getOwed): the first few open
 // deliverables within `days` (overdue and undated always), most urgent first.
 export const getProjectOwed = (projectId, days) => request(`${base}/projects/${projectId}/owed${days ? `?days=${days}` : ''}`)
+
+// Quick send (api/_retainers.js): what the popover offers, and the one-step send.
+// → { deliverables: [{ id, title, round, workstream, … }] (last sent first), workstreams, default_workstream_id }
+export const getSendTargets = projectId => request(`${base}/projects/${projectId}/send-targets`)
+// { url, note?, deliverable_id } or { url, note?, title, workstream_id? }
+// → { delivery: { id, round }, deliverable, notified, created }
+export const quickSend = (projectId, body) => post(`projects/${projectId}/quick-send`, body)

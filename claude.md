@@ -921,6 +921,23 @@ always the source of truth and nothing is ever read back from Google.
 - Not on the delivered-tick path (no round): there, Approve / Request changes
   only, because that tick means final.
 
+### Quick send (`src/views/quick-send.js`)
+- A **Quick send** button in the project header (every tab, phones get a bottom
+  sheet): paste the Frame.io link, press Send. "What is it?" starts on the
+  deliverable sent most recently (most sends are its next revision); typing
+  another of the project's deliverables sends that one's next round; typing a
+  new name **makes the deliverable and sends round 1 in one step**. Everything
+  stays on the worklist: there is deliberately no stand-alone send, because
+  rounds, the portal and the Approve links are all keyed to a deliverable.
+- Routes: `GET retainers/projects/:id/send-targets` (open deliverables, last sent
+  first; workstreams; the default workstream) and
+  `POST retainers/projects/:id/quick-send { url, note?, deliverable_id | title,
+  workstream_id? }`. A new deliverable is the sender's, In progress and shown to
+  the client; it goes in the workstream of the one sent last (else the first
+  active one, else a new "Reviews"). Sending reuses `sendRound` (also behind
+  the Worklist tab's send form), so the round, the email and its buttons are
+  identical. If the send fails the deliverable just made is removed.
+
 ### How far ahead dated work shows (7 / 14 / 30 / 60 days)
 - One choice, four values (`WINDOW_DAYS` in `api/_retainer-rules.js`, mirrored in
   `src/utils/window-days.js`; a test compares them). Each screen has its own

@@ -42,6 +42,8 @@ export const ROUTES = [
   { method: 'POST',   pattern: new RegExp(`^retainers/projects/${ID}/copy-worklist$`),    handler: copyWorklist,      access: 'editor' },
   { method: 'GET',    pattern: new RegExp(`^retainers/projects/${ID}$`),                  handler: getProjectPage },
   { method: 'GET',    pattern: new RegExp(`^retainers/projects/${ID}/owed$`),             handler: getOwed },
+  { method: 'GET',    pattern: new RegExp(`^retainers/projects/${ID}/send-targets$`),     handler: sendTargets },
+  { method: 'POST',   pattern: new RegExp(`^retainers/projects/${ID}/quick-send$`),       handler: quickSend,         access: 'editor' },
   { method: 'POST',   pattern: new RegExp(`^retainers/projects/${ID}/attach$`),           handler: attachWorkstreams, access: 'editor' },
   { method: 'POST',   pattern: new RegExp(`^retainers/projects/${ID}/link$`),             handler: setLink,           access: 'editor' },
   { method: 'PUT',    pattern: new RegExp(`^retainers/projects/${ID}/portal-emails$`),    handler: setPortalEmails,   access: 'editor' },
@@ -660,8 +662,18 @@ async function sendDelivery(req, res, { sql, user, params }) {
   }
 
   const ws = await workspaceId(sql)
-  const current = await loadDeliverable(sql, ws, params.id)
-  if (!current) return fail(res, 404, 'not_found', 'Deliverable not found')
+  const result = await sendRound(sql, { ws, user, deliverableId: params.id, url: link.url, note: cleanText(body.note) })
+  if (result.error) return fail(res, result.error.status, result.error.code, result.error.message)
+  return res.status(201).json(result)
+}
+
+// Sends the next round of a deliverable and emails the client: the one place a
+// round is made, for the send form and for Quick send. `url` is already
+// normalised. → { delivery: { id, round }, deliverable, notified } or
+// { error: { status, code, message } }.
+async function sendRound(sql, { ws, user, deliverableId, url, note }) {
+  const current = await loadDeliverable(sql, ws, deliverableId)
+  if (!current) return { error: { status: 404, code: 'not_found', message: 'Deliverable not found' } }
   const patch = statusPatch({ from: current.status, to: STATUS_AFTER_DELIVERY })
 
   for (let attempt = 1; attempt <= SEND_ATTEMPTS; attempt++) {
@@ -676,7 +688,7 @@ async function sendDelivery(req, res, { sql, user, params }) {
           FOR UPDATE OF d
         ), sent AS (
           INSERT INTO deliveries (deliverable_id, url, note, round, sent_by)
-          SELECT target.id, ${link.url}, ${cleanText(body.note)},
+          SELECT target.id, ${url}, ${note ?? null},
                  COALESCE((SELECT max(x.round) FROM deliveries x WHERE x.deliverable_id = target.id), 0) + 1,
                  ${user.id}
           FROM target
@@ -696,17 +708,123 @@ async function sendDelivery(req, res, { sql, user, params }) {
       if (err?.code === '23505' && attempt < SEND_ATTEMPTS) continue   // round taken by a send at the same moment
       throw err
     }
-    if (!sent) return fail(res, 409, 'conflict', 'Someone changed this while you were sending — refresh and try again')
+    if (!sent) return { error: { status: 409, code: 'conflict', message: 'Someone changed this while you were sending — refresh and try again' } }
     // The client is emailed as part of sending — there is no separate step to
     // forget. `notified` says who, so the page can say it, and why not if not.
     const notified = await emailDelivery(sql, { deliveryId: sent.id })
-    return res.status(201).json({
+    return {
       delivery: { id: sent.id, round: sent.round },
       deliverable: await loadDeliverable(sql, ws, current.id),
       notified,
-    })
+    }
   }
-  return fail(res, 409, 'conflict', 'Someone sent a round at the same moment — refresh and try again')
+  return { error: { status: 409, code: 'conflict', message: 'Someone sent a round at the same moment — refresh and try again' } }
+}
+
+// ── GET /api/retainers/projects/:id/send-targets ─────────────────────────────
+// What Quick send offers: the project's open deliverables, the one sent most
+// recently first (most sends are revisions of it), and its active workstreams
+// (for a new deliverable).
+async function sendTargets(req, res, { sql, params }) {
+  const ws = await workspaceId(sql)
+  if (!(await projectInWorkspace(sql, ws, params.id))) return fail(res, 404, 'not_found', 'Project not found')
+  const deliverables = await sql`
+    SELECT d.id, d.title, d.status, w.id AS workstream_id, w.title AS workstream,
+           (SELECT max(dv.sent_at) FROM deliveries dv WHERE dv.deliverable_id = d.id) AS last_sent_at,
+           (SELECT max(dv.round) FROM deliveries dv WHERE dv.deliverable_id = d.id) AS round
+    FROM deliverables d
+    JOIN workstreams w ON w.id = d.workstream_id
+    WHERE w.user_id = ${ws} AND w.project_id = ${params.id} AND w.status = 'active' AND d.status <> 'approved'
+    ORDER BY last_sent_at DESC NULLS LAST, d.updated_at DESC
+    LIMIT 100`
+  const workstreams = await sql`
+    SELECT id, title FROM workstreams
+    WHERE user_id = ${ws} AND project_id = ${params.id} AND status = 'active'
+    ORDER BY sort_order, created_at`
+  return res.status(200).json({
+    deliverables: deliverables.map(d => ({
+      id: d.id, title: d.title, status: d.status, status_label: STATUS_LABELS[d.status],
+      workstream_id: d.workstream_id, workstream: d.workstream, round: d.round ?? 0, last_sent_at: d.last_sent_at,
+    })),
+    workstreams,
+    // Where a new deliverable goes unless told otherwise: the workstream of the
+    // one sent most recently, else the first active one.
+    default_workstream_id: deliverables.find(d => d.last_sent_at)?.workstream_id ?? workstreams[0]?.id ?? null,
+  })
+}
+
+// ── POST /api/retainers/projects/:id/quick-send ──────────────────────────────
+// { url, note?, deliverable_id } sends the next round of that deliverable; or
+// { url, note?, title, workstream_id? } makes the deliverable and sends round 1
+// in one step. Everything stays on the worklist. A new deliverable is yours,
+// In progress and shown to the client (sending it is showing it). If sending
+// then fails, the deliverable just made is removed again.
+async function quickSend(req, res, { sql, user, params }) {
+  const body = readBody(req)
+  if (!body) return invalid(res, 'body', 'Request body is not valid JSON')
+  const link = normaliseDeliveryUrl(body.url)
+  if (link.error) return invalid(res, link.error.field, link.error.message)
+  if (body.note != null && (typeof body.note !== 'string' || body.note.length > TEXT_MAX)) return invalid(res, 'note', 'That note is too long')
+
+  const ws = await workspaceId(sql)
+  if (!(await projectInWorkspace(sql, ws, params.id))) return fail(res, 404, 'not_found', 'Project not found')
+
+  if (body.deliverable_id) {
+    if (!isUuid(body.deliverable_id)) return invalid(res, 'deliverable_id', 'Choose what this is')
+    const [d] = await sql`
+      SELECT d.id, d.status FROM deliverables d JOIN workstreams w ON w.id = d.workstream_id
+      WHERE d.id = ${body.deliverable_id} AND w.user_id = ${ws} AND w.project_id = ${params.id}`
+    if (!d) return invalid(res, 'deliverable_id', 'That is not on this project')
+    if (d.status === 'approved') return invalid(res, 'deliverable_id', 'That is already approved — pick or name another')
+    await sql`UPDATE deliverables SET client_visible = true WHERE id = ${d.id} AND NOT client_visible`   // sending it is showing it
+    const result = await sendRound(sql, { ws, user, deliverableId: d.id, url: link.url, note: cleanText(body.note) })
+    if (result.error) return fail(res, result.error.status, result.error.code, result.error.message)
+    return res.status(201).json({ ...result, created: false })
+  }
+
+  const title = typeof body.title === 'string' ? body.title.trim() : ''
+  if (!title) return invalid(res, 'title', 'Choose what this is, or name it')
+  if (title.length > TITLE_MAX) return invalid(res, 'title', 'That title is too long')
+
+  let workstreamId = body.workstream_id ?? null
+  if (workstreamId) {
+    if (!isUuid(workstreamId)) return invalid(res, 'workstream_id', 'Choose the workstream')
+    const [w] = await sql`SELECT id FROM workstreams WHERE id = ${workstreamId} AND user_id = ${ws} AND project_id = ${params.id} AND status = 'active'`
+    if (!w) return invalid(res, 'workstream_id', 'That workstream is not on this project')
+  } else {
+    // The workstream of the one sent most recently, else the first active one,
+    // else a new "Reviews" workstream.
+    const [w] = await sql`
+      SELECT w.id FROM workstreams w
+      LEFT JOIN deliverables d ON d.workstream_id = w.id
+      LEFT JOIN deliveries dv ON dv.deliverable_id = d.id
+      WHERE w.user_id = ${ws} AND w.project_id = ${params.id} AND w.status = 'active'
+      GROUP BY w.id, w.sort_order, w.created_at
+      ORDER BY max(dv.sent_at) DESC NULLS LAST, w.sort_order, w.created_at LIMIT 1`
+    if (w) workstreamId = w.id
+    else {
+      const [made] = await sql`INSERT INTO workstreams (user_id, project_id, title, sort_order) VALUES (${ws}, ${params.id}, 'Reviews', 0) RETURNING id`
+      workstreamId = made.id
+    }
+  }
+
+  const [made] = await sql`
+    INSERT INTO deliverables (workstream_id, title, owner_id, status, client_visible, sort_order)
+    VALUES (${workstreamId}, ${title}, ${user.id}, 'in_progress', true,
+            COALESCE((SELECT max(sort_order) + 1 FROM deliverables WHERE workstream_id = ${workstreamId}), 0))
+    RETURNING id`
+  let result
+  try {
+    result = await sendRound(sql, { ws, user, deliverableId: made.id, url: link.url, note: cleanText(body.note) })
+  } catch (err) {
+    await sql`DELETE FROM deliverables WHERE id = ${made.id} AND NOT EXISTS (SELECT 1 FROM deliveries WHERE deliverable_id = ${made.id})`
+    throw err
+  }
+  if (result.error) {
+    await sql`DELETE FROM deliverables WHERE id = ${made.id} AND NOT EXISTS (SELECT 1 FROM deliveries WHERE deliverable_id = ${made.id})`
+    return fail(res, result.error.status, result.error.code, result.error.message)
+  }
+  return res.status(201).json({ ...result, created: true })
 }
 
 // ── DELETE /api/retainers/deliveries/:id ─────────────────────────────────────

@@ -4,6 +4,7 @@ import { PostProductionView } from './post-production.js'
 import { Worklist } from './worklist.js'
 import { isSubcontractor } from '../utils/contact-kind.js'
 import { mountOwed } from './owed.js'
+import { openQuickSend } from './quick-send.js'
 import { getProjectCounts, copyWorklist, createWorkstream, createDeliverable } from '../api/retainers.js'
 import { timeLogFormHtml, bindTimeLogForm } from './time-log.js'
 import { icon } from './icons.js'
@@ -662,6 +663,7 @@ export class ProjectsView {
                <option value="Active"  ${(p.status!=='Enquiry')?'selected':''}>Active</option>`
             : STAGES.map(s => `<option value="${s}" ${p.status===s?'selected':''}>${s}</option>`).join('')}
         </select>
+        ${this.app.permissions?.projects_edit ? `<button class="btn-secondary" id="pv-quick-send" aria-haspopup="dialog">Quick send</button>` : ''}
         ${this.app.permissions?.projects_edit ? `<button class="btn-secondary" id="pv-duplicate">Duplicate</button>` : ''}
         ${this.app.permissions?.projects_edit
           ? `<button class="btn-cancel" id="pv-client-link" style="font-size:11px" aria-haspopup="dialog">Client link${p.portal_token ? ' · on' : ''}</button>`
@@ -1264,6 +1266,15 @@ export class ProjectsView {
     mc.querySelector('#pv-status')?.addEventListener('change', e => {
       p.status = e.target.value
       updateProject(this.app.userId, p.id, { status: p.status }).catch(console.error)
+    })
+    mc.querySelector('#pv-quick-send')?.addEventListener('click', e => {
+      openQuickSend(this.app, e.currentTarget, p, {
+        // What is behind the popover may now be out of date: redraw the tab if it shows deliverables.
+        onSent: () => {
+          this._loadWorklistCounts(mc, p)
+          if (['overview', 'worklist'].includes(this._pvTab || 'overview')) mc.querySelector('#proj-tab-bar .proj-tab.active')?.click()
+        },
+      })
     })
     mc.querySelector('#pv-client-link')?.addEventListener('click', e => {
       const button = e.currentTarget
