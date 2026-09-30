@@ -152,6 +152,44 @@ describeDb('worklists that belong to a project', () => {
     expect(await companyOf()).toBeNull()
   })
 
+  describe('the project\'s client link', () => {
+    const tokenOf = async id => (await sql`SELECT portal_token FROM projects WHERE id = ${id}`)[0].portal_token
+    it('creates one, refuses a second create, replaces it, and turns it off', async () => {
+      const p = await project('PW Link')
+      const made = await call('POST', `retainers/projects/${p.id}/link`, { action: 'create' })
+      expect(made.statusCode).toBe(200)
+      expect(made.body.has_link).toBe(true)
+      expect(made.body.token).toMatch(/^[A-Za-z0-9_-]{32}$/)
+      expect(await tokenOf(p.id)).toBe(made.body.token)
+
+      const again = await call('POST', `retainers/projects/${p.id}/link`, { action: 'create' })
+      expect([again.statusCode, again.body.error.code]).toEqual([409, 'has_link'])
+      expect(await tokenOf(p.id)).toBe(made.body.token)
+
+      const swapped = await call('POST', `retainers/projects/${p.id}/link`, { action: 'replace' })
+      expect(swapped.body.token).not.toBe(made.body.token)
+      expect(await tokenOf(p.id)).toBe(swapped.body.token)   // the old one no longer matches any project
+
+      const off = await call('POST', `retainers/projects/${p.id}/link`, { action: 'off' })
+      expect(off.body).toEqual({ has_link: false, token: null })
+      expect(await tokenOf(p.id)).toBeNull()
+      const page = await call('GET', `retainers/projects/${p.id}`)
+      expect(page.body.project.has_link).toBe(false)
+    })
+    it('refuses an unknown action, another workspace\'s project, and a viewer', async () => {
+      const p = await project('PW Link 2')
+      expect((await call('POST', `retainers/projects/${p.id}/link`, { action: 'nope' })).body.error.field).toBe('action')
+      const [foreign] = await sql`INSERT INTO projects (user_id, name) VALUES ('someone_else', 'PW Foreign link') RETURNING id`
+      expect((await call('POST', `retainers/projects/${foreign.id}/link`, { action: 'create' })).statusCode).toBe(404)
+      expect(await tokenOf(foreign.id)).toBeNull()
+      await sql`DELETE FROM projects WHERE id = ${foreign.id}`
+      CURRENT = { ...ana, role: 'viewer' }
+      const v = await call('POST', `retainers/projects/${p.id}/link`, { action: 'create' })
+      expect([v.statusCode, v.body.error.code]).toEqual([403, 'read_only'])
+      expect(await tokenOf(p.id)).toBeNull()
+    })
+  })
+
   describe('where a company-less worklist shows up', () => {
     let p, d
     beforeEach(async () => {

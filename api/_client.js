@@ -214,7 +214,9 @@ async function approveViaLink(req, res, { sql, scope }) {
 }
 
 // ── POST /api/client/requests ────────────────────────────────────────────────
-// { title, detail?, wanted_by? }. Tells the company's lead straight away (the
+// { title, detail?, wanted_by?, name? }. A signed-in client's request, or one
+// from a project link (which must give a name and is marked as sent via the
+// link). Tells the company's lead — or the superadmins — straight away (the
 // request has no deliverable, so no owner, yet). Returns the fresh view.
 async function raiseRequest(req, res, { sql, scope }) {
   const body = readBody(req)

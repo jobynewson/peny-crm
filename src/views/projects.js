@@ -659,11 +659,9 @@ export class ProjectsView {
             : STAGES.map(s => `<option value="${s}" ${p.status===s?'selected':''}>${s}</option>`).join('')}
         </select>
         ${this.app.permissions?.projects_edit ? `<button class="btn-secondary" id="pv-duplicate">Duplicate</button>` : ''}
-        ${p.portal_token
-          ? `<button class="btn-cancel" id="pv-copy-portal" style="font-size:11px">Copy Client Portal Link</button>`
-          : this.app.permissions?.projects_edit
-            ? `<button class="btn-cancel" id="pv-gen-portal" style="font-size:11px">Create Portal Link</button>`
-            : ''}
+        ${this.app.permissions?.projects_edit
+          ? `<button class="btn-cancel" id="pv-client-link" style="font-size:11px" aria-haspopup="dialog">Client link${p.portal_token ? ' · on' : ''}</button>`
+          : ''}
         ${this.app.permissions?.projects_edit ? `<button class="btn-primary" id="enter-edit">Edit project</button>` : ''}
         <button class="row-btn" id="pv-delete" style="color:var(--danger);border-color:var(--danger-border)">Delete</button>
       </div>
@@ -1321,18 +1319,9 @@ export class ProjectsView {
       p.status = e.target.value
       updateProject(this.app.userId, p.id, { status: p.status }).catch(console.error)
     })
-    mc.querySelector('#pv-copy-portal')?.addEventListener('click', async e => {
-      const url = `${location.origin}/portal/${p.portal_token}`
-      await navigator.clipboard.writeText(url)
-      const btn = e.target; btn.textContent = '✓ Copied!'; setTimeout(() => btn.textContent = 'Copy Client Portal Link', 1500)
-    })
-    mc.querySelector('#pv-gen-portal')?.addEventListener('click', async () => {
-      const token = crypto.randomUUID().replace(/-/g,'').slice(0,24)
-      p.portal_token = token
-      const idx = this.app.projects.findIndex(x => x.id === p.id)
-      if (idx >= 0) this.app.projects[idx].portal_token = token
-      try { await updateProject(this.app.userId, p.id, { portal_token: token }) } catch(e) { console.error(e) }
-      this.renderViewer(mc)
+    mc.querySelector('#pv-client-link')?.addEventListener('click', e => {
+      const button = e.currentTarget
+      this._worklist.openLinkPanel(button, p.id, { onChange: on => { button.textContent = `Client link${on ? ' · on' : ''}` } })
     })
     mc.querySelector('#enter-edit')?.addEventListener('click', () => {
       this.editingId = this.currentId; this.renderEditor(mc)

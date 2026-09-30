@@ -135,7 +135,8 @@ const REQUESTS_SHOWN = 5
 
 function requestsHtml(view) {
   const list = view.requests || []
-  const canSend = view.scope.can_respond
+  const canSend = view.scope.can_request ?? view.scope.can_respond
+  const asksName = view.scope.kind === 'project'   // a link can't say who is holding it
   const shown = list.slice(0, REQUESTS_SHOWN)
   const earlier = list.slice(REQUESTS_SHOWN)
   return `
@@ -146,6 +147,8 @@ function requestsHtml(view) {
       </div>
       ${canSend ? `
         <form class="pt-form" data-request-form hidden novalidate>
+          ${asksName ? `<label for="rq-name">Your name <span class="pt-muted">— so we know who it’s from</span></label>
+          <input id="rq-name" maxlength="100" autocomplete="name" />` : ''}
           <label for="rq-title">What do you need?</label>
           <input id="rq-title" maxlength="300" autocomplete="off" />
           <label for="rq-detail">More detail <span class="pt-muted">— a link to any files or references is fine</span></label>
@@ -161,7 +164,7 @@ function requestsHtml(view) {
       ${list.length
         ? `<ul class="pt-list">${shown.map(requestHtml).join('')}</ul>
            ${earlier.length ? `<details class="pt-earlier pt-earlier--requests"><summary>Earlier requests (${earlier.length})</summary><ul class="pt-list">${earlier.map(requestHtml).join('')}</ul></details>` : ''}`
-        : `<p class="pt-muted pt-requests-empty">${canSend ? 'Need something from us? Ask here instead of emailing — you’ll see where it stands.' : 'No requests yet.'}</p>`}
+        : `<p class="pt-muted pt-requests-empty">${canSend ? 'Need something from us? Ask here instead of emailing — you’ll see where it stands.' : (view.scope.kind === 'project' ? 'This project has been delivered, so it isn’t taking new requests here.' : 'No requests yet.')}</p>`}
     </section>`
 }
 
@@ -320,6 +323,7 @@ function projectHtml(view) {
             ? (legacy.length ? `<ul class="pt-simple">${legacy.map(d => legacyHtml(d, today)).join('')}</ul>` : '<p class="pt-muted">No deliverables listed.</p>')
             : (view.workstreams.length ? view.workstreams.map(workstreamHtml).join('') : '<p class="pt-muted">No deliverables listed.</p>')}
         </section>
+        ${requestsHtml(view)}
         <section>
           <h2 class="pt-section-title">Work log</h2>
           ${view.work_log.length ? `<ul class="pt-log">${view.work_log.map(e => `
@@ -462,12 +466,16 @@ function bindRequestForm(root, { submitRequest, rerender }) {
   })
   form.addEventListener('submit', async e => {
     e.preventDefault()
+    const nameField = form.querySelector('#rq-name')
+    const name = nameField?.value.trim()
+    if (nameField && !name) { msg.textContent = 'Tell us who you are'; nameField.focus(); return }
     const title = form.querySelector('#rq-title').value.trim()
     if (!title) { msg.textContent = 'Say what you need'; form.querySelector('#rq-title').focus(); return }
     const button = form.querySelector('[type="submit"]')
     button.disabled = true
     try {
       const fresh = await submitRequest({
+        ...(nameField ? { name } : {}),
         title,
         detail: form.querySelector('#rq-detail').value.trim() || null,
         wanted_by: form.querySelector('#rq-by').value || null,
@@ -477,7 +485,7 @@ function bindRequestForm(root, { submitRequest, rerender }) {
     } catch (err) {
       button.disabled = false
       msg.textContent = err.message
-      form.querySelector(err.field === 'wanted_by' ? '#rq-by' : '#rq-title').focus()
+      form.querySelector(err.field === 'wanted_by' ? '#rq-by' : err.field === 'name' && nameField ? '#rq-name' : '#rq-title').focus()
     }
   })
 }

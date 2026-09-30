@@ -16,6 +16,7 @@
 //
 // NOT a Vercel function — the `_` prefix keeps it out of function detection.
 
+import { randomBytes } from 'node:crypto'
 import { UUID, fail, invalid, readBody, workspaceId } from './_api.js'
 import { londonDate, daysBetween, formatDay } from './_dates.js'
 import { fetchLinkPreview } from './_preview.js'
@@ -38,6 +39,7 @@ export const ROUTES = [
   { method: 'GET',    pattern: /^retainers\/project-counts$/,                            handler: projectCounts },
   { method: 'GET',    pattern: new RegExp(`^retainers/projects/${ID}$`),                  handler: getProjectPage },
   { method: 'POST',   pattern: new RegExp(`^retainers/projects/${ID}/attach$`),           handler: attachWorkstreams, access: 'editor' },
+  { method: 'POST',   pattern: new RegExp(`^retainers/projects/${ID}/link$`),             handler: setLink,           access: 'editor' },
   { method: 'POST',   pattern: /^retainers\/workstreams$/,                               handler: createWorkstream,  access: 'editor' },
   { method: 'PATCH',  pattern: new RegExp(`^retainers/workstreams/${ID}$`),               handler: updateWorkstream,  access: 'editor' },
   { method: 'DELETE', pattern: new RegExp(`^retainers/workstreams/${ID}$`),               handler: deleteWorkstream,  access: 'editor' },
@@ -265,6 +267,30 @@ async function attachWorkstreams(req, res, { sql, params }) {
     WHERE user_id = ${ws} AND project_id IS NULL AND company_id = ${project.company_id}
     RETURNING id`
   return res.status(200).json({ attached: moved.length })
+}
+
+// ── POST /api/retainers/projects/:id/link ────────────────────────────────────
+// { action: 'create' | 'replace' | 'off' } — the project's client link
+// (/portal/<token>): what anyone holding it can see and send requests through.
+// 'replace' makes a new one, and the old one stops working at once; 'off'
+// removes it. The token is 24 random bytes, made here, never in the browser.
+// → { has_link, token } (token is null when off).
+async function setLink(req, res, { sql, params }) {
+  const body = readBody(req)
+  if (!body || !['create', 'replace', 'off'].includes(body.action)) return invalid(res, 'action', 'Choose create, replace or off')
+  const ws = await workspaceId(sql)
+  const token = body.action === 'off' ? null : randomBytes(24).toString('base64url')
+  const [row] = await sql`
+    UPDATE projects SET portal_token = ${token}, updated_at = NOW()
+    WHERE id = ${params.id} AND user_id = ${ws}
+      AND (${body.action !== 'create'} OR portal_token IS NULL)
+    RETURNING id`
+  if (!row) {
+    const [p] = await sql`SELECT portal_token FROM projects WHERE id = ${params.id} AND user_id = ${ws}`
+    if (!p) return fail(res, 404, 'not_found', 'Project not found')
+    return fail(res, 409, 'has_link', 'This project already has a link — replace it instead')
+  }
+  return res.status(200).json({ has_link: !!token, token })
 }
 
 // ── POST /api/retainers/workstreams ──────────────────────────────────────────

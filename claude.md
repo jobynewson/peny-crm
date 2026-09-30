@@ -1025,8 +1025,9 @@ always the source of truth and nothing is ever read back from Google.
   `resolveScope(req, sql)` — the only place a portal scope is built from a
   request — then runs the handler with the scope and nothing else about the
   visitor:
-  - `X-Portal-Token` header (a project's portal link) → that project,
-    read-only. A token beats a session if both come (the lesser view).
+  - `X-Portal-Token` header (a project's portal link) → that project. It can
+    look and **send requests** (below), never answer or reply. A token beats a
+    session if both come (the lesser view).
   - Otherwise a Clerk session: the active organisation from the verified token
     (`o.id`, v1 `org_id`) → the company with that `clerk_org_id`. Never an id
     from the body, query or path. Anyone with an `app_users` row is refused
@@ -1061,7 +1062,14 @@ always the source of truth and nothing is ever read back from Google.
     is a grant to whoever controls that address, and it doesn't expire until
     it's used.
   - A project link is a bearer secret with no expiry: whoever has it sees
-    that project.
+    that project, and can send requests through it. It can be forwarded, so it
+    can be replaced (the old one stops working) or turned off from the
+    project's "Client link" control (`POST retainers/projects/:id/link`,
+    token made on the server), and what it can do is limited: requests only,
+    each needing a typed name (never verified), marked "Sent via project
+    link" in triage, capped at ten unanswered per project, and refused once
+    the project is Delivered. Link requests don't count toward a company's
+    signed-in cap, so a forwarded link can't block its clients.
   - Organisation membership is trusted from Clerk's signed session token;
     removing someone takes effect when their token refreshes (about a
     minute).
@@ -1105,9 +1113,10 @@ Migration `drizzle/0036` (also in `runMigrations()`): `companies.lead_id`
 is the guard), `requests` decision columns, `deliverables.client_reply`,
 `alert_log`, `action_links`. All server-only.
 
-- **Requests** (`POST /api/client/requests`, `submitRequest` in `_worklist.js`):
-  signed-in clients only, company from the session, ten unanswered per company
-  (the cap is in the writing statement). The client sees the company's requests
+- **Requests** (`POST /api/client/requests`, `submitRequest` in `_worklist.js`;
+  a signed-in client's, or a project link's — see Scope above):
+  a signed-in client's gets the company from the session, ten unanswered per
+  company (the cap is in the writing statement). The client sees the company's requests
   as Submitted / Accepted (date read live from the deliverable, with a link to it
   in their worklist) / Declined (our note). Nothing about who decided leaves.
 - **Triage** (`api/_requests.js`, `src/views/requests.js`, the Requests tab — a count of new ones sits on it, from `GET retainers/request-count`):

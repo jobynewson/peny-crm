@@ -217,12 +217,14 @@ describeDb('/api/client', () => {
   })
 
   describe('requests', () => {
+    const mine = `company_id IN (SELECT id FROM companies WHERE name LIKE 'CLTest %') OR project_id IN (SELECT id FROM projects WHERE name LIKE 'CLTest %')`
     beforeEach(async () => {
-      await sql`DELETE FROM requests WHERE company_id IN (SELECT id FROM companies WHERE name LIKE 'CLTest %')`
+      await sql`DELETE FROM requests WHERE company_id IN (SELECT id FROM companies WHERE name LIKE 'CLTest %') OR project_id IN (SELECT id FROM projects WHERE name LIKE 'CLTest %')`
+      await sql`UPDATE projects SET status = 'Post' WHERE name LIKE 'CLTest %'`
       newRequestAlerts.length = 0
     })
     const raise = (body, opts = {}) => call('POST', 'client/requests', { body, ...opts })
-    const count = async () => (await sql`SELECT count(*)::int AS n FROM requests WHERE company_id IN (SELECT id FROM companies WHERE name LIKE 'CLTest %')`)[0].n
+    const count = async () => (await sql`SELECT count(*)::int AS n FROM requests WHERE company_id IN (SELECT id FROM companies WHERE name LIKE 'CLTest %') OR project_id IN (SELECT id FROM projects WHERE name LIKE 'CLTest %')`)[0].n
 
     it('lets a signed-in client raise one, shows it as Submitted, and tells us', async () => {
       CLAIMS = DANA
@@ -249,10 +251,7 @@ describeDb('/api/client', () => {
       expect(newRequestAlerts).toEqual([])
     })
 
-    it('is for signed-in clients only: not a portal link, an impersonation or Slate staff', async () => {
-      CLAIMS = DANA   // a session as well: the link still wins
-      const viaLink = await raise({ title: 'x' }, { token: 'cltestlegacytoken0001' })
-      expect([viaLink.statusCode, viaLink.body.error.code]).toEqual([403, 'signed_in_only'])
+    it('is for signed-in clients and project links only: not an impersonation, Slate staff or an Approve link', async () => {
       CLAIMS = { ...DANA, act: { sub: 'user_cl_staff' } }
       const impersonated = await raise({ title: 'x' })
       expect([impersonated.statusCode, impersonated.body.error.code]).toEqual([403, 'read_only'])
@@ -262,6 +261,103 @@ describeDb('/api/client', () => {
       expect((await raise({ title: 'x' })).statusCode).toBe(401)
       expect(await count()).toBe(0)
       expect(newRequestAlerts).toEqual([])
+    })
+
+    describe('through a project link', () => {
+      const LINK = 'cltestlegacytoken0001'   // CLTest Legacy: a project with no company
+      const viaLink = (body, token = LINK) => raise(body, { token })
+
+      it('takes one with a name, files it under the project, marks it as sent via the link, and tells us', async () => {
+        CLAIMS = null
+        const r = await viaLink({ name: '  Sam   Lee ', title: 'A cut-down', detail: 'See https://x.test', wanted_by: '2026-10-30' })
+        expect(r.statusCode).toBe(201)
+        expect(r.body.view.requests).toHaveLength(1)
+        expect(r.body.view.requests[0]).toMatchObject({ title: 'A cut-down', status: 'submitted', sent_by: 'Sam Lee', accepted: null })
+        const [row] = await sql`SELECT project_id, company_id, submitted_via, submitted_by, submitted_by_name, user_id FROM requests`
+        expect(row).toMatchObject({ submitted_via: 'link', submitted_by: null, submitted_by_name: 'Sam Lee', company_id: null, user_id: ws })
+        const [legacy] = await sql`SELECT id FROM projects WHERE name = 'CLTest Legacy'`
+        expect(row.project_id).toBe(legacy.id)
+        expect(newRequestAlerts).toHaveLength(1)
+        expect(newRequestAlerts[0]).toMatchObject({ companyName: 'CLTest Legacy', request: { submitted_via: 'link', submitted_by_name: 'Sam Lee', project_id: legacy.id } })
+      })
+
+      it('needs a name, and a title, and writes nothing otherwise', async () => {
+        CLAIMS = null
+        for (const [body, field] of [[{ title: 'x' }, 'name'], [{ name: '   ', title: 'x' }, 'name'], [{ name: 'x'.repeat(101), title: 'x' }, 'name'], [{ name: 'Sam', title: ' ' }, 'title'], [{ name: 'Sam', title: 'x', wanted_by: '2026-02-30' }, 'wanted_by']]) {
+          const r = await viaLink(body)
+          expect([r.statusCode, r.body.error.field], JSON.stringify(body)).toEqual([422, field])
+        }
+        expect(await count()).toBe(0)
+        expect(newRequestAlerts).toEqual([])
+      })
+
+      it('files it under the link\'s project, whatever the body says', async () => {
+        CLAIMS = null
+        await viaLink({ name: 'Sam', title: 'x', project_id: '11111111-1111-4111-8111-111111111111', company_id: ids.alpha, submitted_via: 'login', status: 'accepted' })
+        const [row] = await sql`SELECT project_id, company_id, submitted_via, status FROM requests`
+        const [legacy] = await sql`SELECT id FROM projects WHERE name = 'CLTest Legacy'`
+        expect(row).toEqual({ project_id: legacy.id, company_id: null, submitted_via: 'link', status: 'new' })
+      })
+
+      it('shows the people holding the link what was sent through it — and not a signed-in client\'s requests', async () => {
+        CLAIMS = DANA
+        await raise({ title: 'Signed-in ask' })
+        CLAIMS = null
+        await viaLink({ name: 'Sam', title: 'Link ask' })
+        const view = await call('GET', 'client/view', { token: LINK })
+        expect(view.body.scope).toMatchObject({ kind: 'project', can_respond: false, can_request: true })
+        expect(view.body.requests.map(r => r.title)).toEqual(['Link ask'])
+        expect(JSON.stringify(view.body)).not.toContain('Signed-in ask')
+      })
+
+      it('stops at ten unanswered per project, separately from each other project, and from a company\'s signed-in clients', async () => {
+        CLAIMS = null
+        for (let i = 1; i <= 10; i++) expect((await viaLink({ name: 'Sam', title: `Ask ${i}` })).statusCode).toBe(201)
+        const eleventh = await viaLink({ name: 'Sam', title: 'Ask 11' })
+        expect([eleventh.statusCode, eleventh.body.error.code]).toEqual([429, 'too_many_open'])
+        expect((await viaLink({ name: 'Sam', title: 'Other project' }, 'cltestmovedtoken00002')).statusCode).toBe(201)
+        await sql`UPDATE requests SET status = 'declined', decline_note = 'No' WHERE title = 'Ask 1'`
+        expect((await viaLink({ name: 'Sam', title: 'Ask 11' })).statusCode).toBe(201)
+      })
+
+      it('does not stop a company\'s signed-in clients, even when the link is full of requests for its projects', async () => {
+        CLAIMS = null
+        const [alphaProject] = await sql`INSERT INTO projects (user_id, name, company_id, portal_token) VALUES (${ws}, 'CLTest Alpha project', ${ids.alpha}, 'cltestalphatoken000003') RETURNING id`
+        for (let i = 1; i <= 10; i++) expect((await viaLink({ name: 'Sam', title: `Link ${i}` }, 'cltestalphatoken000003')).statusCode).toBe(201)
+        CLAIMS = DANA
+        expect((await raise({ title: 'Signed-in ask' })).statusCode).toBe(201)
+        // …and the company's own view shows both, the link ones with the name typed.
+        const view = await call('GET', 'client/view')
+        expect(view.body.requests).toHaveLength(11)
+        await sql`DELETE FROM requests WHERE project_id = ${alphaProject.id}`
+        await sql`DELETE FROM projects WHERE id = ${alphaProject.id}`
+      })
+
+      it('stops taking requests once the project is Delivered, and says so, and still shows the page', async () => {
+        CLAIMS = null
+        await sql`UPDATE projects SET status = 'Delivered' WHERE name = 'CLTest Legacy'`
+        const r = await viaLink({ name: 'Sam', title: 'Too late' })
+        expect([r.statusCode, r.body.error.code]).toEqual([409, 'project_closed'])
+        expect(r.body.error.message).toMatch(/delivered/i)
+        expect(await count()).toBe(0)
+        const view = await call('GET', 'client/view', { token: LINK })
+        expect(view.body.scope.can_request).toBe(false)
+        expect(view.body.title).toBe('CLTest Legacy')
+      })
+
+      it('still cannot answer or reply: a link is not a client', async () => {
+        CLAIMS = null
+        const answer = await call('POST', `client/deliveries/${ids.hero1}/response`, { token: LINK, body: { response: 'approved' } })
+        expect([answer.statusCode, answer.body.error.code]).toEqual([403, 'read_only'])
+        const reply = await call('POST', `client/deliverables/${ids.waiting}/reply`, { token: LINK, body: { reply: 'hi' } })
+        expect(reply.statusCode).toBeGreaterThanOrEqual(400)
+      })
+
+      it('does not take one from an unknown link', async () => {
+        CLAIMS = null
+        expect((await viaLink({ name: 'Sam', title: 'x' }, 'nosuchlinktoken0000')).statusCode).toBe(404)
+        expect(await count()).toBe(0)
+      })
     })
 
     it('files it under the caller\'s own company, whatever the body says, and keeps companies apart', async () => {

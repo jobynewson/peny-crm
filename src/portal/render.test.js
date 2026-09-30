@@ -49,13 +49,13 @@ describe('the portal: requests', () => {
     expect(out).toContain('Earlier requests (2)')
   })
 
-  it('can\'t ask while viewing as the client, and a portal link has no requests at all', () => {
+  it('can\'t ask while viewing as the client, nor on a link that says it is not taking requests', () => {
     expect(html(view({ scope: { kind: 'company', can_respond: false } }))).not.toContain('data-new-request')
     const project = renderView({
       scope: { kind: 'project', can_respond: false }, today: '2026-09-29', title: 'Film', studio: {}, project: { name: 'Film' },
       client: null, workstreams: null, deliverables: [], work_log: [], schedule: null,
     }, { signedIn: false, canSwitch: false })
-    expect(project).not.toContain('Requests')
+    expect(project).not.toContain('data-new-request')
     expect(project).not.toContain('data-request-form')
   })
 })
@@ -154,5 +154,44 @@ describe('the Approve link\'s confirm page', () => {
     const load = source.slice(start, source.indexOf("addEventListener('click'", start))
     expect(load).toContain("api('/api/client/link')")
     expect(load).not.toContain("method: 'POST'")
+  })
+})
+
+describe('the portal: requests through a project link', () => {
+  const link = (over = {}) => ({
+    scope: { kind: 'project', can_respond: false, can_request: true },
+    today: '2026-09-29', title: 'Riverside shoot',
+    project: { name: 'Riverside shoot', status: 'Post', brief: null, shoot_start: null, shoot_end: null, frame_io_link: null },
+    client: null, studio: { name: 'Peny', website: null },
+    workstreams: [], deliverables: null, requests: [], work_log: [], schedule: null, ...over,
+  })
+
+  it('offers the form with a name field, because a link cannot say who is holding it', () => {
+    const out = html(link())
+    expect(out).toContain('data-new-request')
+    expect(out).toContain('id="rq-name"')
+    expect(out).toContain('Your name')
+    expect(out).toContain('Ask here instead of emailing')
+  })
+
+  it('shows what has been sent through the link, with the name typed and our answer', () => {
+    const out = html(link({ requests: [
+      { id: 'q1', title: 'Cut-down', detail: null, wanted_by: null, status: 'submitted', status_label: 'Submitted', sent_at: '2026-09-28T10:00:00Z', sent_by: 'Sam <b>', note: null, accepted: null },
+      { id: 'q2', title: 'Reshoot', detail: null, wanted_by: null, status: 'declined', status_label: 'Declined', sent_at: '2026-09-10T10:00:00Z', sent_by: 'Sam', note: 'Outside this project', accepted: null },
+    ] }))
+    expect(out).toContain('Cut-down')
+    expect(out).toContain('Sam &lt;b&gt;')
+    expect(out).toContain('Outside this project')
+  })
+
+  it('says so, without a form, once the project is delivered', () => {
+    const out = html(link({ scope: { kind: 'project', can_respond: false, can_request: false } }))
+    expect(out).not.toContain('data-request-form')
+    expect(out).not.toContain('data-new-request')
+    expect(out).toContain('has been delivered')
+  })
+
+  it('does not ask a signed-in client for a name', () => {
+    expect(html(view())).not.toContain('id="rq-name"')
   })
 })

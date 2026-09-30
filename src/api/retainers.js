@@ -17,6 +17,9 @@ export const getProjectCounts = () => request(`${base}/project-counts`).then(r =
 // Brings the project's company's older project-less workstreams into it. → { attached }
 export const attachWorkstreams = id => post(`projects/${id}/attach`, {})
 
+// The project's client link: action 'create' | 'replace' | 'off'. → { has_link, token }
+export const setProjectLink = (id, action) => post(`projects/${id}/link`, { action })
+
 export const createWorkstream = body => post('workstreams', body).then(r => r.workstream)
 export const updateWorkstream = (id, body) => patch(`workstreams/${id}`, body).then(r => r.workstream)
 export const deleteWorkstream = id => del(`workstreams/${id}`)

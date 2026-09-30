@@ -119,6 +119,7 @@ export class Worklist {
           ${company ? this._leadHtml(company) : ''}
         </div>
         <div class="rt-head-actions">
+          ${this.canEdit ? '<button class="btn-secondary" data-rt-link-panel data-focus-key="link">Client link</button>' : ''}
           ${this.isSuperadmin && company ? '<button class="btn-secondary" data-rt-portal data-focus-key="portal">Portal access</button>' : ''}
           ${this.canEdit ? '<button class="btn-primary" data-rt-add-ws data-focus-key="add-ws">+ Workstream</button>' : ''}
         </div>
@@ -259,6 +260,7 @@ export class Worklist {
   _bind() {
     const mc = this.el
     mc.querySelectorAll('[data-rt-add-ws]').forEach(b => b.addEventListener('click', () => this._workstreamForm(b, null)))
+    mc.querySelector('[data-rt-link-panel]')?.addEventListener('click', e => this.openLinkPanel(e.currentTarget, this.projectId))
     mc.querySelector('[data-rt-portal]')?.addEventListener('click', e => this._portalPanel(e.currentTarget))
     mc.querySelector('[data-rt-lead]')?.addEventListener('click', e => this._leadForm(e.currentTarget))
     mc.querySelector('[data-rt-attach]')?.addEventListener('click', async e => {
@@ -758,6 +760,72 @@ export class Worklist {
             this.app.toast('Deleted')
           } catch (err) { this.app.toast(err.message || 'Could not delete') }
         })
+      },
+    })
+  }
+
+  // ── The project's client link (editors) ────────────────────────────────────
+  // /portal/<token>: anyone holding it sees what is shown to the client on this
+  // project and can send requests (with a name, marked as sent via the link,
+  // capped, and only until the project is Delivered). It can't approve or
+  // reply; approvals go by the emailed one-time link or a login. Forwardable,
+  // so it can be replaced (the old one stops working) or switched off.
+
+  // `projectId` is passed because the project page's header button opens this
+  // too, whether or not the Worklist tab is showing. `onChange(hasLink)` lets
+  // the opener update its own label.
+  openLinkPanel(anchor, projectId, { onChange } = {}) {
+    const known = () => (this.app.projects || []).find(p => p.id === projectId)
+    const render = () => {
+      const token = known()?.portal_token || null
+      const url = token ? `${location.origin}/portal/${token}` : ''
+      return `
+        <div class="lt-head"><h2 class="lt-title" id="rt-link-title">Client link</h2></div>
+        <div class="tl-form">
+          <p class="tl-hint">Anyone with the link can see what you’ve shown the client on this project, and send a request (they give their name; it isn’t checked, and requests land in triage). They can’t approve anything.</p>
+          ${token ? `
+            <div class="tl-field"><label for="rt-link-url">Link</label><input id="rt-link-url" readonly value="${esc(url)}" /></div>
+            <div class="tl-msg" id="rt-link-msg" role="alert"></div>
+            <button type="button" class="btn-primary tl-submit" data-link-copy>Copy link</button>
+            <button type="button" class="rt-link-btn" data-link-act="replace">Replace it — the old link stops working</button>
+            <button type="button" class="rt-link-btn rt-danger" data-link-act="off">Turn the link off</button>`
+          : `
+            <p class="tl-hint">There is no link for this project.</p>
+            <div class="tl-msg" id="rt-link-msg" role="alert"></div>
+            <button type="button" class="btn-primary tl-submit" data-link-act="create">Create a link</button>`}
+        </div>`
+    }
+    openFloating({
+      anchor, id: 'rt-link', role: 'dialog', className: 'lt-pop rt-pop rt-pop--wide', html: render(),
+      onReady: el => {
+        el.setAttribute('aria-labelledby', 'rt-link-title')
+        const bind = () => {
+          el.querySelector('[data-link-copy]')?.addEventListener('click', async e => {
+            try { await navigator.clipboard.writeText(el.querySelector('#rt-link-url').value); e.currentTarget.textContent = '✓ Copied' }
+            catch { el.querySelector('#rt-link-url').select() }
+          })
+          el.querySelectorAll('[data-link-act]').forEach(b => b.addEventListener('click', async () => {
+            const act = b.dataset.linkAct
+            if (act === 'replace' && !confirm('Replace the link? Anyone using the old one loses access straight away.')) return
+            if (act === 'off' && !confirm('Turn the link off? Anyone using it loses access straight away.')) return
+            b.disabled = true
+            try {
+              const { token } = await api.setProjectLink(projectId, act)
+              if (known()) known().portal_token = token
+              if (this.page?.project.id === projectId) { this.page.project.has_link = !!token; this._repaint() }
+              onChange?.(!!token)
+              const body = el.classList.contains('sheet') ? el.querySelector('.sheet-body') : el
+              body.innerHTML = render()
+              bind()
+              this.app.toast({ create: 'Link created', replace: 'New link made — the old one no longer works', off: 'Link turned off' }[act])
+            } catch (err) {
+              b.disabled = false
+              const msg = el.querySelector('#rt-link-msg')
+              if (msg) { msg.dataset.tone = 'error'; msg.textContent = err.message || 'Could not do that' }
+            }
+          }))
+        }
+        bind()
       },
     })
   }

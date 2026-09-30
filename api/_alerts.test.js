@@ -105,6 +105,16 @@ describe('the wording', () => {
     expect(e.body).toContain('https://x.test/brief')
     expect(e.href).toMatch(/#requests\/r1$/)
   })
+  it('a request through a project link says so, and that the name is not checked', () => {
+    const e = newRequestEmail({
+      company: 'Riverside shoot',
+      request: { id: 'r2', title: 'Cut-down', submitted_by_name: 'Sam', submitted_via: 'link' },
+    })
+    expect(e.sentence).toContain('project link')
+    expect(e.sentence).toContain('Sam')
+    expect(e.sentence).toContain('isn’t checked')
+    expect(e.sentence).not.toContain('Sam at Riverside shoot')
+  })
   it('everything a client wrote is escaped', () => {
     const evil = '<img src=x onerror=alert(1)>'
     for (const e of [

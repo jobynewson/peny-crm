@@ -141,7 +141,7 @@ async function companyView(sql, scope) {
   if (!companies[0]) return null
   const today = londonDate()
   return {
-    scope: { kind: 'company', can_respond: scope.canRespond },
+    scope: { kind: 'company', can_respond: scope.canRespond, can_request: scope.canRespond },
     today,
     title: companies[0].name,
     studio: studioJson(studios[0]),
@@ -158,7 +158,7 @@ async function companyView(sql, scope) {
 // time.
 
 async function projectView(sql, scope) {
-  const [projects, studios, linked, workstreams, deliverables, rounds, log, schedules, phases] = await Promise.all([
+  const [projects, studios, linked, workstreams, deliverables, rounds, log, schedules, phases, requests] = await Promise.all([
     sql`
       SELECT p.name, p.status, p.brief, p.shoot_start::text AS shoot_start, p.shoot_end::text AS shoot_end,
              p.frame_io_link, p.deliverables, c.first_name, c.last_name, c.company
@@ -220,13 +220,28 @@ async function projectView(sql, scope) {
       WHERE s.project_id = ${scope.projectId} AND s.user_id = ${scope.ws}
       ORDER BY ph.sort_order, ph.created_at
     `,
+    // What people have asked for through this project's link, newest first.
+    // (A signed-in client's requests are the company's, shown in its portal.)
+    sql`
+      SELECT r.id, r.title, r.detail, r.wanted_by::text AS wanted_by, r.status, r.decline_note,
+             r.submitted_by_name, r.created_at,
+             d.id AS deliverable_id, d.due_kind, d.due_date::text AS due_date, d.due_label, d.cadence,
+             d.status AS deliverable_status
+      FROM requests r
+      LEFT JOIN deliverables d ON d.id = r.deliverable_id AND d.client_visible
+      WHERE r.user_id = ${scope.ws} AND r.project_id = ${scope.projectId} AND r.submitted_via = 'link'
+      ORDER BY r.created_at DESC
+      LIMIT 50
+    `,
   ])
   const project = projects[0]
   if (!project) return null
   const today = londonDate()
   const moved = linked[0].workstreams > 0
   return {
-    scope: { kind: 'project', can_respond: false },
+    // A link can ask for things (with a name) but not answer: no approving, no
+    // replying. It stops taking requests once the project is Delivered.
+    scope: { kind: 'project', can_respond: false, can_request: project.status !== 'Delivered' },
     today,
     title: project.name,
     project: {
@@ -243,6 +258,7 @@ async function projectView(sql, scope) {
     studio: studioJson(studios[0]),
     workstreams: moved ? worklistJson({ workstreams, deliverables, rounds, today, canRespond: false }) : null,
     deliverables: moved ? null : legacyDeliverables(project).map(d => ({ text: d.text, due: d.due, done: d.done, link: d.link })),
+    requests: requestsJson(requests, today),
     work_log: log.map(e => ({ note: e.note, date: e.entry_date, by: e.created_by || null })),
     schedule: schedules[0]
       ? { start_date: schedules[0].start_date, end_date: schedules[0].end_date, phases: portalPhases(phases) }
