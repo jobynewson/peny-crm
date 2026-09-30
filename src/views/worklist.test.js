@@ -118,3 +118,32 @@ describe('loading it', () => {
     expect(second.innerHTML).toContain('No workstreams yet')
   })
 })
+
+describe('the Delivered tick on the Worklist tab', () => {
+  const one = over => page({ workstreams: [{ id: 'w1', project_id: 'p1', title: 'Monthly content', brief: '', status: 'active', status_label: 'Active', deliverables: [deliverable(over)] }] })
+
+  it('gives editors a Delivered tick that is separate from the status, and says it awaits the client', () => {
+    const plain = painted(one()).html
+    expect(plain).toContain('data-rt-delivered="d1"')
+    expect(plain).not.toMatch(/data-rt-delivered="d1" checked/)
+    const ticked = painted(one({ delivered: true, delivered_at: '2026-09-29T10:00:00Z' })).html
+    expect(ticked).toMatch(/data-rt-delivered="d1" checked/)
+    expect(ticked).toContain('awaiting the client')
+    expect(ticked).toContain('Planned')                               // status untouched
+  })
+  it('locks the tick once the client has approved, and shows who approved it', () => {
+    const html = painted(one({ status: 'approved', status_label: 'Approved', approved_at: '2026-09-29T10:00:00Z', approved_by_name: 'Dana' })).html
+    expect(html).toMatch(/data-rt-delivered="d1" checked disabled/)
+    expect(html).toContain('Approved 29 Sep by Dana')
+  })
+  it('shows what the client asked to change, and asks for the tick again once fixed', () => {
+    const html = painted(one({ status: 'changes_requested', status_label: 'Changes requested', changes_note: 'Logo <small>', changes_at: '2026-09-29T10:00:00Z' })).html
+    expect(html).toContain('Logo &lt;small&gt;')
+    expect(html).toContain('Tick Delivered again')
+  })
+  it('read-only people see the state but no tick', () => {
+    const html = painted(one({ delivered: true }), app({ permissions: { projects_edit: false } })).html
+    expect(html).not.toContain('data-rt-delivered')
+    expect(html).toContain('rt-delivered')
+  })
+})

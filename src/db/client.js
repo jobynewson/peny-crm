@@ -797,6 +797,13 @@ export async function runMigrations() {
   // ── Who an Approve link was sent to, when they have no login (drizzle/0039) ─
   await sql`ALTER TABLE action_links ADD COLUMN IF NOT EXISTS name TEXT`
 
+  // ── Delivered (staff tick) and approved (client) are separate (drizzle/0040) ─
+  await sql`ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ`
+  await sql`ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ`
+  await sql`ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS approved_by_name TEXT`
+  await sql`ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS changes_note TEXT`
+  await sql`ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS changes_at TIMESTAMPTZ`
+
   // ── Which company a workstream is for (drizzle/0038) ───────────────────────
   await sql`
     CREATE OR REPLACE VIEW workstream_company AS

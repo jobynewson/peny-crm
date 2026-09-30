@@ -212,3 +212,21 @@ describe('the portal: requests through a project link', () => {
     expect(html(view())).not.toContain('id="rq-name"')
   })
 })
+
+describe('the portal: a deliverable marked delivered', () => {
+  const d = over => ({ id: 'd1', title: 'Hero <film>', format: null, due: 'No date', status: 'delivered', status_label: 'Delivered', waiting_for: null, reply: null, can_reply: false, delivered: true, can_answer: true, rounds: [], ...over })
+  const withD = x => html(view({ workstreams: [{ id: 'w1', title: 'Edits', brief: null, status: 'active', status_label: 'Active', deliverables: [x] }] }))
+
+  it('shows Delivered with Approve and Request changes that act on the deliverable, no round needed', () => {
+    const out = withD(d())
+    expect(out).toContain('pt-chip--delivered')
+    expect(out).toContain('data-approve="d1"')
+    expect(out).toContain('data-changes="d1"')
+    expect(out).toContain('data-kind="deliverable"')
+    expect(out).toContain('Approve “Hero &lt;film&gt;”?')
+  })
+  it('shows no buttons when it cannot be answered (a round is out, it is approved, or someone is only looking)', () => {
+    expect(withD(d({ can_answer: false }))).not.toContain('data-approve')
+    expect(withD(d({ status: 'approved', status_label: 'Approved', can_answer: false }))).not.toContain('data-approve')
+  })
+})

@@ -871,6 +871,32 @@ always the source of truth and nothing is ever read back from Google.
 - Viewers don't get Settings (the account menu hides it), so their emails stay
   at the defaults.
 
+### Delivered and approved are separate (`drizzle/0040`)
+- **Two things, two owners.** The staff tick is `deliverables.delivered_at`
+  (set by `PATCH retainers/deliverables/:id { delivered: true|false }`, from the
+  Worklist row's Delivered box and the dashboard tick). It changes nothing else:
+  status stays as it was. **Approved is the client's answer** (status
+  `approved`); staff can still set it from the status menu to record one that
+  came another way. An approved row's tick is checked and locked.
+- **What the client sees** (`clientFace`, `canAnswerDelivered` in the rules): a
+  delivered, unapproved deliverable reads **Delivered** with **Approve** and
+  **Request changes**, and no round is needed. If a round is out it reads "Ready
+  for review" and the round's own buttons are the ones that answer. Both paths
+  stay (`POST client/deliveries/:id/response` for a round,
+  `POST client/deliverables/:id/response` for a delivered deliverable).
+  Signed-in clients only; a project link or a viewer can look but not answer.
+- **The answer** (`respondToDeliverable` in `api/_worklist.js`, one statement
+  with its conditions inside): approve sets `status = approved`, `approved_at`,
+  `approved_by_name` and keeps the tick; changes (a comment is needed) sets
+  `changes_requested`, stores `changes_note`/`changes_at`, **clears the tick**
+  (staff tick again once fixed, which clears the note) and tells the owner
+  straight away like a round does. Approvals with no round reach the digest
+  through `loadApprovals` (round is null there).
+- Board and lists: a delivered deliverable is always on the board (muted, chip
+  "Delivered · awaiting approval") and counts as open in Owed and What's due
+  until it is approved. The dashboard's "to do" badge counts a tick as done.
+- Old ticks are not migrated: the change applies from now.
+
 ### How far ahead dated work shows (7 / 14 / 30 / 60 days)
 - One choice, four values (`WINDOW_DAYS` in `api/_retainer-rules.js`, mirrored in
   `src/utils/window-days.js`; a test compares them). Each screen has its own
@@ -1009,8 +1035,9 @@ always the source of truth and nothing is ever read back from Google.
   deliverable lists; a Projects-board card shows its open count; the
   dashboard's project rows list worklist deliverables
   (`GET retainers/dashboard-deliverables`: open ones and ones approved in the
-  last week) and **a tick means delivered and approved** (it sets the status
-  to approved, unticking reopens it); the AI brief import adds its deliverables
+  last week) and **a tick means delivered, not approved** (it sets
+  `deliverables.delivered_at`; see "Delivered and approved are separate"
+  below); the AI brief import adds its deliverables
   to a "Deliverables" workstream (planned, hidden from the client); a new
   budget from a project reads its worklist for the notes; **Duplicate** copies
   the worklist as a fresh plan (`POST retainers/projects/:id/copy-worklist`:

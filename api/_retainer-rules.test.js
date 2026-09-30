@@ -6,7 +6,7 @@ import {
   requestLabel, validateRequestInput, validateDecline, validateReply, MAX_OPEN_REQUESTS,
   requestSourceLabel, worklistLink, validateSenderName, COMPANY_TYPES, companyTypeLabel, validateCompanyType, normalisePortalEmails,
   boardColumn, boardChip, isWithClient, statusAfterBoardDrag, DRAG_REFUSALS, BOARD_COLUMNS, validateAccept,
-  boardShows, boardCard, compareBoardCards, BOARD_HORIZON_DAYS, owedList,
+  boardShows, boardCard, compareBoardCards, BOARD_HORIZON_DAYS, owedList, clientFace, isDelivered, canAnswerDelivered, boardChip,
 } from './_retainer-rules.js'
 
 const today = '2026-09-28'
@@ -404,5 +404,33 @@ describe('a project\'s Owed list', () => {
   })
   it('links each row to its deliverable on the project\'s Worklist tab', () => {
     expect(owedList([row({ id: 'd9' })], today).items[0].link).toBe('#projects/p1/worklist/d9')
+  })
+})
+
+describe('delivered (the staff tick) is separate from approved (the client\'s answer)', () => {
+  const at = '2026-09-30T10:00:00Z'
+  it('shows the client Delivered until a round is out or it is approved', () => {
+    expect(clientFace({ status: 'in_progress', delivered_at: at })).toEqual({ key: 'delivered', label: 'Delivered' })
+    expect(clientFace({ status: 'planned', delivered_at: at }).label).toBe('Delivered')
+    expect(clientFace({ status: 'in_progress', delivered_at: null }).label).toBe('In progress')
+    expect(clientFace({ status: 'in_review', delivered_at: at }).label).toBe('Ready for review')   // the round says more
+    expect(clientFace({ status: 'approved', delivered_at: at }).label).toBe('Approved')
+  })
+  it('is delivered only while not approved, and answerable only with no round waiting', () => {
+    expect(isDelivered({ status: 'planned', delivered_at: at })).toBe(true)
+    expect(isDelivered({ status: 'approved', delivered_at: at })).toBe(false)
+    expect(isDelivered({ status: 'planned', delivered_at: null })).toBe(false)
+    expect(canAnswerDelivered({ status: 'planned', delivered_at: at })).toBe(true)
+    expect(canAnswerDelivered({ status: 'planned', delivered_at: at }, { hasPendingRound: true })).toBe(false)
+    expect(canAnswerDelivered({ status: 'approved', delivered_at: at })).toBe(false)
+  })
+  it('a delivered deliverable is on the board whatever its date, muted, with an awaiting-approval chip; it is still open in Owed', () => {
+    const d = { id: 'd', title: 'Reel', status: 'planned', owner_id: 'u1', due_kind: 'exact', due_date: '2027-06-01', delivered_at: at, company: 'DMM', workstream: 'Edits' }
+    expect(boardShows(d, '2026-09-30')).toBe(true)
+    expect(boardShows({ ...d, delivered_at: null }, '2026-09-30')).toBe(false)
+    expect(boardCard(d, '2026-09-30')).toMatchObject({ muted: true, chip: { key: 'delivered' } })
+    expect(boardChip({ ...d, delivered_at: null })).toBeNull()
+    const o = owedList([d], '2026-09-30', 60)
+    expect(o).toMatchObject({ total: 1 })
   })
 })

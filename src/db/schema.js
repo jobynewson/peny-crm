@@ -857,6 +857,13 @@ export const deliverables = pgTable('deliverables', {
   waiting_note:   text('waiting_note'),           // shown to the client
   client_reply:      text('client_reply'),        // the client's latest reply while waiting (drizzle/0036)
   client_replied_at: timestamp('client_replied_at', { withTimezone: true }),
+  // The staff tick, and the client's answer to a delivered deliverable with no
+  // round (drizzle/0040). A round's own answer lives on deliveries.
+  delivered_at:      timestamp('delivered_at', { withTimezone: true }),
+  approved_at:       timestamp('approved_at', { withTimezone: true }),
+  approved_by_name:  text('approved_by_name'),
+  changes_note:      text('changes_note'),
+  changes_at:        timestamp('changes_at', { withTimezone: true }),
   client_visible: boolean('client_visible').notNull().default(false),
   internal_notes: text('internal_notes'),         // never leaves Slate
   sort_order:     integer('sort_order').notNull().default(0),

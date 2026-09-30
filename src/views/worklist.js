@@ -168,7 +168,7 @@ export class Worklist {
     const meta = [d.format && esc(d.format), d.owner_name ? esc(d.owner_name) : '<span class="rt-muted">Unassigned</span>',
       `<span class="rt-due${d.overdue ? ' rt-due--late' : ''}">${esc(d.due_display)}${d.overdue ? ` · ${d.days_late}d late` : ''}</span>`]
       .filter(Boolean).join(' · ')
-    const round = latest ? this._roundLineHtml(latest) : ''
+    const round = (latest ? this._roundLineHtml(latest) : '') + this._answerLineHtml(d)
     const waiting = d.status === 'waiting_on_client'
       ? `<div class="rt-d-waiting">${d.waiting_note ? `Waiting for: ${esc(d.waiting_note)}` : 'Waiting on the client'}${d.waiting_days != null ? ` · ${d.waiting_days ? `for ${count(d.waiting_days, 'day')}` : 'since today'}` : ''}</div>`
       : ''
@@ -179,6 +179,11 @@ export class Worklist {
     const status = this.canEdit
       ? `<button type="button" class="rt-status rt-status--${d.status}" data-rt-status="${d.id}" data-focus-key="status-${d.id}" aria-haspopup="menu" aria-label="${esc(`Status: ${d.status_label}. Change status of ${d.title}`)}">${esc(d.status_label)}</button>`
       : `<span class="rt-status rt-status--${d.status}">${esc(d.status_label)}</span>`
+    // The staff tick. Separate from the client's approval: ticked, the client sees
+    // "Delivered" and can approve it; an approved one stays ticked and locked.
+    const delivered = this.canEdit
+      ? `<label class="rt-delivered" title="${d.status === 'approved' ? 'Approved by the client' : 'Tick when it has been delivered. The client can then approve it'}"><input type="checkbox" data-rt-delivered="${d.id}"${d.delivered || d.status === 'approved' ? ' checked' : ''}${d.status === 'approved' ? ' disabled' : ''} aria-label="${esc(`Delivered: ${d.title}`)}" /> Delivered</label>`
+      : (d.delivered ? '<span class="rt-delivered">Delivered</span>' : '')
     return `
       <div class="rt-d${d.status === 'approved' ? ' rt-d--done' : ''}" data-d="${d.id}">
         ${eye}
@@ -187,9 +192,18 @@ export class Worklist {
           <div class="rt-d-meta">${meta}</div>
           ${round}${waiting}
         </div>
+        ${delivered}
         ${status}
         ${this.canEdit && d.status !== 'approved' ? `<button type="button" class="btn-secondary rt-send" data-rt-send="${d.id}" data-focus-key="send-${d.id}">${icon('send', 15)}<span>Send</span></button>` : ''}
       </div>`
+  }
+
+  // What the client said about a delivered deliverable that had no round.
+  _answerLineHtml(d) {
+    if (d.changes_note) return `<div class="rt-d-round rt-d-round--changes">Client asked for changes${d.changes_at ? ` ${dayMonth(d.changes_at)}` : ''} — “${esc(d.changes_note)}”. Tick Delivered again once it is fixed.</div>`
+    if (d.approved_at) return `<div class="rt-d-round rt-d-round--ok">Approved ${dayMonth(d.approved_at)}${d.approved_by_name ? ` by ${esc(d.approved_by_name)}` : ''}</div>`
+    if (d.delivered && d.status !== 'approved') return '<div class="rt-d-round">Delivered · awaiting the client’s approval</div>'
+    return ''
   }
 
   _roundLineHtml(r) {
@@ -226,6 +240,14 @@ export class Worklist {
     mc.querySelectorAll('[data-rt-open]').forEach(b => b.addEventListener('click', () => this._deliverableSheet(b, b.dataset.rtOpen)))
     mc.querySelectorAll('[data-rt-status]').forEach(b => b.addEventListener('click', () => this._statusMenu(b, this._deliverable(b.dataset.rtStatus))))
     mc.querySelectorAll('[data-rt-send]').forEach(b => b.addEventListener('click', () => this._sendForm(b, this._deliverable(b.dataset.rtSend))))
+    mc.querySelectorAll('[data-rt-delivered]').forEach(b => b.addEventListener('change', async () => {
+      const d = this._deliverable(b.dataset.rtDelivered)
+      const on = b.checked
+      b.disabled = true
+      const ok = await this._save(() => api.updateDeliverable(d.id, { delivered: on }), on ? 'Delivered. The client can now approve it' : 'Marked as not delivered')
+      if (!ok) b.checked = !on
+      b.disabled = false
+    }))
     mc.querySelectorAll('[data-rt-visible]').forEach(b => b.addEventListener('click', async () => {
       const d = this._deliverable(b.dataset.rtVisible)
       b.disabled = true

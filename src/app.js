@@ -1005,8 +1005,10 @@ export class App {
   }
 
   // Each project row lists its deliverables (open ones, and ones approved this
-  // week). Ticking one marks it approved; unticking reopens it. The row's
-  // badge counts what is still to do.
+  // week). Ticking one marks it delivered (the client then sees it as Delivered
+  // and can approve it); unticking takes that back. Approval is the client's and
+  // is not set from here: an approved row is ticked and locked. The row's badge
+  // counts what is still to do.
   async _loadDbDeliverables(mc) {
     let rows
     try {
@@ -1029,11 +1031,12 @@ export class App {
         ${mine.map(d => `
           <div style="display:flex;align-items:center;gap:7px;padding:3px 0;${d.done ? 'opacity:0.45;' : ''}">
             <input type="checkbox" class="db-inline-deliv-check" data-deliv-id="${d.id}" ${d.done ? 'checked' : ''}
-              ${this.permissions?.projects_edit ? '' : 'disabled'} aria-label="Mark ${esc(d.title)} delivered and approved"
+              ${this.permissions?.projects_edit && !d.approved ? '' : 'disabled'} aria-label="${d.approved ? `${esc(d.title)} was approved by the client` : `Mark ${esc(d.title)} delivered`}"
               style="cursor:pointer;flex-shrink:0;width:13px;height:13px;accent-color:var(--accent)">
             <span style="flex:1;font-size:12px;color:var(--text-primary);line-height:1.3;${d.done ? 'text-decoration:line-through;' : ''}">${esc(d.title)}</span>
             ${d.overdue && !d.done ? `<span class="db-due-pill db-due-pill--overdue" style="font-size:9px;padding:1px 5px">${d.days_late}d late</span>`
               : d.due_date ? `<span class="db-due-pill" style="font-size:9px;padding:1px 5px">${esc(d.due_display)}</span>` : ''}
+            ${d.delivered && !d.approved ? '<span style="font-size:10px;color:var(--text-tertiary);flex-shrink:0">awaiting approval</span>' : ''}
             ${d.owner_name ? `<span style="font-size:10px;color:var(--text-tertiary);flex-shrink:0">${esc(d.owner_name)}</span>` : ''}
           </div>`).join('')}`
       box.querySelectorAll('.db-inline-deliv-check').forEach(cb => {
@@ -1044,9 +1047,10 @@ export class App {
           const done = cb.checked
           try {
             const { updateDeliverable } = await import('./api/retainers.js')
-            await updateDeliverable(d.id, { status: done ? 'approved' : 'in_progress' })
+            await updateDeliverable(d.id, { delivered: done })
+            d.delivered = done
             d.done = done
-            this.toast(done ? '✓ Delivered and approved' : 'Reopened')
+            this.toast(done ? '✓ Delivered. The client can now approve it' : 'Marked as not delivered')
             paint(box)
           } catch (err) {
             cb.checked = !done

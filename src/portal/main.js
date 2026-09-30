@@ -139,6 +139,7 @@ async function show(view = null) {
       const result = await api(`/api/client/deliveries/${deliveryId}/response`, { method: 'POST', body })
       return result.view
     },
+    respondDelivered: async (deliverableId, body) => (await api(`/api/client/deliverables/${deliverableId}/response`, { method: 'POST', body })).view,
     reply: async (deliverableId, body) => (await api(`/api/client/deliverables/${deliverableId}/reply`, { method: 'POST', body })).view,
     submitRequest: async body => (await api('/api/client/requests', { method: 'POST', body })).view,
     rerender: fresh => show(fresh),

@@ -238,6 +238,7 @@ function deliverableHtml(d) {
       ${meta ? `<div class="pt-d-meta">${meta}</div>` : ''}
       ${d.status === 'waiting_on_you' ? waitingHtml(d) : ''}
       ${latest ? roundHtml(latest, d) : ''}
+      ${d.can_answer ? deliveredHtml(d) : ''}
       ${earlier.length ? `
         <details class="pt-earlier">
           <summary>Earlier ${earlier.length === 1 ? 'round' : 'rounds'} (${earlier.length})</summary>
@@ -269,6 +270,38 @@ function waitingHtml(d) {
             <button type="button" class="pt-btn" data-reply-cancel="${id}">Cancel</button>
           </div>
         </form>` : ''}
+    </div>`
+}
+
+// A deliverable Peny have marked delivered, with no round to answer: the same
+// Approve / Request changes, acting on the deliverable itself (data-kind).
+function deliveredHtml(d) {
+  const id = esc(d.id)
+  return `
+    <div class="pt-round">
+      <div class="pt-round-body">
+        <p class="pt-round-note">Peny have delivered this. Please approve it, or tell us what needs to change.</p>
+        <div class="pt-actions" data-actions="${id}">
+          <button type="button" class="pt-btn pt-btn--primary" data-approve="${id}">Approve</button>
+          <button type="button" class="pt-btn" data-changes="${id}">Request changes</button>
+        </div>
+        <div class="pt-confirm" data-confirm="${id}" hidden>
+          <p>Approve “${esc(d.title)}”?</p>
+          <div class="pt-actions">
+            <button type="button" class="pt-btn pt-btn--primary" data-confirm-yes="${id}" data-kind="deliverable">Yes, approve</button>
+            <button type="button" class="pt-btn" data-cancel="${id}">Cancel</button>
+          </div>
+        </div>
+        <form class="pt-changes" data-changes-form="${id}" data-kind="deliverable" hidden novalidate>
+          <label for="c-${id}">What needs to change?</label>
+          <textarea id="c-${id}" rows="3"></textarea>
+          <div class="pt-form-msg" role="alert"></div>
+          <div class="pt-actions">
+            <button type="submit" class="pt-btn pt-btn--primary">Send</button>
+            <button type="button" class="pt-btn" data-cancel="${id}">Cancel</button>
+          </div>
+        </form>
+      </div>
     </div>`
 }
 
@@ -354,7 +387,7 @@ function projectHtml(view) {
 
 // ── Behaviour ────────────────────────────────────────────────────────────────
 
-export function bindView(root, view, { respond, submitRequest, reply, rerender, signOut, switchCompany }) {
+export function bindView(root, view, { respond, respondDelivered = respond, submitRequest, reply, rerender, signOut, switchCompany }) {
   root.querySelector('[data-sign-out]')?.addEventListener('click', signOut)
   root.querySelector('[data-switch]')?.addEventListener('click', switchCompany)
   if (view.schedule) bindSchedule(root, view.schedule)
@@ -367,10 +400,10 @@ export function bindView(root, view, { respond, submitRequest, reply, rerender, 
     part('data-confirm', id).hidden = true
     part('data-changes-form', id).hidden = true
   }
-  const send = async (id, body, button, msgEl) => {
+  const send = async (id, body, button, msgEl, kind) => {
     button.disabled = true
     try {
-      const fresh = await respond(id, body)
+      const fresh = await (kind === 'deliverable' ? respondDelivered : respond)(id, body)
       toast(body.response === 'approved' ? 'Approved — thank you' : 'Sent — thank you')
       rerender(fresh)
     } catch (err) {
@@ -401,13 +434,13 @@ export function bindView(root, view, { respond, submitRequest, reply, rerender, 
     part('data-actions', id).querySelector('button')?.focus()
   }))
   root.querySelectorAll('[data-confirm-yes]').forEach(b => b.addEventListener('click', () =>
-    send(b.dataset.confirmYes, { response: 'approved' }, b, null)))
+    send(b.dataset.confirmYes, { response: 'approved' }, b, null, b.dataset.kind)))
   root.querySelectorAll('[data-changes-form]').forEach(form => form.addEventListener('submit', e => {
     e.preventDefault()
     const comment = form.querySelector('textarea').value.trim()
     const msg = form.querySelector('.pt-form-msg')
     if (!comment) { msg.textContent = 'Say what needs to change'; form.querySelector('textarea').focus(); return }
-    send(form.dataset.changesForm, { response: 'changes_requested', comment }, form.querySelector('[type="submit"]'), msg)
+    send(form.dataset.changesForm, { response: 'changes_requested', comment }, form.querySelector('[type="submit"]'), msg, form.dataset.kind)
   }))
 }
 

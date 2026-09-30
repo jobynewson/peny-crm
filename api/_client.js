@@ -5,6 +5,8 @@
 //   POST /api/client/deliveries/:id/response  { response, comment } — approve
 //                                             or request changes (signed-in
 //                                             clients only)
+//   POST /api/client/deliverables/:id/response { response, comment } — approve or
+//     ask for changes on a deliverable marked delivered (no round)
 //   POST /api/client/deliverables/:id/reply   { reply } — a note on an item
 //                                             that is waiting on them
 //                                             (signed-in clients only)
@@ -37,7 +39,7 @@ import { createClerkClient } from '@clerk/backend'
 import { UUID, fail, invalid, matchRoute, routePathFrom, readBody, workspaceId } from './_api.js'
 import { verifyClerkSession } from './_auth.js'
 import { isRateLimited, getClientIp } from './_ratelimit.js'
-import { companyScope, projectScope, deliveryScope, respondToDelivery, submitRequest, replyToWaiting } from './_worklist.js'
+import { companyScope, projectScope, deliveryScope, respondToDelivery, respondToDeliverable, submitRequest, replyToWaiting } from './_worklist.js'
 import { hashToken } from './_delivery-mail.js'
 import { alertNewRequest, alertChangesRequested, alertClientReply } from './_alerts.js'
 import { readClientView, readLinkView } from './_client-view.js'
@@ -53,6 +55,7 @@ export const ROUTES = [
   { method: 'GET',  pattern: /^client\/view$/,                                      handler: getView },
   { method: 'POST', pattern: new RegExp(`^client/deliveries/(?<id>${UUID})/response$`), handler: respond },
   { method: 'POST', pattern: new RegExp(`^client/deliverables/(?<id>${UUID})/reply$`), handler: reply },
+  { method: 'POST', pattern: new RegExp(`^client/deliverables/(?<id>${UUID})/response$`), handler: respondDelivered },
   { method: 'POST', pattern: /^client\/requests$/,                                   handler: raiseRequest },
 ]
 
@@ -166,6 +169,30 @@ async function respond(req, res, { sql, scope, params }) {
   if (body.response === 'changes_requested') {
     try {
       await alertChangesRequested(sql, { deliverableId: result.delivery.deliverable_id, comment: body.comment.trim(), by: by.name })
+    } catch (err) {
+      console.error('[client] changes-requested alert failed:', err?.message)   // the answer is saved either way
+    }
+  }
+  return res.status(200).json({ ok: true, view: await readClientView(sql, scope) })
+}
+
+// ── POST /api/client/deliverables/:id/response ───────────────────────────────
+// { response: 'approved' | 'changes_requested', comment } — the client's answer
+// to a deliverable Peny have marked delivered, when there is no round to answer.
+// Changes tell the owner straight away; an approval waits for the digest.
+// Returns the fresh view.
+async function respondDelivered(req, res, { sql, scope, params }) {
+  const body = readBody(req)
+  if (!body) return invalid(res, 'body', 'Request body is not valid JSON')
+  const by = { clerkId: scope.clerkUserId, name: await clientName(scope.clerkUserId) }
+  const result = await respondToDeliverable(sql, scope, { deliverableId: params.id, input: body, by })
+  if (result.error) {
+    const { status, code, message, field } = result.error
+    return fail(res, status, code, message, field ? { field } : {})
+  }
+  if (body.response === 'changes_requested') {
+    try {
+      await alertChangesRequested(sql, { deliverableId: result.deliverable.id, comment: body.comment.trim(), by: by.name })
     } catch (err) {
       console.error('[client] changes-requested alert failed:', err?.message)   // the answer is saved either way
     }

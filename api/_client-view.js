@@ -19,7 +19,7 @@
 // NOT a Vercel function — the `_` prefix keeps it out of function detection.
 
 import { londonDate } from './_dates.js'
-import { clientStatus, dueDisplay, isFrameIoUrl, requestLabel, RESPONSE_LABELS, WORKSTREAM_LABELS } from './_retainer-rules.js'
+import { clientStatus, clientFace, isDelivered, canAnswerDelivered, dueDisplay, isFrameIoUrl, requestLabel, RESPONSE_LABELS, WORKSTREAM_LABELS } from './_retainer-rules.js'
 import { isScope } from './_worklist.js'
 
 // → the view, or null if the scope's company or project no longer exists.
@@ -108,7 +108,7 @@ async function companyView(sql, scope) {
     `,
     sql`
       SELECT d.id, d.workstream_id, d.title, d.format, d.due_kind, d.due_date::text AS due_date,
-             d.due_label, d.cadence, d.status, d.waiting_note, d.client_reply, d.client_replied_at
+             d.due_label, d.cadence, d.status, d.waiting_note, d.client_reply, d.client_replied_at, d.delivered_at
       FROM deliverables d
       JOIN workstreams w ON w.id = d.workstream_id
       WHERE w.user_id = ${scope.ws} AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${scope.companyId}) AND d.client_visible
@@ -179,7 +179,7 @@ async function projectView(sql, scope) {
     `,
     sql`
       SELECT d.id, d.workstream_id, d.title, d.format, d.due_kind, d.due_date::text AS due_date,
-             d.due_label, d.cadence, d.status, d.waiting_note
+             d.due_label, d.cadence, d.status, d.waiting_note, d.delivered_at
       FROM deliverables d
       JOIN workstreams w ON w.id = d.workstream_id
       WHERE w.user_id = ${scope.ws} AND w.project_id = ${scope.projectId} AND d.client_visible
@@ -313,9 +313,10 @@ export function worklistJson({ workstreams, deliverables, rounds, today, canResp
     status: w.status,
     status_label: WORKSTREAM_LABELS[w.status],
     deliverables: (byWorkstream.get(w.id) || []).map(d => {
-      const theirs = clientStatus(d.status)
+      const theirs = clientFace(d)
       const list = roundsByDeliverable.get(d.id) || []
       const latest = list[list.length - 1]
+      const pendingRound = !!latest && latest.client_response === 'pending'
       return {
         id: d.id,
         title: d.title,
@@ -329,6 +330,9 @@ export function worklistJson({ workstreams, deliverables, rounds, today, canResp
           ? { text: d.client_reply, at: d.client_replied_at }
           : null,
         can_reply: !!canRespond && showReplies && d.status === 'waiting_on_client',
+        // Delivered by Peny, answerable on its own when no round is out.
+        delivered: isDelivered(d),
+        can_answer: !!canRespond && showReplies && canAnswerDelivered(d, { hasPendingRound: pendingRound }),
         rounds: list.map(r => roundJson(r, r === latest, canRespond)),
       }
     }),

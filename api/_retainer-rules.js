@@ -47,6 +47,20 @@ const CLIENT_STATUS = {
 }
 export const clientStatus = status => CLIENT_STATUS[status] ?? CLIENT_STATUS.planned
 
+// Delivered is the staff tick (deliverables.delivered_at), separate from status
+// and from the client's approval. A delivered deliverable that is not approved
+// shows the client "Delivered" — unless a round is out, which says more
+// ("Ready for review") and has its own Approve.
+export const isDelivered = d => !!d.delivered_at && d.status !== 'approved'
+export function clientFace(d) {
+  if (isDelivered(d) && d.status !== 'in_review') return { key: 'delivered', label: 'Delivered' }
+  return clientStatus(d.status)
+}
+// The client can answer the deliverable itself (no round) when it is delivered,
+// shown to them, not approved, and no round is waiting on them (that round is
+// what they answer instead).
+export const canAnswerDelivered = (d, { hasPendingRound = false } = {}) => isDelivered(d) && !hasPendingRound
+
 // The status a deliverable should have after a change to `to`, plus the
 // waiting bookkeeping: entering waiting_on_client starts the clock; leaving it
 // clears the clock, the note (which described what we were waiting for) and
@@ -208,6 +222,7 @@ export function validateDeliverableInput(body, { partial = false, userIds = [] }
     return { field: 'owner_id', message: 'Choose someone on the team' }
   }
   if (has(body, 'status') && !DELIVERABLE_STATUSES.includes(body.status)) return { field: 'status', message: 'Unknown status' }
+  if (has(body, 'delivered') && typeof body.delivered !== 'boolean') return { field: 'delivered', message: 'Delivered must be yes or no' }
   if (has(body, 'client_visible') && typeof body.client_visible !== 'boolean') return { field: 'client_visible', message: 'Visible must be yes or no' }
   if (optionalText(body, 'internal_notes', TEXT_MAX)) return { field: 'internal_notes', message: 'Those notes are too long' }
   if (optionalText(body, 'waiting_note', TEXT_MAX)) return { field: 'waiting_note', message: 'That note is too long' }
@@ -339,6 +354,7 @@ export function boardChip(d, now = new Date()) {
   if (d.status === 'in_review') {
     return { key: 'in_review', label: d.round ? `With client · round ${d.round}` : 'With client' }
   }
+  if (isDelivered(d)) return { key: 'delivered', label: 'Delivered · awaiting approval' }
   return null
 }
 
@@ -394,7 +410,7 @@ export function boardShows(d, today, days = BOARD_HORIZON_DAYS) {
   if (d.status === 'approved') return !!d.owner_id && isLiveWorkstream(d)
   if (!d.owner_id) return true
   if (!isLiveWorkstream(d)) return false
-  if (d.status !== 'planned') return true
+  if (d.status !== 'planned' || d.delivered_at) return true   // delivered work is out with the client, whatever its date
   if (!d.due_date) return true
   return d.due_date <= addDays(today, days)
 }
@@ -419,7 +435,7 @@ export function owedList(rows, today, days = BOARD_HORIZON_DAYS, { limit = OWED_
     status: d.status,
     status_label: STATUS_LABELS[d.status],
     chip: boardChip(d, now),
-    muted: isWithClient(d.status),
+    muted: isWithClient(d.status) || isDelivered(d),
     owner_name: d.owner_name ?? null,
     due_date: d.due_date ?? null,
     due_display: dueDisplay(d, today),
@@ -468,7 +484,7 @@ export function boardCard(d, today, now = new Date()) {
     status: d.status,
     status_label: STATUS_LABELS[d.status],
     column: boardColumn(d.status),
-    muted: isWithClient(d.status),
+    muted: isWithClient(d.status) || isDelivered(d),
     chip,
     due_date: d.due_date ?? null,
     due_display: dueDisplay(d, today),

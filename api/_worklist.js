@@ -17,7 +17,7 @@
 
 import {
   RESPONSES, statusAfterResponse, statusPatch, validateResponse, isUuid,
-  validateRequestInput, validateSenderName, validateReply, MAX_OPEN_REQUESTS,
+  validateRequestInput, validateSenderName, validateReply, MAX_OPEN_REQUESTS, canAnswerDelivered,
 } from './_retainer-rules.js'
 
 // Only the objects the constructors made count as scopes — not copies
@@ -92,6 +92,64 @@ export async function respondToDelivery(sql, scope, { deliveryId, input, by }) {
   if (scope.kind === 'staff') return respondAsStaff(sql, scope, { deliveryId, response, comment, by })
   if (scope.kind === 'company') return respondAsClient(sql, scope, { deliveryId, response, comment, by })
   throw new Error(`Scope kind ${scope.kind} cannot respond`)
+}
+
+// A client answering a deliverable staff have ticked as delivered, when no round
+// is out for it (a round is answered on the round instead). Approve makes it
+// approved; changes (a comment is needed) puts it back with Peny, clears the
+// tick so it is ticked again once fixed, and keeps the comment for staff. Only a
+// signed-in client of the company: a project's link can't answer, and someone
+// viewing as the client can only look. The conditions sit in the statement that
+// writes, so a change made in between reads as a conflict.
+//   input — { response: 'approved' | 'changes_requested', comment }
+//   by    — { clerkId, name }
+// { deliverable: { id } } or { error }.
+export async function respondToDeliverable(sql, scope, { deliverableId, input, by }) {
+  if (!isScope(scope)) throw new Error('respondToDeliverable needs a scope from _worklist.js')
+  if (scope.kind !== 'company' || !scope.canRespond) return { error: { status: 403, code: 'read_only', message: 'This view can look but not answer' } }
+  if (!isUuid(deliverableId)) return notFound('Deliverable not found')
+  const bad = validateResponse(input)
+  if (bad) return { error: { status: 422, code: 'validation_failed', ...bad } }
+  const response = input.response
+  const comment = typeof input.comment === 'string' && input.comment.trim() ? input.comment.trim() : null
+
+  const [row] = await sql`
+    SELECT d.id, d.status, d.delivered_at,
+           EXISTS (SELECT 1 FROM deliveries x WHERE x.deliverable_id = d.id AND x.client_response = 'pending'
+                     AND x.round = (SELECT max(y.round) FROM deliveries y WHERE y.deliverable_id = d.id)) AS pending_round
+    FROM deliverables d
+    JOIN workstreams w ON w.id = d.workstream_id
+    WHERE d.id = ${deliverableId} AND w.user_id = ${scope.ws} AND d.client_visible
+      AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${scope.companyId})`
+  if (!row) return notFound('Deliverable not found')
+  if (row.status === 'approved') return { error: { status: 409, code: 'already_answered', message: 'This has already been approved' } }
+  if (row.pending_round) return { error: { status: 409, code: 'use_round', message: 'A round is waiting on you — answer that one' } }
+  if (!canAnswerDelivered(row)) return { error: { status: 409, code: 'not_delivered', message: 'This has not been delivered yet' } }
+
+  const approving = response === 'approved'
+  const patch = statusPatch({ from: row.status, to: statusAfterResponse(response) })
+  const [done] = await sql`
+    UPDATE deliverables d SET
+      status            = ${patch.status}::deliverable_status,
+      approved_at       = CASE WHEN ${approving} THEN NOW() ELSE approved_at END,
+      approved_by_name  = CASE WHEN ${approving} THEN ${by.name} ELSE approved_by_name END,
+      delivered_at      = CASE WHEN ${approving} THEN delivered_at ELSE NULL END,
+      changes_note      = CASE WHEN ${approving} THEN NULL ELSE ${comment} END,
+      changes_at        = CASE WHEN ${approving} THEN NULL ELSE NOW() END,
+      waiting_since     = CASE WHEN ${'waiting_since' in patch} THEN ${patch.waiting_since ?? null}::timestamptz ELSE waiting_since END,
+      waiting_note      = CASE WHEN ${'waiting_note' in patch} THEN ${patch.waiting_note ?? null}::text ELSE waiting_note END,
+      client_reply      = CASE WHEN ${'client_reply' in patch} THEN NULL ELSE client_reply END,
+      client_replied_at = CASE WHEN ${'client_reply' in patch} THEN NULL ELSE client_replied_at END,
+      updated_at        = NOW()
+    FROM workstreams w
+    WHERE d.id = ${deliverableId} AND w.id = d.workstream_id
+      AND w.user_id = ${scope.ws} AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${scope.companyId}) AND d.client_visible
+      AND d.delivered_at IS NOT NULL AND d.status = ${row.status}::deliverable_status AND d.status <> 'approved'
+      AND NOT EXISTS (SELECT 1 FROM deliveries x WHERE x.deliverable_id = d.id AND x.client_response = 'pending'
+                        AND x.round = (SELECT max(y.round) FROM deliveries y WHERE y.deliverable_id = d.id))
+    RETURNING d.id`
+  if (!done) return conflict()
+  return { deliverable: { id: done.id } }
 }
 
 // A client raising a request: a signed-in client (a company scope), or someone

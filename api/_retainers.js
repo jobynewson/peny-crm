@@ -134,6 +134,14 @@ function deliverableJson(d, deliveries, today) {
     waiting_since: d.waiting_since,
     waiting_days: d.waiting_since ? Math.max(0, daysBetween(londonDate(new Date(d.waiting_since)), today)) : null,
     waiting_note: d.waiting_note,
+    // The staff tick, and what the client said about a delivered deliverable
+    // that has no round (a round keeps its own answer in `deliveries`).
+    delivered: !!d.delivered_at,
+    delivered_at: d.delivered_at,
+    approved_at: d.approved_at,
+    approved_by_name: d.approved_by_name,
+    changes_note: d.changes_note,
+    changes_at: d.changes_at,
     client_visible: d.client_visible,
     internal_notes: d.internal_notes,
     sort_order: d.sort_order,
@@ -150,6 +158,7 @@ async function loadDeliverables(sql, ws, { workstreamIds = [], ids = [] }) {
     SELECT d.id, d.workstream_id, d.title, d.format, d.owner_id, u.name AS owner_name, u.email AS owner_email,
            d.due_kind, d.due_date::text AS due_date, d.due_label, d.cadence, d.status,
            d.waiting_since, d.waiting_note, d.client_visible, d.internal_notes, d.sort_order,
+           d.delivered_at, d.approved_at, d.approved_by_name, d.changes_note, d.changes_at,
            d.created_at, d.updated_at
     FROM deliverables d
     JOIN workstreams w ON w.id = d.workstream_id
@@ -253,7 +262,7 @@ async function getOwed(req, res, { sql, params }) {
   if (!(await projectInWorkspace(sql, ws, params.id))) return fail(res, 404, 'not_found', 'Project not found')
   const today = londonDate()
   const rows = await sql`
-    SELECT d.id, d.title, d.status, d.owner_id, d.due_kind, d.due_date::text AS due_date, d.due_label, d.cadence, d.waiting_since,
+    SELECT d.id, d.title, d.status, d.owner_id, d.due_kind, d.due_date::text AS due_date, d.due_label, d.cadence, d.waiting_since, d.delivered_at,
            w.title AS workstream, w.project_id, u.name AS owner_name,
            (SELECT max(dv.round) FROM deliveries dv WHERE dv.deliverable_id = d.id) AS round
     FROM deliverables d
@@ -284,13 +293,14 @@ async function projectCounts(req, res, { sql }) {
 
 // ── GET /api/retainers/dashboard-deliverables ────────────────────────────────
 // The deliverables the dashboard's project rows list, across every project: open
-// ones, and ones approved in the last week (shown struck through). Each row says
+// ones (ticked ones included, until approved), and ones approved in the last
+// week (shown struck through). Each row says
 // what the list needs: its project, words for its date, and whether it's late.
 async function dashboardDeliverables(req, res, { sql }) {
   const ws = await workspaceId(sql)
   const today = londonDate()
   const rows = await sql`
-    SELECT d.id, d.title, d.status, d.due_kind, d.due_date::text AS due_date, d.due_label, d.cadence,
+    SELECT d.id, d.title, d.status, d.due_kind, d.due_date::text AS due_date, d.due_label, d.cadence, d.delivered_at,
            d.owner_id, u.name AS owner_name, u.email AS owner_email, w.project_id, w.title AS workstream
     FROM deliverables d
     JOIN workstreams w ON w.id = d.workstream_id
@@ -302,7 +312,10 @@ async function dashboardDeliverables(req, res, { sql }) {
     today,
     deliverables: rows.map(d => ({
       id: d.id, project_id: d.project_id, workstream: d.workstream, title: d.title,
-      status: d.status, status_label: STATUS_LABELS[d.status], done: d.status === 'approved',
+      // done = the staff tick (delivered); approved is the client's, and a ticked
+      // row that is not approved is still waiting on them.
+      status: d.status, status_label: STATUS_LABELS[d.status], done: !!d.delivered_at || d.status === 'approved',
+      approved: d.status === 'approved', delivered: !!d.delivered_at,
       owner_id: d.owner_id, owner_name: d.owner_name || d.owner_email || null,
       due_date: d.due_date, due_display: dueDisplay(d, today), overdue: isOverdue(d, today),
       days_late: isOverdue(d, today) ? daysBetween(d.due_date, today) : 0,
@@ -597,6 +610,9 @@ async function updateDeliverable(req, res, { sql, user, params }) {
       waiting_note   = CASE WHEN ${setNote} THEN ${waitingNote ?? null} ELSE waiting_note END,
       client_reply      = CASE WHEN ${has(statusChange, 'client_reply')} THEN NULL ELSE client_reply END,
       client_replied_at = CASE WHEN ${has(statusChange, 'client_reply')} THEN NULL ELSE client_replied_at END,
+      delivered_at   = CASE WHEN ${has(body, 'delivered')} THEN (CASE WHEN ${body.delivered === true} THEN COALESCE(delivered_at, NOW()) END) ELSE delivered_at END,
+      changes_note   = CASE WHEN ${body.delivered === true} THEN NULL ELSE changes_note END,
+      changes_at     = CASE WHEN ${body.delivered === true} THEN NULL ELSE changes_at END,
       client_visible = CASE WHEN ${has(body, 'client_visible')} THEN ${body.client_visible === true} ELSE client_visible END,
       internal_notes = CASE WHEN ${has(body, 'internal_notes')} THEN ${cleanText(body.internal_notes)} ELSE internal_notes END,
       sort_order     = CASE WHEN ${has(body, 'sort_order')} THEN ${body.sort_order ?? null}::int ELSE sort_order END,

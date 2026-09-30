@@ -70,6 +70,7 @@ a { color: var(--accent-text); }
 .pt-chip--in_progress { background: var(--cat-blue-soft); color: var(--cat-blue); }
 .pt-chip--waiting_on_you { background: var(--cat-amber-soft); color: var(--cat-amber); }
 .pt-chip--ready_for_review { background: var(--cat-purple-soft); color: var(--cat-purple); }
+.pt-chip--delivered { background: var(--cat-teal-soft, var(--cat-blue-soft)); color: var(--cat-teal, var(--cat-blue)); }
 .pt-chip--approved { background: var(--cat-green-soft); color: var(--cat-green); }
 .pt-waiting { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--cat-amber-soft); font-size: 14px; }
 .pt-waiting-h { margin: 0; font-size: 14px; font-weight: 600; }
