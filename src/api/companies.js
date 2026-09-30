@@ -19,6 +19,16 @@ export const findOrCreateCompany = (name, type) =>
 export const setCompanyType = (id, type, sector = null) =>
   request(`/api/companies/${id}`, { method: 'PATCH', body: { type, sector } }).then(r => r.company)
 
+// Change a company's name, type and sector together (its people's typed company
+// follows a rename). 409 name_taken if another company has the name.
+export const editCompany = (id, { name, type, sector }) =>
+  request(`/api/companies/${id}`, { method: 'PATCH', body: { name, type, sector: sector || null } }).then(r => r.company)
+
+// What deleting it would do: { name, people, projects, has_portal, blocked_by: { workstreams, requests } }.
+export const getCompanyImpact = id => request(`/api/companies/${id}/impact`)
+// → { deleted, people, projects, portal_left }
+export const deleteCompany = id => request(`/api/companies/${id}`, { method: 'DELETE' })
+
 // Who leads a company: hears about its work when a deliverable has no owner.
 // Resolves to the company.
 export const setCompanyLead = (id, leadId) =>

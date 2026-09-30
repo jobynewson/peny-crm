@@ -3,7 +3,7 @@ import {
 } from '../db/client.js'
 import { companyFieldHtml, bindCompanyField, resolveCompanyField, companyById, rememberCompany } from './company-field.js'
 import { findOrCreateCompany, setCompanyType } from '../api/companies.js'
-import { openPortalPanel, leadLine, openLeadForm } from './company-panels.js'
+import { openPortalPanel, leadLine, openLeadForm, openCompanyEdit, confirmDeleteCompany, openCompanyPicker } from './company-panels.js'
 import { COMPANY_TYPES, typeLabel, kindOf, groupContacts, linkSuggestions } from '../utils/contact-kind.js'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -105,7 +105,7 @@ export class ContactsView {
   personRowHTML(c, { showCompany = false } = {}) {
     const kind = kindOf(c, this.app.companies)
     return `
-      <div class="contact-row ${this.selectedId === c.id ? 'selected' : ''}" style="grid-template-columns:2fr 1.4fr 1fr 1fr 90px" data-cid="${c.id}">
+      <div class="contact-row ${this.selectedId === c.id ? 'selected' : ''}" style="grid-template-columns:2fr 1.4fr 1fr 1fr 150px" data-cid="${c.id}"${this.canEdit ? ' draggable="true"' : ''}>
         <div class="contact-name">
           <div class="avatar ${avc(c)}">${ini(c)}</div>
           <div><div class="name-main">${esc(c.first_name)} ${esc(c.last_name)}</div><div class="name-sub">${esc(c.role)}</div></div>
@@ -116,7 +116,7 @@ export class ContactsView {
           <span class="dot dot-${c.status === 'Active' ? 'active' : c.status === 'Warm' ? 'warm' : 'cold'}"></span>${esc(c.status)}
         </div>
         <div class="actions-cell">
-          ${this.canEdit ? `<button class="row-btn" data-edit="${c.id}">Edit</button><button class="row-btn" data-note="${c.id}">+ Note</button>` : ''}
+          ${this.canEdit ? `<button class="row-btn row-btn--desk" data-move="${c.id}" title="Move to a company">Move</button><button class="row-btn" data-edit="${c.id}">Edit</button><button class="row-btn" data-note="${c.id}">+ Note</button>` : ''}
         </div>
       </div>`
   }
@@ -133,7 +133,7 @@ export class ContactsView {
       .sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`, 'en', { sensitivity: 'base' }))
     if (!people.length) return '<div class="empty-state">No one found</div>'
     return `
-      <div class="col-header" style="grid-template-columns:2fr 1.4fr 1fr 1fr 90px"><div>Name</div><div>Company</div><div>Kind</div><div>Status</div><div></div></div>
+      <div class="col-header" style="grid-template-columns:2fr 1.4fr 1fr 1fr 150px"><div>Name</div><div>Company</div><div>Kind</div><div>Status</div><div></div></div>
       ${people.map(c => this.personRowHTML(c, { showCompany: true })).join('')}`
   }
 
@@ -163,12 +163,13 @@ export class ContactsView {
     const projects = (this.app.projects || []).filter(p => p.company_id === company.id).length
     return `
       <div class="co-group" data-co="${company.id}">
-        <div class="co-row" role="button" tabindex="0" aria-expanded="${isOpen}" data-co-toggle="${company.id}">
+        <div class="co-row" role="button" tabindex="0" aria-expanded="${isOpen}" data-co-toggle="${company.id}" data-co-drop="${company.id}">
           <span class="co-chevron${isOpen ? ' co-chevron--open' : ''}" aria-hidden="true">▶</span>
           <span class="co-name">${esc(company.name)}${company.sector ? ` <span class="co-sector">${esc(company.sector)}</span>` : ''}</span>
           <span class="tag ${KC[kind] ?? 'tag-corp'}">${typeLabel(kind)}</span>
           ${company.type_reviewed ? '' : '<span class="co-check" title="The type was worked out from its people. Open it to confirm.">check type</span>'}
           <span class="co-meta">${count(people.length, 'person', 'people')}${projects ? ` · ${count(projects, 'project')}` : ''}</span>
+          ${this.canEdit ? `<span class="actions-cell co-actions"><button type="button" class="row-btn" data-co-edit="${company.id}">Edit</button><button type="button" class="row-btn row-btn--danger" data-co-delete="${company.id}">Delete</button></span>` : ''}
         </div>
         ${isOpen ? this.companyBodyHTML(company, people) : ''}
       </div>`
@@ -284,6 +285,7 @@ export class ContactsView {
         <div class="detail-avatar ${avc(c)}">${ini(c)}</div>
         <div class="detail-name">${esc(c.first_name)} ${esc(c.last_name)}</div>
         <div class="detail-role">${esc(c.role)} · ${companyLine}</div>
+        ${this.canEdit ? `<button class="row-btn" data-move="${c.id}" style="margin-top:8px">Move to company…</button>` : ''}
         <div class="detail-tags">
           <span class="tag ${KC[kindOf(c, this.app.companies)] ?? 'tag-corp'}">${typeLabel(kindOf(c, this.app.companies))}</span>
           <span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary)">${c.status}</span>
@@ -406,7 +408,7 @@ export class ContactsView {
     }
     root.querySelectorAll('[data-co-toggle]').forEach(el => {
       el.addEventListener('click', () => toggle(el))
-      el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(el) } })
+      el.addEventListener('keydown', e => { if (e.target === el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggle(el) } })
     })
     const company = id => (this.app.companies || []).find(c => c.id === id)
 
@@ -429,6 +431,13 @@ export class ContactsView {
     root.querySelectorAll('[data-co-confirm]').forEach(el => el.addEventListener('click', () => saveType(el.dataset.coConfirm)))
     root.querySelectorAll('[data-co-add]').forEach(el => el.addEventListener('click', () => this.openAdd(mc, { company: company(el.dataset.coAdd)?.name })))
     root.querySelectorAll('[data-co-portal]').forEach(el => el.addEventListener('click', () => openPortalPanel(this.app, el, company(el.dataset.coPortal), { onChange: () => this.refreshList() })))
+    root.querySelectorAll('[data-co-edit]').forEach(el => el.addEventListener('click', e => { e.stopPropagation(); openCompanyEdit(this.app, el, company(el.dataset.coEdit), { onSaved: () => this.refreshList() }) }))
+    root.querySelectorAll('[data-co-delete]').forEach(el => el.addEventListener('click', e => {
+      e.stopPropagation()
+      confirmDeleteCompany(this.app, company(el.dataset.coDelete), { onDeleted: () => this.render(document.getElementById('main-content')) })
+    }))
+    root.querySelectorAll('[data-move]').forEach(btn => btn.addEventListener('click', e => { e.stopPropagation(); this.openMove(btn.dataset.move, btn) }))
+    this.bindDrag(root)
     root.querySelectorAll('[data-co-lead]').forEach(el => el.addEventListener('click', () => openLeadForm(this.app, el, company(el.dataset.coLead), { onSaved: () => this.refreshList() })))
 
     // Suggestions: show them, set one aside, or link the ticked people.
@@ -438,6 +447,80 @@ export class ContactsView {
       row.querySelector('[data-suggest-skip]')?.addEventListener('click', () => { this._dismissed.add(key); this.refreshList() })
       row.querySelector('[data-suggest-link]')?.addEventListener('click', e => this.applySuggestion(key, row, e.currentTarget))
     })
+  }
+
+  // Put a person in a company (or none). The one path for dragging and for the
+  // Move button: it writes both the link and the typed company, like the
+  // suggestions do.
+  async movePerson(personId, companyId) {
+    const person = this.app.contacts.find(c => c.id === personId)
+    const target = companyId ? (this.app.companies || []).find(c => c.id === companyId) : null
+    if (!person || (companyId && !target)) return
+    if ((person.company_id ?? null) === (companyId ?? null)) return
+    try {
+      const [updated] = await updateContact(this.app.userId, personId, { company_id: target?.id ?? null, company: target?.name ?? '' })
+      const i = this.app.contacts.findIndex(c => c.id === personId)
+      if (i >= 0) this.app.contacts[i] = updated
+      logActivity(this.app.userId, 'contact', personId, `${updated.first_name} ${updated.last_name}`, target ? `Company: ${target.name}` : 'Company removed').catch(console.error)
+      if (target) this.expanded.add(target.id)
+      this.app.toast(target ? `Moved ${updated.first_name} to ${target.name}` : `${updated.first_name} now has no company`)
+      this.render(document.getElementById('main-content'))
+      if (this.selectedId === personId) this.showDetail(personId)
+    } catch (err) {
+      console.error(err)
+      this.app.toast(err.message || 'Could not move them')
+    }
+  }
+
+  openMove(personId, anchor) {
+    const person = this.app.contacts.find(c => c.id === personId)
+    if (person) openCompanyPicker(this.app, anchor, person, { onPick: companyId => this.movePerson(personId, companyId) })
+  }
+
+  // Dragging a person onto a company. Company rows are the targets in the
+  // Companies view; in Everyone, where no company is on screen, a tray of
+  // companies appears while a person is being dragged. Touch screens mostly
+  // can't drag, so the Move button does the same thing.
+  bindDrag(root) {
+    if (!this.canEdit) return
+    const clear = () => {
+      this._dragPerson = null
+      document.querySelectorAll('.is-dragging, .co-drop--over').forEach(el => el.classList.remove('is-dragging', 'co-drop--over'))
+      document.getElementById('co-drop-tray')?.remove()
+    }
+    root.querySelectorAll('.contact-row[draggable]').forEach(row => {
+      row.addEventListener('dragstart', e => {
+        this._dragPerson = row.dataset.cid
+        e.dataTransfer.effectAllowed = 'move'
+        e.dataTransfer.setData('text/plain', row.dataset.cid)
+        row.classList.add('is-dragging')
+        if (this.view === 'everyone') this.showDropTray()
+      })
+      row.addEventListener('dragend', clear)
+    })
+    const target = (el, companyId) => {
+      el.addEventListener('dragover', e => { if (!this._dragPerson) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; el.classList.add('co-drop--over') })
+      el.addEventListener('dragleave', e => { if (!el.contains(e.relatedTarget)) el.classList.remove('co-drop--over') })
+      el.addEventListener('drop', e => {
+        e.preventDefault()
+        const id = this._dragPerson || e.dataTransfer.getData('text/plain')
+        clear()
+        if (id) this.movePerson(id, companyId)
+      })
+    }
+    root.querySelectorAll('[data-co-drop]').forEach(el => target(el, el.dataset.coDrop))
+    this._target = target
+  }
+
+  showDropTray() {
+    document.getElementById('co-drop-tray')?.remove()
+    const companies = [...(this.app.companies || [])].sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }))
+    const tray = document.createElement('div')
+    tray.id = 'co-drop-tray'
+    tray.className = 'co-drop-tray'
+    tray.innerHTML = `<div class="co-drop-label">Drop on a company</div><div class="co-drop-chips">${companies.map(c => `<span class="co-drop-chip" data-co-drop="${c.id}">${esc(c.name)}</span>`).join('') || '<span class="co-meta">No companies yet</span>'}</div>`
+    document.body.appendChild(tray)
+    tray.querySelectorAll('[data-co-drop]').forEach(el => this._target(el, el.dataset.coDrop))
   }
 
   // One confirmed suggestion: link the ticked people to the company, making it

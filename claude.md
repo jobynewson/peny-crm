@@ -797,8 +797,22 @@ always the source of truth and nothing is ever read back from Google.
   project editor and the AI email import. Choosing a client fills an empty
   project Company from that contact's *linked* company, never from its text.
 - `app.companies` is loaded at boot from `GET /api/companies`; the field
-  keeps it current as companies are created. There is no rename, merge or
-  delete screen yet, so a typo makes a stray company.
+  keeps it current as companies are created. There is no merge screen.
+- **Edit and delete** (Contacts, in each company's row; `api/_companies.js`):
+  `PATCH /api/companies/:id { name, type, sector }` renames (409 `name_taken`
+  against another company, ignoring case) and copies the new name onto its
+  people's `contacts.company`. `GET .../impact` counts people, projects and
+  what blocks a delete; `DELETE` keeps people and projects (company removed, the
+  typed `contacts.company` cleared so the link suggestions don't offer it
+  back), is refused (409 `company_in_use`) while company-level workstreams or
+  requests still point at it, and deletes the portal's Clerk organisation after
+  the database delete (a superadmin only, when it has one; a Clerk failure
+  leaves the organisation and says so: `portal_left`).
+- **Dragging a person onto a company** (`ContactsView.bindDrag`, `movePerson`):
+  company rows are the drop targets in the Companies view; in Everyone a tray of
+  companies appears while dragging. Touch screens mostly can't drag, so every
+  person also has a **Move** button (and "Move to company…" in the detail panel)
+  that opens `openCompanyPicker`. Both write `company_id` and the typed name.
 - **Companies have a type** (`drizzle/0037`): client, prospect, subcontractor,
   supplier, other, plus an optional `sector` ("Sport"). It was worked out once,
   on migration, from the company's linked contacts (all subcontractors =>
@@ -856,6 +870,25 @@ always the source of truth and nothing is ever read back from Google.
   no longer written.
 - Viewers don't get Settings (the account menu hides it), so their emails stay
   at the defaults.
+
+### How far ahead dated work shows (7 / 14 / 30 / 60 days)
+- One choice, four values (`WINDOW_DAYS` in `api/_retainer-rules.js`, mirrored in
+  `src/utils/window-days.js`; a test compares them). Each screen has its own
+  toggle and remembers its own value in this browser: the task board
+  (`slate-tasks-window`, default 30), What's due (`slate-due-window`, default 14)
+  and a project's Overview "Owed" list (`slate-owed-window`, default 30). The
+  server takes `?days=` on `GET /api/due`, `GET retainers/board` and
+  `GET retainers/projects/:id/owed`; anything else means that screen's default.
+- On the board the window only hides **owned, planned, dated** deliverables that
+  are further out (`boardShows(d, today, days)`); tasks, started work, undated and
+  unowned work are never hidden by it. An unowned open deliverable shows in the
+  tray whatever its workstream's status; an owned one in a paused or complete
+  workstream is parked on purpose and has no card.
+- The Overview's **Owed** list (`owedList` in the rules, `src/views/owed.js`):
+  open deliverables from active workstreams, overdue first, undated last, five
+  shown, waiting-on-client kept in (muted), "See all N" into the Worklist tab.
+- The 09:00 email and the office screen are fixed windows (nobody is there to
+  click), so they don't have the toggle.
 
 ### What's due (one feed)
 - **Everything dated is read from one feed**: `dueFeed(sql, { ws, days,

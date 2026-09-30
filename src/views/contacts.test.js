@@ -4,6 +4,8 @@ globalThis.localStorage ??= { getItem: () => null, setItem() {}, removeItem() {}
 vi.mock('../db/client.js', () => ({ createContact: vi.fn(), updateContact: vi.fn(), deleteContact: vi.fn(), logActivity: vi.fn(), getActivityLog: vi.fn() }))
 vi.mock('../api/http.js', () => ({ request: async () => ({}), qs: () => '' }))
 const { ContactsView } = await import('./contacts.js')
+const db = await import('../db/client.js')
+const { deleteSummary } = await import('./company-panels.js')
 
 const co = (id, name, type = 'client', over = {}) => ({ id, name, type, sector: null, type_reviewed: true, lead_id: null, ...over })
 const person = (id, first, last, over = {}) => ({ id, first_name: first, last_name: last, company_id: null, company: null, type: 'brand', status: 'Active', role: null, email: null, ...over })
@@ -148,5 +150,58 @@ describe('Everyone', () => {
 describe('the numbers at the top', () => {
   it('count companies, clients, subcontractors and people with no company', () => {
     expect(view().counts()).toEqual({ companies: 2, clients: 1, subs: 1, none: 3 })
+  })
+})
+
+describe('editing and deleting a company, and dragging people onto one', () => {
+  it('gives every company Edit and Delete in its row, even while closed, and read-only people neither', () => {
+    const html = view().listHTML()
+    expect(html).toContain('data-co-edit="c1"')
+    expect(html).toContain('data-co-delete="c1"')
+    expect(html).toContain('data-co-edit="c2"')
+    const ro = view(app({ permissions: { contacts_edit: false } })).listHTML()
+    expect(ro).not.toContain('data-co-edit')
+    expect(ro).not.toContain('data-co-delete')
+    expect(ro).not.toContain('draggable')
+    expect(ro).not.toContain('data-move')
+  })
+
+  it('makes each company row a drop target, and each person draggable, in Companies and in Everyone', () => {
+    const v = view(app(), { expanded: new Set(['c1']) })
+    const html = v.listHTML()
+    expect(html).toContain('data-co-drop="c1"')
+    expect(html).toContain('data-co-drop="c2"')
+    expect(html.match(/draggable="true"/g)).toHaveLength(4)   // Sam (c1 is open), and the three with no company
+    const every = view(app(), { view: 'everyone' }).listHTML()
+    expect(every.match(/draggable="true"/g)).toHaveLength(5)
+    expect(every).toContain('data-move="p3"')          // the fallback for touch screens and keyboards
+  })
+
+  it('moving a person writes the company link and the typed name, and moving to none clears both', async () => {
+    db.updateContact.mockImplementation(async (_u, id, patch) => [{ ...app().contacts.find(c => c.id === id), ...patch }])
+    db.logActivity.mockResolvedValue()
+    const a = app({ toast: vi.fn(), userId: 'ws' })
+    const v = view(a); v.render = vi.fn()
+    await v.movePerson('p3', 'c1')
+    expect(db.updateContact).toHaveBeenLastCalledWith('ws', 'p3', { company_id: 'c1', company: 'DMM' })
+    expect(a.contacts.find(c => c.id === 'p3').company_id).toBe('c1')
+    expect(v.expanded.has('c1')).toBe(true)
+    await v.movePerson('p1', null)
+    expect(db.updateContact).toHaveBeenLastCalledWith('ws', 'p1', { company_id: null, company: '' })
+  })
+
+  it('does nothing when dropped on the company they are already in, or on one that does not exist', async () => {
+    db.updateContact.mockClear()
+    const v = view(app({ toast: vi.fn(), userId: 'ws' })); v.render = vi.fn()
+    await v.movePerson('p1', 'c1')
+    await v.movePerson('p3', 'nope')
+    await v.movePerson('p3', null)   // already none
+    expect(db.updateContact).not.toHaveBeenCalled()
+  })
+
+  it('says what deleting does in plain words', () => {
+    expect(deleteSummary({ people: 1, projects: 2, has_portal: true })).toEqual([
+      '1 person will stay, with no company.', '2 projects will stay, with no company.', 'Its client portal will be deleted and its people lose access.'])
+    expect(deleteSummary({ people: 0, projects: 0, has_portal: false })).toEqual([])
   })
 })

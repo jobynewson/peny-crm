@@ -5,7 +5,8 @@
 // the Contacts page and from a project's Worklist tab.
 
 import { openFloating } from './popover.js'
-import { setCompanyLead, getPortalAccess, setUpPortal, inviteToPortal, revokePortalInvitation, removePortalMember } from '../api/companies.js'
+import { COMPANY_TYPES } from '../utils/contact-kind.js'
+import { editCompany, getCompanyImpact, deleteCompany, setCompanyLead, getPortalAccess, setUpPortal, inviteToPortal, revokePortalInvitation, removePortalMember } from '../api/companies.js'
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -174,3 +175,117 @@ function paintPortal(app, el, company, { portal, invites_enabled }, onChange) {
 }
 
 
+
+
+// ── Edit and delete a company ────────────────────────────────────────────────
+
+// Rename it, change its type and sector. `company` is the object held in
+// app.companies; it is updated in place.
+export function openCompanyEdit(app, anchor, company, { onSaved } = {}) {
+  openFloating({
+    anchor, id: 'co-edit', role: 'dialog', className: 'lt-pop rt-pop',
+    html: `<div class="lt-head"><h2 class="lt-title" id="co-edit-title">Edit ${esc(company.name)}</h2></div>
+      <form class="tl-form" id="co-edit-form" novalidate>
+        <div class="tl-field"><label for="co-edit-name">Name</label>
+          <input id="co-edit-name" maxlength="200" value="${esc(company.name)}" autocomplete="off" /></div>
+        <div class="tl-field"><label for="co-edit-type">Type</label>
+          <select id="co-edit-type">${COMPANY_TYPES.map(t => `<option value="${t.key}"${t.key === company.type ? ' selected' : ''}>${t.label}</option>`).join('')}</select></div>
+        <div class="tl-field"><label for="co-edit-sector">Sector <span class="tl-optional">(optional)</span></label>
+          <input id="co-edit-sector" maxlength="60" value="${esc(company.sector)}" placeholder="e.g. Sport" /></div>
+        <div class="tl-msg" id="co-edit-msg" role="alert"></div>
+        <button type="submit" class="btn-primary tl-submit">Save</button>
+      </form>`,
+    onReady: (el, close) => {
+      el.setAttribute('aria-labelledby', 'co-edit-title')
+      const form = el.querySelector('#co-edit-form')
+      form.addEventListener('submit', async e => {
+        e.preventDefault()
+        const msg = form.querySelector('#co-edit-msg')
+        const name = form.querySelector('#co-edit-name').value
+        if (!name.trim()) { msg.dataset.tone = 'error'; msg.textContent = 'Enter a name'; return }
+        const submit = form.querySelector('[type="submit"]')
+        submit.disabled = true
+        try {
+          const updated = await editCompany(company.id, { name, type: form.querySelector('#co-edit-type').value, sector: form.querySelector('#co-edit-sector').value.trim() })
+          const renamed = updated.name !== company.name
+          Object.assign(company, updated)
+          if (renamed) for (const c of app.contacts || []) if (c.company_id === company.id) c.company = updated.name
+          close({ restoreFocus: false })
+          onSaved?.()
+          app.toast('Company saved')
+        } catch (err) {
+          submit.disabled = false
+          msg.dataset.tone = 'error'; msg.textContent = err.message || 'Could not save'
+        }
+      })
+      form.querySelector('#co-edit-name').select()
+    },
+  })
+}
+
+// What deleting would do, in words, from GET companies/:id/impact. Null-safe
+// on the counts so a thin response still reads.
+export function deleteSummary(impact) {
+  const n = (count, one, many) => `${count} ${count === 1 ? one : many}`
+  const lines = []
+  if (impact.people) lines.push(`${n(impact.people, 'person', 'people')} will stay, with no company.`)
+  if (impact.projects) lines.push(`${n(impact.projects, 'project', 'projects')} will stay, with no company.`)
+  if (impact.has_portal) lines.push('Its client portal will be deleted and its people lose access.')
+  return lines
+}
+
+// Confirm, then delete. Stops before asking when something still belongs to the
+// company (older workstreams or client requests). `onDeleted` runs after the
+// app's own lists have been tidied.
+export async function confirmDeleteCompany(app, company, { onDeleted } = {}) {
+  let impact
+  try { impact = await getCompanyImpact(company.id) } catch (err) { app.toast(err.message || 'Could not check that'); return }
+  const { workstreams = 0, requests = 0 } = impact.blocked_by || {}
+  if (workstreams || requests) {
+    const parts = [workstreams ? `${workstreams} older workstream${workstreams === 1 ? '' : 's'}` : '', requests ? `${requests} client request${requests === 1 ? '' : 's'}` : ''].filter(Boolean)
+    app.toast(`${company.name} still has ${parts.join(' and ')}. Attach the workstreams to a project and clear the requests first.`)
+    return
+  }
+  if (!confirm([`Delete ${company.name}?`, ...deleteSummary(impact), 'This can’t be undone.'].join('\n\n'))) return
+  try {
+    const r = await deleteCompany(company.id)
+    app.companies = (app.companies || []).filter(c => c.id !== company.id)
+    for (const c of app.contacts || []) if (c.company_id === company.id) { c.company_id = null; c.company = '' }
+    for (const p of app.projects || []) if (p.company_id === company.id) p.company_id = null
+    app.toast(r.portal_left ? `${company.name} deleted. Its portal organisation is still in Clerk, so remove it there.` : `${company.name} deleted`)
+    onDeleted?.()
+  } catch (err) { app.toast(err.message || 'Could not delete it') }
+}
+
+// ── Move a person to a company ───────────────────────────────────────────────
+// The way to do it without dragging (phones, keyboards): a searchable list of
+// companies, and "No company". `onPick(companyId | null)` does the move.
+export function openCompanyPicker(app, anchor, person, { onPick } = {}) {
+  const companies = [...(app.companies || [])].sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }))
+  const row = (id, label, sub = '') => `<li><button type="button" class="co-pick-row" data-pick="${esc(id)}"${id === (person.company_id ?? '') ? ' aria-current="true"' : ''}>${esc(label)}${sub ? `<span class="co-meta">${esc(sub)}</span>` : ''}</button></li>`
+  openFloating({
+    anchor, id: 'co-pick', role: 'dialog', className: 'lt-pop rt-pop',
+    html: `<div class="lt-head"><h2 class="lt-title" id="co-pick-title">Move ${esc(person.first_name)} ${esc(person.last_name)} to…</h2></div>
+      <input type="search" id="co-pick-search" class="co-pick-search" placeholder="Search companies" autocomplete="off" aria-label="Search companies" />
+      <ul class="co-pick-list" id="co-pick-list">
+        ${person.company_id ? row('', 'No company') : ''}
+        ${companies.map(c => row(c.id, c.name, COMPANY_TYPES.find(t => t.key === c.type)?.label || '')).join('')}
+      </ul>`,
+    onReady: (el, close) => {
+      el.setAttribute('aria-labelledby', 'co-pick-title')
+      const search = el.querySelector('#co-pick-search')
+      const items = [...el.querySelectorAll('#co-pick-list li')]
+      search.addEventListener('input', () => {
+        const q = search.value.trim().toLowerCase()
+        for (const li of items) li.hidden = !!q && !li.textContent.toLowerCase().includes(q)
+      })
+      el.addEventListener('click', e => {
+        const b = e.target.closest('[data-pick]')
+        if (!b) return
+        close({ restoreFocus: false })
+        onPick?.(b.dataset.pick || null)
+      })
+      search.focus()
+    },
+  })
+}
