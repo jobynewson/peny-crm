@@ -12,6 +12,7 @@
 
 import * as api from '../api/tasks.js'
 import { openFloating, floatingOpen } from './popover.js'
+import { readWindow, saveWindow, windowToggleHtml } from '../utils/window-days.js'
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
 
@@ -25,6 +26,7 @@ const UNREAD_BACKOFF_MS = 300000
 
 const LS_SHELL   = 'slate-tasks-shell'     // '', 'desktop' or 'mobile' (manual override)
 const LS_FILTERS = 'slate-tasks-filters'
+const LS_WINDOW  = 'slate-tasks-window'      // days ahead planned deliverables show on the board
 
 const COLUMNS = [
   { id: 'todo',  label: 'To do' },
@@ -116,6 +118,7 @@ export class TasksView {
     this._mq        = null
 
     this.filters = this._loadFilters()
+    this.window = readWindow(LS_WINDOW, 30)
   }
 
   // ── Shell selection ────────────────────────────────────────────────────────
@@ -173,7 +176,7 @@ export class TasksView {
   // the task board, and the next poll tries again.
   async _loadCards() {
     try {
-      this.cards = await api.listBoardCards()
+      this.cards = await api.listBoardCards(this.window)
       this.cardsError = null
     } catch (err) {
       console.warn('Deliverable cards failed to load:', err.message)
@@ -541,6 +544,7 @@ export class TasksView {
         <option value="">Any project</option>
         ${projects.map(p => `<option value="${esc(p.id)}" ${this.filters.project === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
       </select>
+      <span class="tk-window" title="Planned deliverables appear on the board this many days before they are due">${windowToggleHtml(this.window, 'tk-window', 'Show planned deliverables due within')}</span>
       <button type="button" class="tk-chip" id="tk-shell-toggle" title="Switch to the mobile list">Mobile view</button>`
   }
 
@@ -557,6 +561,13 @@ export class TasksView {
     bar.querySelector('#tk-f-mine')?.addEventListener('click', () => update({ mine: !this.filters.mine }))
     bar.querySelector('#tk-f-person')?.addEventListener('change', e => update({ person: e.target.value }))
     bar.querySelector('#tk-f-project')?.addEventListener('change', e => update({ project: e.target.value }))
+    bar.querySelectorAll('[data-tk-window]').forEach(b => b.addEventListener('click', async () => {
+      this.window = Number(b.dataset.tkWindow)
+      saveWindow(LS_WINDOW, this.window)
+      bar.querySelectorAll('[data-tk-window]').forEach(x => x.setAttribute('aria-pressed', String(x === b)))
+      await this._loadCards()
+      if (this._mc && document.contains(this._mc)) this._renderShell(this._mc)
+    }))
     bar.querySelector('#tk-shell-toggle')?.addEventListener('click', () => this.setShell('mobile'))
   }
 
@@ -593,7 +604,7 @@ export class TasksView {
     return `
       <div class="tk-card tk-card--deliverable ${card.muted ? 'tk-card--muted' : ''}" data-card-id="${esc(card.id)}" data-card-link="${esc(card.link)}" data-in-tray="${inTray ? '1' : ''}" draggable="true" title="Opens ${esc(card.company)}'s worklist">
         <div class="tk-card-title">${esc(card.title)}</div>
-        <div class="tk-card-project">${esc(card.company)} · ${esc(card.workstream)}</div>
+        <div class="tk-card-project">${esc(card.company)} · ${esc(card.workstream)}${card.workstream_status && card.workstream_status !== 'active' ? ` (${esc(card.workstream_status)})` : ''}</div>
         <div class="tk-card-meta">
           <span class="tk-pill tk-pill--deliverable">Deliverable</span>
           ${card.chip ? `<span class="tk-chip-status tk-chip-status--${esc(card.chip.key)}">${esc(card.chip.label)}</span>` : ''}

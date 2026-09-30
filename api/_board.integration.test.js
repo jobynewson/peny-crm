@@ -15,9 +15,9 @@ const { DRAG_REFUSALS } = await import('./_retainer-rules.js')
 
 const describeDb = TEST_DB ? describe : describe.skip
 let sql, ws, ana, ben, vic, co, live, paused
-const call = async (method, route, body) => {
+const call = async (method, route, body, query = {}) => {
   const res = fakeRes()
-  await dispatch({ method, url: `/api/${route}`, query: { route }, body, headers: {} }, res, { name: 'retainers', routes: ROUTES, sql })
+  await dispatch({ method, url: `/api/${route}`, query: { route, ...query }, body, headers: {} }, res, { name: 'retainers', routes: ROUTES, sql })
   return res
 }
 const staff = u => ({ id: u.id, clerk_id: u.clerk_id, role: u.role, name: u.name, email: u.email })
@@ -77,6 +77,26 @@ describeDb('the board\'s deliverable cards', () => {
     await add('Unowned far', { owner: null, due: iso(200) })
     await add('Started far', { status: 'in_progress', due: iso(200) })
     expect((await cards()).map(c => c.title).sort()).toEqual(['Started far', 'Undated owned', 'Unowned far'])
+  })
+
+  it('the window is the person\'s choice: 7, 14, 30 or 60 days, and anything else means the default', async () => {
+    await add('In ten days', { due: iso(10) })
+    await add('In forty days', { due: iso(40) })
+    const titles = async days => (await call('GET', 'retainers/board', undefined, days ? { days: String(days) } : {})).body.cards.map(c => c.title).sort()
+    expect(await titles(7)).toEqual([])
+    expect(await titles(14)).toEqual(['In ten days'])
+    expect(await titles()).toEqual(['In ten days'])
+    expect(await titles(9)).toEqual(['In ten days'])       // not one of the four: the 30-day default
+    expect(await titles(60)).toEqual(['In forty days', 'In ten days'])
+    expect((await call('GET', 'retainers/board', undefined, { days: '60' })).body.days).toBe(60)
+  })
+
+  it('an unowned deliverable in a paused workstream is in the tray; an owned one is parked', async () => {
+    await add('Nobody paused', { stream: paused.id, owner: null })
+    await add('Owned paused', { stream: paused.id })
+    const list = await cards()
+    expect(list.map(c => c.title)).toEqual(['Nobody paused'])
+    expect(list[0]).toMatchObject({ in_tray: true, workstream_status: 'paused' })
   })
 
   it('keeps approved work in Done for 30 days, and only if owned', async () => {

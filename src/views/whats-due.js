@@ -3,14 +3,15 @@
 // GET /api/due (api/_due-feed.js) — the same feed as the 09:00 email and the
 // office screen, so nothing here works out what's due on its own.
 //
-// Overdue plus the next 14 days, grouped by day. Everyone's or just yours
+// Overdue plus the next 7, 14 (default), 30 or 60 days, grouped by day. Everyone's or just yours
 // (remembered per browser in `slate-due-owner`). Rows open the item where it
 // lives; nothing is ticked off from here.
 
 import { request } from '../api/http.js'
+import { readWindow, saveWindow, windowToggleHtml } from '../utils/window-days.js'
 
 const OWNER_KEY = 'slate-due-owner'
-const DAYS = 14
+const WINDOW_KEY = 'slate-due-window'
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
 
@@ -38,9 +39,9 @@ function rowHtml(item) {
     </a>`
 }
 
-function listHtml(items, mine) {
+function listHtml(items, mine, days) {
   if (!items.length) {
-    return `<div class="due-empty">${mine ? 'Nothing due for you' : 'Nothing due'} in the next two weeks.</div>`
+    return `<div class="due-empty">${mine ? 'Nothing due for you' : 'Nothing due'} in the next ${days} days.</div>`
   }
   const groups = []
   for (const item of items) {
@@ -59,6 +60,7 @@ function listHtml(items, mine) {
 export async function mountWhatsDue(app, el) {
   if (!el) return
   let owner = 'all'
+  let days = readWindow(WINDOW_KEY, 14)
   try { if (localStorage.getItem(OWNER_KEY) === 'me') owner = 'me' } catch {}
 
   el.innerHTML = `
@@ -68,9 +70,12 @@ export async function mountWhatsDue(app, el) {
         What's due
         <span class="db-section-count" data-due-count hidden></span>
       </div>
-      <div class="seg" role="group" aria-label="Whose work">
-        <button type="button" class="seg-btn" data-due-owner="all">Everyone</button>
-        <button type="button" class="seg-btn" data-due-owner="me">Mine</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${windowToggleHtml(days, 'due-window', 'Look ahead')}
+        <div class="seg" role="group" aria-label="Whose work">
+          <button type="button" class="seg-btn" data-due-owner="all">Everyone</button>
+          <button type="button" class="seg-btn" data-due-owner="me">Mine</button>
+        </div>
       </div>
     </div>
     <div data-due-body><div class="due-empty">Loading…</div></div>`
@@ -84,10 +89,36 @@ export async function mountWhatsDue(app, el) {
     const shown = owner === 'me' ? items.filter(i => i.owner?.id === app.appUser?.id) : items
     count.hidden = !shown.length
     count.textContent = shown.length
-    body.innerHTML = listHtml(shown, owner === 'me')
+    body.innerHTML = listHtml(shown, owner === 'me', days)
+  }
+
+  let seq = 0   // a slow answer for an earlier window must not overwrite a later one
+  const load = async () => {
+    const mine = ++seq
+    try {
+      const feed = await request(`/api/due?days=${days}`)
+      if (mine !== seq) return
+      items = feed.items
+    } catch (err) {
+      if (mine !== seq) return
+      console.error('What\'s due failed to load:', err)
+      if (el.isConnected) body.innerHTML = `<div class="due-empty" style="color:var(--danger)">Couldn't load what's due.</div>`
+      return
+    }
+    if (el.isConnected) paint()
   }
 
   el.addEventListener('click', e => {
+    const win = e.target.closest('[data-due-window]')
+    if (win) {
+      days = Number(win.dataset.dueWindow)
+      saveWindow(WINDOW_KEY, days)
+      el.querySelectorAll('[data-due-window]').forEach(b => b.setAttribute('aria-pressed', String(b === win)))
+      items = null
+      body.innerHTML = '<div class="due-empty">Loading…</div>'
+      load()
+      return
+    }
     const toggle = e.target.closest('[data-due-owner]')
     if (toggle) {
       owner = toggle.dataset.dueOwner
@@ -104,12 +135,5 @@ export async function mountWhatsDue(app, el) {
   })
 
   paint()
-  try {
-    ;({ items } = await request(`/api/due?days=${DAYS}`))
-  } catch (err) {
-    console.error('What\'s due failed to load:', err)
-    if (el.isConnected) body.innerHTML = `<div class="due-empty" style="color:var(--danger)">Couldn't load what's due.</div>`
-    return
-  }
-  if (el.isConnected) paint()
+  await load()
 }

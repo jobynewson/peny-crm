@@ -264,12 +264,15 @@ describe('which deliverables have a board card', () => {
       expect(boardShows(d({ status, due_date: '2027-01-01' }), today), status).toBe(true)
     }
   })
-  it('shows an owned, planned deliverable once it is within four weeks, or has no date at all', () => {
-    expect(boardShows(d({ due_date: '2026-10-27' }), today)).toBe(true)     // day 28
-    expect(boardShows(d({ due_date: '2026-10-28' }), today)).toBe(false)    // day 29: a dated plan
+  it('shows an owned, planned deliverable once it is within the window, or has no date at all', () => {
+    expect(boardShows(d({ due_date: '2026-10-29' }), today)).toBe(true)     // day 30
+    expect(boardShows(d({ due_date: '2026-10-30' }), today)).toBe(false)    // day 31: a dated plan
+    expect(boardShows(d({ due_date: '2026-10-06' }), today, 7)).toBe(true)  // day 7
+    expect(boardShows(d({ due_date: '2026-10-07' }), today, 7)).toBe(false)
+    expect(boardShows(d({ due_date: '2026-11-27' }), today, 60)).toBe(true) // day 59
     expect(boardShows(d({ due_date: null }), today)).toBe(true)             // nothing else would show it
     expect(boardShows(d({ due_date: '2026-09-01' }), today)).toBe(true)     // late
-    expect(BOARD_HORIZON_DAYS).toBe(28)
+    expect(BOARD_HORIZON_DAYS).toBe(30)
   })
   it('puts every unowned open deliverable in the tray, whatever its date or status', () => {
     for (const due_date of [null, '2026-10-05', '2028-01-01']) {
@@ -277,6 +280,13 @@ describe('which deliverables have a board card', () => {
         expect(boardShows(d({ owner_id: null, due_date, status }), today), `${status} ${due_date}`).toBe(true)
         expect(boardCard(d({ owner_id: null, due_date, status }), today).in_tray).toBe(true)
       }
+    }
+  })
+  it('an unowned one in a paused or complete workstream is still in the tray; an owned one is parked', () => {
+    for (const workstream_status of ['paused', 'complete']) {
+      expect(boardShows(d({ owner_id: null, workstream_status }), today)).toBe(true)
+      expect(boardCard(d({ owner_id: null, workstream_status }), today).in_tray).toBe(true)
+      expect(boardShows(d({ workstream_status, status: 'in_progress' }), today)).toBe(false)
     }
   })
   it('an approved one is a card only if someone owns it, and is not in the tray', () => {
@@ -290,7 +300,7 @@ describe('which deliverables have a board card', () => {
       for (const due_date of [null, '2026-09-01', '2026-10-05', '2026-11-30']) rows.push(d({ owner_id, status, due_date }))
     }
     for (const r of rows.filter(r => !boardShows(r, today))) {
-      expect([r.owner_id, r.status, !!r.due_date, r.due_date > '2026-10-27']).toEqual(['u1', 'planned', true, true])
+      expect([r.owner_id, r.status, !!r.due_date, r.due_date > '2026-10-29']).toEqual(['u1', 'planned', true, true])
     }
   })
   it('the card carries the column, muting, chip, due text and a link to the deliverable on its project’s Worklist tab', () => {

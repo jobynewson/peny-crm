@@ -369,24 +369,38 @@ export function statusAfterBoardDrag({ from, column }) {
 
 // Which deliverables have a card, so that nothing is invisible:
 //   - unowned and open: in the unassigned tray, whatever its date or status
-//     (it needs someone before anything else)
+//     and whichever workstream it is in (paused or complete included: it needs
+//     someone before anything else)
 //   - owned and started (anything but planned): on the board
 //   - owned, planned and undated: on the board — with no date nothing else
 //     (What's due) would ever show it
-//   - owned, planned and dated: on the board once it is within
-//     BOARD_HORIZON_DAYS; until then it is a dated plan, on the project’s Worklist tab
+//   - owned, planned and dated: on the board once it is within the window
+//     (7, 14, 30 or 60 days, the person's choice, BOARD_HORIZON_DAYS until they
+//     choose); until then it is a dated plan, on the project's Worklist tab
 //     and in What's due
+//   - owned in a paused or complete workstream: parked on purpose, so no card
 //   - approved: in Done for BOARD_DONE_DAYS (the server passes only those)
-export const BOARD_HORIZON_DAYS = 28
+export const BOARD_HORIZON_DAYS = 30
 export const BOARD_DONE_DAYS = 30
 
-export function boardShows(d, today) {
-  if (d.status === 'approved') return !!d.owner_id
+// The windows a person can choose wherever dated work is shown.
+export const WINDOW_DAYS = [7, 14, 30, 60]
+export function parseWindowDays(value, fallback) {
+  const n = Number.parseInt(value, 10)
+  return WINDOW_DAYS.includes(n) ? n : fallback
+}
+
+export function boardShows(d, today, days = BOARD_HORIZON_DAYS) {
+  if (d.status === 'approved') return !!d.owner_id && isLiveWorkstream(d)
   if (!d.owner_id) return true
+  if (!isLiveWorkstream(d)) return false
   if (d.status !== 'planned') return true
   if (!d.due_date) return true
-  return d.due_date <= addDays(today, BOARD_HORIZON_DAYS)
+  return d.due_date <= addDays(today, days)
 }
+
+// Rows without a workstream_status (older callers) count as live.
+const isLiveWorkstream = d => !d.workstream_status || d.workstream_status === 'active'
 
 // Where a deliverable lives in the app: its project's Worklist tab, with the
 // deliverable opened. Emails and feeds link here. A deliverable whose workstream
@@ -410,6 +424,7 @@ export function boardCard(d, today, now = new Date()) {
     company: d.company,
     company_id: d.company_id ?? null,
     workstream: d.workstream,
+    workstream_status: d.workstream_status ?? 'active',
     project: d.project ?? null,
     project_id: d.project_id ?? null,
     owner_id: d.owner_id ?? null,
