@@ -248,3 +248,10 @@ a { color: var(--accent-text); }
   .pt-jump { position: static; margin: 0 0 12px; padding: 0; border: 0; background: none; }
   .pt-below { grid-template-columns: 340px minmax(0, 1fr); align-items: start; }
 }
+
+/* The left column stays fully open (nothing folded) and scrolls on its own once it is taller than the screen. */
+.pt-d-open { display: inline-block; margin-top: 4px; font-size: 13px; }
+@media (min-width: 960px) {
+  .pt-board > .pt-col--requests { max-height: calc(100vh - 170px); overflow-y: auto; overscroll-behavior: contain; }
+  .pt-col--requests > .pt-ws-head { position: sticky; top: 0; z-index: 1; padding-top: 6px; background: var(--surface); }
+}

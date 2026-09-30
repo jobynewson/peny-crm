@@ -112,10 +112,14 @@ export function approveHtml(link, { done = false, changed = false, commentsSent 
       <h1 class="pt-signin-title">${openComments ? 'Are your comments in?' : 'Approve this?'}</h1>
       ${what}
       <div class="pt-form-msg" role="alert" data-approve-msg></div>
-      <div class="pt-message-actions" data-approve-actions${openChanges || openComments ? ' hidden' : ''}>
+      <div class="pt-form" data-approve-actions${openChanges || openComments ? ' hidden' : ''}>
+        <label for="ap-ok-comment">A comment with your approval <span class="pt-muted">(optional)</span></label>
+        <textarea id="ap-ok-comment" rows="2" maxlength="1000" data-approve-comment></textarea>
+        <div class="pt-message-actions">
         <button type="button" class="pt-btn pt-btn--primary" data-approve-now>Yes, approve round ${link.round}</button>
         <button type="button" class="pt-btn" data-open-comments>Comments are in</button>
         <button type="button" class="pt-btn" data-open-changes>Ask for changes instead</button>
+        </div>
       </div>
       <div class="pt-message-actions" data-comments-now${openComments ? '' : ' hidden'}>
         <p class="pt-muted">Leave your notes in ${link.frame_io ? 'Frame.io' : 'the link'} first. Press this once you’ve finished, so we know to act on them.</p>
@@ -210,10 +214,14 @@ function boardHtml(view) {
 function approvedHtml(d) {
   const latest = d.rounds[d.rounds.length - 1]
   const when = latest?.response === 'approved' && latest.answered_at ? `Approved ${dayMonth(latest.answered_at)}` : 'Approved'
+  // The link stays: what was approved is still worth opening.
+  const link = [...d.rounds].reverse().find(r => r.url)
   return `
     <li class="pt-d pt-d--quiet" id="d-${esc(d.id)}">
       <div class="pt-d-title">${esc(d.title)}</div>
       <div class="pt-d-meta">${esc(d.workstream)} · ${when}</div>
+      ${link ? `<a class="pt-link pt-d-open" href="${esc(link.url)}" target="_blank" rel="noopener noreferrer">${link.frame_io ? 'Open in Frame.io' : 'Open the link'} <span aria-hidden="true">↗</span></a>` : ''}
+      ${latest?.response === 'approved' && latest.comment ? `<div class="pt-quote">“${esc(latest.comment)}”</div>` : ''}
     </li>`
 }
 
@@ -248,6 +256,7 @@ function requestsColumnHtml(view, c, canSend) {
         <form class="pt-form" data-request-form hidden novalidate>
           ${asksName ? `<label for="rq-name">Your name <span class="pt-muted">— so we know who it’s from</span></label>
           <input id="rq-name" maxlength="100" autocomplete="name" />` : ''}
+          ${projectFieldHtml(view)}
           <label for="rq-title">What do you need?</label>
           <input id="rq-title" maxlength="300" autocomplete="off" />
           <label for="rq-detail">More detail <span class="pt-muted">— a link to any files or references is fine</span></label>
@@ -264,14 +273,28 @@ function requestsColumnHtml(view, c, canSend) {
       ${c.planned.length ? `
         <h3 class="pt-sub-h">Up next</h3>
         <ul class="pt-list">${c.planned.map(d => deliverableHtml(d)).join('')}</ul>` : ''}
-      ${c.answered.length ? `<details class="pt-earlier pt-earlier--requests"><summary>Answered requests (${c.answered.length})</summary><ul class="pt-list">${c.answered.map(requestHtml).join('')}</ul></details>` : ''}
+      ${c.answered.length ? `
+        <h3 class="pt-sub-h">Answered</h3>
+        <ul class="pt-list">${c.answered.map(requestHtml).join('')}</ul>` : ''}
       ${nothing ? `<p class="pt-muted pt-requests-empty">${canSend ? 'Need something from us? Ask here instead of emailing — you’ll see where it stands.' : (view.scope.kind === 'project' ? 'This project has been delivered, so it isn’t taking new requests here.' : 'No requests yet.')}</p>` : ''}
     </section>`
+}
+
+// Which project it is for, chosen by the client so nobody at Peny has to. One
+// project: it is that one, silently. Several: they pick (the first is the
+// retainer, if there is one). None: nothing to pick, and we sort it out.
+function projectFieldHtml(view) {
+  const projects = view.projects || []
+  if (projects.length === 1) return `<input type="hidden" id="rq-project" value="${esc(projects[0].id)}" />`
+  if (projects.length < 2) return ''
+  return `<label for="rq-project">Which project is it for?</label>
+          <select id="rq-project">${projects.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select>`
 }
 
 function requestHtml(r) {
   const meta = [
     `Sent ${dayMonth(r.sent_at)}${r.sent_by ? ` by ${esc(r.sent_by)}` : ''}`,
+    r.project ? esc(r.project) : null,
     r.wanted_by ? `Wanted by ${esc(fullDate(r.wanted_by))}` : null,
   ].filter(Boolean).join(' · ')
   return `
@@ -355,6 +378,8 @@ function deliveredHtml(d) {
         </div>
         <div class="pt-confirm" data-confirm="${id}" hidden>
           <p>Approve “${esc(d.title)}”?</p>
+          <label for="ac-${id}" class="pt-muted">A comment with it <span>(optional)</span></label>
+          <textarea id="ac-${id}" rows="2" maxlength="1000" data-approve-comment="${id}"></textarea>
           <div class="pt-actions">
             <button type="button" class="pt-btn pt-btn--primary" data-confirm-yes="${id}" data-kind="deliverable">Yes, approve</button>
             <button type="button" class="pt-btn" data-cancel="${id}">Cancel</button>
@@ -410,6 +435,8 @@ function roundHtml(r, d) {
           </div>
           <div class="pt-confirm" data-confirm="${esc(r.id)}" hidden>
             <p>Approve round ${r.round} of “${esc(d.title)}”?</p>
+            <label for="ac-${esc(r.id)}" class="pt-muted">A comment with it <span>(optional)</span></label>
+            <textarea id="ac-${esc(r.id)}" rows="2" maxlength="1000" data-approve-comment="${esc(r.id)}"></textarea>
             <div class="pt-actions">
               <button type="button" class="pt-btn pt-btn--primary" data-confirm-yes="${esc(r.id)}">Yes, approve</button>
               <button type="button" class="pt-btn" data-cancel="${esc(r.id)}">Cancel</button>
@@ -534,7 +561,7 @@ export function bindView(root, view, { respond, respondDelivered = respond, undo
     part('data-actions', id).querySelector('button')?.focus()
   }))
   root.querySelectorAll('[data-confirm-yes]').forEach(b => b.addEventListener('click', () =>
-    send(b.dataset.confirmYes, { response: 'approved' }, b, null, b.dataset.kind)))
+    send(b.dataset.confirmYes, { response: 'approved', comment: part('data-approve-comment', b.dataset.confirmYes)?.value.trim() || undefined }, b, null, b.dataset.kind)))
   root.querySelectorAll('[data-changes-form]').forEach(form => form.addEventListener('submit', e => {
     e.preventDefault()
     const comment = form.querySelector('textarea').value.trim()
@@ -604,6 +631,7 @@ function bindRequestForm(root, { submitRequest, rerender }) {
       const fresh = await submitRequest({
         ...(nameField ? { name } : {}),
         title,
+        ...(form.querySelector('#rq-project')?.value ? { project_id: form.querySelector('#rq-project').value } : {}),
         detail: form.querySelector('#rq-detail').value.trim() || null,
         wanted_by: form.querySelector('#rq-by').value || null,
       })

@@ -262,10 +262,12 @@ async function linkPerson(scope) {
 }
 
 // ── POST /api/client/link/approve ────────────────────────────────────────────
-// Approves the round, as the person the email went to, and uses the link up.
+// Approves the round, as the person the email went to (with a comment if they
+// left one), and uses the link up.
 async function approveViaLink(req, res, { sql, scope }) {
+  const body = readBody(req) ?? {}
   const by = await linkPerson(scope)
-  const result = await respondToDelivery(sql, scope, { deliveryId: scope.deliveryId, input: { response: 'approved' }, by })
+  const result = await respondToDelivery(sql, scope, { deliveryId: scope.deliveryId, input: { response: 'approved', comment: body.comment }, by })
   if (result.error) {
     const { status, code, message, field } = result.error
     return fail(res, status, code, message, field ? { field } : {})

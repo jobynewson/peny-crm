@@ -201,14 +201,14 @@ export class Worklist {
   // What the client said about a delivered deliverable that had no round.
   _answerLineHtml(d) {
     if (d.changes_note) return `<div class="rt-d-round rt-d-round--changes">Client asked for changes${d.changes_at ? ` ${dayMonth(d.changes_at)}` : ''} — “${esc(d.changes_note)}”. Tick Delivered again once it is fixed.</div>`
-    if (d.approved_at) return `<div class="rt-d-round rt-d-round--ok">Approved ${dayMonth(d.approved_at)}${d.approved_by_name ? ` by ${esc(d.approved_by_name)}` : ''}</div>`
+    if (d.approved_at) return `<div class="rt-d-round rt-d-round--ok">Approved ${dayMonth(d.approved_at)}${d.approved_by_name ? ` by ${esc(d.approved_by_name)}` : ''}${d.approved_comment ? ` — “${esc(d.approved_comment)}”` : ''}</div>`
     if (d.delivered && d.status !== 'approved') return '<div class="rt-d-round">Delivered · awaiting the client’s approval</div>'
     return ''
   }
 
   _roundLineHtml(r) {
     const link = `<a class="rt-round-link" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Round ${r.round}</a>`
-    if (r.client_response === 'approved') return `<div class="rt-d-round rt-d-round--ok">${link} approved ${dayMonth(r.responded_at)}${r.responded_by_staff ? ' (recorded)' : ''}</div>`
+    if (r.client_response === 'approved') return `<div class="rt-d-round rt-d-round--ok">${link} approved ${dayMonth(r.responded_at)}${r.responded_by_staff ? ' (recorded)' : ''}${r.client_comment ? ` — “${esc(r.client_comment)}”` : ''}</div>`
     if (r.client_response === 'comments_in') return `<div class="rt-d-round rt-d-round--comments">${link}: comments are in — feedback is complete in Frame.io${r.responded_by_staff ? ' (recorded)' : ''}, over to you</div>`
     if (r.client_response === 'changes_requested') {
       return `<div class="rt-d-round rt-d-round--changes">${link}: changes requested${r.client_comment ? ` — “${esc(r.client_comment)}”` : ''}</div>`

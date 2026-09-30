@@ -156,6 +156,6 @@ describe('requestsJson', () => {
   it('only a declined request shows a note, and nothing internal leaves', () => {
     const [r] = requestsJson([row({ decline_note: 'stale note left over' })], today)
     expect(r.note).toBeNull()
-    expect(Object.keys(r).sort()).toEqual(['accepted', 'detail', 'id', 'note', 'sent_at', 'sent_by', 'status', 'status_label', 'title', 'wanted_by'])
+    expect(Object.keys(r).sort()).toEqual(['accepted', 'detail', 'id', 'note', 'project', 'sent_at', 'sent_by', 'status', 'status_label', 'title', 'wanted_by'])
   })
 })

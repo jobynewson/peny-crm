@@ -3,7 +3,7 @@
 // tray (api/_board.js reads loadOpenRequests below); there is no separate
 // inbox. Routes behind /api/retainers (merged into _retainers.js's table), for
 // Slate staff:
-//   GET  retainers/request-count                 new requests: the Tasks tab's number
+//   GET  retainers/request-count                 { new, feedback }: the Tasks tab's bubble
 //   POST retainers/requests/:id/accept   { due_date?, project_id?, workstream_id |
 //                                          new_workstream_title?, owner_id?, title? }
 //   POST retainers/requests/:id/decline  { note }  — the client sees the note
@@ -34,11 +34,19 @@ export const REQUEST_ROUTES = [
 ]
 
 // ── GET retainers/request-count ──────────────────────────────────────────────
-// { new } — the number on the Requests tab in the header, polled.
-async function requestCount(req, res, { sql }) {
+// { new, feedback } — what the Tasks tab's bubble counts, polled: new client
+// requests waiting in the tray, and feedback waiting to be acted on (changes
+// requested, or comments are in) on deliverables that are yours or nobody's. It
+// clears itself when the next round goes out or the deliverable moves on.
+async function requestCount(req, res, { sql, user }) {
   const ws = await workspaceId(sql)
   const [{ n }] = await sql`SELECT count(*)::int AS n FROM requests WHERE user_id = ${ws} AND status = 'new'`
-  return res.status(200).json({ new: n })
+  const [{ f }] = await sql`
+    SELECT count(*)::int AS f
+    FROM deliverables d JOIN workstreams w ON w.id = d.workstream_id
+    WHERE w.user_id = ${ws} AND w.status = 'active' AND d.status IN ('changes_requested', 'comments_in')
+      AND (d.owner_id = ${user.id} OR d.owner_id IS NULL)`
+  return res.status(200).json({ new: n, feedback: f })
 }
 
 // The new requests, for the task board's tray: the one that has waited longest

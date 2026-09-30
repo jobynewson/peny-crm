@@ -76,8 +76,13 @@ describe('the Approve link\'s answer', () => {
 
 describe('a client\'s request and reply', () => {
   it('a request is filed under the scope\'s own company, capped inside the write', async () => {
-    const [write] = await queriesOf('submitRequest')
+    const queries = await queriesOf('submitRequest')
+    const write = queries.find(q => q.includes("r.status = 'new'") && q.includes('INSERT INTO requests') && q.includes('submitted_by,'))
     expect(write).toContain('id = ${scope.companyId} AND user_id = ${scope.ws}')
+    // The project a client names must be one of their own company's, and not delivered.
+    const project = queries.find(q => q.includes('FROM projects') && q.includes("status <> 'Delivered'"))
+    expect(project).toContain('company_id = ${scope.companyId}')
+    expect(project).toContain('user_id = ${scope.ws}')
     expect(write).toContain('${scope.clerkUserId}')
     expect(write).toContain("r.status = 'new'")
     expect(write).toContain('< ${MAX_OPEN_REQUESTS}')

@@ -94,7 +94,7 @@ async function linkView(sql, scope) {
 // ── Signed in: the company's whole visible worklist ──────────────────────────
 
 async function companyView(sql, scope) {
-  const [companies, studios, workstreams, deliverables, rounds, requests] = await Promise.all([
+  const [companies, studios, workstreams, deliverables, rounds, requests, projects] = await Promise.all([
     sql`
       SELECT c.name FROM companies c
       WHERE c.id = ${scope.companyId} AND c.user_id = ${scope.ws}
@@ -134,14 +134,22 @@ async function companyView(sql, scope) {
     // the client — otherwise it reads as accepted, without a date).
     sql`
       SELECT r.id, r.title, r.detail, r.wanted_by::text AS wanted_by, r.status, r.decline_note,
-             r.submitted_by_name, r.created_at,
+             r.submitted_by_name, r.created_at, p.name AS project_name,
              d.id AS deliverable_id, d.due_kind, d.due_date::text AS due_date, d.due_label, d.cadence,
              d.status AS deliverable_status
       FROM requests r
       LEFT JOIN deliverables d ON d.id = r.deliverable_id AND d.client_visible
+      LEFT JOIN projects p ON p.id = r.project_id
       WHERE r.user_id = ${scope.ws} AND r.company_id = ${scope.companyId}
       ORDER BY r.created_at DESC
       LIMIT 50
+    `,
+    // The projects a request can be for: the company's own, not yet delivered
+    // (the retainer first), so the client can say which and nobody has to ask.
+    sql`
+      SELECT p.id, p.name FROM projects p
+      WHERE p.user_id = ${scope.ws} AND p.company_id = ${scope.companyId} AND p.status <> 'Delivered'
+      ORDER BY p.is_retainer DESC, lower(p.name)
     `,
   ])
   if (!companies[0]) return null
@@ -153,6 +161,7 @@ async function companyView(sql, scope) {
     studio: studioJson(studios[0]),
     workstreams: worklistJson({ workstreams, deliverables, rounds, today, canRespond: scope.canRespond, showReplies: true }),
     requests: requestsJson(requests, today),
+    projects: projects.map(p => ({ id: p.id, name: p.name })),
   }
 }
 
@@ -296,6 +305,7 @@ export function requestsJson(rows, today) {
       status_label: requestLabel(r.status),
       sent_at: r.created_at,
       sent_by: r.submitted_by_name || null,
+      project: r.project_name || null,
       note: r.status === 'declined' ? r.decline_note : null,
       accepted: r.status === 'accepted' && r.deliverable_id
         ? { deliverable_id: r.deliverable_id, due: dueDisplay(r, today), status_label: theirs.label }

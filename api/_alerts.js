@@ -391,7 +391,7 @@ export async function loadApprovals(sql, { ws, from, to }) {
   // round (round is null for those).
   return sql`
     SELECT * FROM (
-    SELECT dv.id, dv.round, dv.responded_at, dv.responded_by_name, d.id AS deliverable_id, d.title, d.owner_id,
+    SELECT dv.id, dv.round, dv.responded_at, dv.responded_by_name, dv.client_comment AS comment, d.id AS deliverable_id, d.title, d.owner_id,
            w.project_id, wc.company_id, COALESCE(c.name, p.name) AS company, c.lead_id,
            EXISTS (SELECT 1 FROM app_users u WHERE u.clerk_id = dv.responded_by) AS recorded
     FROM deliveries dv
@@ -403,7 +403,7 @@ export async function loadApprovals(sql, { ws, from, to }) {
     WHERE w.user_id = ${ws} AND dv.client_response = 'approved'
       AND dv.responded_at >= ${from.toISOString()}::timestamptz AND dv.responded_at < ${to.toISOString()}::timestamptz
     UNION ALL
-    SELECT d.id, NULL::int AS round, d.approved_at AS responded_at, d.approved_by_name AS responded_by_name, d.id AS deliverable_id, d.title, d.owner_id,
+    SELECT d.id, NULL::int AS round, d.approved_at AS responded_at, d.approved_by_name AS responded_by_name, d.approved_comment AS comment, d.id AS deliverable_id, d.title, d.owner_id,
            w.project_id, wc.company_id, COALESCE(c.name, p.name) AS company, c.lead_id, false AS recorded
     FROM deliverables d
     JOIN workstreams w ON w.id = d.workstream_id
@@ -445,6 +445,7 @@ export function approvalsSectionHtml(items, baseUrl) {
             <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:14px">
               <a href="${escapeHtml(baseUrl)}/${escapeHtml(worklistLink({ project_id: a.project_id, company_id: a.company_id, id: a.deliverable_id }))}" style="color:#1a1a1a;text-decoration:none">${escapeHtml(a.title)}</a>
               <div style="font-size:11px;color:#999;margin-top:2px">${escapeHtml(a.company)}${a.round ? ` · round ${a.round}` : ''}${a.recorded ? ' · recorded by the team' : a.responded_by_name ? ` · ${escapeHtml(a.responded_by_name)}` : ''}</div>
+              ${a.comment ? `<div style="font-size:13px;color:#444;margin-top:6px;border-left:3px solid #ddd;padding-left:10px;white-space:pre-line">${escapeHtml(a.comment)}</div>` : ''}
             </td>
             <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#16a34a;white-space:nowrap;font-weight:500;vertical-align:top">Approved ${escapeHtml(day(a.responded_at))}</td>
           </tr>`).join('')}</tbody>

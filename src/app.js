@@ -754,7 +754,9 @@ export class App {
   async refreshRequestCount() {
     try {
       const { getRequestCount } = await import('./api/requests.js')
-      this.requestCount = await getRequestCount()
+      const counts = await getRequestCount()
+      this.requestCounts = { new: counts.new ?? 0, feedback: counts.feedback ?? 0 }
+      this.requestCount = this.requestCounts.new + this.requestCounts.feedback
       this.header?.refreshRequests()
     } catch { /* offline, or not staff: keep what was shown */ }
   }

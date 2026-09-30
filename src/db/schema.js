@@ -862,6 +862,7 @@ export const deliverables = pgTable('deliverables', {
   delivered_at:      timestamp('delivered_at', { withTimezone: true }),
   approved_at:       timestamp('approved_at', { withTimezone: true }),
   approved_by_name:  text('approved_by_name'),
+  approved_comment:  text('approved_comment'),     // drizzle/0042
   changes_note:      text('changes_note'),
   changes_at:        timestamp('changes_at', { withTimezone: true }),
   client_visible: boolean('client_visible').notNull().default(false),

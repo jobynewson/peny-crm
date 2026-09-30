@@ -119,12 +119,14 @@ export class HeaderView {
     btn.insertAdjacentHTML('beforeend', this.bellCountHtml())
   }
 
-  // New client requests waiting in the task board's tray: a count on the Tasks
-  // tab, so a request that nobody looked at can't sit unseen. The number comes from
+  // New client requests waiting in the task board's tray, and feedback (changes
+  // requested, comments in) waiting to be acted on: one bubble on the Tasks
+  // tab, so neither can sit unseen. The number comes from
   // app.requestCount (see watchRequests in app.js).
   requestsLabel() {
-    const n = this.app.requestCount || 0
-    return `Tasks${n ? `, ${n} new client request${n === 1 ? '' : 's'}` : ''}`
+    const { new: requests = 0, feedback = 0 } = this.app.requestCounts || {}
+    const parts = [requests && `${requests} new client request${requests === 1 ? '' : 's'}`, feedback && `${feedback} with feedback to act on`].filter(Boolean)
+    return `Tasks${parts.length ? `, ${parts.join(', ')}` : ''}`
   }
 
   requestsCountHtml() {

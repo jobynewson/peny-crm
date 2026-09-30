@@ -8,8 +8,9 @@ import { request } from './http.js'
 
 const base = '/api/retainers/requests'
 
-// → { new } — the number on the header's Tasks tab.
-export const getRequestCount = () => request('/api/retainers/request-count').then(r => r.new)
+// → { new, feedback } — what the header's Tasks bubble counts: requests waiting in the
+// tray, and changes-requested / comments-in deliverables waiting for you.
+export const getRequestCount = () => request('/api/retainers/request-count')
 // body (all optional): { due_date, project_id, workstream_id | new_workstream_title, owner_id, title }
 // → { request_id, deliverable_id, workstream_id, company_id, project_id, link }.
 // 409 needs_project carries `projects: [{ id, name }]` when it can't tell which.

@@ -114,7 +114,7 @@ describeDb('client requests on the task board', () => {
 
     it('counts them for the Tasks tab, and anyone on the team can read the board, even a viewer', async () => {
       await makeRequest(); await makeRequest({ title: 'Another' })
-      expect((await call('GET', 'retainers/request-count')).body).toEqual({ new: 2 })
+      expect((await call('GET', 'retainers/request-count')).body).toEqual({ new: 2, feedback: 0 })
       as(staff(vic))
       expect((await call('GET', 'retainers/board')).statusCode).toBe(200)
     })

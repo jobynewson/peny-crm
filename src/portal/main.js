@@ -15,11 +15,13 @@
 
 import './portal.css'
 import { renderView, bindView, approveHtml, message, esc } from './render.js'
+import { startLive } from './live.js'
 
 const root = document.getElementById('portal')
 const approving = /^\/portal\/approve\/?$/.test(location.pathname)
 const token = approving ? null : location.pathname.match(/^\/portal\/([A-Za-z0-9_-]+)\/?$/)?.[1] ?? null
 let clerk = null
+let live = null   // the auto-refresh (live.js), started once a view is on screen
 
 // ── The API ──────────────────────────────────────────────────────────────────
 
@@ -132,6 +134,7 @@ async function show(view = null) {
     }
   }
   document.title = `${view.title} — ${view.studio?.name || 'Client portal'}`
+  live?.seen(view)
   const canSwitch = (clerk?.user?.organizationMemberships?.length ?? 0) > 1
   root.innerHTML = renderView(view, { signedIn: !token, canSwitch })
   bindView(root, view, {
@@ -147,6 +150,12 @@ async function show(view = null) {
     signOut,
     switchCompany: () => chooseCompany(clerk.user.organizationMemberships),
   })
+  // Close to live: look again every half minute while the page is showing, and redraw if
+  // something changed (never over someone who is typing).
+  if (!live) {
+    live = startLive({ root, fetchView: () => api('/api/client/view'), apply: fresh => show(fresh) })
+    live.seen(view)
+  }
 }
 
 // ── The Approve link's confirm page ──────────────────────────────────────────
@@ -190,7 +199,8 @@ function bindApprove(link) {
   button?.addEventListener('click', async () => {
     button.disabled = true
     try {
-      const result = await api('/api/client/link/approve', { method: 'POST', body: {} })
+      const comment = root.querySelector('[data-approve-comment]')?.value.trim()
+      const result = await api('/api/client/link/approve', { method: 'POST', body: comment ? { comment } : {} })
       root.innerHTML = approveHtml(result.link, { done: true })
     } catch (err) {
       if (err.status === 409 || err.status === 410) return showCurrent(link, err)

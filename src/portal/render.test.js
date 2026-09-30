@@ -43,13 +43,17 @@ describe('the portal: requests', () => {
     expect(out).toContain('&lt;img')
   })
 
-  it('keeps every waiting request in view and folds the answered ones away', () => {
+  it('keeps every request in view, waiting ones first and answered ones under their own heading, nothing folded', () => {
     const mk = (i, status = 'submitted') => ({ id: `q${i}`, title: `Ask ${i}`, detail: null, wanted_by: null, status, status_label: status, sent_at: '2026-09-28T10:00:00Z', sent_by: null, note: null, accepted: null })
     const out = html(view({ requests: [...Array.from({ length: 7 }, (_, i) => mk(i)), mk(8, 'declined'), mk(9, 'accepted')] }))
     expect(out).not.toContain('Earlier requests')
-    for (let i = 0; i < 7; i++) expect(out).toContain(`Ask ${i}`)
-    expect(out).toContain('Answered requests (2)')
-    expect(out.indexOf('Answered requests (2)')).toBeLessThan(out.indexOf('Ask 8'))   // inside the fold
+    expect(out).not.toContain('Answered requests')
+    for (let i = 0; i < 10; i++) if (i !== 7) expect(out).toContain(`Ask ${i}`)
+    expect(out).toContain('>Answered<')
+    expect(out.indexOf('>Answered<')).toBeLessThan(out.indexOf('Ask 8'))
+    expect(out.indexOf('Ask 6')).toBeLessThan(out.indexOf('>Answered<'))
+    const left = out.slice(out.indexOf('id="pt-col-requests"'), out.indexOf('id="pt-col-progress"'))
+    expect(left).not.toContain('<details')                       // the left column has no folds
   })
 
   it('can\'t ask while viewing as the client, nor on a link that says it is not taking requests', () => {
@@ -349,5 +353,56 @@ describe('the portal board: Requests · In progress · Approved', () => {
     expect(out).toContain('Needs you · 1')
     expect(out.indexOf('pt-board')).toBeLessThan(out.indexOf('Work log'))
     expect(out).not.toContain('data-approve')                       // a link can look but not answer
+  })
+})
+
+describe('the portal: round two', () => {
+  const d = (id, status, over = {}) => ({ id, title: `Item ${id}`, format: null, due: 'No date', status, status_label: status, waiting_for: null, reply: null, can_reply: false, rounds: [], ...over })
+  const wrap = (ds, over = {}) => view({ workstreams: [{ id: 'w1', title: 'Launch', brief: null, status: 'active', status_label: 'Active', deliverables: ds }], ...over })
+  const round = over => ({ id: 'r1', round: 1, url: 'https://app.frame.io/reviews/abc', frame_io: true, note: null, sent_at: '2026-09-28T10:00:00Z', response: 'approved', response_label: 'Approved', comment: null, answered_at: '2026-09-29T10:00:00Z', answered_by: 'Dana', recorded_by_studio: false, preview: null, latest: true, can_respond: false, can_undo: false, ...over })
+
+  it('keeps the link on an approved item, to the latest round, and the comment that came with the approval', () => {
+    const out = html(wrap([d('h', 'approved', { rounds: [round({ url: 'https://f.io/old', response: 'changes_requested' }), round({ comment: 'Love it' })] })]))
+    const col = out.slice(out.indexOf('id="pt-col-approved"'))
+    expect(col).toContain('href="https://app.frame.io/reviews/abc"')
+    expect(col).toContain('Open in Frame.io')
+    expect(col).not.toContain('f.io/old')
+    expect(col).toContain('“Love it”')
+    expect(html(wrap([d('h', 'approved')]))).not.toContain('Open in Frame.io')                   // nothing to link to
+    expect(html(wrap([d('h', 'approved', { rounds: [round({ frame_io: false })] })])).includes('Open the link')).toBe(true)
+  })
+
+  it('lets approval carry an optional comment, on a round and on a delivered deliverable', () => {
+    const open = html(wrap([d('a', 'ready_for_review', { rounds: [round({ response: 'pending', response_label: 'Awaiting', can_respond: true, answered_at: null })] })]))
+    expect(open).toContain('data-approve-comment="r1"')
+    expect(open).toContain('maxlength="1000"')
+    const delivered = html(wrap([d('g', 'delivered', { can_answer: true })]))
+    expect(delivered).toContain('data-approve-comment="g"')
+    expect(delivered).toContain('(optional)')
+  })
+
+  it('asks which project a request is for when there are several, and says nothing when there is one', () => {
+    const several = html(view({ projects: [{ id: 'p1', name: 'Retainer' }, { id: 'p2', name: 'Shoot <b>' }] }))
+    expect(several).toContain('id="rq-project"')
+    expect(several).toContain('Which project is it for?')
+    expect(several).toContain('Shoot &lt;b&gt;')
+    expect(several.indexOf('value="p1"')).toBeLessThan(several.indexOf('value="p2"'))
+    const one = html(view({ projects: [{ id: 'p1', name: 'Retainer' }] }))
+    expect(one).toContain('type="hidden" id="rq-project" value="p1"')
+    expect(one).not.toContain('Which project')
+    const none = html(view({ projects: [] }))
+    expect(none).not.toContain('rq-project')
+  })
+
+  it('names the project on a request that has one', () => {
+    const out = html(view({ requests: [{ id: 'q1', title: 'Cut-down', detail: null, wanted_by: null, status: 'submitted', status_label: 'Submitted', sent_at: '2026-09-28T10:00:00Z', sent_by: 'Dana', project: 'Riverside', note: null, accepted: null }] }))
+    expect(out).toContain('Sent 28 Sep by Dana · Riverside')
+  })
+
+  it('has the comment box on the emailed approve page too', () => {
+    const link = { scope: { kind: 'delivery', can_respond: true }, studio: { name: 'Peny' }, company: 'DMM', title: 'Reel', deliverable_id: 'd1', round: 2, url: 'https://f.io/x', frame_io: true, note: null, preview: null, state: 'open', can_approve: true, can_sign_in: false }
+    const out = approveHtml(link)
+    expect(out).toContain('data-approve-comment')
+    expect(out).toContain('data-approve-now')
   })
 })

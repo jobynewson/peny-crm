@@ -188,6 +188,7 @@ export async function respondToDeliverable(sql, scope, { deliverableId, input, b
       status            = ${patch.status}::deliverable_status,
       approved_at       = CASE WHEN ${approving} THEN NOW() ELSE approved_at END,
       approved_by_name  = CASE WHEN ${approving} THEN ${by.name} ELSE approved_by_name END,
+      approved_comment  = CASE WHEN ${approving} THEN ${comment} ELSE approved_comment END,
       delivered_at      = CASE WHEN ${approving} THEN delivered_at ELSE NULL END,
       changes_note      = CASE WHEN ${approving} THEN NULL ELSE ${comment} END,
       changes_at        = CASE WHEN ${approving} THEN NULL ELSE NOW() END,
@@ -235,12 +236,25 @@ export async function submitRequest(sql, scope, { input, by }) {
   const detail = typeof input.detail === 'string' && input.detail.trim() ? input.detail.trim() : null
   const wantedBy = input.wanted_by || null
 
+  // The client can say which project it is for, so nobody at Peny has to. It
+  // must be one of their company's (and not delivered); anything else is refused
+  // rather than quietly dropped. None is fine: Peny choose when accepting.
+  let projectId = null
+  if (input.project_id != null && input.project_id !== '') {
+    if (!isUuid(input.project_id)) return { error: { status: 422, code: 'validation_failed', field: 'project_id', message: 'Choose one of your projects' } }
+    const [p] = await sql`
+      SELECT id FROM projects
+      WHERE id = ${input.project_id} AND user_id = ${scope.ws} AND company_id = ${scope.companyId} AND status <> 'Delivered'`
+    if (!p) return { error: { status: 422, code: 'validation_failed', field: 'project_id', message: 'Choose one of your projects' } }
+    projectId = p.id
+  }
+
   const [request] = await sql`
     WITH co AS (
       SELECT id, name FROM companies WHERE id = ${scope.companyId} AND user_id = ${scope.ws}
     ), made AS (
-      INSERT INTO requests (user_id, company_id, submitted_by, submitted_by_name, title, detail, wanted_by)
-      SELECT ${scope.ws}, co.id, ${scope.clerkUserId}, ${by?.name ?? null}, ${input.title.trim()}, ${detail}, ${wantedBy}::date
+      INSERT INTO requests (user_id, company_id, project_id, submitted_by, submitted_by_name, title, detail, wanted_by)
+      SELECT ${scope.ws}, co.id, ${projectId}::uuid, ${scope.clerkUserId}, ${by?.name ?? null}, ${input.title.trim()}, ${detail}, ${wantedBy}::date
       FROM co
       WHERE (SELECT count(*) FROM requests r WHERE r.company_id = co.id AND r.status = 'new' AND r.submitted_via = 'login') < ${MAX_OPEN_REQUESTS}
       RETURNING id, company_id, project_id, submitted_via, title, detail, wanted_by::text AS wanted_by, submitted_by_name
@@ -492,7 +506,7 @@ async function respondViaLink(sql, scope, { response, comment, by }) {
     ), answered AS (
       UPDATE deliveries SET
         client_response   = ${response}::delivery_response,
-        client_comment    = ${response === 'changes_requested' ? comment : null},
+        client_comment    = ${response === 'comments_in' ? null : comment},
         responded_at      = NOW(),
         responded_by      = ${respondedBy},
         responded_by_name = ${by.name}

@@ -1253,6 +1253,10 @@ always the source of truth and nothing is ever read back from Google.
   client-visible deliverables as "Up next", and answered requests folded),
   **In progress** in the middle and widest, **Approved** on the right, narrower
   and quieter (six shown, the rest folded; closed by default on a phone).
+  The left column never folds anything (answered requests sit under an
+  "Answered" heading) and scrolls on its own on a desktop once it is taller than
+  the screen. An approved item keeps its link (Open in Frame.io) and the comment
+  that came with the approval.
   Ready for review, waiting on you and delivered-to-approve sit at the top of the
   middle column under "Needs you", marked with an amber edge and what to do. A
   summary line and jump links lead the page. On a phone the columns stack in
@@ -1260,6 +1264,23 @@ always the source of truth and nothing is ever read back from Google.
   duplicated markup). Grouping is by status, not workstream: each card carries
   its workstream's name and workstream briefs are no longer shown. Every
   `#d-<id>` anchor still exists.
+- **Close to live** (`src/portal/live.js`): every 30 s while the page is showing
+  (and when it comes back into view) the portal asks for the view again and
+  redraws only if it changed. It never redraws over someone typing or with a form
+  or confirm open (it waits a tick), and keeps the scroll, the open folds and the
+  left column's scroll. 30 s keeps an office of clients well under the API's
+  60-requests-a-minute-per-IP limit.
+- **Approve can carry a comment** (optional, on a round, on a delivered deliverable
+  and on the emailed Approve page): stored on the round's `client_comment`, or
+  `deliverables.approved_comment` (`drizzle/0042`) when there is no round; shown
+  to the client and on the Worklist, and quoted in the digest's approvals.
+- **The client says which project a request is for** (`projects` in the company
+  view; the form shows a picker when there are several, sends the only one
+  silently, and nothing when there are none). `POST client/requests` takes
+  `project_id`, which must be one of the company's own projects and not
+  Delivered (422 otherwise). The request is then filed under it, so Accept never
+  asks; with none named, staff still get the old rule (the one project, or the one
+  retainer, else a question).
 - `main.js` boots and handles errors, `render.js` draws the two views and
   the approve / comments-are-in / request-changes flow (approve is two taps;
   changes need words), `schedule.js` is the post-production grid ported from the old page,
@@ -1280,7 +1301,8 @@ is the guard), `requests` decision columns, `deliverables.client_reply`,
   as Submitted / Accepted (date read live from the deliverable, with a link to it
   in their worklist) / Declined (our note). Nothing about who decided leaves.
 - **Requests on the task board** (`api/_requests.js`, `src/views/request-cards.js`;
-  the count of new ones sits on the **Tasks** tab, from `GET retainers/request-count`).
+  the **Tasks** tab's bubble, from `GET retainers/request-count` → `{ new, feedback }`: new requests, plus
+  feedback waiting to be acted on — `changes_requested` or `comments_in` deliverables that are yours or nobody's; it clears when the next round goes out).
   There is no separate inbox: `GET retainers/board` returns `requests` (the new
   ones, oldest first) beside `cards`, and each is a card in the **Unassigned**
   tray (and "New requests" first on the phone list), marked "Sent via project

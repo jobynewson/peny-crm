@@ -23,7 +23,8 @@ export const linkify = text => esc(text).replace(/https?:\/\/[^\s<]+/g, match =>
   return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>${match.slice(url.length)}`
 })
 
-const meta = r => [esc(r.company), r.sent_by ? `from ${esc(r.sent_by)}` : null].filter(Boolean).join(' · ')
+// Company, and the project when the client named one that is not simply the company again.
+const meta = r => [esc(r.company), r.project && r.project !== r.company ? esc(r.project) : null, r.sent_by ? `from ${esc(r.sent_by)}` : null].filter(Boolean).join(' · ')
 
 // The card for the tray. Not draggable: a request isn't work yet. Accept is on it.
 export function requestCardHtml(r, { canEdit = true } = {}) {

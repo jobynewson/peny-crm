@@ -17,6 +17,10 @@ describe('a request card', () => {
     expect(html).toContain('data-request-accept="q1"')
     expect(html).toContain('>Request<')
   })
+  it('names the project the client chose, but not when it is just the company again', () => {
+    expect(requestCardHtml(r({ project: 'Riverside shoot' }))).toContain('DMM · Riverside shoot · from Dana')
+    expect(requestCardHtml(r({ project: 'DMM' }))).toContain('DMM · from Dana')
+  })
   it('marks one sent through a project link, and says when no date was asked', () => {
     const link = requestCardHtml(r({ source: 'link', source_label: 'Sent via project link', wanted_by: null, wanted_by_display: null }))
     expect(link).toContain('Sent via project link')

@@ -142,6 +142,7 @@ function deliverableJson(d, deliveries, today) {
     delivered_at: d.delivered_at,
     approved_at: d.approved_at,
     approved_by_name: d.approved_by_name,
+    approved_comment: d.approved_comment,
     changes_note: d.changes_note,
     changes_at: d.changes_at,
     client_visible: d.client_visible,
@@ -160,7 +161,7 @@ async function loadDeliverables(sql, ws, { workstreamIds = [], ids = [] }) {
     SELECT d.id, d.workstream_id, d.title, d.format, d.owner_id, u.name AS owner_name, u.email AS owner_email,
            d.due_kind, d.due_date::text AS due_date, d.due_label, d.cadence, d.status,
            d.waiting_since, d.waiting_note, d.client_visible, d.internal_notes, d.sort_order,
-           d.delivered_at, d.approved_at, d.approved_by_name, d.changes_note, d.changes_at,
+           d.delivered_at, d.approved_at, d.approved_by_name, d.approved_comment, d.changes_note, d.changes_at,
            d.created_at, d.updated_at
     FROM deliverables d
     JOIN workstreams w ON w.id = d.workstream_id
