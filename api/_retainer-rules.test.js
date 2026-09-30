@@ -241,17 +241,18 @@ describe('accepting a request', () => {
     expect(validateAccept({ ...ok, workstream_id: undefined, new_workstream_title: 'Launch extras' }, { userIds: users })).toBeNull()
     expect(validateAccept({ ...ok, title: 'A better title' }, { userIds: users })).toBeNull()
   })
-  it('never lets one sit ownerless or undated', () => {
-    expect(validateAccept({ ...ok, owner_id: null }, { userIds: users })).toMatchObject({ field: 'owner_id' })
-    expect(validateAccept({ ...ok, owner_id: '33333333-3333-4333-8333-333333333333' }, { userIds: users })).toMatchObject({ field: 'owner_id' })
-    expect(validateAccept({ ...ok, due_date: null }, { userIds: users })).toMatchObject({ field: 'due_date' })
-    expect(validateAccept({ ...ok, due_date: '2026-02-30' }, { userIds: users })).toMatchObject({ field: 'due_date' })
+  it('asks for nothing: no owner, date or workstream is fine (the board supplies them)', () => {
+    expect(validateAccept({}, { userIds: users })).toBeNull()
+    expect(validateAccept({ owner_id: null, due_date: null, workstream_id: null }, { userIds: users })).toBeNull()
+    expect(validateAccept({ due_date: '' }, { userIds: users })).toBeNull()
   })
-  it('needs somewhere to put it, and not two places', () => {
-    expect(validateAccept({ ...ok, workstream_id: null }, { userIds: users })).toMatchObject({ field: 'workstream_id' })
+  it('still rejects what it is given if it is nonsense', () => {
+    expect(validateAccept({ ...ok, owner_id: '33333333-3333-4333-8333-333333333333' }, { userIds: users })).toMatchObject({ field: 'owner_id' })
+    expect(validateAccept({ ...ok, owner_id: 'nope' }, { userIds: users })).toMatchObject({ field: 'owner_id' })
+    expect(validateAccept({ ...ok, due_date: '2026-02-30' }, { userIds: users })).toMatchObject({ field: 'due_date' })
     expect(validateAccept({ ...ok, workstream_id: 'nope' }, { userIds: users })).toMatchObject({ field: 'workstream_id' })
+    expect(validateAccept({ ...ok, project_id: 'nope' }, { userIds: users })).toMatchObject({ field: 'project_id' })
     expect(validateAccept({ ...ok, new_workstream_title: 'Both' }, { userIds: users })).toMatchObject({ field: 'workstream_id' })
-    expect(validateAccept({ ...ok, workstream_id: null, new_workstream_title: '   ' }, { userIds: users })).toMatchObject({ field: 'workstream_id' })
   })
 })
 

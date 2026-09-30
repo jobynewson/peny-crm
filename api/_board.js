@@ -3,7 +3,7 @@
 // deliverables table — one record, visible on the board and on the project's Worklist tab
 // page. Routes behind /api/retainers (merged into _retainers.js's table), for
 // Slate staff:
-//   GET  retainers/board                               the cards
+//   GET  retainers/board                               the cards, and the new client requests
 //   POST retainers/deliverables/:id/board-move  { column }
 //
 // The mapping between the board's three columns and a deliverable's six
@@ -18,6 +18,7 @@
 
 import { UUID, fail, invalid, readBody, workspaceId } from './_api.js'
 import { londonDate } from './_dates.js'
+import { loadOpenRequests } from './_requests.js'
 import {
   BOARD_COLUMNS, BOARD_DONE_DAYS, BOARD_HORIZON_DAYS, boardShows, parseWindowDays, boardCard, compareBoardCards, statusAfterBoardDrag, statusPatch,
 } from './_retainer-rules.js'
@@ -56,7 +57,9 @@ async function getBoard(req, res, { sql }) {
     .filter(d => boardShows(d, today, days))
     .map(d => boardCard(d, today, now))
     .sort(compareBoardCards)
-  return res.status(200).json({ today, days, cards })
+  // New client requests wait in the tray too, as cards of their own kind.
+  const requests = await loadOpenRequests(sql, ws, today)
+  return res.status(200).json({ today, days, cards, requests })
 }
 
 // ── POST retainers/deliverables/:id/board-move ───────────────────────────────

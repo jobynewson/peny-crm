@@ -25,6 +25,7 @@ export async function request(path, { method = 'GET', body } = {}) {
     err.code   = data?.error?.code
     err.field  = data?.error?.field
     err.status = res.status
+    err.details = data?.error ?? null   // anything else the server sent with it (e.g. `projects`)
     throw err
   }
   return data

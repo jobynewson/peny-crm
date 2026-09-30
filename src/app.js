@@ -21,8 +21,7 @@ import { icon } from './views/icons.js'
 import { closeFloating } from './views/popover.js'
 import { searchCommands } from './views/search-commands.js'
 import { mountWhatsDue } from './views/whats-due.js'
-import { legacyRetainersTarget } from './utils/worklist-route.js'
-import { RequestsView } from './views/requests.js'
+import { legacyRetainersTarget, legacyRequestsTarget } from './utils/worklist-route.js'
 import { matchCommands } from './utils/command-search.js'
 import { segTabs, bindSegTabs } from './views/toolbar.js'
 import { syncThemeColor } from './theme.js'
@@ -30,7 +29,7 @@ import { syncThemeColor } from './theme.js'
 const PHONE = '(max-width: 768px)'
 
 // Every route the app has used; old bookmarks keep working.
-const VIEWS = ['dashboard', 'tasks', 'calendar', 'projects', 'budgets', 'planning', 'requests', 'contacts', 'marketing', 'story-planner', 'leave', 'expenses', 'password-manager', 'offload-log', 'settings', 'timetrack']
+const VIEWS = ['dashboard', 'tasks', 'calendar', 'projects', 'budgets', 'planning', 'contacts', 'marketing', 'story-planner', 'leave', 'expenses', 'password-manager', 'offload-log', 'settings', 'timetrack']
 
 export class App {
   constructor({ userId, clerkUserId, user, appUser, permissions, contacts, companies, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, leaveRequests, publicHolidays, onSignOut }) {
@@ -66,7 +65,6 @@ export class App {
     this.offloadLogView       = new OffloadLogView(this)
     this.boardsView           = new BoardsView(this)
     this.canvasView           = new CanvasView(this)
-    this.requestsView         = new RequestsView(this)
     this.tasksView            = new TasksView(this)
     this.planningTabs         = new PlanningTabsView(this)
     this.header               = new HeaderView(this)
@@ -515,9 +513,6 @@ export class App {
         if (this.currentView === 'budgets' && this.budgetsView.currentId) {
           document.querySelector('#bv-back')?.click(); return
         }
-        if (this.currentView === 'requests' && this.requestsView.currentId) {
-          document.querySelector('#rq-back')?.click(); return
-        }
         return
       }
 
@@ -582,7 +577,6 @@ export class App {
       'offload-log': this.offloadLogView,
       marketing: this.marketingView,
       planning: this.boardsView,
-      requests: this.requestsView,
       settings: { toolbar: () => this._settingsToolbar(), bindToolbar: bar => this._bindSettingsToolbar(bar) },
     }[this.currentView]
   }
@@ -738,14 +732,13 @@ export class App {
     this.boardsView.board = null
     this.canvasView.currentId = null
     this.canvasView.canvas = null
-    this.requestsView.currentId = null
     // The dashboard is the home page, "/". Every other view keeps its #hash
     // (the task board is #tasks), so bookmarks still resolve.
     history.pushState({ view }, '', view === 'dashboard' ? '/' : `#${view}`)
     this.render()
   }
 
-  // New client requests waiting for triage, for the count on the Requests tab.
+  // New client requests waiting in the task board's tray, for the count on the Tasks tab.
   // Checked when the app opens, every minute while it is on screen, when the
   // window comes back into view and after a request is answered (triage calls
   // refreshRequestCount). Staff only; a failed check just keeps the last number.
@@ -800,6 +793,9 @@ export class App {
   // emails already sent. Worklists live on projects now, so it goes to that
   // company's project (its retainer if it has one), and #retainers to Projects.
   _redirectOldRetainersAddress() {
+    // #requests and #requests/<id> (emails already sent) are the task board now.
+    const requests = legacyRequestsTarget(location.hash)
+    if (requests) { history.replaceState(history.state, '', location.pathname + requests.hash); return }
     const target = legacyRetainersTarget(location.hash, this.projects || [])
     if (!target) return
     const named = location.hash.includes('/')
@@ -819,7 +815,6 @@ export class App {
       this.projectsView._pvSub = tab === 'worklist' ? sub || null : null
     }
     if (view === 'budgets' && id) this.budgetsView.currentId = id
-    if (view === 'requests' && id) this.requestsView.currentId = id
     if (view === 'planning' && id) {
       // #planning/<boardId> or #planning/canvas/<canvasId>
       if (id === 'canvas' && tab) this.canvasView.currentId = tab
@@ -850,7 +845,6 @@ export class App {
     this.budgetsView.editingId  = null
     this.boardsView.currentId   = (view === 'planning' && id && id !== 'canvas') ? id : null
     this.canvasView.currentId   = (view === 'planning' && id === 'canvas' && tab) ? tab : null
-    this.requestsView.currentId = (view === 'requests' && id) ? id : null
     this.render()
   }
 
@@ -878,9 +872,6 @@ export class App {
       if (!p.projects_view) return locked("You don't have access to Planning.")
       if (this.canvasView.currentId) this.canvasView.render(mc)
       else this.boardsView.render(mc)
-    } else if (this.currentView === 'requests') {
-      if (!p.projects_view) return locked("You don't have access to Requests.")
-      this.requestsView.render(mc)
     } else if (this.currentView === 'timetrack') {
       this.timeTrackView.render(mc)
     } else if (this.currentView === 'password-manager') {

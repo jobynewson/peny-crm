@@ -3161,3 +3161,12 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 .co-pick-row:hover, .co-pick-row:focus-visible { background: var(--bg-secondary); }
 .co-pick-row[aria-current="true"] { font-weight: 600; }
 @media (max-width: 768px) { .row-btn--desk { display: none; } .co-actions .row-btn { padding: 6px 8px; } }
+
+/* Client requests in the task board's tray (src/views/request-cards.js) */
+.tk-card--request { cursor: pointer; border-left: 3px solid var(--accent); }
+.tk-pill--request { background: var(--accent-subtle); color: var(--accent-text); }
+.tk-chip-status--link { background: var(--bg-secondary); color: var(--text-secondary); }
+.tk-accept { font-size: 12px; padding: 4px 12px; }
+.tk-m-row--request { border-left: 3px solid var(--accent); }
+.rq-detail { margin: 8px 0; font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rq-actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; }

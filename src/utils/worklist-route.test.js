@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { legacyRetainersTarget } from './worklist-route.js'
+import { legacyRetainersTarget, legacyRequestsTarget } from './worklist-route.js'
 
 const projects = [
   { id: 'p1', company_id: 'c1', is_retainer: false },
@@ -21,5 +21,15 @@ describe('the old #retainers addresses', () => {
   })
   it('leave every other address alone', () => {
     for (const h of ['#projects/p1', '#requests', '', '#tasks/abc']) expect(legacyRetainersTarget(h, projects)).toBeNull()
+  })
+})
+
+describe('the old #requests addresses', () => {
+  it('go to the task board, where requests are cards in the tray now', () => {
+    expect(legacyRequestsTarget('#requests')).toEqual({ hash: '#tasks' })
+    expect(legacyRequestsTarget('#requests/11111111-1111-4111-8111-111111111111')).toEqual({ hash: '#tasks' })
+  })
+  it('leave every other address alone', () => {
+    for (const h of ['#tasks', '#projects', '#retainers/c1', '', '#']) expect(legacyRequestsTarget(h)).toBeNull()
   })
 })

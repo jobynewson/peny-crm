@@ -22,6 +22,8 @@ export const markRead = (payload) => request('/api/notifications/read', { method
 // Deliverables on the board (api/_board.js): cards read from the deliverables
 // table, one record shown here and on the Retainers page. The server decides
 // which columns they sit in and what a drag may do.
-export const listBoardCards = days => request(`/api/retainers/board${days ? `?days=${days}` : ''}`).then(r => r.cards)
+// → { today, days, cards, requests }: `requests` are the new client requests waiting in the tray.
+export const listBoard = days => request(`/api/retainers/board${days ? `?days=${days}` : ''}`)
+export const listBoardCards = days => listBoard(days).then(r => r.cards)
 // → { card }, or a 409 with code 'board_refused' whose message is the sentence to show.
 export const moveBoardCard = (id, column) => request(`/api/retainers/deliverables/${id}/board-move`, { method: 'POST', body: { column } })

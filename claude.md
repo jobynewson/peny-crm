@@ -501,8 +501,9 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 - `worklist.js` - the Worklist tab on a project's page: its workstreams,
   deliverables and rounds (`#projects/<id>/worklist`, and
   `#projects/<id>/worklist/<deliverableId>` opens that deliverable) over
-  `/api/retainers` — see "Retainer worklists" below. `requests.js` is triage
-  (`#requests`, its own header tab with a count of new ones).
+  `/api/retainers` — see "Retainer worklists" below. Client requests are
+  cards in the task board's tray (`request-cards.js`); there is no Requests view
+  or tab (`#requests` redirects to `#tasks`).
 - `password-manager.js` - Password management
 - `offload-log.js` - Offload Log (read-only table of backup reports from Fence)
 
@@ -1214,7 +1215,7 @@ always the source of truth and nothing is ever read back from Google.
     project's "Client link" control (`POST retainers/projects/:id/link`,
     token made on the server), and what it can do is limited: requests only,
     each needing a typed name (never verified), marked "Sent via project
-    link" in triage, capped at ten unanswered per project, and refused once
+    link" on its card, capped at ten unanswered per project, and refused once
     the project is Delivered. Link requests don't count toward a company's
     signed-in cap, so a forwarded link can't block its clients.
   - Organisation membership is trusted from Clerk's signed session token;
@@ -1266,13 +1267,26 @@ is the guard), `requests` decision columns, `deliverables.client_reply`,
   company (the cap is in the writing statement). The client sees the company's requests
   as Submitted / Accepted (date read live from the deliverable, with a link to it
   in their worklist) / Declined (our note). Nothing about who decided leaves.
-- **Triage** (`api/_requests.js`, `src/views/requests.js`, the Requests tab — a count of new ones sits on it, from `GET retainers/request-count`):
-  accept = pick the project (a link request's is fixed), then pick or make a
-  workstream in it, + owner + date, creating the deliverable
-  (client-visible, planned) and marking the request accepted in ONE statement;
-  decline = a note. Triage holds no work: after accepting, the deliverable is the
-  only record. The new owner gets the "Tasks assigned to you" email (also on
-  create/reassign in `_retainers.js`).
+- **Requests on the task board** (`api/_requests.js`, `src/views/request-cards.js`;
+  the count of new ones sits on the **Tasks** tab, from `GET retainers/request-count`).
+  There is no separate inbox: `GET retainers/board` returns `requests` (the new
+  ones, oldest first) beside `cards`, and each is a card in the **Unassigned**
+  tray (and "New requests" first on the phone list), marked "Sent via project
+  link" when it was. They ignore "Just mine" and the assignee filter; only the
+  project filter hides one. Not draggable (a request isn't work yet).
+  **Accept** is on the card: one popover with the date (filled with the one they
+  asked for, optional); the body is optional all round, the server supplies the
+  rest: owner = whoever accepts, project = the request's own / the company's only
+  project / its one retainer (409 `needs_project` with the list when it can't tell,
+  and the popover asks; 422 when the company has no project), workstream = the
+  project's "Requests" one (made on first use); a named `workstream_id` still
+  works (also an older company-level one). It creates the deliverable (client-visible,
+  planned) and marks the request accepted in ONE statement. **Decline** asks for
+  the note the client reads. Clicking a card shows their full words with both.
+  After accepting, the deliverable is the only record; Planned to Doing on the
+  board already sets In progress for the client. The new owner gets the "Tasks
+  assigned to you" email (not when it is you). The new-request alert email still
+  goes to the lead / superadmins, and opens the board.
 - **Waiting on you**: `POST /api/client/deliverables/:id/reply` keeps the latest
   note (cleared with `waiting_note` by `statusPatch`), never shown on a project
   link, alerts the owner every time.

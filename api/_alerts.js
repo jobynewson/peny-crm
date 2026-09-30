@@ -118,11 +118,11 @@ export function newRequestEmail({ request, company }) {
     title: 'A new client request',
     subtitle: company,
     sentence: viaLink
-      ? `Someone using the ${escapeHtml(company)} project link sent a request and gave the name ${escapeHtml(request.submitted_by_name || 'nothing')}. The name isn’t checked. It needs an owner and a date.`
-      : `${escapeHtml(request.submitted_by_name || 'Someone')} at ${escapeHtml(company)} has sent a request. It needs an owner and a date.`,
+      ? `Someone using the ${escapeHtml(company)} project link sent a request and gave the name ${escapeHtml(request.submitted_by_name || 'nothing')}. The name isn’t checked. It is waiting in the task board’s Unassigned tray.`
+      : `${escapeHtml(request.submitted_by_name || 'Someone')} at ${escapeHtml(company)} has sent a request. It is waiting in the task board’s Unassigned tray.`,
     body: card(request.title, [request.wanted_by && `They'd like it by ${formatDay(request.wanted_by, today())}`], request.detail),
-    href: `${appBaseUrl()}/#requests/${request.id}`,
-    linkLabel: 'Open the request',
+    href: `${appBaseUrl()}/#tasks`,
+    linkLabel: 'Open the task board',
   }
 }
 

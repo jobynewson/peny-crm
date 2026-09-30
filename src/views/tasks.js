@@ -13,6 +13,7 @@
 import * as api from '../api/tasks.js'
 import { openFloating, floatingOpen } from './popover.js'
 import { readWindow, saveWindow, windowToggleHtml } from '../utils/window-days.js'
+import { requestCardHtml, requestRowHtml, bindRequestCards } from './request-cards.js'
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
 
@@ -119,6 +120,7 @@ export class TasksView {
 
     this.filters = this._loadFilters()
     this.window = readWindow(LS_WINDOW, 30)
+    this.requests = []         // new client requests waiting in the tray (api/_requests.js)
   }
 
   // ── Shell selection ────────────────────────────────────────────────────────
@@ -176,7 +178,9 @@ export class TasksView {
   // the task board, and the next poll tries again.
   async _loadCards() {
     try {
-      this.cards = await api.listBoardCards(this.window)
+      const board = await api.listBoard(this.window)
+      this.cards = board.cards
+      this.requests = board.requests ?? []
       this.cardsError = null
     } catch (err) {
       console.warn('Deliverable cards failed to load:', err.message)
@@ -187,9 +191,9 @@ export class TasksView {
   // A poll's fresh cards: true when they differ from what is on screen.
   async _pollCards() {
     if (this._dragCardId || this._dragId) return false
-    const before = JSON.stringify(this.cards)
+    const before = JSON.stringify([this.cards, this.requests])
     await this._loadCards()
-    return JSON.stringify(this.cards) !== before
+    return JSON.stringify([this.cards, this.requests]) !== before
   }
 
   // Merge by id — never wholesale-replace, or an in-flight drag gets clobbered.
@@ -364,6 +368,22 @@ export class TasksView {
     return this.visibleCards().filter(c => c.in_tray)
   }
 
+  // New client requests. "Just mine" and the assignee filter never hide them
+  // (nobody owns one yet, and one nobody can see is one nobody answers); only
+  // the project filter does, and only for a request that belongs to a project.
+  visibleRequests() {
+    return this.requests.filter(r => !this.filters.project || !r.project_id || r.project_id === this.filters.project)
+  }
+
+  get canAnswerRequests() { return this.app.permissions?.projects_edit === true }
+
+  // After one is accepted or declined: the board and the Tasks tab's number.
+  async _requestsChanged() {
+    await this._loadCards()
+    this._refreshBoard()
+    this.app.refreshRequestCount?.()
+  }
+
   unassignedTasks() {
     return this.visibleTasks()
       .filter(t => !t.assignee_id && t.status !== 'done')
@@ -486,7 +506,8 @@ export class TasksView {
   _renderDesktop(mc) {
     const unassigned = this.unassignedTasks()
     const trayCards = this.trayCards()
-    const trayCount = unassigned.length + trayCards.length
+    const requests = this.visibleRequests()
+    const trayCount = unassigned.length + trayCards.length + requests.length
     mc.innerHTML = `
       <div class="tk-wrap">
         ${this._quickAddHtml()}
@@ -494,7 +515,7 @@ export class TasksView {
           <div class="tk-tray-label">Unassigned${trayCount ? ` · ${trayCount}` : ''}</div>
           <div class="tk-tray-body" data-drop-tray="1">
             ${trayCount
-              ? trayCards.map(c => this._deliverableCardHtml(c, true)).join('') + unassigned.map(t => this._cardHtml(t, true)).join('')
+              ? requests.map(r => requestCardHtml(r, { canEdit: this.canAnswerRequests })).join('') + trayCards.map(c => this._deliverableCardHtml(c, true)).join('') + unassigned.map(t => this._cardHtml(t, true)).join('')
               : `<div class="tk-tray-empty">Nothing waiting to be picked up.</div>`}
           </div>
         </div>
@@ -628,6 +649,7 @@ export class TasksView {
         this.app.openLink(el.dataset.cardLink)
       })
     })
+    bindRequestCards(this.app, mc, this.requests, { canEdit: this.canAnswerRequests, onChanged: () => this._requestsChanged() })
   }
 
   // ── Drag and drop ──────────────────────────────────────────────────────────
@@ -805,6 +827,8 @@ export class TasksView {
     const withCards = (column, tasks) => [...mineCards.filter(c => c.column === column), ...tasks]
 
     return [
+      // New client requests come first: they are waiting for someone to say yes.
+      { id: 'requests', label: 'New requests', items: this.requests },
       { id: 'needs', label: 'Needs a reply', items: needsReply.sort(byDue) },
       { id: 'doing', label: 'Doing',         items: withCards('doing', acked.filter(t => t.status === 'doing').sort(byDue)) },
       { id: 'todo',  label: 'To do',         items: withCards('todo', acked.filter(t => t.status === 'todo').sort(byDue)) },
@@ -823,10 +847,10 @@ export class TasksView {
         ${!anything ? `<div class="empty-state" style="padding:60px 20px">Nothing assigned to you.</div>` : ''}
         ${open.filter(g => g.items.length).map(g => `
           <div class="tk-m-group">
-            <div class="tk-m-group-head ${g.id === 'needs' ? 'tk-m-group-head--alert' : ''}">
+            <div class="tk-m-group-head ${['needs', 'requests'].includes(g.id) ? 'tk-m-group-head--alert' : ''}">
               ${esc(g.label)} <span class="kanban-count">${g.items.length}</span>
             </div>
-            ${g.items.map(t => t.kind === 'deliverable' ? this._mobileCardHtml(t) : this._mobileRowHtml(t)).join('')}
+            ${g.items.map(t => this._mobileItemHtml(t)).join('')}
           </div>`).join('')}
         ${done.items.length ? `
           <div class="tk-m-group">
@@ -852,6 +876,7 @@ export class TasksView {
     mc.querySelectorAll('[data-card-link]').forEach(el => {
       el.addEventListener('click', () => this.app.openLink(el.dataset.cardLink))
     })
+    bindRequestCards(this.app, mc, this.requests, { canEdit: this.canAnswerRequests, onChanged: () => this._requestsChanged() })
     // "Got it" is inline on the row — one tap, no navigation.
     mc.querySelectorAll('[data-ack-id]').forEach(btn => {
       btn.addEventListener('click', async e => {
@@ -859,6 +884,11 @@ export class TasksView {
         await this._acknowledge(btn.dataset.ackId)
       })
     })
+  }
+
+  _mobileItemHtml(t) {
+    if (t.kind === 'request') return requestRowHtml(t, { canEdit: this.canAnswerRequests })
+    return t.kind === 'deliverable' ? this._mobileCardHtml(t) : this._mobileRowHtml(t)
   }
 
   // A deliverable on the phone list: a row that opens the project’s Worklist tab, where

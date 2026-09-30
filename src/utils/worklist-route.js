@@ -13,3 +13,10 @@ export function legacyRetainersTarget(hash, projects = []) {
   const project = mine.find(p => p.is_retainer) ?? mine[0]
   return project ? { hash: `#projects/${project.id}/worklist`, found: true } : { hash: '#projects', found: false }
 }
+
+// #requests and #requests/<id> were the client requests inbox, and links to them
+// are in emails already sent. Requests are cards in the task board's tray now.
+export function legacyRequestsTarget(hash) {
+  const [view] = String(hash).replace(/^#/, '').split('/')
+  return view === 'requests' ? { hash: '#tasks' } : null
+}

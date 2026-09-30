@@ -396,10 +396,6 @@ describeDb('worklists that belong to a project', () => {
     it('from a company-level request: into a chosen project of that company, in a new workstream', async () => {
       const p = await project('PW Accept', dmm.id)
       const r = await newRequest({ company: dmm.id })
-      const page = await call('GET', `retainers/requests/${r.id}`)
-      const names = page.body.projects.map(x => x.name)
-      expect(names).toContain('PW Accept')
-      expect(page.body.projects.every(x => Array.isArray(x.workstreams))).toBe(true)
       const done = await accept(r.id, { project_id: p.id, new_workstream_title: 'PW Asks', owner_id: ana.id, due_date: '2026-10-20' })
       expect(done.statusCode).toBe(200)
       const [w] = await sql`SELECT project_id, company_id FROM workstreams WHERE id = ${done.body.workstream_id}`
@@ -418,9 +414,8 @@ describeDb('worklists that belong to a project', () => {
       const p = await project('PW Link project')
       const elsewhere = await project('PW Somewhere else', dmm.id)
       const r = await newRequest({ project: p.id, via: 'link' })
-      const page = await call('GET', `retainers/requests/${r.id}`)
-      expect(page.body.request).toMatchObject({ project_id: p.id, company_id: null, source: 'link', source_label: 'Sent via project link', company: 'PW Link project' })
-      expect(page.body.projects.map(x => x.id)).toEqual([p.id])
+      const card = (await call('GET', 'retainers/board')).body.requests.find(x => x.id === r.id)
+      expect(card).toMatchObject({ project_id: p.id, company_id: null, source: 'link', source_label: 'Sent via project link', company: 'PW Link project' })
       const wrong = await accept(r.id, { project_id: elsewhere.id, new_workstream_title: 'PW Asks', owner_id: ana.id, due_date: '2026-10-20' })
       expect(wrong.statusCode).toBe(422)
       const ok = await accept(r.id, { new_workstream_title: 'PW Asks', owner_id: ana.id, due_date: '2026-10-20' })
@@ -428,11 +423,11 @@ describeDb('worklists that belong to a project', () => {
       expect(ok.body.project_id).toBe(p.id)
     })
 
-    it('lists a link request in the inbox, named for its project', async () => {
+    it('puts a link request in the tray, named for its project', async () => {
       const p = await project('PW Inbox project')
       await newRequest({ project: p.id, via: 'link' })
-      const list = await call('GET', 'retainers/requests', undefined, { status: 'new' })
-      expect(list.body.requests.find(x => x.project_id === p.id)).toMatchObject({ company: 'PW Inbox project', source: 'link' })
+      const list = await call('GET', 'retainers/board')
+      expect(list.body.requests.find(x => x.project_id === p.id)).toMatchObject({ company: 'PW Inbox project', source: 'link', kind: 'request' })
     })
   })
 })
