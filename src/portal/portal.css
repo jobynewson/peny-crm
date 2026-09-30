@@ -255,3 +255,11 @@ a { color: var(--accent-text); }
   .pt-board > .pt-col--requests { max-height: calc(100vh - 170px); overflow-y: auto; overscroll-behavior: contain; }
   .pt-col--requests > .pt-ws-head { position: sticky; top: 0; z-index: 1; padding-top: 6px; background: var(--surface); }
 }
+
+/* Approved, grouped by project: one fold per project. */
+.pt-proj { border-top: 1px solid var(--border); }
+.pt-proj-head { display: flex; align-items: center; gap: 8px; padding: 10px 16px; min-height: 40px; cursor: pointer; list-style: none; font-size: 13px; font-weight: 600; background: var(--surface-2, var(--bg)); }
+.pt-proj-head::-webkit-details-marker { display: none; }
+.pt-proj-head::before { content: '▾'; font-size: 11px; color: var(--text-muted); }
+.pt-proj:not([open]) > .pt-proj-head::before { content: '▸'; }
+.pt-proj .pt-list { border-top: none; }

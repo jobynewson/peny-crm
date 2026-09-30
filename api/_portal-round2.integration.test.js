@@ -85,6 +85,11 @@ describeDb('portal round two', () => {
       const accepted = await staffCall('POST', `retainers/requests/${id}/accept`, {})
       expect([accepted.statusCode, accepted.body.project_id]).toEqual([200, filmB.id])      // no needs_project
     })
+    it('says which project each workstream belongs to, so approved work can be grouped', async () => {
+      await sql`INSERT INTO deliverables (workstream_id, title, status, client_visible) VALUES (${stream.id}, 'Grouped', 'approved', true)`
+      const w = (await clientCall('GET', 'client/view')).body.workstreams.find(x => x.id === stream.id)
+      expect(w).toMatchObject({ project: 'P2 Retainer', project_id: filmA.id })
+    })
     it('shows the project on the client\'s own request list', async () => {
       await ask({ project_id: filmB.id })
       expect((await clientCall('GET', 'client/view')).body.requests[0]).toMatchObject({ project: 'P2 Shoot' })

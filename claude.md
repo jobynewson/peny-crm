@@ -1252,7 +1252,10 @@ always the source of truth and nothing is ever read back from Google.
   three columns. **Requests** on the left (submitted requests, not-started
   client-visible deliverables as "Up next", and answered requests folded),
   **In progress** in the middle and widest, **Approved** on the right, narrower
-  and quieter (six shown, the rest folded; closed by default on a phone).
+  and quieter, **grouped by project** (one fold per project, A–Z, work outside a
+  project last as "Other work"; no headings when there is only one project; the
+  whole column is closed by default on a phone). Workstreams carry `project` /
+  `project_id` in the client view for this.
   The left column never folds anything (answered requests sit under an
   "Answered" heading) and scrolls on its own on a desktop once it is taller than
   the screen. An approved item keeps its link (Open in Frame.io) and the comment

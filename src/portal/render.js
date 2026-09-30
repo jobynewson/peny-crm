@@ -152,12 +152,11 @@ const CLIENTS_MOVE = {
   waiting_on_you: 'Waiting on you',
   delivered: 'Delivered — over to you',
 }
-const APPROVED_SHOWN = 6
 
 // Pure, so it is tested without a page. `view.workstreams[].deliverables` and
 // `view.requests` as the server sends them.
 export function portalColumns(view) {
-  const items = (view.workstreams || []).flatMap(w => w.deliverables.map(d => ({ ...d, workstream: w.title })))
+  const items = (view.workstreams || []).flatMap(w => w.deliverables.map(d => ({ ...d, workstream: w.title, project: w.project ?? null })))
   const needs = items.filter(d => d.status in CLIENTS_MOVE)
   const planned = items.filter(d => d.status === 'planned')
   const approved = items.filter(d => d.status === 'approved')
@@ -202,12 +201,35 @@ function boardHtml(view) {
       </section>
       <details class="pt-col pt-col--approved" id="pt-col-approved" open data-collapse-mobile>
         <summary class="pt-col-title pt-col-summary">Approved <span class="pt-muted">${c.approved.length}</span></summary>
-        ${c.approved.length
-          ? `<ul class="pt-list pt-list--quiet">${c.approved.slice(0, APPROVED_SHOWN).map(approvedHtml).join('')}</ul>
-             ${c.approved.length > APPROVED_SHOWN ? `<details class="pt-earlier"><summary>Earlier (${c.approved.length - APPROVED_SHOWN})</summary><ul class="pt-list pt-list--quiet">${c.approved.slice(APPROVED_SHOWN).map(approvedHtml).join('')}</ul></details>` : ''}`
-          : '<p class="pt-muted">Approved work will collect here.</p>'}
+        ${approvedByProject(c.approved)}
       </details>
     </div>`
+}
+
+// Approved work grouped by project, so a client can find what they want: one fold
+// per project (A–Z, work not in a project last), each open with its items. With
+// only one project there is nothing to group, so no heading.
+export function approvedGroups(approved) {
+  const by = new Map()
+  for (const d of approved) {
+    const key = d.project ?? ''
+    if (!by.has(key)) by.set(key, [])
+    by.get(key).push(d)
+  }
+  return [...by.entries()]
+    .sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b, 'en', { sensitivity: 'base' })))
+    .map(([name, items]) => ({ name: name || 'Other work', items }))
+}
+
+function approvedByProject(approved) {
+  if (!approved.length) return '<p class="pt-muted">Approved work will collect here.</p>'
+  const groups = approvedGroups(approved)
+  if (groups.length === 1) return `<ul class="pt-list pt-list--quiet">${groups[0].items.map(approvedHtml).join('')}</ul>`
+  return groups.map(g => `
+    <details class="pt-proj" open>
+      <summary class="pt-proj-head"><span class="pt-proj-name">${esc(g.name)}</span> <span class="pt-muted">${g.items.length}</span></summary>
+      <ul class="pt-list pt-list--quiet">${g.items.map(approvedHtml).join('')}</ul>
+    </details>`).join('')
 }
 
 // A finished one, small and quiet: what it was, where, and when it was approved.

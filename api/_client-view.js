@@ -104,8 +104,9 @@ async function companyView(sql, scope) {
       WHERE s.user_id = ${scope.ws} LIMIT 1
     `,
     sql`
-      SELECT w.id, w.title, w.brief, w.status
+      SELECT w.id, w.title, w.brief, w.status, w.project_id, p.name AS project_name
       FROM workstreams w
+      LEFT JOIN projects p ON p.id = w.project_id
       WHERE w.user_id = ${scope.ws} AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${scope.companyId})
         AND EXISTS (SELECT 1 FROM deliverables d WHERE d.workstream_id = w.id AND d.client_visible)
       ORDER BY w.sort_order, w.created_at
@@ -184,8 +185,9 @@ async function projectView(sql, scope) {
       WHERE s.user_id = ${scope.ws} LIMIT 1
     `,
     sql`
-      SELECT w.id, w.title, w.brief, w.status
+      SELECT w.id, w.title, w.brief, w.status, w.project_id, p.name AS project_name
       FROM workstreams w
+      LEFT JOIN projects p ON p.id = w.project_id
       WHERE w.user_id = ${scope.ws} AND w.project_id = ${scope.projectId}
         AND EXISTS (SELECT 1 FROM deliverables d WHERE d.workstream_id = w.id AND d.client_visible)
       ORDER BY w.sort_order, w.created_at
@@ -326,6 +328,10 @@ export function worklistJson({ workstreams, deliverables, rounds, today, canResp
     brief: w.brief,
     status: w.status,
     status_label: WORKSTREAM_LABELS[w.status],
+    // Which project it belongs to (an older company-level workstream has none): the
+    // portal groups approved work by it.
+    project_id: w.project_id ?? null,
+    project: w.project_name ?? null,
     deliverables: (byWorkstream.get(w.id) || []).map(d => {
       const theirs = clientFace(d)
       const list = roundsByDeliverable.get(d.id) || []

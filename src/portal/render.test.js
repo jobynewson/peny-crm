@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { renderView, approveHtml, portalColumns } from './render.js'
+import { renderView, approveHtml, portalColumns, approvedGroups } from './render.js'
 
 const view = (over = {}) => ({
   scope: { kind: 'company', can_respond: true },
@@ -328,14 +328,28 @@ describe('the portal board: Requests · In progress · Approved', () => {
     expect(out).toContain('pt-jump-link pt-jump-link--alert')
     expect(html(board([d('b', 'in_progress')]))).toContain('Nothing needs you right now.')
   })
-  it('keeps the approved column quiet: title, where and when, folded past six, and no buttons', () => {
+  it('keeps the approved column quiet: title, where and when, and no buttons', () => {
     const ds = Array.from({ length: 8 }, (_, i) => d(`x${i}`, 'approved', { rounds: [{ response: 'approved', answered_at: '2026-09-20T10:00:00Z' }] }))
     const out = html(board(ds))
     const col = out.slice(out.indexOf('id="pt-col-approved"'))
     expect(col).toContain('Approved 20 Sep')
-    expect(col).toContain('Earlier (2)')
+    expect(col.match(/pt-d--quiet/g)).toHaveLength(8)             // all of them, none hidden behind a fold
     expect(col).not.toContain('data-approve')
     expect(col).toContain('data-collapse-mobile')
+  })
+  it('groups approved work by project, A to Z with work outside a project last, one fold each', () => {
+    const ws = (id, project, title) => ({ id, title, brief: null, status: 'active', status_label: 'Active', project, deliverables: [d(`${id}-1`, 'approved'), d(`${id}-2`, 'approved')] })
+    const out = html(view({ workstreams: [ws('w1', 'Shoot <b>', 'Edits'), ws('w2', null, 'Old stuff'), ws('w3', 'Annual retainer', 'Monthly')] }))
+    const col = out.slice(out.indexOf('id="pt-col-approved"'))
+    const names = [...col.matchAll(/pt-proj-name">([^<]*)</g)].map(m => m[1])
+    expect(names).toEqual(['Annual retainer', 'Shoot &lt;b&gt;', 'Other work'])
+    expect(col.match(/<details class="pt-proj" open>/g)).toHaveLength(3)
+    expect(col).toContain('Item w3-1')
+    expect(col).not.toContain('Shoot <b>')
+    // One project, or none: nothing to group, so no headings.
+    const single = html(view({ workstreams: [ws('w1', 'Only one', 'Edits'), ws('w3', 'Only one', 'Monthly')] }))
+    expect(single.slice(single.indexOf('id="pt-col-approved"'))).not.toContain('pt-proj')
+    expect(html(board([d('a', 'approved')])).includes('pt-proj-name')).toBe(false)
   })
   it('keeps every anchor an email can point at, and escapes the workstream name', () => {
     const out = html(board([d('e', 'ready_for_review'), d('h', 'approved'), d('a', 'planned')]))
@@ -404,5 +418,12 @@ describe('the portal: round two', () => {
     const out = approveHtml(link)
     expect(out).toContain('data-approve-comment')
     expect(out).toContain('data-approve-now')
+  })
+})
+
+describe('approvedGroups', () => {
+  it('groups by project name, ignoring case, with no-project work last', () => {
+    const g = approvedGroups([{ id: 1, project: 'beta' }, { id: 2, project: null }, { id: 3, project: 'Alpha' }, { id: 4, project: 'beta' }])
+    expect(g.map(x => [x.name, x.items.map(i => i.id)])).toEqual([['Alpha', [3]], ['beta', [1, 4]], ['Other work', [2]]])
   })
 })
