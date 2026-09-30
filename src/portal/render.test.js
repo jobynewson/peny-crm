@@ -53,7 +53,7 @@ describe('the portal: requests', () => {
     expect(html(view({ scope: { kind: 'company', can_respond: false } }))).not.toContain('data-new-request')
     const project = renderView({
       scope: { kind: 'project', can_respond: false }, today: '2026-09-29', title: 'Film', studio: {}, project: { name: 'Film' },
-      client: null, workstreams: null, deliverables: [], work_log: [], schedule: null,
+      client: null, workstreams: [], work_log: [], schedule: null,
     }, { signedIn: false, canSwitch: false })
     expect(project).not.toContain('data-new-request')
     expect(project).not.toContain('data-request-form')
@@ -180,7 +180,7 @@ describe('the portal: requests through a project link', () => {
     today: '2026-09-29', title: 'Riverside shoot',
     project: { name: 'Riverside shoot', status: 'Post', brief: null, shoot_start: null, shoot_end: null, frame_io_link: null },
     client: null, studio: { name: 'Peny', website: null },
-    workstreams: [], deliverables: null, requests: [], work_log: [], schedule: null, ...over,
+    workstreams: [], requests: [], work_log: [], schedule: null, ...over,
   })
 
   it('offers the form with a name field, because a link cannot say who is holding it', () => {

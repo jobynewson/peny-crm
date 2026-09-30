@@ -1004,6 +1004,60 @@ export class App {
     })
   }
 
+  // Each project row lists its deliverables (open ones, and ones approved this
+  // week). Ticking one marks it approved; unticking reopens it. The row's
+  // badge counts what is still to do.
+  async _loadDbDeliverables(mc) {
+    let rows
+    try {
+      const { getDashboardDeliverables } = await import('./api/retainers.js')
+      rows = (await getDashboardDeliverables()).deliverables
+    } catch (e) { console.error(e); return }
+    if (!document.contains(mc)) return
+    this._dbDeliverables = rows
+    const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
+    const paint = box => {
+      const pid = box.dataset.dbDeliv
+      const mine = this._dbDeliverables.filter(d => d.project_id === pid)
+      const todo = mine.filter(d => !d.done).length
+      const badge = mc.querySelector(`[data-deliv-badge="${pid}"]`)
+      if (badge) { badge.hidden = !todo; badge.textContent = `${todo} to do` }
+      box.hidden = !mine.length
+      if (!mine.length) { box.innerHTML = ''; return }
+      box.innerHTML = `
+        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:7px">Deliverables · ${todo} to do</div>
+        ${mine.map(d => `
+          <div style="display:flex;align-items:center;gap:7px;padding:3px 0;${d.done ? 'opacity:0.45;' : ''}">
+            <input type="checkbox" class="db-inline-deliv-check" data-deliv-id="${d.id}" ${d.done ? 'checked' : ''}
+              ${this.permissions?.projects_edit ? '' : 'disabled'} aria-label="Mark ${esc(d.title)} delivered and approved"
+              style="cursor:pointer;flex-shrink:0;width:13px;height:13px;accent-color:var(--accent)">
+            <span style="flex:1;font-size:12px;color:var(--text-primary);line-height:1.3;${d.done ? 'text-decoration:line-through;' : ''}">${esc(d.title)}</span>
+            ${d.overdue && !d.done ? `<span class="db-due-pill db-due-pill--overdue" style="font-size:9px;padding:1px 5px">${d.days_late}d late</span>`
+              : d.due_date ? `<span class="db-due-pill" style="font-size:9px;padding:1px 5px">${esc(d.due_display)}</span>` : ''}
+            ${d.owner_name ? `<span style="font-size:10px;color:var(--text-tertiary);flex-shrink:0">${esc(d.owner_name)}</span>` : ''}
+          </div>`).join('')}`
+      box.querySelectorAll('.db-inline-deliv-check').forEach(cb => {
+        cb.addEventListener('click', e => e.stopPropagation())
+        cb.addEventListener('change', async () => {
+          const d = this._dbDeliverables.find(x => x.id === cb.dataset.delivId)
+          if (!d) return
+          const done = cb.checked
+          try {
+            const { updateDeliverable } = await import('./api/retainers.js')
+            await updateDeliverable(d.id, { status: done ? 'approved' : 'in_progress' })
+            d.done = done
+            this.toast(done ? '✓ Delivered and approved' : 'Reopened')
+            paint(box)
+          } catch (err) {
+            cb.checked = !done
+            this.toast(err.message || 'Could not save that')
+          }
+        })
+      })
+    }
+    mc.querySelectorAll('[data-db-deliv]').forEach(paint)
+  }
+
   async _loadDbTimeSection(mc, project) {
     const el = mc.querySelector(`#db-time-${project.id}`)
     if (!el) return
@@ -1260,8 +1314,6 @@ export class App {
       const comments = (p.dashboard_comments || [])
       const isOpen = this._dbPinned.has(p.id)
       const tone = statusTone(p.status)
-      const delivs = (p.deliverables||[]).filter(d => d.text)
-      const doneCount = delivs.filter(d => d.done).length
       const unresolvedCount = comments.filter(c => !c.resolved).length
 
       // Mirror the Project page tab bar — each item deep-links to that tab.
@@ -1290,7 +1342,7 @@ export class App {
           <span class="db-status-dot" style="background:var(--cat-${tone})"></span>
           <span class="db-proj-name-label">${esc(p.name)}</span>
           ${clientName ? `<span class="db-proj-client-label">${esc(clientName)}</span>` : ''}
-          ${delivs.length ? `<span class="db-badge" style="color:${doneCount===delivs.length?'var(--success)':'var(--text-tertiary)'}">${doneCount}/${delivs.length} done</span>` : ''}
+          <span class="db-badge" data-deliv-badge="${p.id}" hidden style="color:var(--text-tertiary)"></span>
           ${unresolvedCount ? `<span class="db-badge" style="color:var(--warning)">${unresolvedCount} open</span>` : ''}
           <span class="db-status-pill" style="color:var(--cat-${tone});background:var(--cat-${tone}-soft);border-color:var(--cat-${tone}-soft)">${p.status}</span>
           <button class="db-pin-btn${this._dbPinned.has(p.id) ? ' db-pin-btn--on' : ''}" data-pin-pid="${p.id}" title="${this._dbPinned.has(p.id) ? 'Unpin (panel stays open)' : 'Pin open'}">⊙</button>
@@ -1299,33 +1351,7 @@ export class App {
         <div class="db-proj-body" id="db-body-${p.id}" style="display:${isOpen ? 'block' : 'none'}">
           ${navRow}
 
-          ${(() => {
-            if (!delivs.length) return ''
-            const sorted = [...delivs.map((d,i)=>({...d,_i:i}))].sort((a,b) => {
-              if (a.done !== b.done) return a.done ? 1 : -1
-              if (a.due && b.due) return new Date(a.due) - new Date(b.due)
-              return a.due ? -1 : 1
-            })
-            const todayMs = new Date().setHours(0,0,0,0)
-            return `<div style="padding:10px 16px 10px;border-bottom:1px solid var(--border-light)">
-              <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:7px">Deliverables · ${doneCount}/${delivs.length}</div>
-              ${sorted.map(d => {
-                const daysUntil = d.due ? Math.round((new Date(d.due + 'T00:00:00') - todayMs) / 86400000) : null
-                const duePill = daysUntil === null ? ''
-                  : daysUntil < 0 && !d.done ? `<span class="db-due-pill db-due-pill--overdue" style="font-size:9px;padding:1px 5px">${Math.abs(daysUntil)}d late</span>`
-                  : daysUntil === 0 ? `<span class="db-due-pill db-due-pill--today" style="font-size:9px;padding:1px 5px">Today</span>`
-                  : `<span class="db-due-pill" style="font-size:9px;padding:1px 5px">${new Date(d.due + 'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</span>`
-                const assignee = d.assignee_id ? this.allUsers.find(u => u.id === d.assignee_id) : null
-                return `<div style="display:flex;align-items:center;gap:7px;padding:3px 0;${d.done ? 'opacity:0.45;' : ''}">
-                  <input type="checkbox" class="db-inline-deliv-check" data-deliv-pid="${p.id}" data-deliv-idx="${d._i}" data-deliv-src="deliverables"
-                    ${d.done ? 'checked' : ''} style="cursor:pointer;flex-shrink:0;width:13px;height:13px;accent-color:var(--accent)">
-                  <span style="flex:1;font-size:12px;color:var(--text-primary);line-height:1.3;${d.done ? 'text-decoration:line-through;' : ''}">${esc(d.text)}</span>
-                  ${duePill}
-                  ${assignee ? `<span style="font-size:10px;color:var(--text-tertiary);flex-shrink:0">${esc(assignee.name || assignee.email)}</span>` : ''}
-                </div>`
-              }).join('')}
-            </div>`
-          })()}
+          <div class="db-deliverables" data-db-deliv="${p.id}" hidden style="padding:10px 16px 10px;border-bottom:1px solid var(--border-light)"></div>
 
           <div id="db-time-${p.id}" style="padding:10px 16px;border-bottom:1px solid var(--border-light)">
             <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Time tracked — loading…</div>
@@ -1551,35 +1577,8 @@ export class App {
       })
     })
 
-    // --- Upcoming deliverable completion checkboxes ---
-    // Inline deliverable checkboxes inside the project accordion
-    mc.querySelectorAll('.db-inline-deliv-check').forEach(cb => {
-      cb.addEventListener('click', e => e.stopPropagation())
-      cb.addEventListener('change', async () => {
-        const p = this.projects.find(x => x.id === cb.dataset.delivPid)
-        if (!p) return
-        const arr = p[cb.dataset.delivSrc]
-        const idx = +cb.dataset.delivIdx
-        if (!arr?.[idx]) return
-        arr[idx].done = cb.checked
-        const row = cb.closest('[style*="display:flex"]')
-        if (row) {
-          row.style.opacity = cb.checked ? '0.45' : ''
-          const span = row.querySelector('span[style*="flex:1"]')
-          if (span) span.style.textDecoration = cb.checked ? 'line-through' : ''
-        }
-        // Update the header badge
-        const allDelivs = (p.deliverables || []).filter(d => d.text)
-        const nowDone = allDelivs.filter(d => d.done).length
-        const badge = mc.querySelector(`[data-pid="${p.id}"] .db-badge`)
-        if (badge) badge.textContent = `${nowDone}/${allDelivs.length} done`
-        try {
-          const { updateProject } = await import('./db/client.js')
-          await updateProject(this.userId, p.id, { [cb.dataset.delivSrc]: arr })
-          this.toast(cb.checked ? '✓ Done' : 'Unmarked')
-        } catch(e) { console.error(e) }
-      })
-    })
+    // --- Deliverables in each project row: from the worklists ---
+    this._loadDbDeliverables(mc)
 
     // --- Enquiries collapse ---
     mc.querySelector('#db-enq-toggle')?.addEventListener('click', () => {

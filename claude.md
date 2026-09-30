@@ -872,9 +872,8 @@ always the source of truth and nothing is ever read back from Google.
 - Sources, and what counts as finished:
   - worklist deliverables in **active** workstreams, until approved (a paused
     or complete workstream drops out);
-  - the older deliverables stored as JSON on projects (monthly ones on
-    retainers only). `legacyProjectDeliverables()` is the only thing that
-    reads them; delete it when they're moved into the worklist tables;
+  - (the deliverables that used to be stored as JSON on projects are no
+    longer read — see "Worklists belong to projects");
   - marketing card due dates and sub-tasks, except cards in Done;
   - canvas checklists (the `sub_tasks` of `todo` items);
   - planning-board cards, except in a column named Done, Complete(d),
@@ -967,6 +966,26 @@ always the source of truth and nothing is ever read back from Google.
   - `POST deliveries/:id/response` records an answer that came another way.
   - **Nothing with rounds sent can be deleted** (409 `has_rounds`), so a
     client's approvals can't vanish by accident: mark it approved/complete.
+- **The old JSON deliverables are retired** (commit 7 of the project-first
+  change). `projects.deliverables` and `projects.monthly_deliverables` stay in
+  the database, untouched and unread — nothing migrates them, there is no
+  monthly reset or rollover of deliverables (a retainer is retained *time*, not
+  a fixed list), and `api/_no-json-deliverables.test.js` fails if anything
+  reads or writes them. Where each thing went: the project Overview points at
+  the Worklist tab (open / overdue / waiting counts); the editor has no
+  deliverable lists; a Projects-board card shows its open count; the
+  dashboard's project rows list worklist deliverables
+  (`GET retainers/dashboard-deliverables`: open ones and ones approved in the
+  last week) and **a tick means delivered and approved** (it sets the status
+  to approved, unticking reopens it); the AI brief import adds its deliverables
+  to a "Deliverables" workstream (planned, hidden from the client); a new
+  budget from a project reads its worklist for the notes; **Duplicate** copies
+  the worklist as a fresh plan (`POST retainers/projects/:id/copy-worklist`:
+  planned, hidden, no owner, dates, rounds or answers; a recurring one keeps its
+  cadence) and now keeps a retainer's contract terms (items, hours, fee mode,
+  alert, rollover; its period starts today), which it used to lose. Project
+  *approvals* (the internal Brief sign-off / Budget approved checklist) are a
+  different thing and are unchanged.
 - **Worklists belong to projects.** Any project can have workstreams and
   deliverables, retainer or not; a retainer is a project that also has
   contract terms (hours, fee, period — unchanged, on the project). The
@@ -1078,9 +1097,8 @@ always the source of truth and nothing is ever read back from Google.
   rounds (links, notes, answers, previews), `can_respond` on the latest
   unanswered round. Project link: the project (name, status, brief, shoot
   dates, Frame.io link), client, work log and post-production schedule as
-  the old portal did, plus deliverables — from the project's workstreams once
-  it has any, else the JSON on the project (`_legacy-deliverables.js`, the one
-  reader of that JSON, shared with the What's due feed).
+  the old portal did, plus its worklist (client-visible deliverables) and what
+  was asked for through the link.
 - **Where it isn't structural** (read before relying on it):
   - Any Slate user can run any query through `/api/db` ("Database
     access"), so all of the above holds against clients and the public, not

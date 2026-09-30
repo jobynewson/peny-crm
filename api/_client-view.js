@@ -20,7 +20,6 @@
 
 import { londonDate } from './_dates.js'
 import { clientStatus, dueDisplay, isFrameIoUrl, requestLabel, RESPONSE_LABELS, WORKSTREAM_LABELS } from './_retainer-rules.js'
-import { legacyDeliverables } from './_legacy-deliverables.js'
 import { isScope } from './_worklist.js'
 
 // → the view, or null if the scope's company or project no longer exists.
@@ -154,17 +153,15 @@ async function companyView(sql, scope) {
 }
 
 // ── A portal token link: one project, read-only ──────────────────────────────
-// What the token portal has always shown — the project, its deliverables, the
-// work log and the post-production schedule. The deliverables come from the
-// project's workstreams once it has any; until then from the JSON stored on
-// the project (_legacy-deliverables.js), so projects can move over one at a
-// time.
+// The project, its deliverables (from its worklist), the work log and the
+// post-production schedule, and what has been asked for through the link. The
+// deliverables that used to be stored as JSON on the project are no longer shown.
 
 async function projectView(sql, scope) {
-  const [projects, studios, linked, workstreams, deliverables, rounds, log, schedules, phases, requests] = await Promise.all([
+  const [projects, studios, workstreams, deliverables, rounds, log, schedules, phases, requests] = await Promise.all([
     sql`
       SELECT p.name, p.status, p.brief, p.shoot_start::text AS shoot_start, p.shoot_end::text AS shoot_end,
-             p.frame_io_link, p.deliverables, c.first_name, c.last_name, c.company
+             p.frame_io_link, c.first_name, c.last_name, c.company
       FROM projects p
       LEFT JOIN contacts c ON c.id = p.client_id
       WHERE p.id = ${scope.projectId} AND p.user_id = ${scope.ws}
@@ -172,10 +169,6 @@ async function projectView(sql, scope) {
     sql`
       SELECT s.company_name, s.website FROM settings s
       WHERE s.user_id = ${scope.ws} LIMIT 1
-    `,
-    sql`
-      SELECT count(*)::int AS workstreams FROM workstreams w
-      WHERE w.user_id = ${scope.ws} AND w.project_id = ${scope.projectId}
     `,
     sql`
       SELECT w.id, w.title, w.brief, w.status
@@ -240,7 +233,6 @@ async function projectView(sql, scope) {
   const project = projects[0]
   if (!project) return null
   const today = londonDate()
-  const moved = linked[0].workstreams > 0
   return {
     // A link can ask for things (with a name) but not answer: no approving, no
     // replying. It stops taking requests once the project is Delivered.
@@ -259,8 +251,7 @@ async function projectView(sql, scope) {
       ? { name: [project.first_name, project.last_name].filter(Boolean).join(' '), company: project.company || null }
       : null,
     studio: studioJson(studios[0]),
-    workstreams: moved ? worklistJson({ workstreams, deliverables, rounds, today, canRespond: false }) : null,
-    deliverables: moved ? null : legacyDeliverables(project).map(d => ({ text: d.text, due: d.due, done: d.done, link: d.link })),
+    workstreams: worklistJson({ workstreams, deliverables, rounds, today, canRespond: false }),
     requests: requestsJson(requests, today),
     work_log: log.map(e => ({ note: e.note, date: e.entry_date, by: e.created_by || null })),
     schedule: schedules[0]

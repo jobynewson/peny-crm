@@ -4,9 +4,8 @@
 // office screen and the 09:00 email all read it (stage 2's alerts will too);
 // nothing else works out what's due.
 //
-// Sources: worklist deliverables, the older deliverables stored on projects
-// (until they are retired — read through _legacy-deliverables.js), marketing
-// sub-tasks and card due dates, canvas checklists, planning-board cards,
+// Sources: worklist deliverables (the older deliverables stored as JSON on
+// projects are no longer read), marketing sub-tasks and card due dates, canvas checklists, planning-board cards,
 // edit deadlines (post-production blocks and Team Calendar deadlines) and
 // tasks with a due date.
 //
@@ -17,12 +16,10 @@
 
 import { londonDate, addDays, daysBetween, toDateString, isDateString } from './_dates.js'
 import { dueDisplay, worklistLink } from './_retainer-rules.js'
-import { legacyDeliverables } from './_legacy-deliverables.js'
 
 export const TYPE_LABELS = {
   task:                'Task',
   deliverable:         'Deliverable',
-  project_deliverable: 'Deliverable',
   edit_deadline:       'Edit deadline',
   marketing_task:      'Marketing',
   marketing_card:      'Marketing',
@@ -38,7 +35,7 @@ export const isFinishedColumn = name => FINISHED_COLUMN.test(String(name || '').
 // ── SQL ──────────────────────────────────────────────────────────────────────
 
 export async function fetchDueSources(sql, { ws, today, to }) {
-  const [worklist, projects, marketing, checklists, boardCards, ppsPhases, calendar, tasks, users] = await Promise.all([
+  const [worklist, marketing, checklists, boardCards, ppsPhases, calendar, tasks, users] = await Promise.all([
     // Open deliverables in active workstreams (a paused or complete workstream
     // is not chasing anyone).
     sql`
@@ -51,13 +48,6 @@ export async function fetchDueSources(sql, { ws, today, to }) {
       LEFT JOIN projects p ON p.id = w.project_id
       WHERE w.user_id = ${ws} AND w.status = 'active' AND d.status <> 'approved'
         AND d.due_date IS NOT NULL AND d.due_date <= ${to}::date
-    `,
-    sql`
-      SELECT id, name, is_retainer, deliverables, monthly_deliverables
-      FROM projects
-      WHERE user_id = ${ws}
-        AND ((jsonb_typeof(deliverables) = 'array' AND jsonb_array_length(deliverables) > 0)
-          OR (jsonb_typeof(monthly_deliverables) = 'array' AND jsonb_array_length(monthly_deliverables) > 0))
     `,
     sql`
       SELECT id, title, due_date::text AS due_date, lead_owner_id, sub_tasks
@@ -104,23 +94,12 @@ export async function fetchDueSources(sql, { ws, today, to }) {
     `,
     sql`SELECT id, clerk_id, name, email FROM app_users`,
   ])
-  return { worklist, projects, marketing, checklists, boardCards, ppsPhases, calendar, tasks, users }
+  return { worklist, marketing, checklists, boardCards, ppsPhases, calendar, tasks, users }
 }
 
 // ── The pure part ────────────────────────────────────────────────────────────
 
 const list = v => (Array.isArray(v) ? v : [])
-
-// The deliverables stored as JSON on projects, until they're retired. Monthly
-// deliverables only exist on retainers.
-function projectDeliverables(projects) {
-  return projects.flatMap(p => legacyDeliverables(p, { monthly: p.is_retainer })
-    .filter(d => !d.done && d.due)
-    .map(d => ({
-      type: 'project_deliverable', key: `pd:${p.id}:${d.source}:${d.index}`, title: d.text, context: p.name,
-      date: d.due, owner_id: d.assignee_id, link: `#projects/${p.id}/overview`,
-    })))
-}
 
 // One line under an item's title: what it is, where it lives and, for work
 // with a looser deadline, when (e.g. "Deliverable · DMM · Launch · October").
@@ -145,7 +124,6 @@ export function collectDue(src, { today, to, ownerId = null }) {
       link: worklistLink({ project_id: d.project_id, company_id: d.company_id, id: d.id }),
     })
   }
-  raw.push(...projectDeliverables(list(src.projects)))
 
   for (const card of list(src.marketing)) {
     if (card.due_date) {

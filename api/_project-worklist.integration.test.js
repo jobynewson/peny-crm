@@ -153,6 +153,81 @@ describeDb('worklists that belong to a project', () => {
     expect(await companyOf()).toBeNull()
   })
 
+  describe('the dashboard\'s deliverables', () => {
+    it('lists open ones and ones approved this week, from active worklists of projects only', async () => {
+      const p = await project('PW Dash')
+      const { body } = await call('POST', 'retainers/workstreams', { project_id: p.id, title: 'PW Dash stream' })
+      const paused = await call('POST', 'retainers/workstreams', { project_id: p.id, title: 'PW Dash paused', status: 'paused' })
+      const w = body.workstream.id
+      const make = (workstream_id, title, extra = {}) => call('POST', 'retainers/deliverables', { workstream_id, title, ...extra })
+      await make(w, 'Open late', { due_kind: 'exact', due_date: '2020-01-01', owner_id: ana.id })
+      await make(w, 'Open undated')
+      const fresh = (await make(w, 'Approved today', { status: 'approved' })).body.deliverable
+      const old = (await make(w, 'Approved long ago', { status: 'approved' })).body.deliverable
+      await sql`UPDATE deliverables SET updated_at = now() - interval '30 days' WHERE id = ${old.id}`
+      await make(paused.body.workstream.id, 'In a paused stream')
+      await sql`INSERT INTO workstreams (user_id, company_id, title) VALUES (${ws}, ${dmm.id}, 'PW Dash no project')`
+      const [orphan] = await sql`SELECT id FROM workstreams WHERE title = 'PW Dash no project'`
+      await sql`INSERT INTO deliverables (workstream_id, title) VALUES (${orphan.id}, 'No project')`
+
+      const r = await call('GET', 'retainers/dashboard-deliverables')
+      const mine = r.body.deliverables.filter(d => d.project_id === p.id)
+      expect(mine.map(d => [d.title, d.done])).toEqual([['Open late', false], ['Open undated', false], ['Approved today', true]])
+      expect(mine[0]).toMatchObject({ overdue: true, owner_name: 'Ana', status: 'planned', workstream: 'PW Dash stream' })
+      expect(mine[0].days_late).toBeGreaterThan(365)
+      expect(mine[2].id).toBe(fresh.id)
+      expect(r.body.deliverables.some(d => d.title === 'No project')).toBe(false)
+    })
+
+    it('reads a tick as approved: the status change it makes is the ordinary one', async () => {
+      const p = await project('PW Tick')
+      const { body } = await call('POST', 'retainers/workstreams', { project_id: p.id, title: 'PW Tick stream' })
+      const d = (await call('POST', 'retainers/deliverables', { workstream_id: body.workstream.id, title: 'Film' })).body.deliverable
+      expect((await call('PATCH', `retainers/deliverables/${d.id}`, { status: 'approved' })).body.deliverable).toMatchObject({ status: 'approved', client_status: 'Approved' })
+      expect((await call('PATCH', `retainers/deliverables/${d.id}`, { status: 'in_progress' })).body.deliverable.status).toBe('in_progress')
+    })
+  })
+
+  describe('copying a worklist to a duplicated project', () => {
+    it('copies workstreams and deliverables as a fresh plan: planned, hidden, no owner, no dates, no rounds', async () => {
+      const from = await project('PW Copy from')
+      const to = await project('PW Copy to')
+      const a = (await call('POST', 'retainers/workstreams', { project_id: from.id, title: 'PW Copy A', brief: 'For the client' })).body.workstream
+      const b = (await call('POST', 'retainers/workstreams', { project_id: from.id, title: 'PW Copy B', status: 'complete' })).body.workstream
+      const hero = (await call('POST', 'retainers/deliverables', { workstream_id: a.id, title: 'Hero', format: '16:9', owner_id: ana.id, due_kind: 'exact', due_date: '2026-10-02', client_visible: true, internal_notes: 'SECRET' })).body.deliverable
+      await call('POST', 'retainers/deliverables', { workstream_id: a.id, title: 'Weekly', due_kind: 'recurring', cadence: 'weekly', due_label: 'Every Monday' })
+      await call('POST', 'retainers/deliverables', { workstream_id: b.id, title: 'Old job', status: 'approved' })
+      await sql`INSERT INTO deliveries (deliverable_id, url, round, client_response, client_comment) VALUES (${hero.id}, 'https://f.io/x', 1, 'approved', 'Lovely')`
+
+      const r = await call('POST', `retainers/projects/${from.id}/copy-worklist`, { to_project_id: to.id })
+      expect(r.body).toEqual({ workstreams: 2, deliverables: 3 })
+      const page = (await call('GET', `retainers/projects/${to.id}`)).body
+      expect(page.workstreams.map(w => [w.title, w.brief, w.status])).toEqual([['PW Copy A', 'For the client', 'active'], ['PW Copy B', null, 'active']])
+      const copied = page.workstreams.flatMap(w => w.deliverables)
+      expect(copied.map(d => d.title).sort()).toEqual(['Hero', 'Old job', 'Weekly'])
+      for (const d of copied) expect(d).toMatchObject({ status: 'planned', client_visible: false, owner_id: null, deliveries: [], internal_notes: null, waiting_note: null })
+      expect(copied.find(d => d.title === 'Hero')).toMatchObject({ format: '16:9', due_kind: 'exact', due_date: null })
+      expect(copied.find(d => d.title === 'Weekly')).toMatchObject({ due_kind: 'recurring', cadence: 'weekly', due_label: 'Every Monday' })
+      expect(JSON.stringify(page)).not.toContain('SECRET')
+      // The original is untouched.
+      const original = (await call('GET', `retainers/projects/${from.id}`)).body.workstreams.flatMap(w => w.deliverables)
+      expect(original.find(d => d.title === 'Hero')).toMatchObject({ owner_id: ana.id, client_visible: true, internal_notes: 'SECRET' })
+    })
+
+    it('refuses the same project, a bad id, another workspace\'s project and a viewer', async () => {
+      const from = await project('PW Copy from 2')
+      const to = await project('PW Copy to 2')
+      expect((await call('POST', `retainers/projects/${from.id}/copy-worklist`, { to_project_id: from.id })).statusCode).toBe(422)
+      expect((await call('POST', `retainers/projects/${from.id}/copy-worklist`, { to_project_id: 'nope' })).statusCode).toBe(422)
+      const [foreign] = await sql`INSERT INTO projects (user_id, name) VALUES ('someone_else', 'PW Foreign copy') RETURNING id`
+      expect((await call('POST', `retainers/projects/${from.id}/copy-worklist`, { to_project_id: foreign.id })).statusCode).toBe(404)
+      expect((await call('POST', `retainers/projects/${foreign.id}/copy-worklist`, { to_project_id: to.id })).statusCode).toBe(404)
+      await sql`DELETE FROM projects WHERE id = ${foreign.id}`
+      CURRENT = { ...ana, role: 'viewer' }
+      expect((await call('POST', `retainers/projects/${from.id}/copy-worklist`, { to_project_id: to.id })).statusCode).toBe(403)
+    })
+  })
+
   describe('the project\'s client link', () => {
     const tokenOf = async id => (await sql`SELECT portal_token FROM projects WHERE id = ${id}`)[0].portal_token
     it('creates one, refuses a second create, replaces it, and turns it off', async () => {

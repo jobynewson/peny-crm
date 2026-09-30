@@ -3,7 +3,7 @@ import { companyFieldHtml, bindCompanyField, setCompanyField, resolveCompanyFiel
 import { PostProductionView } from './post-production.js'
 import { Worklist } from './worklist.js'
 import { isSubcontractor } from '../utils/contact-kind.js'
-import { getProjectCounts } from '../api/retainers.js'
+import { getProjectCounts, copyWorklist, createWorkstream, createDeliverable } from '../api/retainers.js'
 import { timeLogFormHtml, bindTimeLogForm } from './time-log.js'
 import { icon } from './icons.js'
 import { mountStatusSwitch } from './board-status.js'
@@ -62,16 +62,13 @@ export class ProjectsView {
     const retainerProjects = projects.filter(p => p.is_retainer)
     const renderCard = p => {
       const cl = contacts.find(c => c.id === p.client_id)
-      const delivs = Array.isArray(p.deliverables) ? p.deliverables : []
-      const done = delivs.filter(d => d.done && d.text).length
-      const total = delivs.filter(d => d.text).length
       const linked = Array.isArray(p.budget_ids) ? p.budget_ids.length : 0
       return `<div class="kanban-card" data-open="${p.id}" ${this.canEdit ? 'draggable="true"' : ''}>
         <div class="kanban-card-title">${esc(p.name)}</div>
         <div class="kanban-card-client">${cl ? esc(cl.first_name)+' '+esc(cl.last_name)+' · '+esc(cl.company) : 'No client'}</div>
         <div class="kanban-card-meta">
           ${p.shoot_start ? `<span class="kanban-card-date">${p.shoot_start}</span>` : ''}
-          ${total ? `<span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary)">${done}/${total} done</span>` : ''}
+          <span class="tag" data-kanban-open="${p.id}" hidden style="background:var(--bg-secondary);color:var(--text-secondary)"></span>
           ${linked ? `<span class="tag" style="background:var(--cat-blue-soft);color:var(--cat-blue)">${linked} budget${linked>1?'s':''}</span>` : ''}
         </div>
       </div>`
@@ -143,6 +140,7 @@ export class ProjectsView {
       btn.addEventListener('click', () => this.openNewModal(null, btn.dataset.stage, mc, !!btn.dataset.isRetainer))
     })
     this._bindKanbanDnD(mc)
+    this._loadKanbanCounts(mc)
     mc.querySelectorAll('[data-close]').forEach(btn => {
       btn.addEventListener('click', () => mc.querySelector(`#${btn.dataset.close}`)?.classList.remove('open'))
     })
@@ -568,9 +566,6 @@ export class ProjectsView {
     } catch (e) { console.error(e); this.app.toast('Error saving the company'); return }
 
     const ai = this._aiExtraction || {}
-    const deliverables = ai.deliverables?.length
-      ? ai.deliverables.map(d => ({ text: d, done: false }))
-      : [{ text: '', done: false }]
 
     const data = {
       name,
@@ -581,7 +576,7 @@ export class ProjectsView {
       location:     mc.querySelector('#pf-location')?.value.trim() || '',
       shoot_start:  mc.querySelector('#pf-shoot-start')?.value || null,
       shoot_end:    mc.querySelector('#pf-shoot-end')?.value   || null,
-      deliverables,
+      deliverables: [],
       crew:         [{ name: '', role: '' }],
       shots:        [{ text: '' }],
       approvals:    [
@@ -606,6 +601,14 @@ export class ProjectsView {
     try {
       const [created] = await createProject(this.app.userId, data)
       this.app.projects.unshift(created)
+      // Deliverables the AI read from the brief go on the worklist: planned and
+      // hidden from the client until someone shows them.
+      if (ai.deliverables?.length) {
+        try {
+          const stream = await createWorkstream({ project_id: created.id, title: 'Deliverables' })
+          for (const title of ai.deliverables) await createDeliverable({ workstream_id: stream.id, title: String(title).slice(0, 300) })
+        } catch (err) { console.error(err); this.app.toast('Project created, but its deliverables could not be added') }
+      }
       mc.querySelector('#proj-new-modal')?.classList.remove('open')
       this.currentId = created.id
       this.editingId = created.id  // open straight into edit mode
@@ -626,7 +629,6 @@ export class ProjectsView {
     const p = this.app.projects.find(x => x.id === this.currentId)
     if (!p) { this.currentId = null; this.renderKanban(mc); return }
 
-    if (p.is_retainer && p.retainer_start) this._checkRetainerReset(p)
     const worklistOpen = this._worklistCounts?.[p.id]?.open
     const TABS = [
       { id: 'overview',         label: 'Overview' },
@@ -741,6 +743,26 @@ export class ProjectsView {
     if (mc.isConnected) this._showWorklistCount(p.id)
   }
 
+  // The Overview's line about a project's deliverables, from the counts.
+  _worklistSummary(p) {
+    const c = this._worklistCounts?.[p.id]
+    if (!this._worklistCounts) return 'Deliverables, rounds and approvals are on the Worklist tab.'
+    if (!c?.open && c?.open !== 0) return 'No deliverables yet. Add them on the Worklist tab.'
+    const parts = [`${c.open} open`, c.overdue ? `${c.overdue} overdue` : '', c.waiting ? `${c.waiting} waiting on the client` : ''].filter(Boolean)
+    return parts.join(' · ')
+  }
+
+  // The open count on each project card on the Projects board.
+  async _loadKanbanCounts(mc) {
+    try { this._worklistCounts = await getProjectCounts() } catch { return }
+    if (!mc.isConnected) return
+    mc.querySelectorAll('[data-kanban-open]').forEach(chip => {
+      const open = this._worklistCounts?.[chip.dataset.kanbanOpen]?.open
+      chip.hidden = !open
+      if (open) chip.textContent = `${open} open`
+    })
+  }
+
   setWorklistCount(projectId, open) {
     this._worklistCounts = { ...(this._worklistCounts ?? {}), [projectId]: { ...(this._worklistCounts?.[projectId] ?? {}), open } }
     this._showWorklistCount(projectId)
@@ -751,10 +773,13 @@ export class ProjectsView {
     const tab = document.querySelector('#proj-tab-bar [data-tab="worklist"]')
     const open = this._worklistCounts?.[projectId]?.open
     if (tab) tab.textContent = `Worklist${open ? ` (${open})` : ''}`
+    const p = this.app.projects.find(x => x.id === projectId)
+    const summary = document.getElementById('pv-worklist-summary')
+    if (summary && p) summary.textContent = this._worklistSummary(p)
   }
 
   _renderTab(tab, p, cl, linked) {
-    const delivs = (p.deliverables||[]).filter(d => d.text)
+    const delivs = []   // deliverables live on the Worklist tab now
     const crew   = (p.crew||[]).filter(c => c.name || c.role)
     const shots  = (p.shots||[]).filter(s => s.text)
     const doneCount = delivs.filter(d => d.done).length
@@ -791,49 +816,11 @@ export class ProjectsView {
       </div>
 
       <div class="proj-panel">
-        <div class="proj-panel-head" style="display:flex;justify-content:space-between;align-items:center">
-          <span>Deliverables <span style="font-size:11px;color:var(--text-tertiary);font-weight:400">(${doneCount}/${delivs.length})</span></span>
-          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
-            ${this.app.permissions?.projects_edit ? `
-            <button class="btn-cancel" id="pv-mark-all-done" style="font-size:11px">Mark all done</button>
-            <button class="btn-cancel" id="pv-reset-delivs" style="font-size:11px">Reset</button>` : ''}
-          </div>
+        <div class="proj-panel-head">Deliverables</div>
+        <div style="padding:12px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <span style="font-size:13px;color:var(--text-secondary);flex:1;min-width:180px" id="pv-worklist-summary">${this._worklistSummary(p)}</span>
+          <button class="btn-secondary" id="pv-open-worklist" style="font-size:12px">Open the Worklist</button>
         </div>
-        <div style="padding:12px 14px">
-          ${delivs.map((d,i) => {
-            const today2 = new Date(); today2.setHours(0,0,0,0)
-            const dueDate = d.due ? new Date(d.due) : null
-            const daysLeft = dueDate ? Math.round((dueDate - today2) / 86400000) : null
-            const isOverdue = !d.done && dueDate && daysLeft < 0
-            const isDueSoon = !d.done && dueDate && daysLeft >= 0 && daysLeft <= 3
-            const dueColour = isOverdue ? 'var(--danger)' : isDueSoon ? 'var(--warning)' : 'var(--text-tertiary)'
-            const dueLabel = dueDate && !d.done
-              ? isOverdue ? `${Math.abs(daysLeft)}d overdue` : daysLeft === 0 ? 'due today' : `${daysLeft}d left`
-              : dueDate && d.done
-              ? new Date(d.due).toLocaleDateString('en-GB',{day:'numeric',month:'short'})
-              : ''
-            const assignee = d.assignee_id ? (this.app.allUsers||[]).find(u => u.id === d.assignee_id) : null
-            const assigneeName = assignee ? (assignee.name || assignee.email.split('@')[0]) : null
-            return `
-            <div class="deliv-row" style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border-light)${isOverdue?';background:var(--danger-wash);border-radius:6px;margin:1px 0':''}">
-              <input type="checkbox" ${d.done?'checked':''} data-pv-deliv="${p.id},${i}" style="width:15px;height:15px;cursor:pointer;flex-shrink:0" />
-              <span style="font-size:13px;flex:1;min-width:0;${d.done?'text-decoration:line-through;color:var(--text-tertiary)':''}">${esc(d.text)}</span>
-              ${assigneeName ? `<span style="font-size:11px;color:var(--text-tertiary);white-space:nowrap;flex-shrink:0;padding:2px 7px;border:0.5px solid var(--border-light);border-radius:5px" title="Assigned to ${esc(assigneeName)}">👤 ${esc(assigneeName)}</span>` : ''}
-              ${dueLabel ? `<span style="font-size:11px;color:${dueColour};white-space:nowrap;flex-shrink:0;font-weight:${isOverdue||isDueSoon?'500':'400'}">${isOverdue?'⚠ ':isDueSoon?'⏰ ':''}${dueLabel}</span>` : ''}
-              ${d.link ? `<a href="${esc(d.link)}" target="_blank" rel="noopener" title="${esc(d.link)}" style="flex-shrink:0;font-size:11px;color:var(--accent);text-decoration:none;padding:2px 7px;border:0.5px solid rgba(var(--accent-rgb),0.3);border-radius:5px;white-space:nowrap" onmouseover="this.style.opacity='0.7'" onmouseout="this.style.opacity='1'">↗ Link</a>` : ''}
-            </div>`
-          }).join('')}
-        </div>
-        ${this.app.permissions?.projects_edit ? `
-        <div style="padding:10px 14px 14px;border-top:1px solid var(--border-light);display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-          <input type="text" id="pv-new-deliv-text" placeholder="Add deliverable…" style="flex:1;min-width:120px;font-size:12px;padding:5px 8px;border:1px solid var(--border-light);border-radius:6px;background:transparent;color:var(--text-primary);font-family:var(--font);outline:none" />
-          <input type="date" id="pv-new-deliv-due" title="Due date" style="font-size:11px;padding:5px 7px;border:1px solid var(--border-light);border-radius:6px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none;flex-shrink:0" />
-          <select id="pv-new-deliv-assignee" title="Assignee" style="font-size:11px;padding:5px 7px;border:1px solid var(--border-light);border-radius:6px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none;flex-shrink:0">
-            <option value="">Assignee…</option>
-            ${(this.app.allUsers||[]).map(u => `<option value="${esc(u.id)}">${esc(u.name||u.email)}</option>`).join('')}
-          </select>
-          <button class="btn-secondary" id="pv-add-deliv" style="font-size:12px;white-space:nowrap">+ Add</button>
-        </div>` : ''}
       </div>
 
       ${crew.length ? `
@@ -1112,17 +1099,6 @@ export class ProjectsView {
     if (tab === 'overview') {
       this._loadProjectActivity(mc, p.id)
       this._loadWorkLog(mc, p)
-      mc.querySelectorAll('[data-pv-deliv]').forEach(el => {
-        el.addEventListener('change', async () => {
-          const [pid, i] = el.dataset.pvDeliv.split(',')
-          p.deliverables[+i].done = el.checked
-          try { await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }) } catch(e) { console.error(e) }
-          // Update line-through style
-          const span = el.nextElementSibling
-          if (span) span.style.cssText = el.checked ? 'font-size:13px;text-decoration:line-through;color:var(--text-tertiary)' : 'font-size:13px'
-        })
-      })
-
       mc.querySelectorAll('[data-pv-shot]').forEach(el => {
         el.addEventListener('change', async () => {
           const [pid, i] = el.dataset.pvShot.split(',')
@@ -1130,24 +1106,7 @@ export class ProjectsView {
           try { await updateProject(this.app.userId, p.id, { shots: p.shots }) } catch(e) { console.error(e) }
         })
       })
-      mc.querySelector('#pv-mark-all-done')?.addEventListener('click', async () => {
-        try { p.deliverables.forEach(d => { if(d.text) d.done = true }); await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }); this.renderViewer(mc); this.app.toast('All deliverables marked done') } catch(e) { console.error(e) }
-      })
-      mc.querySelector('#pv-reset-delivs')?.addEventListener('click', async () => {
-        try { p.deliverables.forEach(d => d.done = false); await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }); this.renderViewer(mc) } catch(e) { console.error(e) }
-      })
-      mc.querySelector('#pv-add-deliv')?.addEventListener('click', async () => {
-        const textEl     = mc.querySelector('#pv-new-deliv-text')
-        const dueEl      = mc.querySelector('#pv-new-deliv-due')
-        const assigneeEl = mc.querySelector('#pv-new-deliv-assignee')
-        const text = textEl?.value.trim()
-        if (!text) { textEl?.focus(); return }
-        p.deliverables.push({ text, done: false, due: dueEl?.value || null, assignee_id: assigneeEl?.value || null })
-        try { await updateProject(this.app.userId, p.id, { deliverables: p.deliverables }); this.renderViewer(mc) } catch(e) { console.error(e) }
-      })
-      mc.querySelector('#pv-new-deliv-text')?.addEventListener('keydown', e => {
-        if (e.key === 'Enter') mc.querySelector('#pv-add-deliv')?.click()
-      })
+      mc.querySelector('#pv-open-worklist')?.addEventListener('click', () => mc.querySelector('#proj-tab-bar [data-tab="worklist"]')?.click())
     }
     if (tab === 'shoots') {
       mc.querySelector('#pv-add-shoot')?.addEventListener('click', () => this._createShoot(mc, p))
@@ -1331,19 +1290,26 @@ export class ProjectsView {
       const copy = {
         name: p.name + ' (copy)', status: 'Enquiry', brief: p.brief, notes: p.notes,
         client_id: p.client_id, company_id: p.company_id ?? null, project_type: p.project_type, shoot_start: p.shoot_start, shoot_end: p.shoot_end,
-        location: p.location, deliverables: JSON.parse(JSON.stringify(p.deliverables||[])),
+        location: p.location, deliverables: [],
         crew: JSON.parse(JSON.stringify(p.crew||[])), shots: JSON.parse(JSON.stringify(p.shots||[])),
         approvals: (p.approvals||[]).map(a=>({...a,status:'Pending'})),
         hotels: JSON.parse(JSON.stringify(p.hotels||[])),
-        is_retainer: p.is_retainer, retainer_fee: p.retainer_fee,
+        // A retainer keeps its contract terms (what it covers and costs); its period starts today.
+        is_retainer: p.is_retainer, retainer_fee: p.retainer_fee, retainer_hours: p.retainer_hours, retainer_alert: p.retainer_alert,
+        retainer_fee_mode: p.retainer_fee_mode, retainer_rollover: p.retainer_rollover,
+        retainer_items: JSON.parse(JSON.stringify(p.retainer_items||[])),
+        retainer_start: p.is_retainer ? new Date().toISOString().slice(0, 10) : null,
       }
       try {
         const [created] = await createProject(this.app.userId, copy)
         this.app.projects.unshift(created)
+        // Its worklist comes too, as a fresh plan: planned, hidden, nothing sent.
+        let worklistNote = ''
+        try { await copyWorklist(p.id, created.id) } catch (err) { console.error(err); worklistNote = ' — its worklist could not be copied' }
         this.currentId = created.id; this._pvTab = 'overview'
         this.app._pushAppState(`#projects/${created.id}/overview`, { view:'projects', id:created.id, tab:'overview' })
         this.renderViewer(mc); this.app.updateTitle()
-        this.app.toast('Project duplicated')
+        this.app.toast(`Project duplicated${worklistNote}`)
       } catch(e) { console.error(e); this.app.toast('Error duplicating project') }
     })
     mc.querySelector('#pv-delete')?.addEventListener('click', async () => {
@@ -3907,12 +3873,7 @@ export class ProjectsView {
     const p = this.app.projects.find(x => x.id === this.currentId)
     if (!p) { this.currentId = null; this.renderKanban(mc); return }
 
-    // Auto-reset monthly deliverables if period has rolled over
-    if (p.is_retainer && p.retainer_start && Array.isArray(p.monthly_deliverables)) {
-      this._checkRetainerReset(p)
-    }
     const { contacts, budgets } = this.app
-    const delivs   = Array.isArray(p.deliverables) ? p.deliverables : []
     const crew     = Array.isArray(p.crew)          ? p.crew         : []
     const shots    = Array.isArray(p.shots)         ? p.shots        : []
     const approvals = Array.isArray(p.approvals)    ? p.approvals    : []
@@ -4063,32 +4024,6 @@ export class ProjectsView {
               <button class="btn-secondary" id="pe-export-retainer" style="font-size:12px;width:100%;margin-top:12px">📄 Export proposal PDF</button>
             </div>` : ''}
           </div>
-          <div class="proj-panel">
-            <div class="proj-panel-head">
-              ${p.is_retainer ? 'Fixed monthly deliverables' : 'Deliverables'}
-              <div style="margin-left:auto;display:flex;gap:6px">
-                <button class="row-btn" id="pe-delivs-all" style="font-size:10px">Mark all done</button>
-                <button class="row-btn" id="pe-delivs-clear" style="font-size:10px">Clear all</button>
-              </div>
-            </div>
-            <div style="padding:0 16px" id="pe-delivs">
-              ${delivs.map((d,i) => this.delivHTML(p.id, d, i)).join('')}
-            </div>
-            <button class="add-line" id="pe-add-deliv">+ add ${p.is_retainer ? 'fixed deliverable' : 'deliverable'}</button>
-          </div>
-
-          ${p.is_retainer ? `
-          <div class="proj-panel">
-            <div class="proj-panel-head">
-              This month's deliverables
-              <span style="margin-left:auto;font-size:11px;color:var(--text-tertiary);font-weight:400;text-transform:none;letter-spacing:0">resets with period</span>
-            </div>
-            <div style="padding:0 16px" id="pe-monthly-delivs">
-              ${(p.monthly_deliverables||[]).map((d,i) => this.delivHTML(p.id, d, i, true)).join('')}
-            </div>
-            <button class="add-line" id="pe-add-monthly-deliv">+ add this month's deliverable</button>
-          </div>` : ''}
-
           ${(p.project_type||'full_service') === 'full_service' ? `
           <div class="proj-panel">
             <div class="proj-panel-head">Shot list / run of show</div>
@@ -4428,64 +4363,6 @@ export class ProjectsView {
     })
   }
 
-  _checkRetainerReset(p) {
-    if (!p.retainer_start || !p.monthly_deliverables?.length) return
-    const anchor = new Date(p.retainer_start)
-    const day = anchor.getUTCDate()
-    const now = new Date()
-    const y = now.getUTCFullYear(), m = now.getUTCMonth()
-    let periodStart = new Date(Date.UTC(y, m, day))
-    if (periodStart > now) periodStart = new Date(Date.UTC(y, m - 1, day))
-
-    const lastReset = p._lastRetainerReset ? new Date(p._lastRetainerReset) : null
-    if (!lastReset || lastReset < periodStart) {
-      // Reset done states on all monthly deliverables
-      const anyDone = p.monthly_deliverables.some(d => d.done)
-      if (anyDone) {
-        p.monthly_deliverables = p.monthly_deliverables.map(d => ({ ...d, done: false }))
-        p._lastRetainerReset = periodStart.toISOString()
-        // Save silently
-        updateProject(this.app.userId, p.id, {
-          monthly_deliverables: p.monthly_deliverables,
-        }).catch(console.error)
-      }
-    }
-  }
-
-  delivHTML(pid, d, i, isMonthly = false) {
-    const pfx = isMonthly ? 'monthly-' : ''
-    const today = new Date(); today.setHours(0,0,0,0)
-    const due = d.due ? new Date(d.due) : null
-    const daysUntil = due ? Math.round((due - today) / 86400000) : null
-    const overdue  = !d.done && due && daysUntil < 0
-    const dueSoon  = !d.done && due && daysUntil >= 0 && daysUntil <= 3
-    const dueColour = overdue ? 'var(--danger)' : dueSoon ? 'var(--warning)' : 'var(--text-tertiary)'
-    const dueLabel  = due && !d.done
-      ? overdue
-        ? `${Math.abs(daysUntil)}d overdue`
-        : daysUntil === 0 ? 'due today' : `${daysUntil}d left`
-      : ''
-    const users = this.app.allUsers || []
-    const assigneeOptions = [
-      `<option value="">Assignee…</option>`,
-      ...users.map(u => `<option value="${esc(u.id)}" ${d.assignee_id===u.id?'selected':''}>${esc(u.name||u.email)}</option>`)
-    ].join('')
-    return `<div class="deliverable-row" data-di="${i}" style="${overdue?'background:var(--danger-wash);border-radius:6px;margin:1px 0':''}">
-      <input type="checkbox" class="deliverable-check" ${d.done?'checked':''} data-${pfx}deliv-done="${i}" />
-      <input type="text" class="deliverable-text" value="${esc(d.text)}" placeholder="${isMonthly ? 'e.g. Monthly edit, Social content...' : 'e.g. 90s hero film, 3x social cutdowns...'}" data-${pfx}deliv-text="${i}" />
-      <input type="date" class="deliverable-date" value="${d.due||''}" data-${pfx}deliv-due="${i}"
-        title="Due date" style="width:120px;font-size:11px;padding:3px 6px;border:1px solid var(--border-light);border-radius:5px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none;flex-shrink:0" />
-      ${dueLabel ? `<span style="font-size:10px;color:${dueColour};white-space:nowrap;flex-shrink:0;font-weight:${overdue||dueSoon?'500':'400'}">${overdue?'⚠ ':dueSoon?'⏰ ':''}${dueLabel}</span>` : ''}
-      <select data-${pfx}deliv-assignee="${i}" title="Assigned to"
-        style="min-width:0;flex:0 1 120px;font-size:11px;padding:3px 6px;border:1px solid var(--border-light);border-radius:5px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none">
-        ${assigneeOptions}
-      </select>
-      <input type="url" class="deliverable-link-input" value="${esc(d.link||'')}" placeholder="Link (e.g. Frame.io…)" data-${pfx}deliv-link="${i}"
-        style="min-width:0;flex:0 1 160px;font-size:11px;padding:3px 6px;border:1px solid var(--border-light);border-radius:5px;background:transparent;color:var(--text-tertiary);font-family:var(--font);outline:none" />
-      <button class="row-btn" style="color:var(--danger);flex-shrink:0" data-${pfx}deliv-rem="${i}">×</button>
-    </div>`
-  }
-
   shotHTML(pid, s, i) {
     return `<div class="shot-row" data-si="${i}">
       <span class="shot-num">${i+1}.</span>
@@ -4516,7 +4393,6 @@ export class ProjectsView {
     const snap = () => ({
       name: p.name, status: p.status, location: p.location,
       shoot_start: p.shoot_start, shoot_end: p.shoot_end,
-      deliverables: JSON.parse(JSON.stringify(p.deliverables||[])),
       approvals: JSON.parse(JSON.stringify(p.approvals||[])),
     })
     let prevSnap = snap()
@@ -4685,67 +4561,6 @@ export class ProjectsView {
     mc.querySelector('#pe-add-ret-item')?.addEventListener('click', () => {
       p.retainer_items.push({ label:'', qty:1, unit:'days', rate:null, period:'month' })
       save(); this.renderEditor(mc)
-    })
-
-    mc.querySelector('#pe-delivs-all')?.addEventListener('click', () => {
-      p.deliverables.forEach(d => { if (d.text) d.done = true }); save(); this.renderEditor(mc)
-    })
-    mc.querySelector('#pe-delivs-clear')?.addEventListener('click', () => {
-      p.deliverables.forEach(d => d.done = false); save(); this.renderEditor(mc)
-    })
-
-    // Deliverables
-    mc.querySelectorAll('[data-deliv-done]').forEach(el => {
-      el.addEventListener('change', () => { p.deliverables[+el.dataset.delivDone].done = el.checked; save() })
-    })
-    mc.querySelectorAll('[data-deliv-text]').forEach(el => {
-      el.addEventListener('change', () => { p.deliverables[+el.dataset.delivText].text = el.value; save() })
-    })
-    mc.querySelectorAll('[data-deliv-due]').forEach(el => {
-      el.addEventListener('change', () => { p.deliverables[+el.dataset.delivDue].due = el.value || null; save(); requestAnimationFrame(() => this.renderEditor(mc)) })
-    })
-    mc.querySelectorAll('[data-deliv-link]').forEach(el => {
-      el.addEventListener('change', () => { p.deliverables[+el.dataset.delivLink].link = el.value.trim() || null; save() })
-    })
-    mc.querySelectorAll('[data-deliv-assignee]').forEach(el => {
-      el.addEventListener('change', () => { p.deliverables[+el.dataset.delivAssignee].assignee_id = el.value || null; save() })
-    })
-    mc.querySelectorAll('[data-deliv-rem]').forEach(el => {
-      el.addEventListener('click', () => {
-        if (p.deliverables.length <= 1) return
-        p.deliverables.splice(+el.dataset.delivRem, 1)
-        save(); this.renderEditor(mc)
-      })
-    })
-    mc.querySelector('#pe-add-deliv')?.addEventListener('click', () => {
-      p.deliverables.push({ text: '', done: false }); save(); this.renderEditor(mc)
-    })
-
-    // Monthly deliverables (retainer only)
-    if (!Array.isArray(p.monthly_deliverables)) p.monthly_deliverables = []
-    mc.querySelectorAll('[data-monthly-deliv-done]').forEach(el => {
-      el.addEventListener('change', () => { p.monthly_deliverables[+el.dataset.monthlyDelivDone].done = el.checked; save() })
-    })
-    mc.querySelectorAll('[data-monthly-deliv-text]').forEach(el => {
-      el.addEventListener('change', () => { p.monthly_deliverables[+el.dataset.monthlyDelivText].text = el.value; save() })
-    })
-    mc.querySelectorAll('[data-monthly-deliv-due]').forEach(el => {
-      el.addEventListener('change', () => { p.monthly_deliverables[+el.dataset.monthlyDelivDue].due = el.value || null; save(); requestAnimationFrame(() => this.renderEditor(mc)) })
-    })
-    mc.querySelectorAll('[data-monthly-deliv-link]').forEach(el => {
-      el.addEventListener('change', () => { p.monthly_deliverables[+el.dataset.monthlyDelivLink].link = el.value.trim() || null; save() })
-    })
-    mc.querySelectorAll('[data-monthly-deliv-assignee]').forEach(el => {
-      el.addEventListener('change', () => { p.monthly_deliverables[+el.dataset.monthlyDelivAssignee].assignee_id = el.value || null; save() })
-    })
-    mc.querySelectorAll('[data-monthly-deliv-rem]').forEach(el => {
-      el.addEventListener('click', () => {
-        p.monthly_deliverables.splice(+el.dataset.monthlyDelivRem, 1)
-        save(); this.renderEditor(mc)
-      })
-    })
-    mc.querySelector('#pe-add-monthly-deliv')?.addEventListener('click', () => {
-      p.monthly_deliverables.push({ text: '', done: false }); save(); this.renderEditor(mc)
     })
 
     // Shots
@@ -5013,7 +4828,7 @@ export class ProjectsView {
         insurer_email:   p.insurer_email   || null,
         insurer_contact: p.insurer_contact || null,
         shoot_start: p.shoot_start || null, shoot_end: p.shoot_end || null,
-        deliverables: p.deliverables, crew: p.crew, shots: p.shots,
+        crew: p.crew, shots: p.shots,
         approvals: p.approvals, notes: p.notes,
         is_retainer:      p.is_retainer    ?? false,
         retainer_fee:      p.retainer_fee   ?? null,
@@ -5022,7 +4837,6 @@ export class ProjectsView {
         retainer_start:    p.retainer_start || null,
         retainer_items:    p.retainer_items    ?? [],
         retainer_fee_mode: p.retainer_fee_mode ?? 'fixed',
-        monthly_deliverables: p.monthly_deliverables ?? [],
         portal_token:  p.portal_token  || null,
         frame_io_link: p.frame_io_link || null,
       }
@@ -5038,9 +4852,6 @@ export class ProjectsView {
         if (prevSnapshot.location !== p.location && p.location) changes.push(`Location set to ${p.location}`)
         if (prevSnapshot.shoot_start !== p.shoot_start && p.shoot_start) changes.push(`Shoot start: ${p.shoot_start}`)
         if (prevSnapshot.shoot_end !== p.shoot_end && p.shoot_end) changes.push(`Shoot end: ${p.shoot_end}`)
-        const prevDone = (prevSnapshot.deliverables||[]).filter(d=>d.done).length
-        const nowDone = (p.deliverables||[]).filter(d=>d.done).length
-        if (nowDone !== prevDone) changes.push(`Deliverables: ${nowDone}/${(p.deliverables||[]).filter(d=>d.text).length} done`)
         const prevAppr = (prevSnapshot.approvals||[]).map(a=>a.status).join(',')
         const nowAppr  = (p.approvals||[]).map(a=>a.status).join(',')
         if (prevAppr !== nowAppr) {

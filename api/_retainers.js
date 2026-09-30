@@ -38,6 +38,8 @@ const ID = `(?<id>${UUID})`
 export const ROUTES = [
   // A project's worklist: what the project page's Worklist tab shows.
   { method: 'GET',    pattern: /^retainers\/project-counts$/,                            handler: projectCounts },
+  { method: 'GET',    pattern: /^retainers\/dashboard-deliverables$/,                    handler: dashboardDeliverables },
+  { method: 'POST',   pattern: new RegExp(`^retainers/projects/${ID}/copy-worklist$`),    handler: copyWorklist,      access: 'editor' },
   { method: 'GET',    pattern: new RegExp(`^retainers/projects/${ID}$`),                  handler: getProjectPage },
   { method: 'POST',   pattern: new RegExp(`^retainers/projects/${ID}/attach$`),           handler: attachWorkstreams, access: 'editor' },
   { method: 'POST',   pattern: new RegExp(`^retainers/projects/${ID}/link$`),             handler: setLink,           access: 'editor' },
@@ -258,6 +260,70 @@ async function projectCounts(req, res, { sql }) {
     WHERE w.user_id = ${ws} AND w.project_id IS NOT NULL AND w.status = 'active'
     GROUP BY w.project_id`
   return res.status(200).json({ counts: Object.fromEntries(rows.map(({ project_id, ...c }) => [project_id, c])) })
+}
+
+// ── GET /api/retainers/dashboard-deliverables ────────────────────────────────
+// The deliverables the dashboard's project rows list, across every project: open
+// ones, and ones approved in the last week (shown struck through). Each row says
+// what the list needs: its project, words for its date, and whether it's late.
+async function dashboardDeliverables(req, res, { sql }) {
+  const ws = await workspaceId(sql)
+  const today = londonDate()
+  const rows = await sql`
+    SELECT d.id, d.title, d.status, d.due_kind, d.due_date::text AS due_date, d.due_label, d.cadence,
+           d.owner_id, u.name AS owner_name, u.email AS owner_email, w.project_id, w.title AS workstream
+    FROM deliverables d
+    JOIN workstreams w ON w.id = d.workstream_id
+    LEFT JOIN app_users u ON u.id = d.owner_id
+    WHERE w.user_id = ${ws} AND w.project_id IS NOT NULL AND w.status = 'active'
+      AND (d.status <> 'approved' OR d.updated_at >= now() - interval '7 days')
+    ORDER BY (d.status = 'approved'), d.due_date NULLS LAST, d.sort_order, d.created_at`
+  return res.status(200).json({
+    today,
+    deliverables: rows.map(d => ({
+      id: d.id, project_id: d.project_id, workstream: d.workstream, title: d.title,
+      status: d.status, status_label: STATUS_LABELS[d.status], done: d.status === 'approved',
+      owner_id: d.owner_id, owner_name: d.owner_name || d.owner_email || null,
+      due_date: d.due_date, due_display: dueDisplay(d, today), overdue: isOverdue(d, today),
+      days_late: isOverdue(d, today) ? daysBetween(d.due_date, today) : 0,
+    })),
+  })
+}
+
+// ── POST /api/retainers/projects/:id/copy-worklist ───────────────────────────
+// { to_project_id } — a duplicated project's worklist: the same workstreams and
+// deliverables, all planned and hidden from the client, with no owner, no
+// dates (a recurring one keeps its cadence) and none of the rounds, answers or
+// links. Not one statement: a failure part-way leaves what was copied so far.
+// → { workstreams, deliverables } counts
+async function copyWorklist(req, res, { sql, params }) {
+  const body = readBody(req)
+  if (!body || !isUuid(body.to_project_id)) return invalid(res, 'to_project_id', 'Choose the project to copy into')
+  if (body.to_project_id === params.id) return invalid(res, 'to_project_id', 'That is the same project')
+  const ws = await workspaceId(sql)
+  const both = await sql`SELECT id FROM projects WHERE user_id = ${ws} AND id = ANY(${[params.id, body.to_project_id]}::uuid[])`
+  if (both.length !== 2) return fail(res, 404, 'not_found', 'Project not found')
+
+  const source = await sql`SELECT id, title, brief, sort_order FROM workstreams WHERE project_id = ${params.id} AND user_id = ${ws} ORDER BY sort_order, created_at`
+  let copiedWorkstreams = 0
+  let copiedDeliverables = 0
+  for (const w of source) {
+    const [made] = await sql`
+      INSERT INTO workstreams (user_id, project_id, title, brief, status, sort_order)
+      VALUES (${ws}, ${body.to_project_id}, ${w.title}, ${w.brief}, 'active', ${w.sort_order}) RETURNING id`
+    copiedWorkstreams++
+    const inserted = await sql`
+      INSERT INTO deliverables (workstream_id, title, format, due_kind, due_label, cadence, status, client_visible, sort_order)
+      SELECT ${made.id}, d.title, d.format,
+             CASE WHEN d.due_kind = 'recurring' THEN 'recurring'::deliverable_due_kind ELSE 'exact'::deliverable_due_kind END,
+             CASE WHEN d.due_kind = 'recurring' THEN d.due_label END,
+             CASE WHEN d.due_kind = 'recurring' THEN d.cadence END,
+             'planned', false, d.sort_order
+      FROM deliverables d WHERE d.workstream_id = ${w.id}
+      RETURNING id`
+    copiedDeliverables += inserted.length
+  }
+  return res.status(200).json({ workstreams: copiedWorkstreams, deliverables: copiedDeliverables })
 }
 
 // ── POST /api/retainers/projects/:id/attach ──────────────────────────────────

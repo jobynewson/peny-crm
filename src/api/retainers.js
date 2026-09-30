@@ -17,6 +17,13 @@ export const getProjectCounts = () => request(`${base}/project-counts`).then(r =
 // Brings the project's company's older project-less workstreams into it. → { attached }
 export const attachWorkstreams = id => post(`projects/${id}/attach`, {})
 
+// What the dashboard's project rows list: open deliverables and ones approved in
+// the last week. → { today, deliverables: [{ id, project_id, title, done, due_display, overdue, … }] }
+export const getDashboardDeliverables = () => request(`${base}/dashboard-deliverables`)
+// A duplicated project's worklist: same workstreams and deliverables, planned and
+// hidden. → { workstreams, deliverables }
+export const copyWorklist = (fromId, toId) => post(`projects/${fromId}/copy-worklist`, { to_project_id: toId })
+
 // The project's client link: action 'create' | 'replace' | 'off'. → { has_link, token }
 export const setProjectLink = (id, action) => post(`projects/${id}/link`, { action })
 

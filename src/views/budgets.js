@@ -300,15 +300,19 @@ export class BudgetsView {
 
   openNewModalFromProject(p) {
     this.app.navigate('budgets')
-    setTimeout(() => {
+    setTimeout(async () => {
       const mc = document.getElementById('main-content')
       if (!mc) return
       const noteParts = []
       if (p.brief) noteParts.push('Brief: ' + p.brief)
       if (p.location) noteParts.push('Location: ' + p.location)
       if (p.shoot_start) noteParts.push('Shoot dates: ' + p.shoot_start + (p.shoot_end && p.shoot_end !== p.shoot_start ? ' – ' + p.shoot_end : ''))
-      const delivs = (p.deliverables||[]).filter(d=>d.text)
-      if (delivs.length) noteParts.push('Deliverables:\n' + delivs.map(d=>'  · '+d.text).join('\n'))
+      // The project's deliverables, from its worklist (nothing is added if it can't be read).
+      try {
+        const { getProjectPage } = await import('../api/retainers.js')
+        const titles = (await getProjectPage(p.id)).workstreams.flatMap(w => w.deliverables.map(d => d.title))
+        if (titles.length) noteParts.push('Deliverables:\n' + titles.map(t => '  · ' + t).join('\n'))
+      } catch (err) { console.error(err) }
 
       mc.querySelector('#bf-name').value   = p.name ?? ''
       mc.querySelector('#bf-notes').value  = noteParts.join('\n')

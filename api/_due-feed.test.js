@@ -8,7 +8,7 @@ const BEN = { id: 'u-ben', clerk_id: 'user_ben', name: null, email: 'ben@peny.co
 const users = [ANA, BEN]
 
 const base = () => ({
-  users, worklist: [], projects: [], marketing: [], checklists: [], boardCards: [], ppsPhases: [], calendar: [], tasks: [],
+  users, worklist: [], marketing: [], checklists: [], boardCards: [], ppsPhases: [], calendar: [], tasks: [],
 })
 const keys = items => items.map(i => i.key)
 
@@ -16,7 +16,8 @@ describe('collectDue', () => {
   it('turns every source into one sorted list with a type, title, date, owner and link', () => {
     const src = base()
     src.worklist = [{ id: 'w1', title: 'Hero film', due_kind: 'exact', due_date: '2026-10-02', due_label: null, status: 'in_progress', owner_id: 'u-ana', workstream: 'Launch', company_id: 'co1', company: 'DMM' }]
-    src.projects = [{ id: 'p1', name: 'Brand film', is_retainer: false, deliverables: [{ text: 'Master', due: '2026-10-01', assignee_id: 'u-ben', done: false }], monthly_deliverables: [] }]
+    // A project's old JSON deliverables are no longer a source, even if handed in.
+    src.projects = [{ id: 'p1', name: 'Brand film', is_retainer: true, deliverables: [{ text: 'Master', due: '2026-10-01', assignee_id: 'u-ben', done: false }], monthly_deliverables: [{ text: 'Monthly', due: '2026-10-01' }] }]
     src.marketing = [{ id: 'm1', title: 'Newsletter', due_date: '2026-10-05', lead_owner_id: 'user_ana', sub_tasks: [{ id: 's1', text: 'Write intro', due_date: '2026-09-30', owner_id: 'user_ben', done: false }] }]
     src.checklists = [{ id: 'ci1', canvas_id: 'cv1', canvas_name: 'Shoot plan', sub_tasks: [{ id: 'x', text: 'Book van', due_date: '2026-10-03', owner_id: 'user_ana', done: false }] }]
     src.boardCards = [{ id: 'b1', title: 'Script', due_date: '2026-10-04', assignee_id: 'u-ben', board_id: 'bd1', board_name: 'Autumn', column_name: 'In progress' }]
@@ -26,7 +27,7 @@ describe('collectDue', () => {
 
     const items = collectDue(src, { today, to })
     expect(items.map(i => [i.date, i.type])).toEqual([
-      ['2026-09-30', 'marketing_task'], ['2026-10-01', 'project_deliverable'], ['2026-10-02', 'deliverable'],
+      ['2026-09-30', 'marketing_task'], ['2026-10-02', 'deliverable'],
       ['2026-10-03', 'checklist'], ['2026-10-04', 'board_card'], ['2026-10-05', 'marketing_card'],
       ['2026-10-06', 'edit_deadline'], ['2026-10-07', 'edit_deadline'], ['2026-10-08', 'task'],
     ])
@@ -73,9 +74,6 @@ describe('collectDue', () => {
 
   it('leaves out finished work', () => {
     const src = base()
-    src.projects = [{ id: 'p', name: 'P', is_retainer: false, deliverables: [
-      { text: 'Done one', due: '2026-10-01', done: true }, { text: '', due: '2026-10-01' }, { text: 'Undated' },
-    ], monthly_deliverables: [] }]
     src.marketing = [{ id: 'm', title: 'M', due_date: null, sub_tasks: [{ text: 'Ticked', due_date: '2026-10-01', done: true }] }]
     src.boardCards = [{ id: 'b', title: 'Shipped', due_date: '2026-10-01', board_id: 'bd', board_name: 'B', column_name: ' done ' }]
     src.ppsPhases = [{ id: 'ph', name: 'Edit', project_id: 'p', project_name: 'P', blocks: [
@@ -85,14 +83,12 @@ describe('collectDue', () => {
     expect(collectDue(src, { today, to })).toEqual([])
   })
 
-  it('reads monthly deliverables only on retainers', () => {
+  it('links a deliverable to its project\'s Worklist tab, with it open, and to the company\'s old address only when it has no project', () => {
     const src = base()
-    const monthly = [{ text: 'Monthly pack', due: '2026-10-01' }]
-    src.projects = [
-      { id: 'r', name: 'Retainer', is_retainer: true, deliverables: [], monthly_deliverables: monthly },
-      { id: 'n', name: 'Not a retainer', is_retainer: false, deliverables: [], monthly_deliverables: monthly },
-    ]
-    expect(keys(collectDue(src, { today, to }))).toEqual(['pd:r:monthly_deliverables:0'])
+    const item = (id, extra) => ({ id, title: id, due_kind: 'exact', due_date: '2026-10-02', due_label: null, status: 'planned', owner_id: null, workstream: 'W', company: 'DMM', company_id: 'co1', project_id: null, ...extra })
+    src.worklist = [item('a', { project_id: 'p1' }), item('b', {}), item('c', { company_id: null, company: 'A project' , project_id: 'p2' })]
+    const links = Object.fromEntries(collectDue(src, { today, to }).map(i => [i.title, i.link]))
+    expect(links).toEqual({ a: '#projects/p1/worklist/a', b: '#retainers/co1', c: '#projects/p2/worklist/c' })
   })
 
   it('says when a worklist item is due only when the date alone doesn\'t', () => {

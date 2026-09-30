@@ -40,11 +40,11 @@ async function seed(ws, prefix) {
     (${live.id}, ${prefix + 'Far film'}, 'exact', '2026-11-20', 'planned', ${ana.id}),
     (${paused.id}, ${prefix + 'Paused film'}, 'exact', '2026-10-02', 'planned', ${ana.id})`
 
+  // Its old JSON deliverables are still there and must not show up.
   const [project] = await sql`
     INSERT INTO projects (user_id, name, deliverables)
     VALUES (${ws}, ${prefix + 'Brand film'}, ${JSON.stringify([
       { text: prefix + 'Master', due: '2026-10-01', assignee_id: ben.id, done: false },
-      { text: prefix + 'Done master', due: '2026-10-01', done: true },
     ])}::jsonb) RETURNING id`
 
   await sql`INSERT INTO marketing_cards (user_id, title, due_date, lead_owner_id, sub_tasks, status) VALUES
@@ -100,7 +100,6 @@ describeDb('the What\'s due feed against Postgres', () => {
     expect(feed.items.map(i => [i.date, i.type, i.title, i.owner?.name ?? null])).toEqual([
       ['2026-09-21', 'task', 'Chase reply', null],
       ['2026-09-30', 'marketing_task', 'Write intro', 'Ben'],
-      ['2026-10-01', 'project_deliverable', 'Master', 'Ben'],
       ['2026-10-02', 'deliverable', 'Hero film', 'Ana'],
       ['2026-10-03', 'checklist', 'Book van', 'Ana'],
       ['2026-10-04', 'board_card', 'Script', 'Ben'],

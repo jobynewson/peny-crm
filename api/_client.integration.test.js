@@ -184,22 +184,21 @@ describeDb('/api/client', () => {
     expect([r.statusCode, r.body.error.code]).toEqual([403, 'read_only'])
   })
 
-  it('gives a project link that project only, read-only, from the old JSON until it moves', async () => {
+  it('gives a project link that project only, from its worklist — never from the old JSON — and it cannot answer', async () => {
     CLAIMS = DANA   // a session as well: the link still wins
     const r = await call('GET', 'client/view', { token: 'cltestlegacytoken0001' })
-    expect(r.body).toMatchObject({ scope: { kind: 'project', can_respond: false }, title: 'CLTest Legacy', workstreams: null })
+    expect(r.body).toMatchObject({ scope: { kind: 'project', can_respond: false }, title: 'CLTest Legacy', workstreams: [] })
     expect(r.body.project.frame_io_link).toBeNull()            // not http(s): dropped
-    expect(r.body.deliverables).toEqual([
-      { text: 'Master', due: '2026-10-01', done: false, link: 'https://f.io/master' },
-      { text: 'Trailer', due: null, done: true, link: null },
-    ])
+    expect(r.body).not.toHaveProperty('deliverables')          // the JSON on the project is not shown
+    expect(JSON.stringify(r.body)).not.toContain('Master')
     expect(r.body.work_log).toEqual([{ note: 'Graded the hero', date: '2026-09-20', by: 'Ana' }])
     expect(r.body.schedule.phases.map(p => p.name)).toEqual(['Edit'])
     expect(JSON.stringify(r.body)).not.toContain('assignee')
     expect(JSON.stringify(r.body)).not.toContain('CLTest Alpha')
 
     const moved = await call('GET', 'client/view', { token: 'cltestmovedtoken00002' })
-    expect(moved.body.deliverables).toBeNull()
+    expect(moved.body).not.toHaveProperty('deliverables')
+    expect(JSON.stringify(moved.body)).not.toContain('Old JSON item')
     expect(moved.body.workstreams.flatMap(w => w.deliverables.map(d => d.title))).toEqual(['Moved visible'])
 
     const answer = await call('POST', `client/deliveries/${ids.hero1}/response`, { token: 'cltestlegacytoken0001', body: { response: 'approved' } })

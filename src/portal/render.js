@@ -328,7 +328,6 @@ function projectHtml(view) {
       ${p.shoot_end && p.shoot_end !== p.shoot_start ? `<div><div class="pt-label">Shoot end</div><div>${fullDate(p.shoot_end)}</div></div>` : ''}
     </div>` : ''
   const today = view.today
-  const legacy = view.deliverables
   return `
     ${headerHtml(view, { sub, chip: p.status ? `<span class="pt-chip">${esc(p.status)}</span>` : '' })}
     <main class="pt-main pt-main--project">
@@ -337,9 +336,7 @@ function projectHtml(view) {
         ${p.frame_io_link ? `<a class="pt-btn pt-btn--secondary pt-open" href="${esc(p.frame_io_link)}" target="_blank" rel="noopener noreferrer">Open in Frame.io <span aria-hidden="true">↗</span></a>` : ''}
         <section>
           <h2 class="pt-section-title">Deliverables</h2>
-          ${legacy
-            ? (legacy.length ? `<ul class="pt-simple">${legacy.map(d => legacyHtml(d, today)).join('')}</ul>` : '<p class="pt-muted">No deliverables listed.</p>')
-            : (view.workstreams.length ? view.workstreams.map(workstreamHtml).join('') : '<p class="pt-muted">No deliverables listed.</p>')}
+          ${view.workstreams.length ? view.workstreams.map(workstreamHtml).join('') : '<p class="pt-muted">No deliverables listed.</p>'}
         </section>
         ${requestsHtml(view)}
         <section>
@@ -353,27 +350,6 @@ function projectHtml(view) {
       </div>
     </main>
     ${footerHtml(view)}`
-}
-
-function legacyHtml(d, today) {
-  let meta = ''
-  let tone = ''
-  if (d.due) {
-    const days = Math.round((Date.parse(d.due) - Date.parse(today)) / 86400000)
-    if (d.done) meta = fullDate(d.due)
-    else if (days < 0) { meta = `${-days}d overdue · ${fullDate(d.due)}`; tone = ' pt-late' }
-    else if (days <= 3) { meta = `${days === 0 ? 'Due today' : `${days}d left`} · ${fullDate(d.due)}`; tone = ' pt-soon' }
-    else meta = fullDate(d.due)
-  }
-  return `
-    <li class="pt-simple-row${d.done ? ' pt-simple-row--done' : ''}">
-      <span class="pt-dot" aria-hidden="true"></span>
-      <span class="pt-simple-main">
-        <span class="pt-simple-text">${esc(d.text)}${d.done ? '<span class="visually-hidden"> (done)</span>' : ''}</span>
-        ${meta ? `<span class="pt-simple-meta${tone}">${meta}</span>` : ''}
-      </span>
-      ${d.link ? `<a class="pt-link" href="${esc(d.link)}" target="_blank" rel="noopener noreferrer">Open ↗</a>` : ''}
-    </li>`
 }
 
 // ── Behaviour ────────────────────────────────────────────────────────────────
