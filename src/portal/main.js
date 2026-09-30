@@ -139,6 +139,7 @@ async function show(view = null) {
       const result = await api(`/api/client/deliveries/${deliveryId}/response`, { method: 'POST', body })
       return result.view
     },
+    undo: async deliveryId => (await api(`/api/client/deliveries/${deliveryId}/undo`, { method: 'POST', body: {} })).view,
     respondDelivered: async (deliverableId, body) => (await api(`/api/client/deliverables/${deliverableId}/response`, { method: 'POST', body })).view,
     reply: async (deliverableId, body) => (await api(`/api/client/deliverables/${deliverableId}/reply`, { method: 'POST', body })).view,
     submitRequest: async body => (await api('/api/client/requests', { method: 'POST', body })).view,
@@ -172,7 +173,8 @@ async function showApprove() {
   // "Request changes" in an email for someone with no login opens the same page
   // with the box for changes already open.
   const wantsChanges = new URLSearchParams(location.search).get('changes') === '1'
-  root.innerHTML = approveHtml(link, { openChanges: wantsChanges })
+  const wantsComments = new URLSearchParams(location.search).get('comments') === '1'
+  root.innerHTML = approveHtml(link, { openChanges: wantsChanges, openComments: wantsComments })
   bindApprove(link)
 }
 
@@ -198,6 +200,35 @@ function bindApprove(link) {
   })
 
   const actions = root.querySelector('[data-approve-actions]')
+  const commentsBox = root.querySelector('[data-comments-now]')
+  root.querySelector('[data-open-comments]')?.addEventListener('click', () => { actions.hidden = true; commentsBox.hidden = false; commentsBox.querySelector('[data-comments-yes]').focus() })
+  root.querySelector('[data-cancel-comments]')?.addEventListener('click', () => { commentsBox.hidden = true; actions.hidden = false; root.querySelector('[data-open-comments]').focus() })
+  const commentsYes = root.querySelector('[data-comments-yes]')
+  commentsYes?.addEventListener('click', async () => {
+    commentsYes.disabled = true
+    try {
+      const result = await api('/api/client/link/comments', { method: 'POST', body: {} })
+      root.innerHTML = approveHtml(result.link, { commentsSent: true })
+      bindApprove(result.link)
+    } catch (err) {
+      if (err.status === 409 || err.status === 410) return showCurrent(link, err)
+      commentsYes.disabled = false
+      root.querySelector('[data-approve-msg]').textContent = err.message
+    }
+  })
+  const undoButton = root.querySelector('[data-undo-comments]')
+  undoButton?.addEventListener('click', async () => {
+    undoButton.disabled = true
+    try {
+      const result = await api('/api/client/link/undo', { method: 'POST', body: {} })
+      root.innerHTML = approveHtml(result.link)
+      bindApprove(result.link)
+    } catch (err) {
+      if (err.status === 409 || err.status === 410) return showCurrent(link, err)
+      undoButton.disabled = false
+      root.querySelector('[data-approve-msg]').textContent = err.message
+    }
+  })
   const form = root.querySelector('[data-changes-now]')
   root.querySelector('[data-open-changes]')?.addEventListener('click', () => { actions.hidden = true; form.hidden = false; form.querySelector('#ap-comment').focus() })
   root.querySelector('[data-cancel-changes]')?.addEventListener('click', () => { form.hidden = true; actions.hidden = false; root.querySelector('[data-open-changes]').focus() })

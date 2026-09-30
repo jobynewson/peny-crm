@@ -6,16 +6,16 @@ import {
   requestLabel, validateRequestInput, validateDecline, validateReply, MAX_OPEN_REQUESTS,
   requestSourceLabel, worklistLink, validateSenderName, COMPANY_TYPES, companyTypeLabel, validateCompanyType, normalisePortalEmails,
   boardColumn, boardChip, isWithClient, statusAfterBoardDrag, DRAG_REFUSALS, BOARD_COLUMNS, validateAccept,
-  boardShows, boardCard, compareBoardCards, BOARD_HORIZON_DAYS, owedList, clientFace, isDelivered, canAnswerDelivered, boardChip,
+  boardShows, boardCard, compareBoardCards, BOARD_HORIZON_DAYS, owedList, clientFace, isDelivered, canAnswerDelivered, boardChip, statusAfterResponse, statusAfterBoardDrag, validateResponse, RESPONSES, statusAfterUnsend,
 } from './_retainer-rules.js'
 
 const today = '2026-09-28'
 
 describe('client-facing statuses', () => {
-  it('maps every internal status onto the five client labels', () => {
+  it('maps every internal status onto the six client labels', () => {
     const labels = DELIVERABLE_STATUSES.map(s => clientStatus(s).label)
-    expect(labels).toEqual(['Planned', 'In progress', 'Waiting on you', 'Ready for review', 'In progress', 'Approved'])
-    expect(new Set(labels).size).toBe(5)
+    expect(labels).toEqual(['Planned', 'In progress', 'Waiting on you', 'Ready for review', 'In progress', 'Comments received', 'Approved'])
+    expect(new Set(labels).size).toBe(6)
   })
   it('never exposes "changes requested" to the client', () => {
     expect(clientStatus('changes_requested')).toEqual({ key: 'in_progress', label: 'In progress' })
@@ -185,7 +185,7 @@ describe('the task board mapping', () => {
   it('puts every status in a column', () => {
     expect(Object.fromEntries(DELIVERABLE_STATUSES.map(s => [s, boardColumn(s)]))).toEqual({
       planned: 'todo', in_progress: 'doing', waiting_on_client: 'doing',
-      in_review: 'doing', changes_requested: 'doing', approved: 'done',
+      in_review: 'doing', changes_requested: 'doing', comments_in: 'doing', approved: 'done',
     })
   })
   it('mutes the cards that are with the client', () => {
@@ -432,5 +432,29 @@ describe('delivered (the staff tick) is separate from approved (the client\'s an
     expect(boardChip({ ...d, delivered_at: null })).toBeNull()
     const o = owedList([d], '2026-09-30', 60)
     expect(o).toMatchObject({ total: 1 })
+  })
+})
+
+describe('"comments are in"', () => {
+  it('is a third answer, separate from approve and from changes', () => {
+    expect(RESPONSES).toEqual(['approved', 'changes_requested', 'comments_in'])
+    expect(statusAfterResponse('comments_in')).toBe('comments_in')
+    expect(statusAfterResponse('changes_requested')).toBe('changes_requested')
+    expect(statusAfterResponse('approved')).toBe('approved')
+  })
+  it('needs no words, unlike changes', () => {
+    expect(validateResponse({ response: 'comments_in' })).toBeNull()
+    expect(validateResponse({ response: 'changes_requested' })).toMatchObject({ field: 'comment' })
+    expect(validateResponse({ response: 'nope' })).toMatchObject({ field: 'response' })
+  })
+  it('is Doing on the board with how long it has waited, and cannot be dragged back', () => {
+    const now = new Date('2026-10-05T12:00:00Z')
+    expect(boardChip({ status: 'comments_in', comments_since: '2026-10-03T12:00:00Z' }, now)).toEqual({ key: 'comments_in', label: 'Comments in · 2d' })
+    expect(boardChip({ status: 'comments_in' }, now).label).toBe('Comments in')
+    expect(statusAfterBoardDrag({ from: 'comments_in', column: 'todo' })).toMatchObject({ code: 'changes' })
+    expect(statusAfterBoardDrag({ from: 'comments_in', column: 'doing' })).toEqual({ status: 'comments_in' })
+  })
+  it('a mistaken round taken back from comments-in history returns to Comments in', () => {
+    expect(statusAfterUnsend({ current: 'in_review', previousResponse: 'comments_in' })).toBe('comments_in')
   })
 })

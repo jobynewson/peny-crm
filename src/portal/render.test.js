@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { renderView } from './render.js'
+import { renderView, approveHtml } from './render.js'
 
 const view = (over = {}) => ({
   scope: { kind: 'company', can_respond: true },
@@ -228,5 +228,52 @@ describe('the portal: a deliverable marked delivered', () => {
   it('shows no buttons when it cannot be answered (a round is out, it is approved, or someone is only looking)', () => {
     expect(withD(d({ can_answer: false }))).not.toContain('data-approve')
     expect(withD(d({ status: 'approved', status_label: 'Approved', can_answer: false }))).not.toContain('data-approve')
+  })
+})
+
+describe('the portal: comments are in', () => {
+  const round = over => ({ id: 'r1', round: 1, url: 'https://f.io/x', frame_io: true, note: null, sent_at: '2026-09-28T10:00:00Z', response: 'pending', response_label: 'Awaiting response', comment: null, answered_at: null, answered_by: null, recorded_by_studio: false, preview: null, latest: true, can_respond: true, can_undo: false, ...over })
+  const withRound = r => html(view({ workstreams: [{ id: 'w1', title: 'Edits', brief: null, status: 'active', status_label: 'Active', deliverables: [{ id: 'd1', title: 'Reel', format: null, due: 'No date', status: 'ready_for_review', status_label: 'Ready for review', waiting_for: null, reply: null, can_reply: false, rounds: [r] }] }] }))
+
+  it('offers three answers on a round, with a confirm before comments are sent', () => {
+    const out = withRound(round())
+    expect(out).toContain('data-comments="r1"')
+    expect(out).toContain('data-approve="r1"')
+    expect(out).toContain('data-changes="r1"')
+    expect(out).toContain('data-comments-confirm="r1"')
+    expect(out).toContain('data-comments-yes="r1"')
+    expect(out).toContain('Frame.io')
+  })
+  it('after comments are in, says so and offers an undo only while it is allowed', () => {
+    const done = round({ response: 'comments_in', response_label: 'Comments are in', can_respond: false, can_undo: true })
+    const out = withRound(done)
+    expect(out).toContain('Comments are in')
+    expect(out).toContain('data-undo="r1"')
+    expect(out).not.toContain('data-approve')
+    expect(withRound({ ...done, can_undo: false })).not.toContain('data-undo')
+  })
+})
+
+describe('the Approve link page: comments are in', () => {
+  const link = over => ({
+    scope: { kind: 'delivery', can_respond: true }, studio: { name: 'Peny' }, company: 'DMM', title: 'Reel', deliverable_id: 'd1', round: 2,
+    url: 'https://f.io/x', frame_io: true, note: null, preview: null, state: 'open', can_approve: true, can_request_changes: true, can_say_comments_in: true, can_undo: false, can_sign_in: false, ...over,
+  })
+  it('has the three answers, and opens straight on the comments question from the email button', () => {
+    const plain = approveHtml(link())
+    expect(plain).toContain('data-approve-now')
+    expect(plain).toContain('data-open-comments')
+    expect(plain).toContain('data-open-changes')
+    const direct = approveHtml(link(), { openComments: true })
+    expect(direct).toContain('Are your comments in?')
+    expect(direct).toMatch(/data-approve-actions hidden/)
+    expect(direct).not.toMatch(/data-comments-now hidden/)
+  })
+  it('thanks them after, offers undo only when allowed, and never approves by itself', () => {
+    expect(approveHtml(link({ state: 'comments_in', can_undo: true }), {})).toContain('data-undo-comments')
+    expect(approveHtml(link({ state: 'comments_in', can_undo: false }), {})).not.toContain('data-undo-comments')
+    const sent = approveHtml(link({ state: 'comments_in', can_undo: true }), { commentsSent: true })
+    expect(sent).toContain('Thank you — we’ll take it from here')
+    expect(sent).not.toContain('data-approve-now')
   })
 })

@@ -17,7 +17,7 @@
 
 import {
   RESPONSES, statusAfterResponse, statusPatch, validateResponse, isUuid,
-  validateRequestInput, validateSenderName, validateReply, MAX_OPEN_REQUESTS, canAnswerDelivered,
+  validateRequestInput, validateSenderName, validateReply, MAX_OPEN_REQUESTS, canAnswerDelivered, STATUS_AFTER_UNDO,
 } from './_retainer-rules.js'
 
 // Only the objects the constructors made count as scopes — not copies
@@ -82,7 +82,8 @@ export async function respondToDelivery(sql, scope, { deliveryId, input, by }) {
   const bad = validateResponse(input)
   if (bad) return { error: { status: 422, code: 'validation_failed', ...bad } }
   const response = input.response
-  const comment = typeof input.comment === 'string' && input.comment.trim() ? input.comment.trim() : null
+  // "Comments are in" carries no words: they are in Frame.io.
+  const comment = response !== 'comments_in' && typeof input.comment === 'string' && input.comment.trim() ? input.comment.trim() : null
   if (!RESPONSES.includes(response)) return notFound()   // unreachable after validation
 
   if (scope.kind === 'delivery') {
@@ -92,6 +93,60 @@ export async function respondToDelivery(sql, scope, { deliveryId, input, by }) {
   if (scope.kind === 'staff') return respondAsStaff(sql, scope, { deliveryId, response, comment, by })
   if (scope.kind === 'company') return respondAsClient(sql, scope, { deliveryId, response, comment, by })
   throw new Error(`Scope kind ${scope.kind} cannot respond`)
+}
+
+// The client taking back "comments are in" because they pressed it too soon:
+// the round is open again and the deliverable is back in review. Only while it
+// is still the latest round, still answered that way and the deliverable still
+// reads Comments in (staff moving it on, or a newer round, ends the chance). A
+// signed-in client of the company, or the link the round's email carried (while
+// it is unused and unexpired). Conditions are inside the statement that writes.
+// { delivery: { id, deliverable_id } } or { error }.
+export async function undoCommentsIn(sql, scope, { deliveryId }) {
+  if (!isScope(scope)) throw new Error('undoCommentsIn needs a scope from _worklist.js')
+  if (!scope.canRespond || !['company', 'delivery'].includes(scope.kind)) return { error: { status: 403, code: 'read_only', message: 'This view can look but not answer' } }
+  if (!isUuid(deliveryId)) return notFound()
+  if (scope.kind === 'delivery' && deliveryId !== scope.deliveryId) return notFound()
+
+  // One statement shape for both kinds of scope: only the matching half of the
+  // condition can be true (no SQL is composed from fragments).
+  const company = scope.kind === 'company'
+  const companyId = scope.companyId ?? null
+  const linkId = scope.linkId ?? null
+  const [row] = await sql`
+    SELECT dv.client_response, dv.round, d.status,
+           (SELECT max(x.round) FROM deliveries x WHERE x.deliverable_id = dv.deliverable_id) AS latest_round
+    FROM deliveries dv
+    JOIN deliverables d ON d.id = dv.deliverable_id
+    JOIN workstreams w ON w.id = d.workstream_id
+    WHERE dv.id = ${deliveryId} AND w.user_id = ${scope.ws} AND d.client_visible AND ((${company}::boolean AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${companyId}::uuid))
+           OR (NOT ${company}::boolean AND EXISTS (SELECT 1 FROM action_links l WHERE l.id = ${linkId}::uuid AND l.delivery_id = dv.id AND l.used_at IS NULL AND l.expires_at > NOW())))`
+  if (!row) return notFound()
+  if (row.client_response !== 'comments_in' || row.round !== row.latest_round || row.status !== 'comments_in') {
+    return { error: { status: 409, code: 'cannot_undo', message: 'That can’t be taken back now — we’ve already picked it up' } }
+  }
+  const [done] = await sql`
+    WITH target AS (
+      SELECT dv.id
+      FROM deliveries dv
+      JOIN deliverables d ON d.id = dv.deliverable_id
+      JOIN workstreams w ON w.id = d.workstream_id
+      WHERE dv.id = ${deliveryId} AND w.user_id = ${scope.ws} AND d.client_visible AND ((${company}::boolean AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${companyId}::uuid))
+           OR (NOT ${company}::boolean AND EXISTS (SELECT 1 FROM action_links l WHERE l.id = ${linkId}::uuid AND l.delivery_id = dv.id AND l.used_at IS NULL AND l.expires_at > NOW())))
+        AND dv.client_response = 'comments_in' AND d.status = 'comments_in'
+        AND dv.round = (SELECT max(x.round) FROM deliveries x WHERE x.deliverable_id = dv.deliverable_id)
+      FOR UPDATE OF dv, d
+    ), reopened AS (
+      UPDATE deliveries SET client_response = 'pending', client_comment = NULL,
+             responded_at = NULL, responded_by = NULL, responded_by_name = NULL
+      FROM target WHERE deliveries.id = target.id
+      RETURNING deliveries.id, deliveries.deliverable_id
+    )
+    UPDATE deliverables SET status = ${STATUS_AFTER_UNDO}::deliverable_status, updated_at = NOW()
+    FROM reopened WHERE deliverables.id = reopened.deliverable_id
+    RETURNING reopened.id AS delivery_id, deliverables.id AS deliverable_id`
+  if (!done) return conflict()
+  return { delivery: { id: done.delivery_id, deliverable_id: done.deliverable_id } }
 }
 
 // A client answering a deliverable staff have ticked as delivered, when no round

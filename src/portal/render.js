@@ -49,7 +49,7 @@ function footerHtml(view) {
 // (Mail scanners open every link in a message, so a link that acted on GET
 // would approve things nobody looked at.)
 
-export function approveHtml(link, { done = false, changed = false, failure = null, openChanges = false } = {}) {
+export function approveHtml(link, { done = false, changed = false, commentsSent = false, failure = null, openChanges = false, openComments = false } = {}) {
   const portal = link ? `/portal#d-${encodeURIComponent(link.deliverable_id)}` : '/portal'
   // Someone with no login has no portal to open: the link is all they have.
   const portalButton = (primary = false) => link?.can_sign_in === false ? '' : `<a class="pt-btn${primary ? ' pt-btn--primary' : ''}" href="${esc(portal)}">Open the portal</a>`
@@ -79,6 +79,15 @@ export function approveHtml(link, { done = false, changed = false, failure = nul
       ${what}
       <div class="pt-message-actions">${portalButton()}</div>`)
   }
+  if (commentsSent || link.state === 'comments_in') {
+    return shell(`
+      <h1 class="pt-signin-title">${commentsSent ? 'Thank you — we’ll take it from here' : 'We have your comments'}</h1>
+      <p class="pt-muted">We’ve been told your feedback is complete, and will send the next round.</p>
+      ${what}
+      <div class="pt-form-msg" role="alert" data-approve-msg></div>
+      ${link.can_undo ? '<div class="pt-message-actions"><button type="button" class="pt-btn" data-undo-comments>Undo — I’m still adding comments</button></div>' : ''}
+      <div class="pt-message-actions">${portalButton()}</div>`)
+  }
   if (done || link.state === 'approved') {
     return shell(`
       <h1 class="pt-signin-title">${done ? 'Approved — thank you' : 'Already approved'}</h1>
@@ -100,12 +109,18 @@ export function approveHtml(link, { done = false, changed = false, failure = nul
       <div class="pt-message-actions">${portalButton()}</div>`)
   }
   return shell(`
-      <h1 class="pt-signin-title">Approve this?</h1>
+      <h1 class="pt-signin-title">${openComments ? 'Are your comments in?' : 'Approve this?'}</h1>
       ${what}
       <div class="pt-form-msg" role="alert" data-approve-msg></div>
-      <div class="pt-message-actions" data-approve-actions${openChanges ? ' hidden' : ''}>
+      <div class="pt-message-actions" data-approve-actions${openChanges || openComments ? ' hidden' : ''}>
         <button type="button" class="pt-btn pt-btn--primary" data-approve-now>Yes, approve round ${link.round}</button>
+        <button type="button" class="pt-btn" data-open-comments>Comments are in</button>
         <button type="button" class="pt-btn" data-open-changes>Ask for changes instead</button>
+      </div>
+      <div class="pt-message-actions" data-comments-now${openComments ? '' : ' hidden'}>
+        <p class="pt-muted">Leave your notes in ${link.frame_io ? 'Frame.io' : 'the link'} first. Press this once you’ve finished, so we know to act on them.</p>
+        <button type="button" class="pt-btn pt-btn--primary" data-comments-yes>Yes, my comments are in</button>
+        <button type="button" class="pt-btn" data-cancel-comments>Back</button>
       </div>
       <form class="pt-form pt-approve-changes" data-changes-now${openChanges ? '' : ' hidden'} novalidate>
         <label for="ap-comment">What needs to change?</label>
@@ -311,7 +326,9 @@ function answerLine(r) {
   const when = r.answered_at ? ` ${dayMonth(r.answered_at)}` : ''
   return `
     <div class="pt-answer pt-answer--${esc(r.response)}">${esc(r.response_label)}${when}${who}</div>
-    ${r.comment ? `<div class="pt-quote">“${esc(r.comment)}”</div>` : ''}`
+    ${r.comment ? `<div class="pt-quote">“${esc(r.comment)}”</div>` : ''}
+    ${r.response === 'comments_in' ? `<p class="pt-muted pt-answer-note">We’ve been told your feedback is complete, and will send the next round.</p>` : ''}
+    ${r.can_undo ? `<button type="button" class="pt-link pt-undo" data-undo="${esc(r.id)}">Undo — I’m still adding comments</button>` : ''}`
 }
 
 function roundHtml(r, d) {
@@ -327,8 +344,16 @@ function roundHtml(r, d) {
         ${answerLine(r)}
         ${r.can_respond ? `
           <div class="pt-actions" data-actions="${esc(r.id)}">
+            <button type="button" class="pt-btn" data-comments="${esc(r.id)}">Comments are in</button>
             <button type="button" class="pt-btn pt-btn--primary" data-approve="${esc(r.id)}">Approve</button>
             <button type="button" class="pt-btn" data-changes="${esc(r.id)}">Request changes</button>
+          </div>
+          <div class="pt-confirm" data-comments-confirm="${esc(r.id)}" hidden>
+            <p>Have you finished leaving your comments in ${r.frame_io ? 'Frame.io' : 'the link'}? We’ll take it from here.</p>
+            <div class="pt-actions">
+              <button type="button" class="pt-btn pt-btn--primary" data-comments-yes="${esc(r.id)}">Yes, comments are in</button>
+              <button type="button" class="pt-btn" data-cancel="${esc(r.id)}">Cancel</button>
+            </div>
           </div>
           <div class="pt-confirm" data-confirm="${esc(r.id)}" hidden>
             <p>Approve round ${r.round} of “${esc(d.title)}”?</p>
@@ -387,7 +412,7 @@ function projectHtml(view) {
 
 // ── Behaviour ────────────────────────────────────────────────────────────────
 
-export function bindView(root, view, { respond, respondDelivered = respond, submitRequest, reply, rerender, signOut, switchCompany }) {
+export function bindView(root, view, { respond, respondDelivered = respond, undo, submitRequest, reply, rerender, signOut, switchCompany }) {
   root.querySelector('[data-sign-out]')?.addEventListener('click', signOut)
   root.querySelector('[data-switch]')?.addEventListener('click', switchCompany)
   if (view.schedule) bindSchedule(root, view.schedule)
@@ -399,12 +424,14 @@ export function bindView(root, view, { respond, respondDelivered = respond, subm
     part('data-actions', id).hidden = false
     part('data-confirm', id).hidden = true
     part('data-changes-form', id).hidden = true
+    const c = part('data-comments-confirm', id)
+    if (c) c.hidden = true
   }
   const send = async (id, body, button, msgEl, kind) => {
     button.disabled = true
     try {
       const fresh = await (kind === 'deliverable' ? respondDelivered : respond)(id, body)
-      toast(body.response === 'approved' ? 'Approved — thank you' : 'Sent — thank you')
+      toast(body.response === 'approved' ? 'Approved — thank you' : body.response === 'comments_in' ? 'Thanks — we’ll take it from here' : 'Sent — thank you')
       rerender(fresh)
     } catch (err) {
       button.disabled = false
@@ -420,6 +447,26 @@ export function bindView(root, view, { respond, respondDelivered = respond, subm
     part('data-actions', id).hidden = true
     part('data-confirm', id).hidden = false
     part('data-confirm-yes', id).focus()
+  }))
+  root.querySelectorAll('[data-comments]').forEach(b => b.addEventListener('click', () => {
+    const id = b.dataset.comments
+    part('data-actions', id).hidden = true
+    part('data-comments-confirm', id).hidden = false
+    part('data-comments-yes', id).focus()
+  }))
+  root.querySelectorAll('[data-comments-yes]').forEach(b => b.addEventListener('click', () =>
+    send(b.dataset.commentsYes, { response: 'comments_in' }, b, null)))
+  root.querySelectorAll('[data-undo]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true
+    try {
+      const fresh = await undo(b.dataset.undo)
+      toast('Taken back — add your comments, then press Comments are in')
+      rerender(fresh)
+    } catch (err) {
+      b.disabled = false
+      toast(err.message)
+      if (err.status === 409) setTimeout(() => rerender(null), 1200)
+    }
   }))
   root.querySelectorAll('[data-changes]').forEach(b => b.addEventListener('click', () => {
     const id = b.dataset.changes

@@ -214,7 +214,7 @@ describeDb('/api/retainers', () => {
   it('sends the page the words it needs, so the browser holds no copy of the rules', async () => {
     as(ana)
     const r = await call('GET', `retainers/projects/${project.id}`)
-    expect(r.body.vocab.statuses.map(s => s.key)).toEqual(['planned', 'in_progress', 'waiting_on_client', 'in_review', 'changes_requested', 'approved'])
+    expect(r.body.vocab.statuses.map(s => s.key)).toEqual(['planned', 'in_progress', 'waiting_on_client', 'in_review', 'changes_requested', 'comments_in', 'approved'])
     expect(r.body.vocab.statuses.find(s => s.key === 'changes_requested')).toMatchObject({ label: 'Changes requested', client_label: 'In progress' })
     expect(r.body.vocab.workstream_statuses.map(s => s.key)).toEqual(['active', 'paused', 'complete'])
     expect(r.body.workstreams[0].status_label).toBe('Active')

@@ -797,6 +797,12 @@ export async function runMigrations() {
   // ── Who an Approve link was sent to, when they have no login (drizzle/0039) ─
   await sql`ALTER TABLE action_links ADD COLUMN IF NOT EXISTS name TEXT`
 
+  // ── "Comments are in": a third answer to a round (drizzle/0041) ─────────────
+  // Run as their own statements: a new enum value can't be used in the
+  // transaction that adds it, and nothing here uses it.
+  await sql`ALTER TYPE delivery_response ADD VALUE IF NOT EXISTS 'comments_in'`
+  await sql`ALTER TYPE deliverable_status ADD VALUE IF NOT EXISTS 'comments_in'`
+
   // ── Delivered (staff tick) and approved (client) are separate (drizzle/0040) ─
   await sql`ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ`
   await sql`ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ`

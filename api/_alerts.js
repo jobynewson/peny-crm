@@ -138,6 +138,20 @@ export function changesRequestedEmail({ d, comment, by }) {
   }
 }
 
+export function commentsInEmail({ d, by, undone = false }) {
+  return {
+    subject: undone ? `${d.company} is still adding feedback: ${d.title}` : `${d.company}'s comments are in: ${d.title}`,
+    title: undone ? 'Feedback not finished' : 'Comments are in',
+    subtitle: `${d.company} · ${d.workstream}`,
+    sentence: undone
+      ? `${escapeHtml(by || 'The client')} took back “comments are in” — they are still leaving feedback in Frame.io. Hold off on the next round.`
+      : `${escapeHtml(by || 'The client')} has finished leaving feedback in Frame.io. It is over to you to act on it and send the next round.`,
+    body: card(d.title, [d.due_date && `Due ${formatDay(d.due_date, today())}`]),
+    href: retainersLink(d),
+    linkLabel: 'Open the deliverable',
+  }
+}
+
 export function clientReplyEmail({ d, reply, by }) {
   return {
     subject: `${d.company} replied: ${d.title}`,
@@ -224,6 +238,12 @@ export async function alertChangesRequested(sql, { deliverableId, comment, by })
   return send(sql, { kind: 'alert_changes_requested', ownerId: d.owner_id, companyId: d.company_id, email: changesRequestedEmail({ d, comment, by }) })
 }
 
+export async function alertCommentsIn(sql, { deliverableId, by, undone = false }) {
+  const d = await loadDeliverableContext(sql, deliverableId)
+  if (!d) return []
+  return send(sql, { kind: 'alert_comments_in', ownerId: d.owner_id, companyId: d.company_id, email: commentsInEmail({ d, by, undone }) })
+}
+
 export async function alertClientReply(sql, { deliverableId, reply, by }) {
   const d = await loadDeliverableContext(sql, deliverableId)
   if (!d) return []
@@ -261,7 +281,7 @@ export async function sendOwnerAssigned(sql, { deliverableId, assignedBy }) {
 
 const STATUS_LABEL = {
   planned: 'Planned', in_progress: 'In progress', waiting_on_client: 'Waiting on client',
-  changes_requested: 'Changes requested',
+  changes_requested: 'Changes requested', comments_in: 'Comments in',
 }
 
 // Takes the item's place in alert_log. False when someone already has.

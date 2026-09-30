@@ -39,9 +39,9 @@ import { createClerkClient } from '@clerk/backend'
 import { UUID, fail, invalid, matchRoute, routePathFrom, readBody, workspaceId } from './_api.js'
 import { verifyClerkSession } from './_auth.js'
 import { isRateLimited, getClientIp } from './_ratelimit.js'
-import { companyScope, projectScope, deliveryScope, respondToDelivery, respondToDeliverable, submitRequest, replyToWaiting } from './_worklist.js'
+import { companyScope, projectScope, deliveryScope, respondToDelivery, respondToDeliverable, undoCommentsIn, submitRequest, replyToWaiting } from './_worklist.js'
 import { hashToken } from './_delivery-mail.js'
-import { alertNewRequest, alertChangesRequested, alertClientReply } from './_alerts.js'
+import { alertNewRequest, alertChangesRequested, alertClientReply, alertCommentsIn } from './_alerts.js'
 import { readClientView, readLinkView } from './_client-view.js'
 
 // `kinds` is which scopes a route serves (checked before its handler runs):
@@ -52,8 +52,11 @@ export const ROUTES = [
   { method: 'GET',  pattern: /^client\/link$/,                                      handler: getLink, kinds: ['delivery'] },
   { method: 'POST', pattern: /^client\/link\/approve$/,                              handler: approveViaLink, kinds: ['delivery'] },
   { method: 'POST', pattern: /^client\/link\/changes$/,                              handler: changesViaLink, kinds: ['delivery'] },
+  { method: 'POST', pattern: /^client\/link\/comments$/,                             handler: commentsViaLink, kinds: ['delivery'] },
+  { method: 'POST', pattern: /^client\/link\/undo$/,                                 handler: undoViaLink, kinds: ['delivery'] },
   { method: 'GET',  pattern: /^client\/view$/,                                      handler: getView },
   { method: 'POST', pattern: new RegExp(`^client/deliveries/(?<id>${UUID})/response$`), handler: respond },
+  { method: 'POST', pattern: new RegExp(`^client/deliveries/(?<id>${UUID})/undo$`), handler: undoComments },
   { method: 'POST', pattern: new RegExp(`^client/deliverables/(?<id>${UUID})/reply$`), handler: reply },
   { method: 'POST', pattern: new RegExp(`^client/deliverables/(?<id>${UUID})/response$`), handler: respondDelivered },
   { method: 'POST', pattern: /^client\/requests$/,                                   handler: raiseRequest },
@@ -165,7 +168,7 @@ async function respond(req, res, { sql, scope, params }) {
     const { status, code, message, field } = result.error
     return fail(res, status, code, message, field ? { field } : {})
   }
-  // Changes asked for are urgent; an approval waits for the digest.
+  // Changes asked for, and comments being in, are urgent; an approval waits for the digest.
   if (body.response === 'changes_requested') {
     try {
       await alertChangesRequested(sql, { deliverableId: result.delivery.deliverable_id, comment: body.comment.trim(), by: by.name })
@@ -173,6 +176,28 @@ async function respond(req, res, { sql, scope, params }) {
       console.error('[client] changes-requested alert failed:', err?.message)   // the answer is saved either way
     }
   }
+  if (body.response === 'comments_in') await tellCommentsIn(sql, result.delivery.deliverable_id, by.name)
+  return res.status(200).json({ ok: true, view: await readClientView(sql, scope) })
+}
+
+// The owner hears straight away that feedback is complete (or that it is not).
+async function tellCommentsIn(sql, deliverableId, name, undone = false) {
+  try {
+    await alertCommentsIn(sql, { deliverableId, by: name, undone })
+  } catch (err) {
+    console.error('[client] comments-in alert failed:', err?.message)   // the answer is saved either way
+  }
+}
+
+// ── POST /api/client/deliveries/:id/undo ─────────────────────────────────────
+// Takes back "comments are in" while we haven't picked it up. Returns the fresh view.
+async function undoComments(req, res, { sql, scope, params }) {
+  const result = await undoCommentsIn(sql, scope, { deliveryId: params.id })
+  if (result.error) {
+    const { status, code, message } = result.error
+    return fail(res, status, code, message)
+  }
+  await tellCommentsIn(sql, result.delivery.deliverable_id, await clientName(scope.clerkUserId), true)
   return res.status(200).json({ ok: true, view: await readClientView(sql, scope) })
 }
 
@@ -267,6 +292,32 @@ async function changesViaLink(req, res, { sql, scope }) {
   } catch (err) {
     console.error('[client] changes-requested alert failed:', err?.message)   // the answer is saved either way
   }
+  return res.status(200).json({ ok: true, link: await readLinkView(sql, scope) })
+}
+
+// ── POST /api/client/link/comments ───────────────────────────────────────────
+// "Comments are in", as the person the email went to. The link isn't used up
+// (the round is answered, which is what stops it). Tells the owner straight away.
+async function commentsViaLink(req, res, { sql, scope }) {
+  const by = await linkPerson(scope)
+  const result = await respondToDelivery(sql, scope, { deliveryId: scope.deliveryId, input: { response: 'comments_in' }, by })
+  if (result.error) {
+    const { status, code, message, field } = result.error
+    return fail(res, status, code, message, field ? { field } : {})
+  }
+  await tellCommentsIn(sql, result.delivery.deliverable_id, by.name)
+  return res.status(200).json({ ok: true, link: await readLinkView(sql, scope) })
+}
+
+// ── POST /api/client/link/undo ───────────────────────────────────────────────
+async function undoViaLink(req, res, { sql, scope }) {
+  const by = await linkPerson(scope)
+  const result = await undoCommentsIn(sql, scope, { deliveryId: scope.deliveryId })
+  if (result.error) {
+    const { status, code, message } = result.error
+    return fail(res, status, code, message)
+  }
+  await tellCommentsIn(sql, result.delivery.deliverable_id, by.name, true)
   return res.status(200).json({ ok: true, link: await readLinkView(sql, scope) })
 }
 

@@ -34,7 +34,8 @@ async function loadRows(sql, ws, { id = null } = {}) {
     SELECT d.id, d.title, d.owner_id, d.status, d.due_kind, d.due_date::text AS due_date, d.due_label, d.cadence,
            d.waiting_since, d.delivered_at, d.updated_at,
            w.title AS workstream, w.status AS workstream_status, w.project_id, wc.company_id, p.name AS project, COALESCE(c.name, p.name) AS company,
-           (SELECT max(dv.round) FROM deliveries dv WHERE dv.deliverable_id = d.id) AS round
+           (SELECT max(dv.round) FROM deliveries dv WHERE dv.deliverable_id = d.id) AS round,
+           (SELECT max(dv.responded_at) FROM deliveries dv WHERE dv.deliverable_id = d.id AND dv.client_response = 'comments_in') AS comments_since
     FROM deliverables d
     JOIN workstreams w ON w.id = d.workstream_id
     JOIN workstream_company wc ON wc.workstream_id = w.id

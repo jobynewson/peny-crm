@@ -264,7 +264,8 @@ async function getOwed(req, res, { sql, params }) {
   const rows = await sql`
     SELECT d.id, d.title, d.status, d.owner_id, d.due_kind, d.due_date::text AS due_date, d.due_label, d.cadence, d.waiting_since, d.delivered_at,
            w.title AS workstream, w.project_id, u.name AS owner_name,
-           (SELECT max(dv.round) FROM deliveries dv WHERE dv.deliverable_id = d.id) AS round
+           (SELECT max(dv.round) FROM deliveries dv WHERE dv.deliverable_id = d.id) AS round,
+           (SELECT max(dv.responded_at) FROM deliveries dv WHERE dv.deliverable_id = d.id AND dv.client_response = 'comments_in') AS comments_since
     FROM deliverables d
     JOIN workstreams w ON w.id = d.workstream_id
     LEFT JOIN app_users u ON u.id = d.owner_id

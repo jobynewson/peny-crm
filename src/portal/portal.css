@@ -69,6 +69,7 @@ a { color: var(--accent-text); }
 .pt-chip { flex-shrink: 0; padding: 3px 10px; border-radius: var(--radius-pill); background: var(--cat-grey-soft); color: var(--cat-grey); font-size: 12px; font-weight: 500; white-space: nowrap; }
 .pt-chip--in_progress { background: var(--cat-blue-soft); color: var(--cat-blue); }
 .pt-chip--waiting_on_you { background: var(--cat-amber-soft); color: var(--cat-amber); }
+.pt-chip--comments_received { background: var(--cat-blue-soft); color: var(--cat-blue); }
 .pt-chip--ready_for_review { background: var(--cat-purple-soft); color: var(--cat-purple); }
 .pt-chip--delivered { background: var(--cat-teal-soft, var(--cat-blue-soft)); color: var(--cat-teal, var(--cat-blue)); }
 .pt-chip--approved { background: var(--cat-green-soft); color: var(--cat-green); }
@@ -89,6 +90,9 @@ a { color: var(--accent-text); }
 .pt-answer { font-size: 14px; font-weight: 500; }
 .pt-answer--approved { color: var(--success); }
 .pt-answer--changes_requested { color: var(--cat-pink); }
+.pt-answer--comments_in { color: var(--cat-blue); }
+.pt-answer-note { margin: 4px 0; font-size: 13px; }
+.pt-undo { margin-top: 6px; }
 .pt-quote { font-size: 14px; white-space: pre-line; }
 .pt-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .pt-confirm { width: 100%; }

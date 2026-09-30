@@ -819,9 +819,9 @@ export const notifications = pgTable('notifications', {
 // kinds, statuses, rounds, responses, client labels) are api/_retainer-rules.js.
 export const workstream_status   = pgEnum('workstream_status', ['active', 'paused', 'complete'])
 export const deliverable_status  = pgEnum('deliverable_status',
-  ['planned', 'in_progress', 'waiting_on_client', 'in_review', 'changes_requested', 'approved'])
+  ['planned', 'in_progress', 'waiting_on_client', 'in_review', 'changes_requested', 'comments_in', 'approved'])
 export const deliverable_due_kind = pgEnum('deliverable_due_kind', ['exact', 'month', 'window', 'recurring'])
-export const delivery_response   = pgEnum('delivery_response', ['pending', 'approved', 'changes_requested'])
+export const delivery_response   = pgEnum('delivery_response', ['pending', 'approved', 'changes_requested', 'comments_in'])
 export const request_status      = pgEnum('request_status', ['new', 'accepted', 'declined'])
 
 export const workstreams = pgTable('workstreams', {

@@ -52,6 +52,9 @@ export const approveUrl = token => `${appBaseUrl()}/portal/approve#${token}`
 export const changesUrl = deliverableId => `${appBaseUrl()}/portal#d-${deliverableId}`
 // Same confirm page, with the box for changes open, for someone with no login.
 export const changesLinkUrl = token => `${appBaseUrl()}/portal/approve?changes=1#${token}`
+// Same page, for "comments are in" (feedback finished in Frame.io). Everyone uses
+// it, login or not: it needs no words, only a confirm.
+export const commentsLinkUrl = token => `${appBaseUrl()}/portal/approve?comments=1#${token}`
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -82,7 +85,7 @@ export function deliveryRecipients({ members = [], contact = null, extras = [], 
 const button = (href, label, { primary = false } = {}) => `
   <a href="${escapeHtml(href)}" style="display:inline-block;padding:12px 20px;margin:0 8px 8px 0;border-radius:8px;font-size:15px;font-weight:600;text-decoration:none;${primary ? 'background:#16a34a;color:#fff;border:1px solid #16a34a' : 'background:#fff;color:#111;border:1px solid #bbb'}">${escapeHtml(label)}</a>`
 
-export function deliveryEmail({ studio, company, title, round, note, url, first, approve, changes, noLogin = false, days = LINK_DAYS, expires }) {
+export function deliveryEmail({ studio, company, title, round, note, url, first, approve, changes, comments, noLogin = false, days = LINK_DAYS, expires }) {
   const expiry = expires ? new Date(expires).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'Europe/London' }) : null
   return {
     subject: `Ready for your review: ${title}`,
@@ -100,9 +103,9 @@ export function deliveryEmail({ studio, company, title, round, note, url, first,
       <p style="margin:0 0 18px;font-size:14px;color:#444;line-height:1.5">Hi ${escapeHtml(first || 'there')}, round ${round} of <strong>${escapeHtml(title)}</strong> is ready for you.</p>
       ${note ? `<p style="margin:0 0 18px;font-size:14px;color:#444;line-height:1.5;white-space:pre-line;border-left:3px solid #ddd;padding-left:12px">${escapeHtml(note)}</p>` : ''}
       <p style="margin:0 0 20px"><a href="${escapeHtml(url)}" style="color:#3b82f6;font-size:15px;font-weight:600">Watch it ↗</a></p>
-      <div>${button(approve, 'Approve', { primary: true })}${button(changes, 'Request changes')}</div>
+      <div>${button(approve, 'Approve', { primary: true })}${comments ? button(comments, 'Comments are in') : ''}${button(changes, 'Request changes')}</div>
       <p style="margin:18px 0 0;font-size:12px;color:#999;line-height:1.5">
-        Approve asks you to confirm before anything happens. The button works once${expiry ? ` and stops working on ${escapeHtml(expiry)}` : ` and expires after ${days} days`}. ${noLogin ? 'Requesting changes opens the same page, where you say what needs to change — there is nothing to sign in to.' : 'Requesting changes takes you to the portal, where you sign in and say what needs to change.'}
+        ${comments ? 'Leave your notes in Frame.io, then press <strong>Comments are in</strong> so we know you’ve finished. ' : ''}Approve asks you to confirm before anything happens. The button works once${expiry ? ` and stops working on ${escapeHtml(expiry)}` : ` and expires after ${days} days`}. ${noLogin ? 'Requesting changes opens the same page, where you say what needs to change — there is nothing to sign in to.' : 'Requesting changes takes you to the portal, where you sign in and say what needs to change.'}
       </p>
     </div>
   </div>
@@ -169,7 +172,7 @@ export async function emailDelivery(sql, { deliveryId, members = portalMembers, 
       const mail = deliveryEmail({
         studio: dv.studio, company: dv.company, title: dv.title, round: dv.round, note: dv.note, url: dv.url,
         first: person.first, approve: approveUrl(token), noLogin: !person.clerk_id,
-        changes: person.clerk_id ? changesUrl(dv.deliverable_id) : changesLinkUrl(token), expires,
+        changes: person.clerk_id ? changesUrl(dv.deliverable_id) : changesLinkUrl(token), comments: commentsLinkUrl(token), expires,
       })
       const [r] = await notify(sql, {
         kind: 'delivery_ready', to: { email: person.email, name: person.name }, subject: mail.subject, html: mail.html,

@@ -67,6 +67,7 @@ async function linkView(sql, scope) {
   const state = row.round !== row.latest_round ? 'superseded'
     : row.client_response === 'approved' ? 'approved'
     : row.client_response === 'changes_requested' ? 'answered'
+    : row.client_response === 'comments_in' ? 'comments_in'
     : 'open'
   return {
     scope: { kind: 'delivery', can_respond: true, link_only: true },
@@ -82,6 +83,9 @@ async function linkView(sql, scope) {
     state,
     can_approve: state === 'open',
     can_request_changes: state === 'open',
+    can_say_comments_in: state === 'open',
+    // They pressed it too soon: still possible until we have picked it up.
+    can_undo: state === 'comments_in' && row.status === 'comments_in',
     // Someone the email went to with no login has nowhere to "sign in".
     can_sign_in: !!scope.clerkUserId,
   }
@@ -333,13 +337,13 @@ export function worklistJson({ workstreams, deliverables, rounds, today, canResp
         // Delivered by Peny, answerable on its own when no round is out.
         delivered: isDelivered(d),
         can_answer: !!canRespond && showReplies && canAnswerDelivered(d, { hasPendingRound: pendingRound }),
-        rounds: list.map(r => roundJson(r, r === latest, canRespond)),
+        rounds: list.map(r => roundJson(r, r === latest, canRespond, d.status)),
       }
     }),
   }))
 }
 
-function roundJson(r, latest, canRespond) {
+function roundJson(r, latest, canRespond, deliverableStatus) {
   const superseded = !latest && r.client_response === 'pending'
   return {
     id: r.id,
@@ -359,6 +363,8 @@ function roundJson(r, latest, canRespond) {
     preview: r.preview_title || r.preview_image ? { title: r.preview_title, image: r.preview_image } : null,
     latest,
     can_respond: !!canRespond && latest && r.client_response === 'pending',
+    // "Comments are in" can be taken back until we have picked it up.
+    can_undo: !!canRespond && latest && r.client_response === 'comments_in' && deliverableStatus === 'comments_in',
   }
 }
 

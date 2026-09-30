@@ -897,6 +897,30 @@ always the source of truth and nothing is ever read back from Google.
   until it is approved. The dashboard's "to do" badge counts a tick as done.
 - Old ticks are not migrated: the change applies from now.
 
+### "Comments are in" — a third answer to a round (`drizzle/0041`)
+- **Three answers to a round:** Approve (this stage is done), Request changes
+  (a comment in Slate), and **Comments are in** (feedback finished in
+  Frame.io, over to us; no words are stored). `delivery_response` and
+  `deliverable_status` both gain `comments_in`. It is not `changes_requested`:
+  the useful fact is that feedback is *complete*. The deliverable reads
+  **Comments in** (board: Doing, chip "Comments in · 2d"; dragging it back is
+  refused like changes); the client sees "Comments received". Sending the next
+  round moves it to In review.
+- **Who hears:** the owner straight away (`alertCommentsIn`, switch
+  `alert_comments_in`), and again if the client takes it back.
+- **Undo** (`undoCommentsIn` in `api/_worklist.js`): the client can take it back
+  while the round is still the latest, still answered that way and the
+  deliverable still reads Comments in; staff moving it on or sending a newer
+  round ends the chance (409 `cannot_undo`). Portal:
+  `POST client/deliveries/:id/undo`; link: `POST client/link/undo`. The round
+  reopens and the deliverable goes back to In review.
+- **The email** has a third button; it opens `/portal/approve?comments=1#token`,
+  the confirm page, for everyone (login or not). `POST client/link/comments`
+  answers without using the link up (the round is answered either way).
+  Staff can record it too (the answer form on the deliverable sheet).
+- Not on the delivered-tick path (no round): there, Approve / Request changes
+  only, because that tick means final.
+
 ### How far ahead dated work shows (7 / 14 / 30 / 60 days)
 - One choice, four values (`WINDOW_DAYS` in `api/_retainer-rules.js`, mirrored in
   `src/utils/window-days.js`; a test compares them). Each screen has its own

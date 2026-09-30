@@ -53,6 +53,13 @@ describe('the delivery email', () => {
     expect(html).toContain('works once')
     expect(html).toContain('13 October')
   })
+  it('has a Comments are in button when given one, and explains it', () => {
+    const { html } = deliveryEmail({ ...base, comments: 'https://slate.test/portal/approve?comments=1#TOKEN' })
+    expect(html).toContain('href="https://slate.test/portal/approve?comments=1#TOKEN"')
+    expect(html).toContain('>Comments are in<')
+    expect(html).toContain('press <strong>Comments are in</strong>')
+    expect(deliveryEmail(base).html).not.toContain('>Comments are in<')
+  })
   it('the request-changes button carries no token', () => {
     const { html } = deliveryEmail(base)
     const changes = html.match(/<a href="([^"]*)"[^>]*>Request changes<\/a>/)[1]

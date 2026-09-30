@@ -209,6 +209,7 @@ export class Worklist {
   _roundLineHtml(r) {
     const link = `<a class="rt-round-link" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Round ${r.round}</a>`
     if (r.client_response === 'approved') return `<div class="rt-d-round rt-d-round--ok">${link} approved ${dayMonth(r.responded_at)}${r.responded_by_staff ? ' (recorded)' : ''}</div>`
+    if (r.client_response === 'comments_in') return `<div class="rt-d-round rt-d-round--comments">${link}: comments are in — feedback is complete in Frame.io${r.responded_by_staff ? ' (recorded)' : ''}, over to you</div>`
     if (r.client_response === 'changes_requested') {
       return `<div class="rt-d-round rt-d-round--changes">${link}: changes requested${r.client_comment ? ` — “${esc(r.client_comment)}”` : ''}</div>`
     }
@@ -463,6 +464,7 @@ export class Worklist {
           <span class="rt-field-label" id="rt-answer-label">Record the client's answer to round ${latest.round} <span class="tl-optional">(if it came by email or on a call)</span></span>
           <div class="seg" role="radiogroup" aria-labelledby="rt-answer-label">
             <button type="button" class="seg-btn" role="radio" aria-checked="false" data-answer="approved">Approved</button>
+            <button type="button" class="seg-btn" role="radio" aria-checked="false" data-answer="comments_in">Comments in</button>
             <button type="button" class="seg-btn" role="radio" aria-checked="false" data-answer="changes_requested">Changes requested</button>
           </div>
         </div>
@@ -534,7 +536,7 @@ export class Worklist {
       answer.querySelectorAll('[data-answer]').forEach(b => b.addEventListener('click', () => {
         picked = b.dataset.answer
         answer.querySelectorAll('[data-answer]').forEach(x => x.setAttribute('aria-checked', String(x === b)))
-        comment.hidden = false
+        comment.hidden = picked === 'comments_in'   // their comments are in Frame.io
         comment.querySelector('label').textContent = picked === 'approved' ? 'What they said (optional)' : 'What needs to change'
         submit.hidden = false
       }))
@@ -546,7 +548,7 @@ export class Worklist {
         try {
           this._putDeliverable(await api.recordResponse(answer.dataset.delivery, { response: picked, comment: answer.querySelector('#rt-answer-comment').value }))
           this._repaint()
-          this.app.toast(picked === 'approved' ? 'Recorded: approved' : 'Recorded: changes requested')
+          this.app.toast(picked === 'approved' ? 'Recorded: approved' : picked === 'comments_in' ? 'Recorded: comments are in' : 'Recorded: changes requested')
           refresh()
         } catch (err) {
           submit.disabled = false

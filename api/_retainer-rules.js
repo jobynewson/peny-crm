@@ -23,7 +23,7 @@ export const WORKSTREAM_STATUSES = ['active', 'paused', 'complete']
 export const WORKSTREAM_LABELS = { active: 'Active', paused: 'Paused', complete: 'Complete' }
 
 export const DELIVERABLE_STATUSES = [
-  'planned', 'in_progress', 'waiting_on_client', 'in_review', 'changes_requested', 'approved',
+  'planned', 'in_progress', 'waiting_on_client', 'in_review', 'changes_requested', 'comments_in', 'approved',
 ]
 export const STATUS_LABELS = {
   planned:           'Planned',
@@ -31,6 +31,7 @@ export const STATUS_LABELS = {
   waiting_on_client: 'Waiting on client',
   in_review:         'In review',
   changes_requested: 'Changes requested',
+  comments_in:       'Comments in',
   approved:          'Approved',
 }
 
@@ -41,6 +42,8 @@ const CLIENT_STATUS = {
   planned:           { key: 'planned',          label: 'Planned' },
   in_progress:       { key: 'in_progress',      label: 'In progress' },
   changes_requested: { key: 'in_progress',      label: 'In progress' },
+  // Their feedback is complete and it is over to Peny: they can see we have it.
+  comments_in:       { key: 'comments_received', label: 'Comments received' },
   waiting_on_client: { key: 'waiting_on_you',   label: 'Waiting on you' },
   in_review:         { key: 'ready_for_review', label: 'Ready for review' },
   approved:          { key: 'approved',         label: 'Approved' },
@@ -79,12 +82,19 @@ export function statusPatch({ from, to, now = new Date() }) {
 // Sending a round puts the deliverable in front of the client.
 export const STATUS_AFTER_DELIVERY = 'in_review'
 
-export const RESPONSES = ['approved', 'changes_requested']
-export const RESPONSE_LABELS = { pending: 'Awaiting response', approved: 'Approved', changes_requested: 'Changes requested' }
+// Three answers to a round: approve (this stage is done), request changes (with
+// a comment in Slate), or "comments are in" — the feedback is complete in
+// Frame.io and it is over to us (no comment here; the comments are in Frame.io).
+export const RESPONSES = ['approved', 'changes_requested', 'comments_in']
+export const RESPONSE_LABELS = { pending: 'Awaiting response', approved: 'Approved', changes_requested: 'Changes requested', comments_in: 'Comments are in' }
 
 // What a response does to the deliverable. The same rule for the client in the
 // portal and for a Peny user recording an approval that came by email.
-export const statusAfterResponse = response => (response === 'approved' ? 'approved' : 'changes_requested')
+export const statusAfterResponse = response => (response === 'approved' ? 'approved' : response === 'comments_in' ? 'comments_in' : 'changes_requested')
+
+// Taking back "comments are in" (the client pressed it too soon): the round is
+// open again and the deliverable is back in review.
+export const STATUS_AFTER_UNDO = STATUS_AFTER_DELIVERY
 
 // Taking back a round sent by mistake (only possible while it is the latest
 // and unanswered). The deliverable returns to where the previous round left
@@ -99,7 +109,7 @@ export function statusAfterUnsend({ current, previousResponse = null }) {
 // null if fine, else { field, message }.
 export function validateResponse(body) {
   if (!body || !RESPONSES.includes(body.response)) {
-    return { field: 'response', message: 'Choose approve or request changes' }
+    return { field: 'response', message: 'Choose approve, comments are in, or request changes' }
   }
   const comment = typeof body.comment === 'string' ? body.comment.trim() : ''
   if (body.response === 'changes_requested' && !comment) {
@@ -327,6 +337,7 @@ export function validateReply(body) {
 //   planned                                   → To do
 //   in_progress                               → Doing
 //   changes_requested                         → Doing (chip: changes requested)
+//   comments_in                               → Doing (chip: comments in, with how long)
 //   waiting_on_client, in_review              → Doing, muted (with the client)
 //   approved                                  → Done
 //
@@ -336,7 +347,7 @@ export function validateReply(body) {
 export const BOARD_COLUMNS = ['todo', 'doing', 'done']
 
 const BOARD_COLUMN = {
-  planned: 'todo', in_progress: 'doing', changes_requested: 'doing',
+  planned: 'todo', in_progress: 'doing', changes_requested: 'doing', comments_in: 'doing',
   waiting_on_client: 'doing', in_review: 'doing', approved: 'done',
 }
 export const boardColumn = status => BOARD_COLUMN[status] ?? 'todo'
@@ -347,6 +358,10 @@ export const isWithClient = status => status === 'waiting_on_client' || status =
 // What a board card says about its deliverable beyond the title, or null.
 export function boardChip(d, now = new Date()) {
   if (d.status === 'changes_requested') return { key: 'changes_requested', label: 'Changes requested' }
+  if (d.status === 'comments_in') {
+    const days = d.comments_since ? Math.max(0, Math.floor((now - new Date(d.comments_since)) / 86400000)) : null
+    return { key: 'comments_in', label: days == null ? 'Comments in' : `Comments in · ${days}d` }
+  }
   if (d.status === 'waiting_on_client') {
     const days = d.waiting_since ? Math.max(0, Math.floor((now - new Date(d.waiting_since)) / 86400000)) : null
     return { key: 'waiting_on_client', label: days == null ? 'Waiting on client' : `Waiting on client · ${days}d` }
@@ -363,7 +378,7 @@ export function boardChip(d, now = new Date()) {
 export const DRAG_REFUSALS = {
   approve:   'Only the client can approve this — record their answer on the project’s Worklist tab.',
   with_client: 'This is with the client, so it stays in Doing until they answer — the project’s Worklist tab has the detail.',
-  changes:   'The client asked for changes, so it stays in Doing until you send the next round.',
+  changes:   'The client has sent feedback, so it stays in Doing until you send the next round.',
   approved:  'This is approved — reopen it from the project’s Worklist tab if it needs more work.',
 }
 
@@ -379,7 +394,7 @@ export function statusAfterBoardDrag({ from, column }) {
   if (from === 'planned' && column === 'doing') return { status: 'in_progress' }
   if (from === 'in_progress' && column === 'todo') return { status: 'planned' }
   // Everything else is a card in Doing being dragged to To do.
-  if (from === 'changes_requested') return refuse('changes')
+  if (from === 'changes_requested' || from === 'comments_in') return refuse('changes')
   return refuse('with_client')
 }
 

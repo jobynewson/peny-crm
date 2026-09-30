@@ -52,6 +52,11 @@ export const KINDS = {
     description: 'An email when a client asks for changes to a delivery.',
     switchable: true, default: true,
   },
+  alert_comments_in: {
+    label: 'Comments are in',
+    description: 'An email when a client says their feedback on a delivery is complete (and if they take it back).',
+    switchable: true, default: true,
+  },
   alert_client_reply: {
     label: 'Client replies',
     description: 'An email when a client replies on an item that is waiting on them.',
