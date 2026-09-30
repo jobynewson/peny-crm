@@ -1,6 +1,6 @@
 // api/_board.js
 // The task board shows deliverables as cards read straight from the
-// deliverables table — one record, visible on the board and on the Retainers
+// deliverables table — one record, visible on the board and on the project's Worklist tab
 // page. Routes behind /api/retainers (merged into _retainers.js's table), for
 // Slate staff:
 //   GET  retainers/board                               the cards

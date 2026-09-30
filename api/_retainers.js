@@ -1,7 +1,7 @@
 // api/_retainers.js
-// Routes behind /api/retainers (see retainers.js): the Peny side of the
-// retainer worklist — companies with a worklist, their workstreams, the
-// deliverables in each and the rounds sent for review.
+// Routes behind /api/retainers (see retainers.js): the Peny side of a
+// project's worklist — its workstreams, the deliverables in each and the
+// rounds sent for review. (The path keeps its old name.)
 //
 // Slate staff only (dispatch() requires an app_users row); every write also
 // needs a non-viewer. Worklist data is read and written only through here and
@@ -34,8 +34,6 @@ import { emailDelivery } from './_delivery-mail.js'
 
 const ID = `(?<id>${UUID})`
 export const ROUTES = [
-  { method: 'GET',    pattern: /^retainers\/companies$/,                                 handler: listCompanies },
-  { method: 'GET',    pattern: new RegExp(`^retainers/companies/${ID}$`),                 handler: getCompanyPage },
   // A project's worklist: what the project page's Worklist tab shows.
   { method: 'GET',    pattern: /^retainers\/project-counts$/,                            handler: projectCounts },
   { method: 'GET',    pattern: new RegExp(`^retainers/projects/${ID}$`),                  handler: getProjectPage },
@@ -80,7 +78,7 @@ export const VOCAB = Object.freeze({
 })
 
 // ── Shapes ───────────────────────────────────────────────────────────────────
-// What the Retainers page gets for a deliverable: the stored fields plus how
+// What the Worklist tab gets for a deliverable: the stored fields plus how
 // the rules read them (due text, overdue, both status labels) and its rounds.
 
 function deliveryJson(dv, latestRound) {
@@ -176,13 +174,13 @@ async function loadDeliverable(sql, ws, id) {
   return d ?? null
 }
 
-async function loadWorkstreams(sql, ws, { companyId = null, projectId = null, id = null }) {
+async function loadWorkstreams(sql, ws, { projectId = null, id = null }) {
   const rows = await sql`
     SELECT w.id, w.company_id, w.project_id, p.name AS project_name, w.title, w.brief, w.status,
            w.sort_order, w.created_at, w.updated_at
     FROM workstreams w
     LEFT JOIN projects p ON p.id = w.project_id
-    WHERE w.user_id = ${ws} AND (w.company_id = ${companyId} OR w.project_id = ${projectId} OR w.id = ${id})
+    WHERE w.user_id = ${ws} AND (w.project_id = ${projectId} OR w.id = ${id})
     ORDER BY w.sort_order, w.created_at
   `
   return rows.map(w => ({ ...w, status_label: WORKSTREAM_LABELS[w.status] }))
@@ -191,87 +189,6 @@ async function loadWorkstreams(sql, ws, { companyId = null, projectId = null, id
 async function projectInWorkspace(sql, ws, id) {
   const [p] = await sql`SELECT id FROM projects WHERE id = ${id} AND user_id = ${ws}`
   return !!p
-}
-
-// ── GET /api/retainers/companies ─────────────────────────────────────────────
-// The Retainers list: every company with a worklist or a retainer project,
-// with counts from its active workstreams. next_due is the next deadline still
-// ahead (overdue ones are counted separately).
-async function listCompanies(req, res, { sql }) {
-  const ws = await workspaceId(sql)
-  const today = londonDate()
-  const companies = await sql`
-    SELECT c.id, c.name, (c.clerk_org_id IS NOT NULL) AS portal, c.lead_id, lu.name AS lead_name, lu.email AS lead_email,
-           COALESCE(s.open, 0) AS open, COALESCE(s.waiting, 0) AS waiting,
-           COALESCE(s.in_review, 0) AS in_review, COALESCE(s.overdue, 0) AS overdue, s.next_due,
-           wc.workstreams, COALESCE(rp.projects, '[]'::json) AS retainer_projects
-    FROM companies c
-    LEFT JOIN app_users lu ON lu.id = c.lead_id
-    LEFT JOIN LATERAL (
-      SELECT count(*) FILTER (WHERE d.status <> 'approved')::int AS open,
-             count(*) FILTER (WHERE d.status = 'waiting_on_client')::int AS waiting,
-             count(*) FILTER (WHERE d.status = 'in_review')::int AS in_review,
-             count(*) FILTER (WHERE d.status <> 'approved' AND d.due_date < ${today}::date)::int AS overdue,
-             (min(d.due_date) FILTER (WHERE d.status <> 'approved' AND d.due_date >= ${today}::date))::text AS next_due
-      FROM workstreams w
-      JOIN deliverables d ON d.workstream_id = w.id
-      WHERE w.company_id = c.id AND w.user_id = ${ws} AND w.status = 'active'
-    ) s ON true
-    LEFT JOIN LATERAL (
-      SELECT count(*)::int AS workstreams FROM workstreams w WHERE w.company_id = c.id AND w.user_id = ${ws}
-    ) wc ON true
-    LEFT JOIN LATERAL (
-      SELECT json_agg(json_build_object('id', p.id, 'name', p.name) ORDER BY p.name) AS projects
-      FROM projects p WHERE p.company_id = c.id AND p.user_id = ${ws} AND p.is_retainer
-    ) rp ON true
-    WHERE c.user_id = ${ws} AND (wc.workstreams > 0 OR rp.projects IS NOT NULL)
-    ORDER BY lower(c.name)
-  `
-  return res.status(200).json({
-    today,
-    companies: companies.map(({ lead_name, lead_email, ...c }) => ({
-      ...c,
-      lead_name: lead_name || lead_email || null,
-      next_due_display: c.next_due ? formatDay(c.next_due, today) : null,
-    })),
-  })
-}
-
-// ── GET /api/retainers/companies/:id ─────────────────────────────────────────
-// The whole company page in one payload: its workstreams, each with its
-// deliverables and their rounds, and the company's projects (to link a
-// workstream to one).
-async function getCompanyPage(req, res, { sql, params }) {
-  const ws = await workspaceId(sql)
-  const [company] = await sql`
-    SELECT c.id, c.name, c.clerk_org_id, c.lead_id, u.name AS lead_name, u.email AS lead_email
-    FROM companies c LEFT JOIN app_users u ON u.id = c.lead_id
-    WHERE c.id = ${params.id} AND c.user_id = ${ws}
-  `
-  if (!company) return fail(res, 404, 'not_found', 'Company not found')
-
-  const [workstreams, projects] = await Promise.all([
-    loadWorkstreams(sql, ws, { companyId: company.id }),
-    sql`
-      SELECT id, name, status, is_retainer FROM projects
-      WHERE company_id = ${company.id} AND user_id = ${ws}
-      ORDER BY is_retainer DESC, lower(name)
-    `,
-  ])
-  const deliverables = await loadDeliverables(sql, ws, { workstreamIds: workstreams.map(w => w.id) })
-  const byWorkstream = new Map(workstreams.map(w => [w.id, []]))
-  for (const d of deliverables) byWorkstream.get(d.workstream_id)?.push(d)
-
-  return res.status(200).json({
-    today: londonDate(),
-    vocab: VOCAB,
-    company: {
-      id: company.id, name: company.name, portal: !!company.clerk_org_id,
-      lead_id: company.lead_id, lead_name: company.lead_name || company.lead_email || null,
-    },
-    workstreams: workstreams.map(w => ({ ...w, deliverables: byWorkstream.get(w.id) })),
-    projects,
-  })
 }
 
 // ── GET /api/retainers/projects/:id ──────────────────────────────────────────
@@ -353,35 +270,21 @@ async function attachWorkstreams(req, res, { sql, params }) {
 // ── POST /api/retainers/workstreams ──────────────────────────────────────────
 // { project_id, title, brief?, status? } → added at the end of the project's
 // worklist. The company is the project's, read when needed, so none is stored.
-// (Until the Retainers page is gone a { company_id, title } with no project
-// still makes the older company-level kind.)
 async function createWorkstream(req, res, { sql }) {
   const body = readBody(req)
   if (!body) return invalid(res, 'body', 'Request body is not valid JSON')
-  if (!body.project_id && !body.company_id) return invalid(res, 'project_id', 'Choose the project')
-  if (body.project_id && !isUuid(body.project_id)) return invalid(res, 'project_id', 'Choose the project')
-  if (!body.project_id && !isUuid(body.company_id)) return invalid(res, 'company_id', 'Choose the company')
+  if (!isUuid(body.project_id)) return invalid(res, 'project_id', 'Choose the project')
   const bad = validateWorkstreamInput(body)
   if (bad) return invalid(res, bad.field, bad.message)
 
   const ws = await workspaceId(sql)
-  let companyId = null
-  if (body.project_id) {
-    if (!(await projectInWorkspace(sql, ws, body.project_id))) return invalid(res, 'project_id', 'That project does not exist')
-  } else {
-    const [company] = await sql`SELECT id FROM companies WHERE id = ${body.company_id} AND user_id = ${ws}`
-    if (!company) return invalid(res, 'company_id', 'That company does not exist')
-    companyId = company.id
-  }
+  if (!(await projectInWorkspace(sql, ws, body.project_id))) return invalid(res, 'project_id', 'That project does not exist')
 
-  const projectId = body.project_id || null
   const [row] = await sql`
-    INSERT INTO workstreams (user_id, company_id, project_id, title, brief, status, sort_order)
-    SELECT ${ws}, ${companyId}::uuid, ${projectId}::uuid, ${body.title.trim()}, ${cleanText(body.brief)},
+    INSERT INTO workstreams (user_id, project_id, title, brief, status, sort_order)
+    SELECT ${ws}, ${body.project_id}, ${body.title.trim()}, ${cleanText(body.brief)},
            ${body.status || 'active'}::workstream_status,
-           COALESCE((SELECT max(sort_order) + 1 FROM workstreams
-                      WHERE (${projectId}::uuid IS NOT NULL AND project_id = ${projectId}::uuid)
-                         OR (${projectId}::uuid IS NULL AND company_id = ${companyId}::uuid)), 0)
+           COALESCE((SELECT max(sort_order) + 1 FROM workstreams WHERE project_id = ${body.project_id}), 0)
     RETURNING id
   `
   const [workstream] = await loadWorkstreams(sql, ws, { id: row.id })

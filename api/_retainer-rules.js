@@ -316,7 +316,7 @@ export function validateReply(body) {
 //   approved                                  → Done
 //
 // Dragging only ever moves planned <-> in_progress. The rest are the client's
-// moves, or need a note or a link, so they happen on the Retainers page.
+// moves, or need a note or a link, so they happen on the project’s Worklist tab.
 
 export const BOARD_COLUMNS = ['todo', 'doing', 'done']
 
@@ -345,10 +345,10 @@ export function boardChip(d, now = new Date()) {
 // The board's refusals, worded as the board doing its job: what is true, and
 // where to go instead. Short enough for a phone.
 export const DRAG_REFUSALS = {
-  approve:   'Only the client can approve this — record their answer on the Retainers page.',
-  with_client: 'This is with the client, so it stays in Doing until they answer — the Retainers page has the detail.',
+  approve:   'Only the client can approve this — record their answer on the project’s Worklist tab.',
+  with_client: 'This is with the client, so it stays in Doing until they answer — the project’s Worklist tab has the detail.',
   changes:   'The client asked for changes, so it stays in Doing until you send the next round.',
-  approved:  'This is approved — reopen it from the Retainers page if it needs more work.',
+  approved:  'This is approved — reopen it from the project’s Worklist tab if it needs more work.',
 }
 
 // A card dropped in `column`. → { status } to write (status may equal the
@@ -374,7 +374,7 @@ export function statusAfterBoardDrag({ from, column }) {
 //   - owned, planned and undated: on the board — with no date nothing else
 //     (What's due) would ever show it
 //   - owned, planned and dated: on the board once it is within
-//     BOARD_HORIZON_DAYS; until then it is a dated plan, on the Retainers page
+//     BOARD_HORIZON_DAYS; until then it is a dated plan, on the project’s Worklist tab
 //     and in What's due
 //   - approved: in Done for BOARD_DONE_DAYS (the server passes only those)
 export const BOARD_HORIZON_DAYS = 28

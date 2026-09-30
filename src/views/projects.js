@@ -1,6 +1,8 @@
 import { createProject, updateProject, deleteProject, renumberProjectKanban, linkBudgetToProject, unlinkBudgetFromProject, logActivity, getActivityLog, getTimeEntries, setTrackToken, deleteTimeEntry, getWorkLog, addWorkLogEntry, deleteWorkLogEntry, updateBudget } from '../db/client.js'
 import { companyFieldHtml, bindCompanyField, setCompanyField, resolveCompanyField, companyById } from './company-field.js'
 import { PostProductionView } from './post-production.js'
+import { Worklist } from './worklist.js'
+import { getProjectCounts } from '../api/retainers.js'
 import { timeLogFormHtml, bindTimeLogForm } from './time-log.js'
 import { icon } from './icons.js'
 import { mountStatusSwitch } from './board-status.js'
@@ -21,6 +23,9 @@ export class ProjectsView {
     this.currentId = null
     this.editingId = null
     this._pvTab = 'overview'
+    this._pvSub = null          // a deliverable to open on the Worklist tab (#projects/<id>/worklist/<deliverableId>)
+    this._worklist = new Worklist(app)
+    this._worklistCounts = null // { [projectId]: { open, overdue, waiting } }, for the tab's number
     this._pvCrewTab = 'crew'
     this._postProductionView = new PostProductionView(app)
     this._dragProjectId = null
@@ -621,8 +626,10 @@ export class ProjectsView {
     if (!p) { this.currentId = null; this.renderKanban(mc); return }
 
     if (p.is_retainer && p.retainer_start) this._checkRetainerReset(p)
+    const worklistOpen = this._worklistCounts?.[p.id]?.open
     const TABS = [
       { id: 'overview',         label: 'Overview' },
+      { id: 'worklist',         label: `Worklist${worklistOpen ? ` (${worklistOpen})` : ''}` },
       { id: 'shoots',           label: 'Shoots', hide: (p.project_type||'full_service') === 'post_production' },
       { id: 'post-production',  label: 'Post Production' },
       { id: 'budget',           label: 'Budget' },
@@ -725,6 +732,26 @@ export class ProjectsView {
     this._bindSidebar(mc, p, linked)
     // Async loaders (per-tab ones run from _bindTabContent)
     this._loadShoots(mc, p)
+    this._loadWorklistCounts(mc, p)
+  }
+
+  // The number on the Worklist tab. Loaded each time a project opens, then
+  // kept current by the worklist itself as things change.
+  async _loadWorklistCounts(mc, p) {
+    try { this._worklistCounts = await getProjectCounts() } catch { this._worklistCounts = {}; return }
+    if (mc.isConnected) this._showWorklistCount(p.id)
+  }
+
+  setWorklistCount(projectId, open) {
+    this._worklistCounts = { ...(this._worklistCounts ?? {}), [projectId]: { ...(this._worklistCounts?.[projectId] ?? {}), open } }
+    this._showWorklistCount(projectId)
+  }
+
+  _showWorklistCount(projectId) {
+    if (this.currentId !== projectId) return
+    const tab = document.querySelector('#proj-tab-bar [data-tab="worklist"]')
+    const open = this._worklistCounts?.[projectId]?.open
+    if (tab) tab.textContent = `Worklist${open ? ` (${open})` : ''}`
   }
 
   _renderTab(tab, p, cl, linked) {
@@ -740,6 +767,7 @@ export class ProjectsView {
       </div>` : ''
 
     if (tab === 'overview')        return this._renderTabOverview(p, cl, delivs, crew, shots, doneCount, field)
+    if (tab === 'worklist')        return '<div id="pv-worklist"></div>'
     if (tab === 'shoots')          return this._renderTabShoots(p)
     if (tab === 'post-production') return `<div id="pv-pps-container"><div style="font-size:13px;color:var(--text-tertiary);padding:12px 0">Loading…</div></div>`
     if (tab === 'budget')          return this._renderTabBudget(p, linked)
@@ -1073,6 +1101,11 @@ export class ProjectsView {
   }
 
   _bindTabContent(mc, tab, p, cl, linked) {
+    if (tab === 'worklist') {
+      const openId = this._pvSub
+      this._pvSub = null
+      this._worklist.mount(mc.querySelector('#pv-worklist'), p.id, { openId })
+    }
     if (tab === 'time') {
       this._loadTimeTracking(mc, p)
       bindTimeLogForm(this.app, mc, { idPrefix: 'pv-tl' })

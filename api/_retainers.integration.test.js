@@ -15,7 +15,7 @@ const { dispatch, workspaceId } = await import('./_api.js')
 const { ROUTES } = await import('./_retainers.js')
 
 const describeDb = TEST_DB ? describe : describe.skip
-let sql, ws, ana, vic, company, otherCompany, foreignDeliverable
+let sql, ws, ana, vic, company, project, otherCompany, otherProject, foreignDeliverable
 
 const call = async (method, route, body) => {
   const res = fakeRes()
@@ -25,7 +25,9 @@ const call = async (method, route, body) => {
 const as = user => { CURRENT = user }
 
 async function wipe() {
-  await sql`DELETE FROM workstreams WHERE company_id IN (SELECT id FROM companies WHERE name LIKE 'RetTest %')`
+  await sql`DELETE FROM workstreams WHERE company_id IN (SELECT id FROM companies WHERE name LIKE 'RetTest %')
+            OR project_id IN (SELECT id FROM projects WHERE name LIKE 'RetTest %')`
+  await sql`DELETE FROM projects WHERE name LIKE 'RetTest %'`
   await sql`DELETE FROM companies WHERE name LIKE 'RetTest %'`
   await sql`DELETE FROM app_users WHERE clerk_id IN ('ret_ana', 'ret_vic')`
 }
@@ -39,9 +41,11 @@ describeDb('/api/retainers', () => {
     ;[ana] = await sql`INSERT INTO app_users (clerk_id, email, name, role) VALUES ('ret_ana', 'ana@ret.test', 'Ana', 'user') RETURNING id, clerk_id, email, name, role`
     ;[vic] = await sql`INSERT INTO app_users (clerk_id, email, name, role) VALUES ('ret_vic', 'vic@ret.test', 'Vic', 'viewer') RETURNING id, clerk_id, email, name, role`
     ;[company] = await sql`INSERT INTO companies (user_id, name) VALUES (${ws}, 'RetTest DMM') RETURNING id`
+    ;[project] = await sql`INSERT INTO projects (user_id, name, company_id, is_retainer) VALUES (${ws}, 'RetTest Retainer', ${company.id}, true) RETURNING id`
     // Another workspace's worklist: must read as not found.
     ;[otherCompany] = await sql`INSERT INTO companies (user_id, name) VALUES ('someone_else', 'RetTest Other') RETURNING id`
-    const [ow] = await sql`INSERT INTO workstreams (user_id, company_id, title) VALUES ('someone_else', ${otherCompany.id}, 'Theirs') RETURNING id`
+    ;[otherProject] = await sql`INSERT INTO projects (user_id, name, company_id) VALUES ('someone_else', 'RetTest Theirs', ${otherCompany.id}) RETURNING id`
+    const [ow] = await sql`INSERT INTO workstreams (user_id, company_id, project_id, title) VALUES ('someone_else', ${otherCompany.id}, ${otherProject.id}, 'Theirs') RETURNING id`
     ;[foreignDeliverable] = await sql`INSERT INTO deliverables (workstream_id, title) VALUES (${ow.id}, 'Not yours') RETURNING id`
   })
   afterAll(async () => { await wipe(); await sql.end() })
@@ -49,7 +53,7 @@ describeDb('/api/retainers', () => {
   let workstream, hero
   it('creates a workstream and a deliverable, hidden from the client by default', async () => {
     as(ana)
-    const w = await call('POST', 'retainers/workstreams', { company_id: company.id, title: ' Launch ', brief: 'Autumn launch' })
+    const w = await call('POST', 'retainers/workstreams', { project_id: project.id, title: ' Launch ', brief: 'Autumn launch' })
     expect(w.statusCode).toBe(201)
     workstream = w.body.workstream
     expect(workstream).toMatchObject({ title: 'Launch', brief: 'Autumn launch', status: 'active', sort_order: 0, deliverables: [] })
@@ -70,9 +74,10 @@ describeDb('/api/retainers', () => {
   it('says which field is wrong', async () => {
     as(ana)
     const cases = [
-      ['retainers/workstreams', { company_id: company.id, title: '  ' }, 'title'],
-      ['retainers/workstreams', { company_id: 'nope', title: 'X' }, 'company_id'],
-      ['retainers/workstreams', { company_id: otherCompany.id, title: 'X' }, 'company_id'],
+      ['retainers/workstreams', { project_id: project.id, title: '  ' }, 'title'],
+      ['retainers/workstreams', { project_id: 'nope', title: 'X' }, 'project_id'],
+      ['retainers/workstreams', { project_id: otherProject.id, title: 'X' }, 'project_id'],
+      ['retainers/workstreams', { title: 'X' }, 'project_id'],
       ['retainers/deliverables', { workstream_id: workstream.id, title: 'X', owner_id: '00000000-0000-0000-0000-000000000000' }, 'owner_id'],
       ['retainers/deliverables', { workstream_id: workstream.id, title: 'X', due_kind: 'someday' }, 'due_kind'],
       ['retainers/deliverables', { workstream_id: workstream.id, title: 'X', due_kind: 'recurring' }, 'cadence'],
@@ -107,7 +112,7 @@ describeDb('/api/retainers', () => {
 
   it('records a response on the latest round only; changes need a comment', async () => {
     as(ana)
-    const [round1, round2] = (await call('GET', `retainers/companies/${company.id}`)).body.workstreams[0].deliverables[0].deliveries
+    const [round1, round2] = (await call('GET', `retainers/projects/${project.id}`)).body.workstreams[0].deliverables[0].deliveries
     const old = await call('POST', `retainers/deliveries/${round1.id}/response`, { response: 'approved' })
     expect([old.statusCode, old.body.error.code]).toEqual([409, 'superseded'])
 
@@ -202,25 +207,13 @@ describeDb('/api/retainers', () => {
 
     const spare = await call('POST', 'retainers/deliverables', { workstream_id: workstream.id, title: 'Spare' })
     expect((await call('DELETE', `retainers/deliverables/${spare.body.deliverable.id}`)).statusCode).toBe(200)
-    const empty = await call('POST', 'retainers/workstreams', { company_id: company.id, title: 'Empty' })
+    const empty = await call('POST', 'retainers/workstreams', { project_id: project.id, title: 'Empty' })
     expect((await call('DELETE', `retainers/workstreams/${empty.body.workstream.id}`)).statusCode).toBe(200)
-  })
-
-  it('lists companies with a worklist, with counts from active workstreams', async () => {
-    as(ana)
-    const r = await call('GET', 'retainers/companies')
-    expect(r.statusCode).toBe(200)
-    const mine = r.body.companies.find(c => c.id === company.id)
-    expect(mine).toMatchObject({ name: 'RetTest DMM', portal: false, open: 2, workstreams: 1, retainer_projects: [] })
-    // Only deadlines still ahead count as "next due".
-    expect(mine.next_due === null || mine.next_due >= r.body.today).toBe(true)
-    expect(Boolean(mine.next_due) === Boolean(mine.next_due_display)).toBe(true)
-    expect(r.body.companies.some(c => c.id === otherCompany.id)).toBe(false)
   })
 
   it('sends the page the words it needs, so the browser holds no copy of the rules', async () => {
     as(ana)
-    const r = await call('GET', `retainers/companies/${company.id}`)
+    const r = await call('GET', `retainers/projects/${project.id}`)
     expect(r.body.vocab.statuses.map(s => s.key)).toEqual(['planned', 'in_progress', 'waiting_on_client', 'in_review', 'changes_requested', 'approved'])
     expect(r.body.vocab.statuses.find(s => s.key === 'changes_requested')).toMatchObject({ label: 'Changes requested', client_label: 'In progress' })
     expect(r.body.vocab.workstream_statuses.map(s => s.key)).toEqual(['active', 'paused', 'complete'])
@@ -233,9 +226,9 @@ describeDb('/api/retainers', () => {
 
   it('lets a viewer read but not write', async () => {
     as(vic)
-    expect((await call('GET', `retainers/companies/${company.id}`)).statusCode).toBe(200)
+    expect((await call('GET', `retainers/projects/${project.id}`)).statusCode).toBe(200)
     for (const [method, route, body] of [
-      ['POST', 'retainers/workstreams', { company_id: company.id, title: 'X' }],
+      ['POST', 'retainers/workstreams', { project_id: project.id, title: 'X' }],
       ['PATCH', `retainers/deliverables/${hero.id}`, { title: 'X' }],
       ['POST', `retainers/deliverables/${hero.id}/deliveries`, { url: 'https://f.io/x' }],
       ['DELETE', `retainers/workstreams/${workstream.id}`],
@@ -247,7 +240,7 @@ describeDb('/api/retainers', () => {
 
   it('treats another workspace\'s worklist as not found', async () => {
     as(ana)
-    expect((await call('GET', `retainers/companies/${otherCompany.id}`)).statusCode).toBe(404)
+    expect((await call('GET', `retainers/projects/${otherProject.id}`)).statusCode).toBe(404)
     expect((await call('PATCH', `retainers/deliverables/${foreignDeliverable.id}`, { title: 'Mine now' })).statusCode).toBe(404)
     expect((await call('POST', `retainers/deliverables/${foreignDeliverable.id}/deliveries`, { url: 'https://f.io/x' })).statusCode).toBe(404)
     expect((await call('DELETE', `retainers/deliverables/${foreignDeliverable.id}`)).statusCode).toBe(404)

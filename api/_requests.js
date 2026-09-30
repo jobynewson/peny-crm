@@ -20,11 +20,12 @@
 
 import { UUID, fail, invalid, readBody, workspaceId } from './_api.js'
 import { londonDate, formatDay } from './_dates.js'
-import { REQUEST_STATUSES, requestLabel, requestSourceLabel, validateAccept, validateDecline } from './_retainer-rules.js'
+import { REQUEST_STATUSES, requestLabel, requestSourceLabel, validateAccept, validateDecline, worklistLink } from './_retainer-rules.js'
 import { sendOwnerAssigned } from './_alerts.js'
 
 const ID = `(?<id>${UUID})`
 export const REQUEST_ROUTES = [
+  { method: 'GET',  pattern: /^retainers\/request-count$/,                        handler: requestCount },
   { method: 'GET',  pattern: /^retainers\/requests$/,                            handler: listRequests },
   { method: 'GET',  pattern: new RegExp(`^retainers/requests/${ID}$`),            handler: getRequest },
   { method: 'POST', pattern: new RegExp(`^retainers/requests/${ID}/accept$`),      handler: acceptRequest,  access: 'editor' },
@@ -51,7 +52,17 @@ const shape = (r, today) => ({
   decided_by: r.decided_by_name || null,
   decline_note: r.decline_note,
   deliverable_id: r.deliverable_id,
+  // Where an accepted request went: its deliverable on the project's Worklist tab.
+  worklist_link: r.deliverable_id ? worklistLink({ project_id: r.accepted_project_id ?? r.project_id, company_id: r.company_id, id: r.deliverable_id }) : null,
 })
+
+// ── GET retainers/request-count ──────────────────────────────────────────────
+// { new } — the number on the Requests tab in the header, polled.
+async function requestCount(req, res, { sql }) {
+  const ws = await workspaceId(sql)
+  const [{ n }] = await sql`SELECT count(*)::int AS n FROM requests WHERE user_id = ${ws} AND status = 'new'`
+  return res.status(200).json({ new: n })
+}
 
 // ── GET retainers/requests ───────────────────────────────────────────────────
 // New ones oldest first (the one that has waited longest is on top); decided
@@ -67,6 +78,7 @@ async function listRequests(req, res, { sql }) {
         SELECT r.id, r.company_id, r.project_id, p.name AS project, COALESCE(c.name, p.name) AS company, r.submitted_via,
                r.title, r.detail, r.wanted_by::text AS wanted_by, r.status,
                r.submitted_by_name, r.created_at, r.decided_at, r.decline_note, r.deliverable_id,
+               (SELECT w.project_id FROM deliverables dd JOIN workstreams w ON w.id = dd.workstream_id WHERE dd.id = r.deliverable_id) AS accepted_project_id,
                COALESCE(u.name, u.email) AS decided_by_name
         FROM requests r
         LEFT JOIN companies c ON c.id = r.company_id
@@ -79,6 +91,7 @@ async function listRequests(req, res, { sql }) {
         SELECT r.id, r.company_id, r.project_id, p.name AS project, COALESCE(c.name, p.name) AS company, r.submitted_via,
                r.title, r.detail, r.wanted_by::text AS wanted_by, r.status,
                r.submitted_by_name, r.created_at, r.decided_at, r.decline_note, r.deliverable_id,
+               (SELECT w.project_id FROM deliverables dd JOIN workstreams w ON w.id = dd.workstream_id WHERE dd.id = r.deliverable_id) AS accepted_project_id,
                COALESCE(u.name, u.email) AS decided_by_name
         FROM requests r
         LEFT JOIN companies c ON c.id = r.company_id
@@ -109,6 +122,7 @@ async function getRequest(req, res, { sql, params }) {
     SELECT r.id, r.company_id, r.project_id, p.name AS project, COALESCE(c.name, p.name) AS company, r.submitted_via,
            r.title, r.detail, r.wanted_by::text AS wanted_by, r.status,
            r.submitted_by_name, r.created_at, r.decided_at, r.decline_note, r.deliverable_id,
+           (SELECT w.project_id FROM deliverables dd JOIN workstreams w ON w.id = dd.workstream_id WHERE dd.id = r.deliverable_id) AS accepted_project_id,
            COALESCE(u.name, u.email) AS decided_by_name, c.lead_id
     FROM requests r
     LEFT JOIN companies c ON c.id = r.company_id

@@ -18,7 +18,7 @@ export function searchCommands(app) {
 
   const pages = [
     { label: 'Dashboard', hint: 'Home', icon: 'dashboard', run: go('dashboard'),
-      keywords: 'home overview today week live projects deadlines retainers countdown' },
+      keywords: 'home overview today week live projects deadlines retainers worklist countdown' },
     { label: 'Tasks', hint: 'Task board', icon: 'tasks', run: go('tasks'),
       keywords: 'task board todo to do requests assigned claim acknowledge' },
     { label: 'Calendar', hint: 'Team calendar', icon: 'calendar', run: go('calendar'),
@@ -29,9 +29,7 @@ export function searchCommands(app) {
       keywords: 'quotes estimates costs pricing invoices' },
     p.projects_view && { label: 'Planning', hint: 'Projects › Planning', icon: 'project', run: go('planning'),
       keywords: 'boards canvases kanban storyboard moodboard plans' },
-    p.projects_view && { label: 'Retainers', hint: 'Projects › Retainers', icon: 'folder', run: go('retainers'),
-      keywords: 'retainer clients worklist deliverables rounds approvals review frame.io workstreams send' },
-    p.projects_view && { label: 'Requests', hint: 'Projects › Requests', icon: 'folder', run: go('requests'),
+    p.projects_view && { label: 'Requests', hint: 'New client requests', icon: 'inbox', run: go('requests'),
       keywords: 'client requests inbox triage accept decline asks incoming' },
     p.contacts_view && { label: 'Contacts', hint: 'Clients and crew', icon: 'person', run: go('contacts'),
       keywords: 'clients people crm subcontractors freelancers crew leads' },

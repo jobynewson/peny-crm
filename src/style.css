@@ -277,6 +277,15 @@ kbd { font-family: var(--font-mono); }
   transition: color 0.12s, background 0.12s;
 }
 .app-tab:hover { color: var(--header-text-strong); }
+/* The count of new client requests on the Requests tab (header and tab bar). */
+.tab-count {
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--danger, #E5484D); color: #fff; font-size: 11px; font-weight: 700; line-height: 1;
+}
+.tab-count[hidden] { display: none; }
+.app-tabbar a { position: relative; }
+.app-tabbar .tab-count { position: absolute; top: 2px; left: calc(50% + 6px); }
 .app-tab[aria-current="page"] { background: var(--bg); color: var(--text); font-weight: 600; }
 .app-tab:focus-visible { outline-offset: -3px; border-radius: 10px 10px 0 0; }
 .app-header-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
@@ -1222,7 +1231,7 @@ kbd { font-family: var(--font-mono); }
 .db-due-pill--today { background: var(--warning-soft); color: var(--warning); }
 .db-due-pill--overdue { background: var(--danger-subtle); color: var(--danger); }
 
-/* ── Projects › Retainers (src/views/retainers.js) ── */
+/* ── The Worklist tab (src/views/worklist.js) and the request list (src/views/requests.js) ── */
 .rq-tabs { margin-bottom: 14px; }
 .rq-count { margin-left: 4px; padding: 0 6px; border-radius: var(--radius-pill); background: var(--accent-soft); color: var(--accent-text); font-size: 11px; font-weight: 600; }
 .rq-screen { display: flex; flex-direction: column; gap: 16px; max-width: 640px; }
@@ -3060,3 +3069,11 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
   .tk-notice { left: 0; right: 0; bottom: 0; width: auto; transform: none; border-radius: var(--radius-md) var(--radius-md) 0 0; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
 }
 @media (prefers-reduced-motion: reduce) { .tk-card--refused { animation: none; } }
+
+/* Older workstreams a company has with no project, offered for attaching. */
+.rt-attach {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  margin: 0 0 14px; padding: 10px 14px; font-size: 13px; line-height: 1.5;
+  border: 1px solid var(--border); border-left: 3px solid var(--accent, #E5484D); border-radius: var(--radius-md, 8px);
+  background: var(--bg-secondary, transparent);
+}

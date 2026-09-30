@@ -10,10 +10,12 @@ const post = (path, body) => request(`${base}/${path}`, { method: 'POST', body }
 const patch = (path, body) => request(`${base}/${path}`, { method: 'PATCH', body })
 const del = path => request(`${base}/${path}`, { method: 'DELETE' })
 
-// { today, companies: [{ id, name, portal, open, waiting, in_review, overdue, next_due, workstreams, retainer_projects }] }
-export const listRetainerCompanies = () => request(`${base}/companies`)
-// { today, company, workstreams: [{ …, deliverables: [{ …, deliveries }] }], projects }
-export const getCompanyPage = id => request(`${base}/companies/${id}`)
+// A project's worklist — { today, vocab, project, company | null, workstreams: [{ …, deliverables: [{ …, deliveries }] }],
+// unattached: [{ id, title }] } — and the open counts the tab and dashboard show.
+export const getProjectPage = id => request(`${base}/projects/${id}`)
+export const getProjectCounts = () => request(`${base}/project-counts`).then(r => r.counts)
+// Brings the project's company's older project-less workstreams into it. → { attached }
+export const attachWorkstreams = id => post(`projects/${id}/attach`, {})
 
 export const createWorkstream = body => post('workstreams', body).then(r => r.workstream)
 export const updateWorkstream = (id, body) => patch(`workstreams/${id}`, body).then(r => r.workstream)

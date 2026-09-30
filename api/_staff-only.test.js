@@ -74,7 +74,7 @@ describe('staff endpoints refuse a client portal account', () => {
     ['companies.js',   { method: 'POST', query: { route: 'companies/3f2504e0-4f89-11d3-9a0c-0305e82c3301/portal/invitations' }, body: { email: 'a@b.test' } }],
     ['due.js',         { method: 'GET', url: '/api/due' }],
     ['notification-settings.js', { method: 'GET', url: '/api/notification-settings' }],
-    ['retainers.js',   { method: 'GET', query: { route: 'retainers/companies' } }],
+    ['retainers.js',   { method: 'GET', query: { route: 'retainers/project-counts' } }],
     ['retainers.js',   { method: 'POST', query: { route: 'retainers/deliveries/3f2504e0-4f89-11d3-9a0c-0305e82c3301/response' }, body: { response: 'approved' } }],
     ['portal.js',      { method: 'GET', query: { view: 'tasks', route: 'tasks' } }],
     ['realtime.js',    { method: 'GET' }],

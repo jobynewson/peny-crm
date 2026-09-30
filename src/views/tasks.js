@@ -581,9 +581,9 @@ export class TasksView {
       </div>`
   }
 
-  // A deliverable's card: the same record as on the Retainers page, drawn as a
+  // A deliverable's card: the same record as on the project’s Worklist tab, drawn as a
   // card. It says which client and workstream, and — for the statuses that are
-  // the client's move — where it really is. Clicking opens the Retainers page
+  // the client's move — where it really is. Clicking opens the project’s Worklist tab
   // rather than a second editor; there is no acknowledgement, no comments.
   _deliverableCardHtml(card, inTray = false) {
     const owner = this.userById(card.owner_id)
@@ -757,7 +757,7 @@ export class TasksView {
     host.innerHTML = `
       <p class="tk-notice-text">${esc(message)}</p>
       <div class="tk-notice-actions">
-        <button type="button" class="btn-primary" data-notice-open>Open the Retainers page</button>
+        <button type="button" class="btn-primary" data-notice-open>Open the worklist</button>
         <button type="button" class="btn-secondary" data-notice-ok>Got it</button>
       </div>`
     const close = () => { host.remove(); document.removeEventListener('keydown', onKey); this._refreshBoard() }
@@ -850,7 +850,7 @@ export class TasksView {
     })
   }
 
-  // A deliverable on the phone list: a row that opens the Retainers page, where
+  // A deliverable on the phone list: a row that opens the project’s Worklist tab, where
   // the one-tap status lives. Nothing to drag, so nothing to refuse.
   _mobileCardHtml(card) {
     const meta = [

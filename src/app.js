@@ -21,7 +21,7 @@ import { icon } from './views/icons.js'
 import { closeFloating } from './views/popover.js'
 import { searchCommands } from './views/search-commands.js'
 import { mountWhatsDue } from './views/whats-due.js'
-import { RetainersView } from './views/retainers.js'
+import { legacyRetainersTarget } from './utils/worklist-route.js'
 import { RequestsView } from './views/requests.js'
 import { matchCommands } from './utils/command-search.js'
 import { segTabs, bindSegTabs } from './views/toolbar.js'
@@ -30,7 +30,7 @@ import { syncThemeColor } from './theme.js'
 const PHONE = '(max-width: 768px)'
 
 // Every route the app has used; old bookmarks keep working.
-const VIEWS = ['dashboard', 'tasks', 'calendar', 'projects', 'budgets', 'planning', 'retainers', 'requests', 'contacts', 'marketing', 'story-planner', 'leave', 'expenses', 'password-manager', 'offload-log', 'settings', 'timetrack']
+const VIEWS = ['dashboard', 'tasks', 'calendar', 'projects', 'budgets', 'planning', 'requests', 'contacts', 'marketing', 'story-planner', 'leave', 'expenses', 'password-manager', 'offload-log', 'settings', 'timetrack']
 
 export class App {
   constructor({ userId, clerkUserId, user, appUser, permissions, contacts, companies, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, leaveRequests, publicHolidays, onSignOut }) {
@@ -66,7 +66,6 @@ export class App {
     this.offloadLogView       = new OffloadLogView(this)
     this.boardsView           = new BoardsView(this)
     this.canvasView           = new CanvasView(this)
-    this.retainersView        = new RetainersView(this)
     this.requestsView         = new RequestsView(this)
     this.tasksView            = new TasksView(this)
     this.planningTabs         = new PlanningTabsView(this)
@@ -86,6 +85,7 @@ export class App {
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', syncThemeColor)
     this._loadNotes()         // notes are also indexed by ⌘K search
     this.tasksView.watchUnread()  // the header bell's count
+    this.watchRequests()          // the Requests tab's count
     this._bindKeyboard()
     this._bindNavLinks()
     this._bindDateRangeLinks()
@@ -515,9 +515,6 @@ export class App {
         if (this.currentView === 'budgets' && this.budgetsView.currentId) {
           document.querySelector('#bv-back')?.click(); return
         }
-        if (this.currentView === 'retainers' && this.retainersView.currentId) {
-          document.querySelector('#rt-back')?.click(); return
-        }
         if (this.currentView === 'requests' && this.requestsView.currentId) {
           document.querySelector('#rq-back')?.click(); return
         }
@@ -585,21 +582,19 @@ export class App {
       'offload-log': this.offloadLogView,
       marketing: this.marketingView,
       planning: this.boardsView,
-      retainers: this.retainersView,
       requests: this.requestsView,
       settings: { toolbar: () => this._settingsToolbar(), bindToolbar: bar => this._bindSettingsToolbar(bar) },
     }[this.currentView]
   }
 
-  // View switcher under the Projects tab: All projects · Budgets · Planning ·
-  // Retainers · Requests.
+  // View switcher under the Projects tab: All projects · Budgets · Planning.
   _viewSwitcherHtml() {
     const groups = [
-      { label: 'Project views', views: [['projects', 'All projects'], ['budgets', 'Budgets'], ['planning', 'Planning'], ['retainers', 'Retainers'], ['requests', 'Requests']] },
+      { label: 'Project views', views: [['projects', 'All projects'], ['budgets', 'Budgets'], ['planning', 'Planning']] },
     ]
     const group = groups.find(g => g.views.some(([v]) => v === this.currentView))
     if (!group) return ''
-    if (this.projectsView.currentId || this.budgetsView.currentId || this.boardsView.currentId || this.canvasView.currentId || this.retainersView.currentId || this.requestsView.currentId) return ''
+    if (this.projectsView.currentId || this.budgetsView.currentId || this.boardsView.currentId || this.canvasView.currentId) return ''
     return `<nav class="seg view-switch" aria-label="${group.label}">${group.views.map(([v, label, href = `#${v}`]) =>
       `<a class="seg-btn" href="${href}" data-nav="${v}"${v === this.currentView ? ' aria-current="page"' : ''}>${label}</a>`).join('')}</nav>`
   }
@@ -743,12 +738,32 @@ export class App {
     this.boardsView.board = null
     this.canvasView.currentId = null
     this.canvasView.canvas = null
-    this.retainersView.currentId = null
     this.requestsView.currentId = null
     // The dashboard is the home page, "/". Every other view keeps its #hash
     // (the task board is #tasks), so bookmarks still resolve.
     history.pushState({ view }, '', view === 'dashboard' ? '/' : `#${view}`)
     this.render()
+  }
+
+  // New client requests waiting for triage, for the count on the Requests tab.
+  // Checked when the app opens, every minute while it is on screen, when the
+  // window comes back into view and after a request is answered (triage calls
+  // refreshRequestCount). Staff only; a failed check just keeps the last number.
+  watchRequests() {
+    if (this._requestsWatching) return
+    this._requestsWatching = true
+    this.requestCount = 0
+    this._requestTimer = setInterval(() => { if (document.visibilityState !== 'hidden') this.refreshRequestCount() }, 60000)
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') this.refreshRequestCount() })
+    this.refreshRequestCount()
+  }
+
+  async refreshRequestCount() {
+    try {
+      const { getRequestCount } = await import('./api/requests.js')
+      this.requestCount = await getRequestCount()
+      this.header?.refreshRequests()
+    } catch { /* offline, or not staff: keep what was shown */ }
   }
 
   // Open an in-app link ("#view/id/tab", as the What's due feed gives them)
@@ -776,22 +791,34 @@ export class App {
   // #projects, #budgets and #planning sit under the Projects tab; the rest
   // are reached from the account menu.
   _parseHash() {
-    const [view = 'dashboard', id, tab] = (location.hash.slice(1) || 'dashboard').split('/')
-    return VIEWS.includes(view) ? { view, id, tab } : null
+    this._redirectOldRetainersAddress()
+    const [view = 'dashboard', id, tab, sub] = (location.hash.slice(1) || 'dashboard').split('/')
+    return VIEWS.includes(view) ? { view, id, tab, sub } : null
+  }
+
+  // #retainers/<companyId> was a client's worklist, and links to it are in
+  // emails already sent. Worklists live on projects now, so it goes to that
+  // company's project (its retainer if it has one), and #retainers to Projects.
+  _redirectOldRetainersAddress() {
+    const target = legacyRetainersTarget(location.hash, this.projects || [])
+    if (!target) return
+    const named = location.hash.includes('/')
+    history.replaceState(history.state, '', location.pathname + target.hash)
+    if (!target.found && named) setTimeout(() => this.toast('Client worklists now live on their project. That company has no project with a worklist yet.'), 400)
   }
 
   // Parse the URL hash and restore view state before first render
   _restoreFromHash() {
     const route = this._parseHash()
     if (!route) return
-    const { view, id, tab } = route
+    const { view, id, tab, sub } = route
     this.currentView = view
     if (view === 'projects' && id) {
       this.projectsView.currentId = id
       if (tab) this.projectsView._pvTab = tab
+      this.projectsView._pvSub = tab === 'worklist' ? sub || null : null
     }
     if (view === 'budgets' && id) this.budgetsView.currentId = id
-    if (view === 'retainers' && id) this.retainersView.currentId = id
     if (view === 'requests' && id) this.requestsView.currentId = id
     if (view === 'planning' && id) {
       // #planning/<boardId> or #planning/canvas/<canvasId>
@@ -812,17 +839,17 @@ export class App {
   // Show what the address bar points at. An unknown hash lands on the home
   // page, as a fresh load does, with any open project, budget or board cleared.
   _showHash() {
-    const { view, id, tab } = this._parseHash() ?? { view: 'dashboard' }
+    const { view, id, tab, sub } = this._parseHash() ?? { view: 'dashboard' }
 
     this.currentView = view
     this.projectsView.currentId = (view === 'projects' && id) ? id : null
     this.projectsView._pvTab = tab || 'overview'
+    this.projectsView._pvSub = tab === 'worklist' ? sub || null : null
     this.projectsView.editingId = null
     this.budgetsView.currentId  = (view === 'budgets' && id) ? id : null
     this.budgetsView.editingId  = null
     this.boardsView.currentId   = (view === 'planning' && id && id !== 'canvas') ? id : null
     this.canvasView.currentId   = (view === 'planning' && id === 'canvas' && tab) ? tab : null
-    this.retainersView.currentId = (view === 'retainers' && id) ? id : null
     this.requestsView.currentId = (view === 'requests' && id) ? id : null
     this.render()
   }
@@ -851,9 +878,6 @@ export class App {
       if (!p.projects_view) return locked("You don't have access to Planning.")
       if (this.canvasView.currentId) this.canvasView.render(mc)
       else this.boardsView.render(mc)
-    } else if (this.currentView === 'retainers') {
-      if (!p.projects_view) return locked("You don't have access to Retainers.")
-      this.retainersView.render(mc)
     } else if (this.currentView === 'requests') {
       if (!p.projects_view) return locked("You don't have access to Requests.")
       this.requestsView.render(mc)
@@ -1245,6 +1269,7 @@ export class App {
       const cached = this._dbNavCounts?.[p.id]
       const navTabs = [
         { id: 'overview',        label: 'Overview' },
+        { id: 'worklist',        label: 'Worklist' },
         { id: 'shoots',          label: 'Shoots', key: 'shoots', hide: (p.project_type||'full_service') === 'post_production' },
         { id: 'post-production', label: 'Post Production', count: ppsCountByProject[p.id] || 0 },
         { id: 'budget',          label: 'Budget', count: (p.budget_ids||[]).length },

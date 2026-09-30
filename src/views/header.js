@@ -16,7 +16,8 @@ export const TABS = [
   { id: 'dashboard', label: 'Dashboard', href: '/',       view: 'dashboard', icon: 'dashboard', views: ['dashboard'] },
   { id: 'tasks',    label: 'Tasks',    href: '#tasks',    view: 'tasks',     icon: 'tasks',    views: ['tasks'] },
   { id: 'calendar', label: 'Calendar', href: '#calendar', view: 'calendar',  icon: 'calendar', views: ['calendar'] },
-  { id: 'projects', label: 'Projects', href: '#projects', view: 'projects',  icon: 'folder',   views: ['projects', 'budgets', 'planning', 'retainers', 'requests'] },
+  { id: 'projects', label: 'Projects', href: '#projects', view: 'projects',  icon: 'folder',   views: ['projects', 'budgets', 'planning'] },
+  { id: 'requests', label: 'Requests', href: '#requests', view: 'requests',  icon: 'inbox',    views: ['requests'] },
   { id: 'contacts', label: 'Contacts', href: '#contacts', view: 'contacts',  icon: 'person',   views: ['contacts'] },
 ]
 
@@ -58,7 +59,7 @@ export class HeaderView {
       <header class="app-header">
         <a class="app-wordmark" href="/" data-nav="dashboard"><img class="app-logo" src="/slate-logo.png" alt="Slate" width="2057" height="454"></a>
         <nav class="app-tabs" aria-label="Main">
-          ${TABS.map(t => `<a class="app-tab" href="${t.href}" data-nav="${t.view}"${t.id === active ? ' aria-current="page"' : ''}>${t.label}</a>`).join('')}
+          ${TABS.map(t => `<a class="app-tab" href="${t.href}" data-nav="${t.view}"${t.id === active ? ' aria-current="page"' : ''}${t.id === 'requests' ? ` aria-label="${esc(this.requestsLabel())}"` : ''}>${t.label}${t.id === 'requests' ? this.requestsCountHtml() : ''}</a>`).join('')}
         </nav>
         <div class="app-header-actions">
           <button type="button" class="hdr-search" id="hdr-search" title="Search or jump to (${mac ? '⌘K' : 'Ctrl K'})" aria-keyshortcuts="${mac ? 'Meta+K' : 'Control+K'}">
@@ -82,7 +83,7 @@ export class HeaderView {
     const active = tabForView(this.app.currentView)?.id
     return `
       <nav class="app-tabbar" aria-label="Main">
-        ${TABS.map(t => `<a href="${t.href}" data-nav="${t.view}"${t.id === active ? ' aria-current="page"' : ''}>${icon(t.icon, 22)}<span>${t.label}</span></a>`).join('')}
+        ${TABS.map(t => `<a href="${t.href}" data-nav="${t.view}"${t.id === active ? ' aria-current="page"' : ''}${t.id === 'requests' ? ` aria-label="${esc(this.requestsLabel())}"` : ''}>${icon(t.icon, 22)}<span>${t.label}</span>${t.id === 'requests' ? this.requestsCountHtml() : ''}</a>`).join('')}
       </nav>`
   }
 
@@ -117,6 +118,30 @@ export class HeaderView {
     btn.setAttribute('aria-label', this.bellLabel())
     btn.querySelector('.hdr-bell-count')?.remove()
     btn.insertAdjacentHTML('beforeend', this.bellCountHtml())
+  }
+
+  // New client requests waiting for triage: a count on the Requests tab, so a
+  // request that nobody looked at can't sit unseen. The number comes from
+  // app.requestCount (see watchRequests in app.js).
+  requestsLabel() {
+    const n = this.app.requestCount || 0
+    return `Requests${n ? `, ${n} new` : ''}`
+  }
+
+  requestsCountHtml() {
+    const n = this.app.requestCount || 0
+    return `<span class="tab-count" data-request-count aria-hidden="true"${n ? '' : ' hidden'}>${n > 99 ? '99+' : n}</span>`
+  }
+
+  refreshRequests() {
+    const n = this.app.requestCount || 0
+    document.querySelectorAll('[data-nav="requests"]').forEach(a => {
+      a.setAttribute('aria-label', this.requestsLabel())
+      const badge = a.querySelector('[data-request-count]')
+      if (!badge) return
+      badge.hidden = !n
+      badge.textContent = n > 99 ? '99+' : String(n)
+    })
   }
 
   // Keep the approvals dot and label in step when leave requests change.

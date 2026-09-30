@@ -8,7 +8,7 @@ const match = (method, path) => matchRoute(method, path, ROUTES)
 describe('/api/retainers routes', () => {
   it('matches every route', () => {
     for (const [method, path] of [
-      ['GET', 'retainers/companies'], ['GET', `retainers/companies/${ID}`],
+      ['GET', 'retainers/project-counts'], ['GET', `retainers/projects/${ID}`], ['POST', `retainers/projects/${ID}/attach`],
       ['POST', 'retainers/workstreams'], ['PATCH', `retainers/workstreams/${ID}`], ['DELETE', `retainers/workstreams/${ID}`],
       ['POST', 'retainers/deliverables'], ['PATCH', `retainers/deliverables/${ID}`], ['DELETE', `retainers/deliverables/${ID}`],
       ['POST', `retainers/deliverables/${ID}/deliveries`], ['DELETE', `retainers/deliveries/${ID}`],
@@ -19,7 +19,7 @@ describe('/api/retainers routes', () => {
   })
 
   it('only takes uuids as ids', () => {
-    expect(match('GET', 'retainers/companies/1').status).toBe(404)
+    expect(match('GET', 'retainers/projects/1').status).toBe(404)
     expect(match('PATCH', "retainers/deliverables/1' OR 1=1").status).toBe(404)
   })
 

@@ -1,7 +1,9 @@
-// src/views/retainers.js
-// Projects › Retainers: each client company's worklist — its workstreams, the
-// deliverables in each and the rounds sent for review. #retainers lists the
-// companies; #retainers/<companyId> is one company's page.
+// src/views/worklist.js
+// The Worklist tab on a project's page: the project's workstreams, the
+// deliverables in each and the rounds sent for review. Any project can have
+// one. A project is the parent of its worklist; the company (if it has one) is
+// read from the project. Opened at #projects/<id>/worklist, and
+// #projects/<id>/worklist/<deliverableId> opens that deliverable's sheet.
 //
 // Built for a phone first: one column, 44px tap targets, and every form opens
 // through views/popover.js (a popover on desktop, a bottom sheet on phones).
@@ -17,9 +19,8 @@
 // out by api/_retainer-rules.js — the module the portal uses too.
 
 import * as api from '../api/retainers.js'
-import { openFloating, closeFloating } from './popover.js'
+import { openFloating } from './popover.js'
 import { icon } from './icons.js'
-import { companyFieldHtml, bindCompanyField, resolveCompanyField } from './company-field.js'
 import { setCompanyLead, getPortalAccess, setUpPortal, inviteToPortal, revokePortalInvitation, removePortalMember } from '../api/companies.js'
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -41,132 +42,64 @@ function fitInViewport(el) {
   if (top + el.offsetHeight > room) el.style.top = `${Math.max(16, room - el.offsetHeight)}px`
 }
 
-export class RetainersView {
+export class Worklist {
   constructor(app) {
     this.app = app
-    this.currentId = null    // the company on show, or null for the list
-    this.list = null         // GET /companies payload
-    this.page = null         // GET /companies/:id payload
-    this._seq = 0            // drops responses for a page no longer on show
+    this.el = null           // the tab's container
+    this.projectId = null
+    this.page = null         // GET /projects/:id payload
+    this._seq = 0            // drops responses for a project no longer on show
     this._openComplete = new Set()   // complete workstreams someone has opened
   }
 
   get canEdit() { return this.app.permissions?.projects_edit === true }
   get isSuperadmin() { return this.app.appUser?.role === 'superadmin' }
 
-  // ── Toolbar (list page only; a company page has its own header) ───────────
-  toolbar() {
-    if (this.currentId) return { filters: '', actions: '' }
-    return { filters: '', actions: this.canEdit ? '<button class="btn-primary" id="rt-add-client">+ Add client</button>' : '' }
-  }
-
-  bindToolbar(bar) {
-    bar?.querySelector('#rt-add-client')?.addEventListener('click', e => this._addClientForm(e.currentTarget))
-  }
-
-  render(mc) {
-    if (this.currentId) this._renderCompany(mc)
-    else this._renderList(mc)
-  }
-
-  open(companyId) {
-    this.app.openLink(companyId ? `#retainers/${companyId}` : '#retainers')
-  }
-
-  // ── The list ───────────────────────────────────────────────────────────────
-
-  async _renderList(mc) {
+  // Show the project's worklist in `el`. `openId` (from the address) opens that
+  // deliverable's sheet once it has loaded.
+  async mount(el, projectId, { openId = null } = {}) {
     const seq = ++this._seq
-    if (this.list) this._paintList(mc)
-    else mc.innerHTML = '<div class="rt-empty">Loading…</div>'
-    try {
-      this.list = await api.listRetainerCompanies()
-    } catch (err) {
-      if (seq === this._seq && mc.isConnected && !this.list) mc.innerHTML = `<div class="rt-empty rt-error">Couldn't load retainers. ${esc(err.message)}</div>`
-      return
-    }
-    if (seq === this._seq && mc.isConnected) this._paintList(mc)
-  }
-
-  _paintList(mc) {
-    const { companies } = this.list
-    if (!companies.length) {
-      mc.innerHTML = `
-        <div class="rt-empty">
-          <p>No retainer clients yet. A company shows here once it has a workstream or a retainer project.</p>
-          ${this.canEdit ? '<button class="btn-primary" data-rt-add-client>+ Add client</button>' : ''}
-        </div>`
-    } else {
-      mc.innerHTML = `<div class="rt-cos">${companies.map(c => this._companyRowHtml(c)).join('')}</div>`
-    }
-    mc.querySelector('[data-rt-add-client]')?.addEventListener('click', e => this._addClientForm(e.currentTarget))
-    mc.querySelectorAll('a[data-rt-company]').forEach(a => a.addEventListener('click', e => {
-      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-      e.preventDefault()
-      this.open(a.dataset.rtCompany)
-    }))
-  }
-
-  _companyRowHtml(c) {
-    const pills = [
-      c.overdue && `<span class="rt-pill rt-pill--late">${c.overdue} overdue</span>`,
-      c.waiting && `<span class="rt-pill rt-pill--waiting">${c.waiting} waiting on client</span>`,
-      c.in_review && `<span class="rt-pill rt-pill--review">${c.in_review} in review</span>`,
-      !c.lead_id && `<span class="rt-pill rt-pill--late">No lead</span>`,
-      `<span class="rt-pill">${count(c.open, 'open item')}</span>`,
-    ].filter(Boolean).join('')
-    const meta = [
-      c.workstreams ? count(c.workstreams, 'workstream') : 'No workstreams yet',
-      ...c.retainer_projects.map(p => esc(p.name)),
-    ].join(' · ')
-    return `
-      <a class="rt-co" href="#retainers/${c.id}" data-rt-company="${c.id}">
-        <span class="rt-co-main">
-          <span class="rt-co-name">${esc(c.name)}${c.portal ? ' <span class="rt-chip">Portal</span>' : ''}</span>
-          <span class="rt-co-meta">${meta}</span>
-        </span>
-        <span class="rt-co-pills">${pills}</span>
-        <span class="rt-co-next">${c.next_due_display ? `Next due ${esc(c.next_due_display)}` : 'Nothing due'}</span>
-      </a>`
-  }
-
-  // ── A company's page ───────────────────────────────────────────────────────
-
-  async _renderCompany(mc) {
-    const seq = ++this._seq
-    const id = this.currentId
-    if (this.page?.company.id === id) this._paintCompany(mc)
-    else mc.innerHTML = '<div class="rt-empty">Loading…</div>'
+    this.el = el
+    this.projectId = projectId
+    if (this.page?.project.id === projectId) this._paint()
+    else el.innerHTML = '<div class="rt-empty">Loading…</div>'
     let page
     try {
-      page = await api.getCompanyPage(id)
+      page = await api.getProjectPage(projectId)
     } catch (err) {
-      if (seq !== this._seq || !mc.isConnected) return
-      mc.innerHTML = err.status === 404
-        ? `<div class="rt-empty"><p>This client isn't in Slate any more.</p><a class="btn-cancel" href="#retainers" data-rt-back>← Retainers</a></div>`
-        : `<div class="rt-empty rt-error">Couldn't load this client. ${esc(err.message)}</div>`
-      mc.querySelector('[data-rt-back]')?.addEventListener('click', e => { e.preventDefault(); this.open(null) })
+      if (seq !== this._seq || !el.isConnected) return
+      el.innerHTML = err.status === 404
+        ? '<div class="rt-empty"><p>This project isn’t in Slate any more.</p></div>'
+        : `<div class="rt-empty rt-error">Couldn't load the worklist. ${esc(err.message)}</div>`
       return
     }
-    if (seq !== this._seq || !mc.isConnected) return
+    if (seq !== this._seq || !el.isConnected) return
     this.page = page
-    this._paintCompany(mc)
+    this._paint()
+    this._refreshCount()
+    if (openId) {
+      const button = el.querySelector(`[data-rt-open="${CSS.escape(openId)}"]`)
+      if (button) { button.scrollIntoView({ block: 'center' }); this._deliverableSheet(button, openId) }
+    }
   }
 
-  _main() { return document.getElementById('main-content') }
+  // The number on the tab (open items), and the dashboard's, kept current.
+  _refreshCount() {
+    const open = this.page.workstreams.filter(w => w.status === 'active').flatMap(w => w.deliverables).filter(d => d.status !== 'approved').length
+    this.app.projectsView?.setWorklistCount?.(this.projectId, open)
+  }
 
   // Repaint from this.page, keeping focus on the same control if it's still
   // there (a repaint replaces every element).
   _repaint() {
-    const mc = this._main()
-    if (!mc || this.app.currentView !== 'retainers' || !this.page) return
+    if (!this.el?.isConnected || !this.page) return
     const focusKey = document.activeElement?.closest?.('[data-focus-key]')?.dataset.focusKey
-    this._paintCompany(mc)
-    if (focusKey) mc.querySelector(`[data-focus-key="${CSS.escape(focusKey)}"]`)?.focus()
+    this._paint()
+    if (focusKey) this.el.querySelector(`[data-focus-key="${CSS.escape(focusKey)}"]`)?.focus()
   }
 
-  _paintCompany(mc) {
-    const { company, workstreams } = this.page
+  _paint() {
+    const { company, project, workstreams, unattached } = this.page
     const all = workstreams.flatMap(w => (w.status === 'active' ? w.deliverables : []))
     const open = all.filter(d => d.status !== 'approved')
     const summary = [
@@ -179,24 +112,27 @@ export class RetainersView {
     const rank = { active: 0, paused: 1, complete: 2 }
     const ordered = [...workstreams].sort((a, b) => rank[a.status] - rank[b.status])
 
-    mc.innerHTML = `
+    this.el.innerHTML = `
       <div class="rt-head">
-        <a class="btn-cancel rt-back" id="rt-back" href="#retainers">← Retainers</a>
         <div class="rt-head-main">
-          <h1 class="rt-title">${esc(company.name)}</h1>
-          <div class="rt-summary">${summary}${company.portal ? ' · <span class="rt-chip">Portal on</span>' : ''}</div>
-          ${this._leadHtml(company)}
+          <div class="rt-summary">${summary}${company?.portal ? ' · <span class="rt-chip">Login on</span>' : ''}${project.has_link ? ' · <span class="rt-chip">Link on</span>' : ''}</div>
+          ${company ? this._leadHtml(company) : ''}
         </div>
         <div class="rt-head-actions">
-          ${this.isSuperadmin ? '<button class="btn-secondary" data-rt-portal data-focus-key="portal">Portal access</button>' : ''}
+          ${this.isSuperadmin && company ? '<button class="btn-secondary" data-rt-portal data-focus-key="portal">Portal access</button>' : ''}
           ${this.canEdit ? '<button class="btn-primary" data-rt-add-ws data-focus-key="add-ws">+ Workstream</button>' : ''}
         </div>
       </div>
+      ${this.canEdit && unattached.length ? `
+        <div class="rt-attach" role="status">
+          <span>${esc(company?.name || 'This company')} has ${count(unattached.length, 'older workstream')} not attached to a project: ${unattached.map(w => esc(w.title)).join(', ')}.</span>
+          <button type="button" class="btn-secondary" data-rt-attach data-focus-key="attach">Attach ${unattached.length === 1 ? 'it' : 'them'} to this project</button>
+        </div>` : ''}
       ${ordered.length
         ? ordered.map(w => this._workstreamHtml(w)).join('')
         : `<div class="rt-empty"><p>No workstreams yet. A workstream groups the deliverables for one piece of work.</p>
             ${this.canEdit ? '<button class="btn-primary" data-rt-add-ws>+ Add a workstream</button>' : ''}</div>`}`
-    this._bindCompany(mc)
+    this._bind()
   }
 
   // Who hears about this company's work when a deliverable has no owner. A
@@ -242,7 +178,6 @@ export class RetainersView {
             company.lead_name = user?.name || user?.email || null
             const known = (this.app.companies || []).find(c => c.id === company.id)
             if (known) known.lead_id = pick
-            this.list = null
             close({ restoreFocus: false })
             this._repaint()
             this.app.toast('Lead saved')
@@ -267,7 +202,6 @@ export class RetainersView {
           <div class="rt-ws-head-main">
             <h2 class="rt-ws-title" id="rt-ws-${w.id}">${esc(w.title)}</h2>
             ${statusChip}
-            ${w.project_id ? `<a class="rt-ws-project" href="#projects/${w.project_id}/overview" data-rt-link="#projects/${w.project_id}/overview">${esc(w.project_name || 'Project')}</a>` : ''}
             <span class="rt-ws-count">${count(w.deliverables.length, 'item')}${openCount && openCount !== w.deliverables.length ? `, ${openCount} open` : ''}</span>
             ${w.status === 'complete' ? `<button type="button" class="rt-link-btn" data-rt-toggle-ws="${w.id}" aria-expanded="${!collapsed}">${collapsed ? 'Show' : 'Hide'}</button>` : ''}
           </div>
@@ -322,18 +256,20 @@ export class RetainersView {
     return `<div class="rt-d-round">${link} sent ${dayMonth(r.sent_at)} · awaiting response</div>`
   }
 
-  _bindCompany(mc) {
-    mc.querySelector('#rt-back')?.addEventListener('click', e => {
-      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-      e.preventDefault(); this.open(null)
-    })
-    mc.querySelectorAll('[data-rt-link]').forEach(a => a.addEventListener('click', e => {
-      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-      e.preventDefault(); this.app.openLink(a.dataset.rtLink)
-    }))
+  _bind() {
+    const mc = this.el
     mc.querySelectorAll('[data-rt-add-ws]').forEach(b => b.addEventListener('click', () => this._workstreamForm(b, null)))
     mc.querySelector('[data-rt-portal]')?.addEventListener('click', e => this._portalPanel(e.currentTarget))
     mc.querySelector('[data-rt-lead]')?.addEventListener('click', e => this._leadForm(e.currentTarget))
+    mc.querySelector('[data-rt-attach]')?.addEventListener('click', async e => {
+      const button = e.currentTarget
+      button.disabled = true
+      try {
+        const { attached } = await api.attachWorkstreams(this.projectId)
+        this.app.toast(`Attached ${count(attached, 'workstream')}`)
+        this._reload()
+      } catch (err) { button.disabled = false; this.app.toast(err.message || 'Could not attach them') }
+    })
     mc.querySelectorAll('[data-rt-ws-edit]').forEach(b => b.addEventListener('click', () => this._workstreamForm(b, this._workstream(b.dataset.rtWsEdit))))
     mc.querySelectorAll('[data-rt-ws-status]').forEach(b => b.addEventListener('click', () => this._workstreamStatusMenu(b, this._workstream(b.dataset.rtWsStatus))))
     mc.querySelectorAll('[data-rt-toggle-ws]').forEach(b => b.addEventListener('click', () => {
@@ -395,8 +331,8 @@ export class RetainersView {
   }
 
   async _reload() {
-    if (!this.currentId) return
-    try { this.page = await api.getCompanyPage(this.currentId); this._repaint() } catch { /* the toast already said */ }
+    if (!this.projectId) return
+    try { this.page = await api.getProjectPage(this.projectId); this._repaint() } catch { /* the toast already said */ }
   }
 
   // ── One-tap status ─────────────────────────────────────────────────────────
@@ -481,7 +417,7 @@ export class RetainersView {
             this._putDeliverable(deliverable)
             close({ restoreFocus: false })
             this._repaint()
-            this._main()?.querySelector(`[data-focus-key="open-${d.id}"]`)?.focus()
+            this.el?.querySelector(`[data-focus-key="open-${d.id}"]`)?.focus()
             this.app.toast(`Round ${delivery.round} sent${notified?.message ? ` — ${notified.message}` : ''}`)
             this._fillPreview(delivery.id, d.id)
           } catch (err) {
@@ -685,7 +621,7 @@ export class RetainersView {
         this._putDeliverable(await api.updateDeliverable(current.id, changes))
         close({ restoreFocus: false })
         this._repaint()
-        this._main()?.querySelector(`[data-focus-key="open-${current.id}"]`)?.focus()
+        this.el?.querySelector(`[data-focus-key="open-${current.id}"]`)?.focus()
         this.app.toast('Saved')
       } catch (err) {
         submit.disabled = false
@@ -757,7 +693,7 @@ export class RetainersView {
             this._putDeliverable(d)
             close({ restoreFocus: false })
             this._repaint()
-            this._main()?.querySelector(`[data-focus-key="add-d-${workstream.id}"]`)?.focus()
+            this.el?.querySelector(`[data-focus-key="add-d-${workstream.id}"]`)?.focus()
             this.app.toast(`Added ${d.title}`)
           } catch (err) {
             submit.disabled = false
@@ -773,20 +709,11 @@ export class RetainersView {
   // ── Workstreams ────────────────────────────────────────────────────────────
 
   _workstreamForm(anchor, w) {
-    const projects = this.page?.projects ?? []
-    const others = (this.app.projects || []).filter(p => !projects.some(x => x.id === p.id))
-    const option = p => `<option value="${p.id}"${p.id === w?.project_id ? ' selected' : ''}>${esc(p.name)}</option>`
     const html = `
       <div class="lt-head"><h2 class="lt-title" id="rt-ws-form-title">${w ? 'Edit workstream' : 'New workstream'}</h2></div>
       <form class="tl-form" id="rt-ws-form" novalidate>
-        <div class="tl-field"><label for="rt-w-title">Title</label><input id="rt-w-title" maxlength="300" value="${esc(w?.title || '')}" placeholder="e.g. Autumn launch" data-autofocus /></div>
+        <div class="tl-field"><label for="rt-w-title">Title</label><input id="rt-w-title" maxlength="300" value="${esc(w?.title || '')}" placeholder="e.g. Edit days" data-autofocus /></div>
         <div class="tl-field"><label for="rt-w-brief">Brief <span class="tl-optional">(optional — the client sees it)</span></label><textarea id="rt-w-brief" rows="3">${esc(w?.brief || '')}</textarea></div>
-        <div class="tl-field"><label for="rt-w-project">Project <span class="tl-optional">(optional)</span></label>
-          <select id="rt-w-project"><option value="">None</option>
-            ${projects.length ? `<optgroup label="${esc(this.page.company.name)}">${projects.map(option).join('')}</optgroup>` : ''}
-            ${others.length ? `<optgroup label="Other projects">${others.map(option).join('')}</optgroup>` : ''}
-          </select>
-          <p class="tl-hint">A project's portal link shows its workstreams.</p></div>
         <div class="tl-msg" id="rt-ws-msg" role="alert"></div>
         <button type="submit" class="btn-primary tl-submit">${w ? 'Save' : 'Add workstream'}</button>
         ${w && !w.deliverables.some(d => d.deliveries.length) ? '<button type="button" class="rt-link-btn rt-danger" data-rt-delete-ws>Delete this workstream</button>' : ''}
@@ -801,21 +728,18 @@ export class RetainersView {
           e.preventDefault()
           const msg = form.querySelector('#rt-ws-msg')
           const submit = form.querySelector('[type="submit"]')
-          const body = {
-            title: form.querySelector('#rt-w-title').value,
-            brief: form.querySelector('#rt-w-brief').value,
-            project_id: form.querySelector('#rt-w-project').value || null,
-          }
+          const body = { title: form.querySelector('#rt-w-title').value, brief: form.querySelector('#rt-w-brief').value }
           submit.disabled = true
           msg.textContent = ''
           try {
             if (w) {
               Object.assign(w, await api.updateWorkstream(w.id, body))
             } else {
-              this.page.workstreams.push(await api.createWorkstream({ ...body, company_id: this.page.company.id }))
+              this.page.workstreams.push(await api.createWorkstream({ ...body, project_id: this.projectId }))
             }
             close({ restoreFocus: false })
             this._repaint()
+            this._refreshCount()
             this.app.toast(w ? 'Saved' : 'Workstream added')
           } catch (err) {
             submit.disabled = false
@@ -830,6 +754,7 @@ export class RetainersView {
             this.page.workstreams = this.page.workstreams.filter(x => x.id !== w.id)
             close({ restoreFocus: false })
             this._repaint()
+            this._refreshCount()
             this.app.toast('Deleted')
           } catch (err) { this.app.toast(err.message || 'Could not delete') }
         })
@@ -944,47 +869,6 @@ export class RetainersView {
     })
   }
 
-  // ── Add a client: a company and its first workstream ──────────────────────
-
-  _addClientForm(anchor) {
-    const html = `
-      <div class="lt-head"><h2 class="lt-title" id="rt-client-title">Add a client</h2></div>
-      <form class="tl-form" id="rt-client-form" novalidate>
-        <div class="tl-field"><label for="rt-c-company">Company</label>${companyFieldHtml({ id: 'rt-c-company', placeholder: 'Start typing a company' })}</div>
-        <div class="tl-field"><label for="rt-c-ws">First workstream</label><input id="rt-c-ws" maxlength="300" placeholder="e.g. Monthly content" /></div>
-        <div class="tl-msg" id="rt-client-msg" role="alert"></div>
-        <button type="submit" class="btn-primary tl-submit">Add client</button>
-      </form>`
-    openFloating({
-      anchor, id: 'rt-client', role: 'dialog', className: 'lt-pop rt-pop', html,
-      onReady: (el, close) => {
-        el.setAttribute('aria-labelledby', 'rt-client-title')
-        const input = el.querySelector('#rt-c-company')
-        bindCompanyField(input, this.app.companies)
-        const form = el.querySelector('#rt-client-form')
-        form.addEventListener('submit', async e => {
-          e.preventDefault()
-          const msg = form.querySelector('#rt-client-msg')
-          const title = form.querySelector('#rt-c-ws').value.trim()
-          const fail = (text, focus) => { msg.dataset.tone = 'error'; msg.textContent = text; focus?.focus() }
-          if (!input.value.trim()) return fail('Type the company’s name', input)
-          if (!title) return fail('Name the first workstream', form.querySelector('#rt-c-ws'))
-          const submit = form.querySelector('[type="submit"]')
-          submit.disabled = true
-          try {
-            const company = await resolveCompanyField(this.app, input, { isNew: true })
-            await api.createWorkstream({ company_id: company.id, title })
-            close({ restoreFocus: false })
-            this.list = null
-            this.open(company.id)
-          } catch (err) {
-            submit.disabled = false
-            fail(err.message || 'Could not add the client')
-          }
-        })
-      },
-    })
-  }
 }
 
 // ── Due fields (shared by the new and edit forms) ────────────────────────────

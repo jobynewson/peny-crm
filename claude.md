@@ -193,10 +193,10 @@ There is no sidebar. The shell is a header over the page:
   with arrow keys; Log time is a `role="dialog"`. On phones the same call
   opens a bottom sheet instead (see "Phones" below).
 - **Page toolbar**: the first row of each list page (`toolbarHtml()` in
-  `src/app.js`): the view switcher (All projects · Budgets · Planning ·
-  Retainers under the Projects tab) or the page's own tabs, then filters,
+  `src/app.js`): the view switcher (All projects · Budgets · Planning
+  under the Projects tab) or the page's own tabs, then filters,
   then primary actions on the right. Pages don't repeat their title. Detail
-  pages (a project, budget, board, plan, retainer client) hide it and use
+  pages (a project, budget, board, plan) hide it and use
   their own header row. A
   project's row starts with a "Projects / <name>" breadcrumb.
 - **A page can fill in the toolbar itself**: implement `toolbar()` returning
@@ -389,7 +389,7 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
   frequent expression fails the deployment). That cap doesn't apply on the
   Pro plan (see "Serverless Functions"), so the schedule can be tightened.
 - `PORTAL_INVITES_ENABLED` - `true` lets superadmins invite client users to
-  the portal (Portal access on a Retainers company page). Unset = invitations
+  the portal (Portal access on a project's Worklist tab). Unset = invitations
   are refused. Leave it unset until the query proxy is live **and** the
   database password has been reset: the old one was in the public
   JavaScript, and no client may have a login before both.
@@ -498,9 +498,11 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 - `marketing.js` - Marketing. Its kanban (by status: Ideas → Planning → In
   Progress → Scheduled/Sent → Done) is one of three separate kanban
   implementations — see "Kanban boards" below.
-- `retainers.js` - Projects › Retainers: client companies' worklists
-  (`#retainers`, `#retainers/<companyId>`) over `/api/retainers` — see
-  "Retainer worklists" below.
+- `worklist.js` - the Worklist tab on a project's page: its workstreams,
+  deliverables and rounds (`#projects/<id>/worklist`, and
+  `#projects/<id>/worklist/<deliverableId>` opens that deliverable) over
+  `/api/retainers` — see "Retainer worklists" below. `requests.js` is triage
+  (`#requests`, its own header tab with a count of new ones).
 - `password-manager.js` - Password management
 - `offload-log.js` - Offload Log (read-only table of backup reports from Fence)
 
@@ -863,7 +865,7 @@ always the source of truth and nothing is ever read back from Google.
   calendar and Tasks sections): Everyone or Mine (remembered per browser in
   `slate-due-owner`), grouped by day, no tick boxes — a row opens the item
   through `app.openLink()`. It replaced the Marketing Tasks, Deliverables and
-  Edit Deadlines lists; Retainers has its own row.
+  Edit Deadlines lists; retainers have their own row.
 - **09:00 email** (`?type=deliverables`, kind `due_digest`): one "What's due"
   email per person — their overdue work and the next three days, with
   unacknowledged tasks on top. It replaced two emails (project deliverables,
@@ -916,10 +918,14 @@ always the source of truth and nothing is ever read back from Google.
 - **Peny API** (`api/retainers.js` → routes in `api/_retainers.js`; vercel.json
   rewrites `/api/retainers/*` with `?route=`). Staff only; reads for anyone on
   the team, writes for non-viewers:
-  - `GET companies` (companies with a worklist or a retainer project, with
-    counts from active workstreams) and `GET companies/:id` (the whole page:
-    workstreams → deliverables → rounds, plus the company's projects).
-  - `POST workstreams`, `PATCH|DELETE workstreams/:id`, `POST deliverables`,
+  - `GET projects/:id` (a project's whole worklist: workstreams →
+    deliverables → rounds, who it is for, whether it has a link, and any
+    older project-less workstreams its company has that can be attached),
+    `GET project-counts` (open / overdue / waiting per project, for the
+    tab's number) and `POST projects/:id/attach` (brings those older
+    workstreams in).
+  - `POST workstreams` (`{ project_id, title }`: a worklist belongs to a
+    project), `PATCH|DELETE workstreams/:id`, `POST deliverables`,
     `PATCH|DELETE deliverables/:id`. A PATCH writes only the fields sent;
     due fields are normalised as a set (changing the kind drops the old
     words); a status change is refused with 409 if the status moved on
@@ -933,9 +939,22 @@ always the source of truth and nothing is ever read back from Google.
   - `POST deliveries/:id/response` records an answer that came another way.
   - **Nothing with rounds sent can be deleted** (409 `has_rounds`), so a
     client's approvals can't vanish by accident: mark it approved/complete.
-- **Peny UI** (`src/views/retainers.js`, Projects › Retainers). `#retainers`
-  lists companies with counts; `#retainers/<companyId>` is a company's page:
-  workstreams (active first, complete ones folded), each with its
+- **Worklists belong to projects.** Any project can have workstreams and
+  deliverables, retainer or not; a retainer is a project that also has
+  contract terms (hours, fee, period — unchanged, on the project). The
+  company is read from the project **now**, through the `workstream_company`
+  view (drizzle/0038): the project's company, else the company stored on an
+  older workstream. Every query that needs a workstream's company joins that
+  view with LEFT JOINs, so a project with no company still has a worklist and
+  a link (no company login). Never join `workstreams.company_id` directly.
+  `workstreams.project_id` is ON DELETE RESTRICT: a project with a worklist
+  can't be deleted until the worklist is (`deleteProject()` says so). A
+  deliverable links to `#projects/<id>/worklist/<deliverableId>`
+  (`worklistLink()` in `_retainer-rules.js`); `#retainers/<companyId>` (in
+  emails already sent) redirects to that company's project
+  (`src/utils/worklist-route.js`).
+- **Peny UI** (`src/views/worklist.js`, the Worklist tab on the project page).
+  Workstreams (active first, complete ones folded), each with its
   deliverable rows. Built phone-first: one column, 44px targets, and every
   form opens through `openFloating()` (popover on desktop, bottom sheet on
   phones).
@@ -948,12 +967,14 @@ always the source of truth and nothing is ever read back from Google.
     unanswered one; record an answer that came by email), then the details
     form (title, format, owner, due, visibility, what we're waiting for,
     internal notes). A viewer gets the same page read-only.
-  - "+ Add client" takes a company (the company field: match or create)
-    and its first workstream.
-  - **The page holds no copy of the rules.** The company payload carries
+  - "Portal access" (superadmins, when the project has a company) and, for
+    editors, an "Attach" banner for a company's older workstreams with no
+    project. Companies are made in Contacts and on the project form; there
+    is no "Add client".
+  - **The page holds no copy of the rules.** The project payload carries
     `vocab` (statuses with the client's label, workstream statuses, due
     kinds, cadences) and computed fields (`status_label`, `due_display`,
-    `overdue`, `days_late`, `waiting_days`, `next_due_display`), all from
+    `overdue`, `days_late`, `waiting_days`), all from
     `_retainer-rules.js`. Nothing in `src/` imports from `api/` — `/api/*`
     URLs belong to functions, so a module there can't be served to the
     browser under `vercel dev`.
@@ -966,7 +987,7 @@ always the source of truth and nothing is ever read back from Google.
   refuse any email that belongs to a Slate user, and are refused altogether
   unless `PORTAL_INVITES_ENABLED` is `true`. The organisation used is always
   the company's own, never one from the request. The panel is the "Portal
-  access" button on a company page.
+  access" button on a project's Worklist tab (shown when the project has a company).
 - **Responses have one writer**: `respondToDelivery(sql, scope, …)` in
   `api/_worklist.js`, shared by the Peny API and the portal. A scope is made
   only by that module's constructors (`staffScope(ws)`; the portal's comes
@@ -1089,8 +1110,9 @@ is the guard), `requests` decision columns, `deliverables.client_reply`,
   (the cap is in the writing statement). The client sees the company's requests
   as Submitted / Accepted (date read live from the deliverable, with a link to it
   in their worklist) / Declined (our note). Nothing about who decided leaves.
-- **Triage** (`api/_requests.js`, `src/views/requests.js`, Projects › Requests):
-  accept = pick or make the workstream + owner + date, creating the deliverable
+- **Triage** (`api/_requests.js`, `src/views/requests.js`, the Requests tab — a count of new ones sits on it, from `GET retainers/request-count`):
+  accept = pick the project (a link request's is fixed), then pick or make a
+  workstream in it, + owner + date, creating the deliverable
   (client-visible, planned) and marking the request accepted in ONE statement;
   decline = a note. Triage holds no work: after accepting, the deliverable is the
   only record. The new owner gets the "Tasks assigned to you" email (also on

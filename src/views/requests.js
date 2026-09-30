@@ -1,5 +1,5 @@
 // src/views/requests.js
-// Projects › Requests: where a client's request gets its owner and its date.
+// Requests (its own tab in the header, with a count of new ones): where a client's request gets its owner and its date.
 // #requests is the inbox; #requests/<id> is one request on one screen: read
 // it, then accept it (pick or make the workstream, set an owner and a date) or
 // decline it (a note the client will read).
@@ -80,6 +80,8 @@ export class RequestsView {
 
   _paintInbox(mc) {
     const { requests, counts } = this.list
+    this.app.requestCount = counts.new
+    this.app.header?.refreshRequests()
     const tabs = TABS.map(([key, label]) => `
       <button type="button" class="seg-btn" data-rq-tab="${key}"${key === this.status ? ' aria-current="page"' : ''}>${label}${counts[key] ? ` <span class="rq-count">${counts[key]}</span>` : ''}</button>`).join('')
     const empty = {
@@ -106,13 +108,14 @@ export class RequestsView {
       r.status === 'declined' && r.decided_at ? `declined ${dayMonth(r.decided_at)}` : null,
       r.status === 'accepted' && r.decided_at ? `accepted ${dayMonth(r.decided_at)}${r.decided_by ? ` by ${esc(r.decided_by)}` : ''}` : null,
     ].filter(Boolean).join(' · ')
+    const where = r.project && r.project !== r.company ? `${esc(r.company)} · ${esc(r.project)}` : esc(r.company)
     return `
       <a class="rt-co" href="#requests/${r.id}" data-rq-open="${r.id}">
         <span class="rt-co-main">
           <span class="rt-co-name">${esc(r.title)}</span>
-          <span class="rt-co-meta">${esc(r.company)} · ${meta}</span>
+          <span class="rt-co-meta">${where} · ${meta}</span>
         </span>
-        <span class="rt-co-pills"><span class="rt-pill">${esc(r.status_label)}</span></span>
+        <span class="rt-co-pills">${r.source === 'link' ? `<span class="rt-pill rt-pill--waiting">${esc(r.source_label)}</span>` : ''}<span class="rt-pill">${esc(r.status_label)}</span></span>
       </a>`
   }
 
@@ -147,7 +150,9 @@ export class RequestsView {
         <div class="rt-head-main">
           <h1 class="rt-title">${esc(r.title)}</h1>
           <div class="rt-summary">
-            <a href="#retainers/${r.company_id}" data-rq-link="#retainers/${r.company_id}">${esc(r.company)}</a>
+            ${r.project_id
+              ? `<a href="#projects/${r.project_id}/worklist" data-rq-link="#projects/${r.project_id}/worklist">${esc(r.project)}</a>${r.company && r.company !== r.project ? ` · ${esc(r.company)}` : ''}`
+              : esc(r.company)}
             · sent ${dayMonth(r.sent_at)}${r.sent_by ? ` by ${esc(r.sent_by)}` : ''}
             ${r.wanted_by_display ? ` · wanted by ${esc(r.wanted_by_display)}` : ''}
             · <span class="rt-chip">${esc(r.status_label)}</span>
@@ -156,6 +161,7 @@ export class RequestsView {
       </div>
       <div class="rq-screen">
         <section class="rq-card" aria-label="The request">
+          ${r.source === 'link' ? '<p class="rt-muted"><strong>Sent via the project link.</strong> Whoever opened the link typed the name, and it is not checked.</p>' : ''}
           ${r.detail ? `<p class="rq-detail">${linkify(r.detail)}</p>` : '<p class="rt-muted">No more detail than the title.</p>'}
         </section>
         ${r.status === 'new' ? (this.canEdit ? this._decideHtml() : '<p class="rt-muted">You can read requests, but only editors can answer them.</p>') : this._decidedHtml(r)}
@@ -169,21 +175,25 @@ export class RequestsView {
     const who = r.decided_by ? ` by ${esc(r.decided_by)}` : ''
     if (r.status === 'accepted') {
       return `<section class="rq-card"><p><strong>Accepted</strong>${when}${who}. It is now a deliverable on the client's worklist, and on the owner's task board.</p>
-        <p><a class="btn-primary" href="#retainers/${r.company_id}" data-rq-link="#retainers/${r.company_id}">Open ${esc(r.company)}’s worklist</a></p></section>`
+        ${r.worklist_link ? `<p><a class="btn-primary" href="${esc(r.worklist_link)}" data-rq-link="${esc(r.worklist_link)}">Open it on the project</a></p>` : ''}</section>`
     }
     return `<section class="rq-card"><p><strong>Declined</strong>${when}${who}. The client sees this note:</p>
       <p class="rq-detail">${linkify(r.decline_note || '')}</p></section>`
   }
 
   _decideHtml() {
-    const { request: r, workstreams } = this.detail
+    const { request: r, projects } = this.detail
+    const workstreams = (projects[0]?.workstreams) ?? []
     const users = this.app.allUsers || []
     const lead = this.app.settings?.show_leads && r.lead_id && users.some(u => u.id === r.lead_id) ? r.lead_id : ''
     return `
       <section class="rq-card" aria-labelledby="rq-accept-h">
         <h2 class="rq-h" id="rq-accept-h">Accept</h2>
         <p class="tl-hint">Accepting adds it to the client's worklist and puts it on the owner's task board, owned and dated. Nothing is left waiting here.</p>
+        ${projects.length ? '' : '<p class="tl-msg" data-tone="error">There is no project for this client yet. Make one in Projects, then come back to accept this.</p>'}
         <form class="tl-form" id="rq-accept" novalidate>
+          <div class="tl-field"${projects.length === 1 ? ' hidden' : ''}><label for="rq-project">Project</label>
+            <select id="rq-project">${projects.map(p => `<option value="${p.id}">${esc(p.name)}${p.is_retainer ? ' (retainer)' : ''}</option>`).join('')}</select></div>
           <div class="tl-field"><label for="rq-ws">Workstream</label>
             <select id="rq-ws">
               ${workstreams.map(w => `<option value="${w.id}">${esc(w.title)}</option>`).join('')}
@@ -199,7 +209,7 @@ export class RequestsView {
           <div class="tl-field"><label for="rq-title">Title on the worklist</label>
             <input id="rq-title" maxlength="300" value="${esc(r.title)}" /></div>
           <div class="tl-msg" id="rq-accept-msg" role="alert"></div>
-          <button type="submit" class="btn-primary tl-submit">Accept and add to their worklist</button>
+          <button type="submit" class="btn-primary tl-submit"${projects.length ? '' : ' disabled'}>Accept and add to their worklist</button>
         </form>
       </section>
       <section class="rq-card" aria-labelledby="rq-decline-h">
@@ -215,9 +225,17 @@ export class RequestsView {
   }
 
   _bindDecide(mc) {
-    const { request: r } = this.detail
+    const { request: r, projects } = this.detail
     const wsSelect = mc.querySelector('#rq-ws')
     const newField = mc.querySelector('#rq-newws-field')
+    const projectSelect = mc.querySelector('#rq-project')
+    // The workstreams offered are the chosen project's.
+    const fillWorkstreams = () => {
+      const list = projects.find(p => p.id === projectSelect?.value)?.workstreams ?? []
+      wsSelect.innerHTML = `${list.map(w => `<option value="${w.id}">${esc(w.title)}</option>`).join('')}<option value="__new"${list.length ? '' : ' selected'}>+ A new workstream…</option>`
+      newField.hidden = wsSelect.value !== '__new'
+    }
+    projectSelect?.addEventListener('change', fillWorkstreams)
     wsSelect.addEventListener('change', () => {
       newField.hidden = wsSelect.value !== '__new'
       if (!newField.hidden) mc.querySelector('#rq-newws').focus()
@@ -230,11 +248,13 @@ export class RequestsView {
       const msg = accept.querySelector('#rq-accept-msg')
       const creating = wsSelect.value === '__new'
       const body = {
+        project_id: projectSelect?.value || null,
         owner_id: accept.querySelector('#rq-owner').value || null,
         due_date: accept.querySelector('#rq-due').value || null,
         title: accept.querySelector('#rq-title').value.trim() || null,
         ...(creating ? { new_workstream_title: accept.querySelector('#rq-newws').value.trim() } : { workstream_id: wsSelect.value }),
       }
+      if (!body.project_id) { message(msg, 'Choose the project'); return }
       if (creating && !body.new_workstream_title) { message(msg, 'Name the new workstream'); accept.querySelector('#rq-newws').focus(); return }
       if (!body.owner_id) { message(msg, 'Choose who will do it'); accept.querySelector('#rq-owner').focus(); return }
       if (!body.due_date) { message(msg, 'Give it a date'); accept.querySelector('#rq-due').focus(); return }
@@ -245,7 +265,8 @@ export class RequestsView {
         this.list = null
         this.detail = null
         this.app.toast('Accepted — it’s on their worklist and the owner’s board')
-        this.app.openLink(`#retainers/${result.company_id}`)
+        this.app.refreshRequestCount()
+        this.app.openLink(`#projects/${result.project_id}/worklist/${result.deliverable_id}`)
       } catch (err) {
         submit.disabled = false
         message(msg, err.message || 'Could not accept')
@@ -266,6 +287,7 @@ export class RequestsView {
         this.list = null
         this.detail = null
         this.app.toast('Declined — the client can see your note')
+        this.app.refreshRequestCount()
         this.open(null)
       } catch (err) {
         submit.disabled = false

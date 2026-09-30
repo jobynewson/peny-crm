@@ -4,7 +4,7 @@ import {
   validateResponse, normaliseDeliveryUrl, isFrameIoUrl, normaliseDue, dueDisplay, isOverdue,
   validateWorkstreamInput, validateDeliverableInput, touchesDue,
   requestLabel, validateRequestInput, validateDecline, validateReply, MAX_OPEN_REQUESTS,
-  requestSourceLabel, validateSenderName, COMPANY_TYPES, companyTypeLabel, validateCompanyType, normalisePortalEmails,
+  requestSourceLabel, worklistLink, validateSenderName, COMPANY_TYPES, companyTypeLabel, validateCompanyType, normalisePortalEmails,
   boardColumn, boardChip, isWithClient, statusAfterBoardDrag, DRAG_REFUSALS, BOARD_COLUMNS, validateAccept,
   boardShows, boardCard, compareBoardCards, BOARD_HORIZON_DAYS,
 } from './_retainer-rules.js'
@@ -219,9 +219,9 @@ describe('the task board mapping', () => {
       expect(r.refused).toBe(DRAG_REFUSALS[code])
     }
   })
-  it('the refusals point at the Retainers page, and are one phone-sized line', () => {
+  it('the refusals point at the project’s Worklist tab, and are one phone-sized line', () => {
     for (const msg of Object.values(DRAG_REFUSALS)) {
-      expect(msg).toMatch(/Retainers page|until they answer|until you send/)
+      expect(msg).toMatch(/Worklist tab|until they answer|until you send/)
       expect(msg.length).toBeLessThan(120)
     }
   })
@@ -293,12 +293,13 @@ describe('which deliverables have a board card', () => {
       expect([r.owner_id, r.status, !!r.due_date, r.due_date > '2026-10-27']).toEqual(['u1', 'planned', true, true])
     }
   })
-  it('the card carries the column, muting, chip, due text and a link to the Retainers page', () => {
+  it('the card carries the column, muting, chip, due text and a link to the deliverable on its project’s Worklist tab', () => {
     const c = boardCard(d({ status: 'in_review', round: 2, due_date: '2026-09-27' }), today)
     expect(c).toMatchObject({
       kind: 'deliverable', column: 'doing', muted: true, chip: { label: 'With client · round 2' },
       overdue: true, days_late: 2, link: '#retainers/c1', company: 'DMM', workstream: 'Monthly', in_tray: false,
     })
+    expect(boardCard(d({ project_id: 'p1', project: 'Retainer' }), today)).toMatchObject({ link: '#projects/p1/worklist/d', project: 'Retainer', project_id: 'p1' })
     expect(boardCard(d({ due_date: null }), today)).toMatchObject({ undated: true, due_display: 'No date', overdue: false, days_late: null })
   })
   it('sorts by deadline with undated last', () => {
@@ -345,5 +346,16 @@ describe('portal emails', () => {
     expect(normalisePortalEmails('a@x.com').error.field).toBe('portal_emails')
     expect(normalisePortalEmails(['nope']).error.message).toContain('nope')
     expect(normalisePortalEmails(Array.from({ length: 11 }, (_, i) => `p${i}@x.com`)).error.message).toContain('Up to 10')
+  })
+})
+
+describe('where a deliverable lives', () => {
+  it('is its project\'s Worklist tab with the deliverable open', () => {
+    expect(worklistLink({ project_id: 'p1', company_id: 'c1', id: 'd9' })).toBe('#projects/p1/worklist/d9')
+    expect(worklistLink({ project_id: 'p1' })).toBe('#projects/p1/worklist')
+  })
+  it('falls back to the company\'s old address (the app redirects it), then to Projects', () => {
+    expect(worklistLink({ company_id: 'c1', id: 'd9' })).toBe('#retainers/c1')
+    expect(worklistLink({})).toBe('#projects')
   })
 })
