@@ -1,18 +1,24 @@
 import {
   createContact, updateContact, deleteContact, logActivity, getActivityLog,
 } from '../db/client.js'
-import { companyFieldHtml, bindCompanyField, resolveCompanyField, companyById } from './company-field.js'
+import { companyFieldHtml, bindCompanyField, resolveCompanyField, companyById, rememberCompany } from './company-field.js'
+import { findOrCreateCompany, setCompanyType } from '../api/companies.js'
+import { openPortalPanel, leadLine, openLeadForm } from './company-panels.js'
+import { COMPANY_TYPES, typeLabel, kindOf, groupContacts, linkSuggestions } from '../utils/contact-kind.js'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const AVC = ['av-blue','av-teal','av-coral','av-purple','av-amber','av-green','av-pink']
+// A person's own type, used for someone with no company (the old list).
 const TL  = { brand:'Brand', agency:'Agency', ngo:'NGO', sport:'Sports', corp:'Corporate', subcontractor:'Subcontractor' }
-const TC  = { brand:'tag-brand', agency:'tag-agency', ngo:'tag-ngo', sport:'tag-sport', corp:'tag-corp', subcontractor:'tag-sub' }
+// Colours for the kind of company (and so of the people in it).
+const KC  = { client:'tag-brand', prospect:'tag-agency', subcontractor:'tag-sub', supplier:'tag-sport', other:'tag-corp' }
 
 const ini = c => ((c.first_name?.[0] ?? '') + (c.last_name?.[0] ?? '')).toUpperCase()
 const avc = c => AVC[Math.abs(hashCode(c.id)) % AVC.length]
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')
 const moy = () => { const d = new Date(); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] + ' ' + d.getFullYear() }
+const count = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
 function hashCode(str) {
   let h = 0
@@ -21,48 +27,73 @@ function hashCode(str) {
 }
 
 // ── Contacts view ─────────────────────────────────────────────────────────────
+// Organised by company. The default view is a list of companies, each with a
+// type (client, prospect, subcontractor, supplier, other); a row opens to show
+// its people. "Everyone" is the flat list, for when you know the name but not
+// the company. People with no company are listed under "No company" — and most
+// existing contacts start there — with suggestions to link them that only happen
+// when you say so.
 
 export class ContactsView {
   constructor(app) {
     this.app = app
-    this.filter = 'all'
-    this.view   = 'clients'  // 'clients' | 'subbies'
+    this.view   = 'companies'   // 'companies' | 'everyone'
+    this.type   = 'all'         // 'all' | a company type
+    this.filter = 'all'         // a person's status, in Everyone
     this.search = ''
+    this.expanded = new Set()   // company ids opened in the list
+    this.reviewOpen = false     // the link suggestions
+    this._dismissed = new Set() // suggestions set aside this visit
     this.selectedId = null
     this.editingId = null
     this.noteTargetId = null
+    this.addCompanyName = ''
   }
+
+  get canEdit() { return this.app.permissions?.contacts_edit !== false }
+  get isSuperadmin() { return this.app.appUser?.role === 'superadmin' }
 
   render(mc) {
     mc.innerHTML = this.html()
     this.bind(mc)
   }
 
+  // The four numbers at the top, each a way into the list below.
+  counts() {
+    const { contacts, companies } = this.app
+    const all = companies || []
+    return {
+      companies: all.length,
+      clients: all.filter(c => c.type === 'client').length,
+      subs: all.filter(c => c.type === 'subcontractor').length,
+      none: contacts.filter(p => !p.company_id || !all.some(c => c.id === p.company_id)).length,
+    }
+  }
+
   html() {
-    const { contacts } = this.app
+    const n = this.counts()
+    const pill = (attr, key, label, active) => `<button class="filter-pill ${active ? 'active' : ''}" data-${attr}="${key}">${label}</button>`
     return `
       <div class="stats-row">
-        <div class="stat-card stat-card--link" role="button" tabindex="0" data-stat-view="clients" data-stat-filter="all" title="Show all clients"><div class="stat-label">Clients</div><div class="stat-value">${contacts.filter(c=>c.type!=='subcontractor').length}</div><div class="stat-sub">total</div></div>
-        <div class="stat-card stat-card--link" role="button" tabindex="0" data-stat-view="clients" data-stat-filter="Active" title="Show active clients"><div class="stat-label">Active clients</div><div class="stat-value">${contacts.filter(c=>c.type!=='subcontractor'&&c.status==='Active').length}</div><div class="stat-sub">in live projects</div></div>
-        <div class="stat-card stat-card--link" role="button" tabindex="0" data-stat-view="subbies" data-stat-filter="all" title="Show subcontractors"><div class="stat-label">Subcontractors</div><div class="stat-value">${contacts.filter(c=>c.type==='subcontractor'&&c.status!=='Retired').length}</div><div class="stat-sub">active</div></div>
-        <div class="stat-card stat-card--link" role="button" tabindex="0" data-stat-view="clients" data-stat-filter="Warm" title="Show warm leads"><div class="stat-label">Warm leads</div><div class="stat-value">${contacts.filter(c=>c.type!=='subcontractor'&&c.status==='Warm').length}</div><div class="stat-sub">needs follow-up</div></div>
+        <div class="stat-card stat-card--link" role="button" tabindex="0" data-stat="all" title="Show every company"><div class="stat-label">Companies</div><div class="stat-value">${n.companies}</div><div class="stat-sub">of every kind</div></div>
+        <div class="stat-card stat-card--link" role="button" tabindex="0" data-stat="client" title="Show clients"><div class="stat-label">Clients</div><div class="stat-value">${n.clients}</div><div class="stat-sub">companies</div></div>
+        <div class="stat-card stat-card--link" role="button" tabindex="0" data-stat="subcontractor" title="Show subcontractors"><div class="stat-label">Subcontractors</div><div class="stat-value">${n.subs}</div><div class="stat-sub">companies</div></div>
+        <div class="stat-card stat-card--link" role="button" tabindex="0" data-stat="none" title="Show people with no company"><div class="stat-label">No company</div><div class="stat-value">${n.none}</div><div class="stat-sub">people</div></div>
       </div>
       <div class="panel">
         <div class="panel-header">
-          <span class="panel-title">${this.view==='subbies'?'Subcontractors':'Clients'}</span>
-          <div style="display:flex;gap:4px;margin-right:8px;background:var(--bg-secondary);border-radius:var(--radius-pill);padding:3px">
-            <button class="filter-pill ${this.view==='clients'?'active':''}" data-view="clients" style="border-radius:16px">Clients</button>
-            <button class="filter-pill ${this.view==='subbies'?'active':''}" data-view="subbies" style="border-radius:16px">Subcontractors</button>
+          <span class="panel-title">${this.view === 'everyone' ? 'Everyone' : 'Companies'}</span>
+          <div class="co-switch" role="group" aria-label="View">
+            <button class="filter-pill ${this.view === 'companies' ? 'active' : ''}" data-view="companies" style="border-radius:16px">Companies</button>
+            <button class="filter-pill ${this.view === 'everyone' ? 'active' : ''}" data-view="everyone" style="border-radius:16px">Everyone</button>
           </div>
-          <button class="filter-pill ${this.filter==='all'?'active':''}" data-filter="all">All</button>
-          <button class="filter-pill ${this.filter==='Active'?'active':''}" data-filter="Active">Active</button>
-          ${this.view==='clients' ? `<button class="filter-pill ${this.filter==='Warm'?'active':''}" data-filter="Warm">Warm leads</button>
-          <button class="filter-pill ${this.filter==='Cold'?'active':''}" data-filter="Cold">Cold</button>` :
-          `<button class="filter-pill ${this.filter==='Retired'?'active':''}" data-filter="Retired">Retired</button>`}
+          ${pill('type', 'all', 'All', this.type === 'all')}
+          ${COMPANY_TYPES.map(t => pill('type', t.key, `${t.label}s`.replace('Otherss', 'Other'), this.type === t.key)).join('')}
         </div>
-        <div class="col-header" style="grid-template-columns:2fr 1.4fr 1fr 1fr 90px">
-          <div>Name</div><div>Company</div><div>Type</div><div>Status</div><div></div>
-        </div>
+        ${this.view === 'everyone' ? `
+        <div class="panel-header co-sub">
+          ${['all', 'Active', 'Warm', 'Cold', 'Retired'].map(s => pill('filter', s, s === 'all' ? 'Any status' : s === 'Warm' ? 'Warm leads' : s, this.filter === s)).join('')}
+        </div>` : ''}
         <div id="contact-list">${this.listHTML()}</div>
       </div>
       ${this.modalHTML()}
@@ -70,34 +101,117 @@ export class ContactsView {
     `
   }
 
-  listHTML() {
-    const q = this.search.toLowerCase().trim()
-    const searching = !!q
-    const filtered = this.app.contacts.filter(c => {
-      const matchQ = !q || (c.first_name+' '+c.last_name).toLowerCase().includes(q) || (c.company??'').toLowerCase().includes(q)
-      const matchF = this.filter === 'all' || c.status === this.filter
-      // While searching, query both Clients and Subcontractors regardless of the
-      // active tab so a result from the other tab isn't hidden.
-      const matchV = searching ? true : (this.view === 'subbies' ? c.type === 'subcontractor' : c.type !== 'subcontractor')
-      return matchQ && matchF && matchV
-    })
-    if (!filtered.length) return '<div class="empty-state">No contacts found</div>'
-    return filtered.map(c => `
-      <div class="contact-row ${this.selectedId===c.id?'selected':''}" style="grid-template-columns:2fr 1.4fr 1fr 1fr 90px" data-cid="${c.id}">
+  // A person's row. `showCompany` adds their company (the Everyone view).
+  personRowHTML(c, { showCompany = false } = {}) {
+    const kind = kindOf(c, this.app.companies)
+    return `
+      <div class="contact-row ${this.selectedId === c.id ? 'selected' : ''}" style="grid-template-columns:2fr 1.4fr 1fr 1fr 90px" data-cid="${c.id}">
         <div class="contact-name">
           <div class="avatar ${avc(c)}">${ini(c)}</div>
           <div><div class="name-main">${esc(c.first_name)} ${esc(c.last_name)}</div><div class="name-sub">${esc(c.role)}</div></div>
         </div>
-        <div style="font-size:13px;color:var(--text-secondary)">${esc(c.company)}</div>
-        <div><span class="tag ${TC[c.type]??'tag-corp'}">${TL[c.type]??c.type}</span></div>
+        <div style="font-size:13px;color:var(--text-secondary)">${showCompany ? (companyById(this.app, c.company_id)?.name ? esc(companyById(this.app, c.company_id).name) : (c.company ? `${esc(c.company)} <span class="co-unlinked">(not linked)</span>` : '')) : esc(c.email)}</div>
+        <div><span class="tag ${KC[kind] ?? 'tag-corp'}">${typeLabel(kind)}</span></div>
         <div class="status-cell">
-          <span class="dot dot-${c.status==='Active'?'active':c.status==='Warm'?'warm':c.status==='Retired'?'cold':'cold'}"></span>${c.status}
+          <span class="dot dot-${c.status === 'Active' ? 'active' : c.status === 'Warm' ? 'warm' : 'cold'}"></span>${esc(c.status)}
         </div>
         <div class="actions-cell">
-          <button class="row-btn" data-edit="${c.id}">Edit</button>
-          <button class="row-btn" data-note="${c.id}">+ Note</button>
+          ${this.canEdit ? `<button class="row-btn" data-edit="${c.id}">Edit</button><button class="row-btn" data-note="${c.id}">+ Note</button>` : ''}
         </div>
-      </div>`).join('')
+      </div>`
+  }
+
+  listHTML() {
+    return this.view === 'everyone' ? this.everyoneHTML() : this.companiesHTML()
+  }
+
+  // Everyone: the flat list, searchable by name, role, email or company.
+  everyoneHTML() {
+    const { contacts, companies } = this.app
+    const { groups, none } = groupContacts({ contacts, companies, type: this.type, search: this.search, status: this.filter })
+    const people = [...groups.flatMap(g => g.people), ...none]
+      .sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`, 'en', { sensitivity: 'base' }))
+    if (!people.length) return '<div class="empty-state">No one found</div>'
+    return `
+      <div class="col-header" style="grid-template-columns:2fr 1.4fr 1fr 1fr 90px"><div>Name</div><div>Company</div><div>Kind</div><div>Status</div><div></div></div>
+      ${people.map(c => this.personRowHTML(c, { showCompany: true })).join('')}`
+  }
+
+  companiesHTML() {
+    const { contacts, companies } = this.app
+    const { groups, none } = groupContacts({ contacts, companies, type: this.type, search: this.search })
+    const suggestions = this.search ? [] : linkSuggestions(contacts, companies).filter(s => !this._dismissed.has(s.key))
+    const banner = suggestions.length && this.canEdit ? `
+      <div class="co-banner" role="status">
+        <span>${count(suggestions.length, 'company name')} typed on people aren’t linked to a company yet.</span>
+        <button type="button" class="btn-secondary" data-review>${this.reviewOpen ? 'Hide suggestions' : 'Review them'}</button>
+      </div>
+      ${this.reviewOpen ? this.suggestionsHTML(suggestions) : ''}` : ''
+    if (!groups.length && !none.length) return `${banner}<div class="empty-state">${this.search ? 'Nothing matches' : 'No companies yet. Add a contact and type a company, and it appears here.'}</div>`
+    return `
+      ${banner}
+      ${groups.map(g => this.companyHTML(g)).join('')}
+      ${none.length ? `
+        <div class="co-group co-group--none">
+          <div class="co-row co-row--static"><span class="co-name">No company</span><span class="co-meta">${count(none.length, 'person', 'people')}</span></div>
+          <div class="co-body">${none.map(c => this.personRowHTML(c)).join('')}</div>
+        </div>` : ''}`
+  }
+
+  companyHTML({ company, people, kind, open }) {
+    const isOpen = this.expanded.has(company.id) || open
+    const projects = (this.app.projects || []).filter(p => p.company_id === company.id).length
+    return `
+      <div class="co-group" data-co="${company.id}">
+        <div class="co-row" role="button" tabindex="0" aria-expanded="${isOpen}" data-co-toggle="${company.id}">
+          <span class="co-chevron${isOpen ? ' co-chevron--open' : ''}" aria-hidden="true">▶</span>
+          <span class="co-name">${esc(company.name)}${company.sector ? ` <span class="co-sector">${esc(company.sector)}</span>` : ''}</span>
+          <span class="tag ${KC[kind] ?? 'tag-corp'}">${typeLabel(kind)}</span>
+          ${company.type_reviewed ? '' : '<span class="co-check" title="The type was worked out from its people. Open it to confirm.">check type</span>'}
+          <span class="co-meta">${count(people.length, 'person', 'people')}${projects ? ` · ${count(projects, 'project')}` : ''}</span>
+        </div>
+        ${isOpen ? this.companyBodyHTML(company, people) : ''}
+      </div>`
+  }
+
+  companyBodyHTML(company, people) {
+    return `
+      <div class="co-body">
+        <div class="co-controls">
+          <label class="co-field">Type
+            <select data-co-type="${company.id}" ${this.canEdit ? '' : 'disabled'}>
+              ${COMPANY_TYPES.map(t => `<option value="${t.key}"${t.key === company.type ? ' selected' : ''}>${t.label}</option>`).join('')}
+            </select></label>
+          <label class="co-field">Sector <span class="tl-optional">(optional)</span>
+            <input data-co-sector="${company.id}" maxlength="60" value="${esc(company.sector)}" placeholder="e.g. Sport" ${this.canEdit ? '' : 'disabled'} /></label>
+          ${this.canEdit && !company.type_reviewed ? `<button type="button" class="btn-secondary" data-co-confirm="${company.id}">Looks right</button>` : ''}
+          ${this.canEdit ? `<button type="button" class="btn-secondary" data-co-add="${company.id}">+ Person</button>` : ''}
+          ${this.isSuperadmin ? `<button type="button" class="btn-secondary" data-co-portal="${company.id}">Portal access</button>` : ''}
+          ${leadLine(this.app, { ...company, lead_name: company.lead_name ?? (this.app.allUsers || []).find(u => u.id === company.lead_id)?.name }, { canEdit: this.canEdit }).replace('data-co-lead', `data-co-lead="${company.id}"`)}
+        </div>
+        ${people.length ? people.map(c => this.personRowHTML(c)).join('') : '<div class="co-empty">No one here yet.</div>'}
+      </div>`
+  }
+
+  // The matches to confirm: one company name at a time, each person ticked by
+  // default. Nothing links until "Link" is pressed.
+  suggestionsHTML(suggestions) {
+    return `<div class="co-suggest">${suggestions.map(s => `
+      <div class="co-suggest-row" data-suggest="${esc(s.key)}">
+        <div class="co-suggest-head">
+          <strong>“${esc(s.name)}”</strong>
+          ${s.company
+            ? `<span class="co-meta">→ link to <strong>${esc(s.company.name)}</strong></span>`
+            : `<span class="co-meta">→ make a new company, type
+                <select data-suggest-type>${COMPANY_TYPES.map(t => `<option value="${t.key}"${t.key === s.suggestedType ? ' selected' : ''}>${t.label}</option>`).join('')}</select></span>`}
+        </div>
+        <div class="co-suggest-people">${s.people.map(p => `
+          <label><input type="checkbox" data-suggest-person="${p.id}" checked /> ${esc(p.first_name)} ${esc(p.last_name)}</label>`).join('')}</div>
+        <div class="co-suggest-actions">
+          <button type="button" class="btn-primary" data-suggest-link>${s.company ? 'Link the ticked people' : 'Make it and link the ticked people'}</button>
+          <button type="button" class="btn-cancel" data-suggest-skip>Not now</button>
+        </div>
+      </div>`).join('')}</div>`
   }
 
   modalHTML(c) {
@@ -121,7 +235,7 @@ export class ContactsView {
             </div>
             <div class="field-row">
               <div class="field"><div class="field-label">Location</div><input id="cf-location" type="text" value="${esc(c?.location)}" /></div>
-              <div class="field"><div class="field-label">Type</div>
+              <div class="field" id="cf-type-field"><div class="field-label">Type <span style="color:var(--text-tertiary);font-weight:400">— a company’s own type decides once they have one</span></div>
                 <select id="cf-type">
                   ${Object.entries(TL).map(([v,l])=>`<option value="${v}" ${c?.type===v?'selected':''}>${l}</option>`).join('')}
                 </select>
@@ -171,7 +285,7 @@ export class ContactsView {
         <div class="detail-name">${esc(c.first_name)} ${esc(c.last_name)}</div>
         <div class="detail-role">${esc(c.role)} · ${companyLine}</div>
         <div class="detail-tags">
-          <span class="tag ${TC[c.type]??'tag-corp'}">${TL[c.type]??c.type}</span>
+          <span class="tag ${KC[kindOf(c, this.app.companies)] ?? 'tag-corp'}">${typeLabel(kindOf(c, this.app.companies))}</span>
           <span class="tag" style="background:var(--bg-secondary);color:var(--text-secondary)">${c.status}</span>
         </div>
       </div>
@@ -226,57 +340,35 @@ export class ContactsView {
       searchEl.addEventListener('input', e => { this.search = e.target.value; this.refreshList() })
     }
 
-    // Filter pills
+    // Companies | Everyone
     mc.querySelectorAll('.filter-pill[data-view]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        this.view = btn.dataset.view
-        this.filter = 'all'
-        // Clear the detail panel if the open contact isn't in the new tab.
-        const sel = this.app.contacts.find(c => c.id === this.selectedId)
-        const inTab = sel && (this.view === 'subbies' ? sel.type === 'subcontractor' : sel.type !== 'subcontractor')
-        if (!inTab) {
-          this.selectedId = null
-          const dp = this.app.container.querySelector('#detail-panel')
-          if (dp) dp.innerHTML = '<div class="detail-empty">Select a contact<br>to view details</div>'
-        }
-        this.render(mc)
-      })
+      btn.addEventListener('click', () => { this.view = btn.dataset.view; this.filter = 'all'; this.render(mc) })
     })
-
-    // Stat cards apply the matching tab + status filter to the list below.
-    mc.querySelectorAll('.stat-card[data-stat-view]').forEach(card => {
-      const apply = () => {
-        this.search = ''
-        this.view = card.dataset.statView
-        this.filter = card.dataset.statFilter
-        const topSearch = document.getElementById('contact-search')
-        if (topSearch) topSearch.value = ''
-        this.render(mc)
-      }
-      card.addEventListener('click', apply)
-      card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); apply() } })
+    // Kind filter and (Everyone) status filter
+    mc.querySelectorAll('.filter-pill[data-type]').forEach(btn => {
+      btn.addEventListener('click', () => { this.type = btn.dataset.type; this.render(mc) })
     })
     mc.querySelectorAll('.filter-pill[data-filter]').forEach(btn => {
       btn.addEventListener('click', () => { this.filter = btn.dataset.filter; this.render(mc) })
     })
 
-    // Row clicks → select contact
-    mc.querySelectorAll('.contact-row[data-cid]').forEach(row => {
-      row.addEventListener('click', e => {
-        if (e.target.closest('button')) return
-        this.selectContact(row.dataset.cid)
-      })
+    // The four numbers are ways into the list.
+    mc.querySelectorAll('.stat-card[data-stat]').forEach(card => {
+      const apply = () => {
+        this.search = ''
+        const topSearch = document.getElementById('contact-search')
+        if (topSearch) topSearch.value = ''
+        const what = card.dataset.stat
+        this.view = 'companies'
+        this.type = what === 'none' ? 'all' : what
+        this.render(mc)
+        if (what === 'none') document.querySelector('.co-group--none')?.scrollIntoView({ block: 'start' })
+      }
+      card.addEventListener('click', apply)
+      card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); apply() } })
     })
 
-    // Edit buttons
-    mc.querySelectorAll('[data-edit]').forEach(btn => {
-      btn.addEventListener('click', e => { e.stopPropagation(); this.openEdit(btn.dataset.edit, mc) })
-    })
-
-    // Note buttons
-    mc.querySelectorAll('[data-note]').forEach(btn => {
-      btn.addEventListener('click', e => { e.stopPropagation(); this.openNoteModal(btn.dataset.note, mc) })
-    })
+    this.bindList(mc)
 
     // Modal close
     mc.querySelectorAll('[data-close]').forEach(btn => {
@@ -293,20 +385,97 @@ export class ContactsView {
     mc.querySelector('#note-save-btn')?.addEventListener('click', () => this.saveNote(mc))
   }
 
-  // Select a contact and show its detail. If it belongs to the other tab
-  // (e.g. found via a cross-tab search), switch to that tab automatically.
+  // Everything inside the list, bound again each time the list is redrawn.
+  bindList(root) {
+    const mc = document.getElementById('main-content') ?? root
+    // A person: select; edit; add a note.
+    root.querySelectorAll('.contact-row[data-cid]').forEach(row => {
+      row.addEventListener('click', e => {
+        if (e.target.closest('button')) return
+        this.selectContact(row.dataset.cid)
+      })
+    })
+    root.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', e => { e.stopPropagation(); this.openEdit(btn.dataset.edit, mc) }))
+    root.querySelectorAll('[data-note]').forEach(btn => btn.addEventListener('click', e => { e.stopPropagation(); this.openNoteModal(btn.dataset.note, mc) }))
+
+    // A company: open or close its people.
+    const toggle = el => {
+      const id = el.dataset.coToggle
+      if (this.expanded.has(id)) this.expanded.delete(id); else this.expanded.add(id)
+      this.refreshList()
+    }
+    root.querySelectorAll('[data-co-toggle]').forEach(el => {
+      el.addEventListener('click', () => toggle(el))
+      el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(el) } })
+    })
+    const company = id => (this.app.companies || []).find(c => c.id === id)
+
+    // Its type and sector save as they are changed; "Looks right" confirms the
+    // type that was worked out.
+    const saveType = async (id, { quiet = false } = {}) => {
+      const c = company(id)
+      const list = document.getElementById('contact-list')
+      const type = list.querySelector(`[data-co-type="${id}"]`).value
+      const sector = list.querySelector(`[data-co-sector="${id}"]`).value
+      try {
+        const updated = await setCompanyType(id, type, sector)
+        Object.assign(c, updated)
+        if (!quiet) this.app.toast(`${c.name}: ${typeLabel(type)}`)
+        this.refreshList()
+      } catch (err) { this.app.toast(err.message || 'Could not save that') }
+    }
+    root.querySelectorAll('[data-co-type]').forEach(el => el.addEventListener('change', () => saveType(el.dataset.coType)))
+    root.querySelectorAll('[data-co-sector]').forEach(el => el.addEventListener('change', () => saveType(el.dataset.coSector, { quiet: true })))
+    root.querySelectorAll('[data-co-confirm]').forEach(el => el.addEventListener('click', () => saveType(el.dataset.coConfirm)))
+    root.querySelectorAll('[data-co-add]').forEach(el => el.addEventListener('click', () => this.openAdd(mc, { company: company(el.dataset.coAdd)?.name })))
+    root.querySelectorAll('[data-co-portal]').forEach(el => el.addEventListener('click', () => openPortalPanel(this.app, el, company(el.dataset.coPortal), { onChange: () => this.refreshList() })))
+    root.querySelectorAll('[data-co-lead]').forEach(el => el.addEventListener('click', () => openLeadForm(this.app, el, company(el.dataset.coLead), { onSaved: () => this.refreshList() })))
+
+    // Suggestions: show them, set one aside, or link the ticked people.
+    root.querySelector('[data-review]')?.addEventListener('click', () => { this.reviewOpen = !this.reviewOpen; this.refreshList() })
+    root.querySelectorAll('[data-suggest]').forEach(row => {
+      const key = row.dataset.suggest
+      row.querySelector('[data-suggest-skip]')?.addEventListener('click', () => { this._dismissed.add(key); this.refreshList() })
+      row.querySelector('[data-suggest-link]')?.addEventListener('click', e => this.applySuggestion(key, row, e.currentTarget))
+    })
+  }
+
+  // One confirmed suggestion: link the ticked people to the company, making it
+  // first if it doesn't exist. Nobody is linked that wasn't ticked.
+  async applySuggestion(key, row, button) {
+    const s = linkSuggestions(this.app.contacts, this.app.companies).find(x => x.key === key)
+    const ids = [...row.querySelectorAll('[data-suggest-person]:checked')].map(el => el.dataset.suggestPerson)
+    if (!s || !ids.length) { this.app.toast('Tick at least one person'); return }
+    button.disabled = true
+    try {
+      const type = row.querySelector('[data-suggest-type]')?.value
+      const target = s.company ?? await findOrCreateCompany(s.name, type)
+      rememberCompany(this.app, target)
+      for (const id of ids) {
+        const [updated] = await updateContact(this.app.userId, id, { company_id: target.id, company: target.name })
+        const i = this.app.contacts.findIndex(c => c.id === id)
+        if (i >= 0) this.app.contacts[i] = updated
+        logActivity(this.app.userId, 'contact', id, `${updated.first_name} ${updated.last_name}`, `Company: ${target.name}`).catch(console.error)
+      }
+      this.expanded.add(target.id)
+      this.app.toast(`Linked ${count(ids.length, 'person', 'people')} to ${target.name}`)
+      this.render(document.getElementById('main-content'))
+    } catch (err) {
+      console.error(err)
+      button.disabled = false
+      this.app.toast(err.message || 'Could not link them')
+    }
+  }
+
+  // Select a person and show their detail, opening their company in the list.
   selectContact(cid) {
     const c = this.app.contacts.find(x => x.id === cid)
     this.selectedId = cid
-    if (c) {
-      const wantView = c.type === 'subcontractor' ? 'subbies' : 'clients'
-      if (wantView !== this.view) {
-        this.view = wantView
-        this.filter = 'all'
-        this.render(document.getElementById('main-content'))
-        this.showDetail(cid)
-        return
-      }
+    if (c?.company_id && this.view === 'companies' && !this.expanded.has(c.company_id)) {
+      this.expanded.add(c.company_id)
+      this.render(document.getElementById('main-content'))
+      this.showDetail(cid)
+      return
     }
     this.showDetail(cid)
     this.refreshList()
@@ -314,20 +483,9 @@ export class ContactsView {
 
   refreshList() {
     const list = document.getElementById('contact-list')
-    if (list) list.innerHTML = this.listHTML()
-    // Re-bind row events
-    list?.querySelectorAll('.contact-row[data-cid]').forEach(row => {
-      row.addEventListener('click', e => {
-        if (e.target.closest('button')) return
-        this.selectContact(row.dataset.cid)
-      })
-    })
-    list?.querySelectorAll('[data-edit]').forEach(btn => {
-      btn.addEventListener('click', e => { e.stopPropagation(); this.openEdit(btn.dataset.edit, document.getElementById('main-content')) })
-    })
-    list?.querySelectorAll('[data-note]').forEach(btn => {
-      btn.addEventListener('click', e => { e.stopPropagation(); this.openNoteModal(btn.dataset.note, document.getElementById('main-content')) })
-    })
+    if (!list) return
+    list.innerHTML = this.listHTML()
+    this.bindList(list)
   }
 
   showDetail(id) {
@@ -387,7 +545,8 @@ export class ContactsView {
     })
   }
 
-  openAdd(mc) {
+  // `company` (a name) pre-fills the company, from a company's "+ Person".
+  openAdd(mc, { company = '' } = {}) {
     this.editingId = null
     mc.querySelector('#contact-modal-title').textContent = 'New contact'
     ;['first','last','role','company','email','phone','location'].forEach(f => {
@@ -395,8 +554,9 @@ export class ContactsView {
       if (el) el.value = ''
     })
     const companyInput = mc.querySelector('#cf-company')
-    if (companyInput) companyInput.dataset.linked = ''
+    if (companyInput) { companyInput.dataset.linked = ''; companyInput.value = company }
     bindCompanyField(companyInput, this.app.companies)
+    if (company && companyInput) companyInput.dataset.touched = '1'
     mc.querySelector('#cf-type').value = 'brand'
     mc.querySelector('#cf-status').value = 'Active'
     mc.querySelector('#contact-modal')?.classList.add('open')
@@ -466,7 +626,8 @@ export class ContactsView {
       // undefined = leave the link alone; null = no company; else link to it.
       // The old text column keeps the linked company's name for its readers.
       const companyInput = mc.querySelector('#cf-company')
-      const linked = await resolveCompanyField(this.app, companyInput, { isNew: !this.editingId })
+      // A subcontractor added with a new company makes it a subcontractor company.
+      const linked = await resolveCompanyField(this.app, companyInput, { isNew: !this.editingId, type: data.type === 'subcontractor' ? 'subcontractor' : undefined })
       if (linked !== undefined) {
         data.company_id = linked?.id ?? null
         data.company    = linked?.name ?? null

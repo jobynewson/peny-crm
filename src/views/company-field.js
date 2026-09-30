@@ -68,11 +68,14 @@ export const companyFieldTouched = (input, { isNew }) => isNew || input?.dataset
 //   undefined — leave the record's company as it is (untouched existing record)
 //   null      — no company (the field was cleared)
 //   company   — link to this one ({ id, name, … })
-export async function resolveCompanyField(app, input, { isNew }) {
+//
+// `type` is what a company made here should be (only when it doesn't exist yet);
+// without it a new company starts as an unconfirmed Client.
+export async function resolveCompanyField(app, input, { isNew, type }) {
   if (!input || !companyFieldTouched(input, { isNew })) return undefined
   const name = input.value.replace(/\s+/g, ' ').trim()
   if (!name) return null
-  const company = await findOrCreateCompany(name)
+  const company = await findOrCreateCompany(name, type)
   rememberCompany(app, company)
   return company
 }

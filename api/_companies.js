@@ -5,7 +5,7 @@
 // NOT a Vercel function — the `_` prefix keeps it out of function detection.
 
 import { UUID, fail, invalid, readBody, workspaceId } from './_api.js'
-import { isUuid } from './_retainer-rules.js'
+import { isUuid, validateCompanyType, COMPANY_TYPES } from './_retainer-rules.js'
 import { PORTAL_ROUTES } from './_portal-access.js'
 import { leadsShown } from './_leads.js'
 
@@ -34,7 +34,7 @@ export const ROUTES = [
 async function listCompanies(req, res, { sql }) {
   const ws = await workspaceId(sql)
   const companies = await sql`
-    SELECT id, name, clerk_org_id, lead_id, created_at, updated_at
+    SELECT id, name, clerk_org_id, lead_id, type, sector, type_reviewed, created_at, updated_at
     FROM companies
     WHERE user_id = ${ws}
     ORDER BY lower(name)
@@ -61,15 +61,20 @@ async function findOrCreateCompany(req, res, { sql, user }) {
   // leads are switched on a new company's lead is whoever created it, so none
   // starts without one; with them off it isn't given one (api/_leads.js).
   const leadId = (await leadsShown(sql)) ? user.id : null
+  // A type chosen when making it counts as confirmed; otherwise it starts as a
+  // Client, unconfirmed, for someone to check.
+  const chosen = body.type === undefined ? null : body.type
+  if (chosen !== null && !COMPANY_TYPES.includes(chosen)) return invalid(res, 'type', 'Choose what kind of company this is')
   const [created] = await sql`
-    INSERT INTO companies (user_id, name, lead_id) VALUES (${ws}, ${name}, ${leadId})
+    INSERT INTO companies (user_id, name, lead_id, type, type_reviewed)
+    VALUES (${ws}, ${name}, ${leadId}, ${chosen ?? 'client'}, ${chosen !== null})
     ON CONFLICT (user_id, lower(name)) DO NOTHING
-    RETURNING id, name, clerk_org_id, lead_id, created_at, updated_at
+    RETURNING id, name, clerk_org_id, lead_id, type, sector, type_reviewed, created_at, updated_at
   `
   if (created) return res.status(201).json({ company: created, created: true })
 
   const [existing] = await sql`
-    SELECT id, name, clerk_org_id, lead_id, created_at, updated_at
+    SELECT id, name, clerk_org_id, lead_id, type, sector, type_reviewed, created_at, updated_at
     FROM companies
     WHERE user_id = ${ws} AND lower(name) = lower(${name})
     LIMIT 1
@@ -80,22 +85,42 @@ async function findOrCreateCompany(req, res, { sql, user }) {
 }
 
 // ── PATCH /api/companies/:id ─────────────────────────────────────────────────
-// { lead_id } — who hears about this company's work when a deliverable has no
-// owner. It has to be a Slate user, and it can't be cleared: a lead is always
-// set once someone has set it.
+// Either or both of:
+//   { lead_id }        who hears about this company's work when a deliverable
+//                      has no owner. A Slate user; can't be cleared once set.
+//   { type, sector? }  what kind of company it is (client, prospect,
+//                      subcontractor, supplier, other) and an optional sector
+//                      ("Sport", "NGO"). Setting the type confirms it.
+// Only what is sent is written.
 async function updateCompany(req, res, { sql, params }) {
   const body = readBody(req)
   if (!body) return invalid(res, 'body', 'Request body is not valid JSON')
-  if (!isUuid(body.lead_id)) return invalid(res, 'lead_id', 'Choose who leads this company')
+  const setsLead = Object.prototype.hasOwnProperty.call(body, 'lead_id')
+  const setsType = Object.prototype.hasOwnProperty.call(body, 'type') || Object.prototype.hasOwnProperty.call(body, 'sector')
+  if (!setsLead && !setsType) return invalid(res, 'body', 'Nothing to change')
+
+  if (setsLead && !isUuid(body.lead_id)) return invalid(res, 'lead_id', 'Choose who leads this company')
+  if (setsType) {
+    const bad = validateCompanyType(body)
+    if (bad) return invalid(res, bad.field, bad.message)
+  }
 
   const ws = await workspaceId(sql)
-  const [lead] = await sql`SELECT id FROM app_users WHERE id = ${body.lead_id}`
-  if (!lead) return invalid(res, 'lead_id', 'Choose someone on the team')
+  if (setsLead) {
+    const [lead] = await sql`SELECT id FROM app_users WHERE id = ${body.lead_id}`
+    if (!lead) return invalid(res, 'lead_id', 'Choose someone on the team')
+  }
+  const sector = typeof body.sector === 'string' && body.sector.trim() ? body.sector.trim() : null
 
   const [company] = await sql`
-    UPDATE companies SET lead_id = ${lead.id}, updated_at = NOW()
+    UPDATE companies SET
+      lead_id       = CASE WHEN ${setsLead} THEN ${setsLead ? body.lead_id : null}::uuid ELSE lead_id END,
+      type          = CASE WHEN ${setsType} THEN ${setsType ? body.type : null} ELSE type END,
+      sector        = CASE WHEN ${setsType} THEN ${sector} ELSE sector END,
+      type_reviewed = CASE WHEN ${setsType} THEN true ELSE type_reviewed END,
+      updated_at    = NOW()
     WHERE id = ${params.id} AND user_id = ${ws}
-    RETURNING id, name, clerk_org_id, lead_id, created_at, updated_at
+    RETURNING id, name, clerk_org_id, lead_id, type, sector, type_reviewed, created_at, updated_at
   `
   if (!company) return fail(res, 404, 'not_found', 'Company not found')
   return res.status(200).json({ company })

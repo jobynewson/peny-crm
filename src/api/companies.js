@@ -8,8 +8,16 @@ export const listCompanies = () => request('/api/companies').then(r => r.compani
 
 // Whatever is typed resolves to exactly one company: an existing one with the
 // same name (ignoring case and spacing) or a new one. Resolves to the company.
-export const findOrCreateCompany = (name) =>
-  request('/api/companies', { method: 'POST', body: { name } }).then(r => r.company)
+// `type` (client, prospect, subcontractor, supplier, other) is used only when
+// the company is new, and counts as confirmed; without it a new one starts as
+// an unconfirmed Client.
+export const findOrCreateCompany = (name, type) =>
+  request('/api/companies', { method: 'POST', body: type ? { name, type } : { name } }).then(r => r.company)
+
+// What kind of company it is, and an optional sector. Confirms the type.
+// Resolves to the company.
+export const setCompanyType = (id, type, sector = null) =>
+  request(`/api/companies/${id}`, { method: 'PATCH', body: { type, sector } }).then(r => r.company)
 
 // Who leads a company: hears about its work when a deliverable has no owner.
 // Resolves to the company.

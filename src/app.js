@@ -602,7 +602,7 @@ export class App {
   topbarSearch() {
     if (this.currentView === 'tasks') return this.tasksView.toolbarFiltersHtml()
     if (this.currentView !== 'contacts') return ''
-    return `<div class="search-wrap"><label for="contact-search" class="visually-hidden">Search contacts</label><span class="search-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg></span><input type="text" id="contact-search" placeholder="Search contacts…" /></div>`
+    return `<div class="search-wrap"><label for="contact-search" class="visually-hidden">Search companies and people</label><span class="search-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg></span><input type="text" id="contact-search" placeholder="Search companies and people…" /></div>`
   }
 
   topbarButton() {

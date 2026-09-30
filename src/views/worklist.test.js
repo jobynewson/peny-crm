@@ -54,9 +54,9 @@ describe('the Worklist tab', () => {
     expect(painted(page({ company: null })).html).not.toContain('data-rt-portal')
   })
 
-  it('hides the lead unless a superadmin has turned leads on', () => {
+  it('does not show the lead here at all: it lives on the company, in Contacts', () => {
     expect(painted(page()).html).not.toContain('No lead')
-    expect(painted(page(), app({ settings: { show_leads: true } })).html).toContain('No lead set')
+    expect(painted(page(), app({ settings: { show_leads: true } })).html).not.toContain('No lead')
   })
 
   it('offers to attach a company\'s older workstreams, to editors only, and names them', () => {

@@ -93,6 +93,52 @@ describeDb('companies', () => {
     await sql`DELETE FROM contacts WHERE id = ${c.id}`
   })
 
+  describe('the type', () => {
+    it('a new company starts as an unconfirmed client, or as the type it was made with, confirmed', async () => {
+      const a = await call('POST', { name: 'Plain Ltd' })
+      expect(a.body.company).toMatchObject({ type: 'client', sector: null, type_reviewed: false })
+      const b = await call('POST', { name: 'Crew Ltd', type: 'subcontractor' })
+      expect(b.body.company).toMatchObject({ type: 'subcontractor', type_reviewed: true })
+      // matching an existing one doesn't change it
+      const again = await call('POST', { name: 'CREW  ltd', type: 'supplier' })
+      expect(again.body.company).toMatchObject({ id: b.body.company.id, type: 'subcontractor' })
+      const bad = await call('POST', { name: 'Odd Ltd', type: 'brand' })
+      expect([bad.statusCode, bad.body.error.field]).toEqual([422, 'type'])
+      expect((await sql`SELECT count(*)::int AS n FROM companies WHERE name = 'Odd Ltd'`)[0].n).toBe(0)
+    })
+
+    it('an editor sets the type and sector, which confirms it, and they come back in the list', async () => {
+      const { body } = await call('POST', { name: 'Kit Hire' })
+      const r = await call('PATCH', { type: 'supplier', sector: '  Equipment ' }, body.company.id)
+      expect(r.statusCode).toBe(200)
+      expect(r.body.company).toMatchObject({ type: 'supplier', sector: 'Equipment', type_reviewed: true })
+      const list = await call('GET')
+      expect(list.body.companies[0]).toMatchObject({ name: 'Kit Hire', type: 'supplier', sector: 'Equipment', type_reviewed: true })
+      const cleared = await call('PATCH', { type: 'supplier' }, body.company.id)
+      expect(cleared.body.company.sector).toBeNull()
+    })
+
+    it('refuses a type outside the list, an over-long sector, an empty change, a viewer and another company', async () => {
+      const { body } = await call('POST', { name: 'Kit Hire' })
+      for (const [patch, field] of [[{ type: 'brand' }, 'type'], [{ type: '' }, 'type'], [{ sector: 'Sport' }, 'type'], [{ type: 'client', sector: 'x'.repeat(61) }, 'sector'], [{}, 'body']]) {
+        const r = await call('PATCH', patch, body.company.id)
+        expect([r.statusCode, r.body.error.field], JSON.stringify(patch)).toEqual([422, field])
+      }
+      expect((await sql`SELECT type, type_reviewed FROM companies WHERE id = ${body.company.id}`)[0]).toEqual({ type: 'client', type_reviewed: false })
+      expect((await call('PATCH', { type: 'supplier' }, '11111111-1111-4111-8111-111111111111')).statusCode).toBe(404)
+      CURRENT = { id: ana.id, role: 'viewer' }
+      expect((await call('PATCH', { type: 'supplier' }, body.company.id)).statusCode).toBe(403)
+    })
+
+    it('setting the lead leaves the type alone, and setting the type leaves the lead alone', async () => {
+      const { body } = await call('POST', { name: 'Both Ltd', type: 'prospect' })
+      await call('PATCH', { lead_id: bea.id }, body.company.id)
+      expect((await sql`SELECT type, lead_id FROM companies WHERE id = ${body.company.id}`)[0]).toEqual({ type: 'prospect', lead_id: bea.id })
+      await call('PATCH', { type: 'client' }, body.company.id)
+      expect((await sql`SELECT type, lead_id FROM companies WHERE id = ${body.company.id}`)[0]).toEqual({ type: 'client', lead_id: bea.id })
+    })
+  })
+
   describe('the lead', () => {
     beforeEach(() => setShowLeads(sql, true))
     afterAll(() => setShowLeads(sql, false))

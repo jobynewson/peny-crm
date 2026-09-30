@@ -2,6 +2,7 @@ import { createProject, updateProject, deleteProject, renumberProjectKanban, lin
 import { companyFieldHtml, bindCompanyField, setCompanyField, resolveCompanyField, companyById } from './company-field.js'
 import { PostProductionView } from './post-production.js'
 import { Worklist } from './worklist.js'
+import { isSubcontractor } from '../utils/contact-kind.js'
 import { getProjectCounts } from '../api/retainers.js'
 import { timeLogFormHtml, bindTimeLogForm } from './time-log.js'
 import { icon } from './icons.js'
@@ -409,7 +410,7 @@ export class ProjectsView {
               <div class="field-label">Client</div>
               <select id="pf-client">
                 <option value="">— no client —</option>
-                ${contacts.filter(c=>c.type!=='subcontractor').map(c=>`<option value="${c.id}">${esc(c.first_name)} ${esc(c.last_name)} — ${esc(c.company)}</option>`).join('')}
+                ${contacts.filter(c=>!isSubcontractor(c, this.app.companies)).map(c=>`<option value="${c.id}">${esc(c.first_name)} ${esc(c.last_name)} — ${esc(c.company)}</option>`).join('')}
               </select>
             </div>
 
@@ -3946,7 +3947,7 @@ export class ProjectsView {
                 <div class="proj-field-label">Client</div>
                 <select class="proj-input" id="pe-client">
                   <option value="">— no client —</option>
-                  ${contacts.filter(c=>c.type!=='subcontractor').map(c=>`<option value="${c.id}" ${p.client_id===c.id?'selected':''}>${esc(c.first_name)} ${esc(c.last_name)} — ${esc(c.company)}</option>`).join('')}
+                  ${contacts.filter(c=>!isSubcontractor(c, this.app.companies)).map(c=>`<option value="${c.id}" ${p.client_id===c.id?'selected':''}>${esc(c.first_name)} ${esc(c.last_name)} — ${esc(c.company)}</option>`).join('')}
                 </select>
               </div>
               <div>
@@ -4119,7 +4120,7 @@ export class ProjectsView {
                 </select>
               </div>` : ''}
               ${(this._peCrewTab||'crew')==='crew' ? (() => {
-                const subbies = (this.app.contacts||[]).filter(c => c.type === 'subcontractor' && c.status !== 'Retired' && !crew.some(cr => cr.name === (c.first_name+' '+c.last_name).trim()))
+                const subbies = (this.app.contacts||[]).filter(c => isSubcontractor(c, this.app.companies) && c.status !== 'Retired' && !crew.some(cr => cr.name === (c.first_name+' '+c.last_name).trim()))
                 return subbies.length ? `
                 <div style="padding:10px 0;border-bottom:1px solid var(--border-light);display:flex;gap:8px;align-items:center">
                   <select id="pe-add-sub-select" style="flex:1;font-size:12px;padding:5px 8px;border:1px solid var(--border-med);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);outline:none">

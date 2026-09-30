@@ -453,7 +453,7 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
 - Vercel auto-deploys (configure env vars in dashboard first)
 
 ## Available Views/Modules
-- `contacts.js` - Contact management
+- `contacts.js` - Contacts, by company (see "Companies" below)
 - `projects.js` - Project management. Its kanban (pipeline by stage, plus a
   Retainer lane) is one of three separate kanban implementations — see
   "Kanban boards" below. Project tabs: Overview, Shoots, Post Production,
@@ -799,6 +799,34 @@ always the source of truth and nothing is ever read back from Google.
 - `app.companies` is loaded at boot from `GET /api/companies`; the field
   keeps it current as companies are created. There is no rename, merge or
   delete screen yet, so a typo makes a stray company.
+- **Companies have a type** (`drizzle/0037`): client, prospect, subcontractor,
+  supplier, other, plus an optional `sector` ("Sport"). It was worked out once,
+  on migration, from the company's linked contacts (all subcontractors =>
+  subcontractor, else client) and stays `type_reviewed = false` until a person
+  confirms or changes it (`PATCH /api/companies/:id { type, sector }`; "Looks
+  right" on the Contacts page). A company made with a type chosen
+  (`POST { name, type }`) is confirmed. The list is in `api/_retainer-rules.js`
+  and mirrored in `src/utils/contact-kind.js` (a test compares the two).
+- **Contacts are organised by company** (`src/views/contacts.js`; logic in
+  `src/utils/contact-kind.js`, unit-tested). Default view: companies, each
+  closed to its people, filterable by type; "Everyone" is the flat, searchable
+  list. People with no company are listed under **No company**, never hidden
+  (most existing contacts start there). A person's **kind** is their company's
+  type when they have one, else their own `type` (subcontractor or the client
+  side): `kindOf()` / `isSubcontractor()`, which the project client picker and
+  the subcontractor crew picker use. The person's own Type still exists for
+  people with no company; a new subcontractor typed with a new company makes it
+  a subcontractor company.
+- **Link suggestions** turn old free-text company names into links, only on
+  confirmation: people whose `company` text matches an existing company (ignoring
+  case and spacing), or would make a new one, grouped by name with each person
+  ticked; "Link the ticked people" does it, "Not now" sets it aside for the
+  visit. Nothing is linked by anyone but a person pressing that.
+- Company-level controls live on the company's row in Contacts, open on phones
+  too (the side panel isn't): type and sector, "+ Person", **Portal access**
+  (superadmins) and the lead (only while leads are on), via
+  `src/views/company-panels.js`, which the project's Worklist tab shares for
+  Portal access.
 
 ### Email: one notification path
 - **Every email goes through `notify()` in `api/_notify.js`** — reminders,
