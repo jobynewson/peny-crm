@@ -3170,3 +3170,7 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 .tk-m-row--request { border-left: 3px solid var(--accent); }
 .rq-detail { margin: 8px 0; font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .rq-actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+
+/* Testing mode reminder in the header */
+.hdr-test { display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 999px; background: #fff3c4; color: #6b5600; border: 1px solid #e6c84a; font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.hdr-test:hover { background: #ffe98a; }

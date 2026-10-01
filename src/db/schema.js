@@ -56,6 +56,9 @@ export const settings = pgTable('settings', {
   fx_markup_pct: numeric('fx_markup_pct', { precision: 5, scale: 2 }).notNull().default('3'),
   // Company leads are hidden until a superadmin turns this on (drizzle/0037).
   show_leads: boolean('show_leads').notNull().default(false),
+  // Testing mode (drizzle/0043): the worklist/portal emails go to test_emails instead.
+  test_mode: boolean('test_mode').notNull().default(false),
+  test_emails: jsonb('test_emails').notNull().default([]),
   ...timestamps,
 })
 

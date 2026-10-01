@@ -16,12 +16,12 @@ export const KINDS = {
   due_digest: {
     label: "What's due",
     description: 'Weekday email at 09:00 with your work that is overdue or due soon.',
-    switchable: true, default: true,
+    switchable: true, default: true, testable: true,
   },
   task_assigned: {
     label: 'Tasks assigned to you',
     description: 'An email as soon as someone gives you a task.',
-    switchable: true, default: true,
+    switchable: true, default: true, testable: true,
   },
   task_mentioned: {
     label: 'Mentions',
@@ -45,41 +45,44 @@ export const KINDS = {
   alert_new_request: {
     label: 'New client requests',
     description: 'An email as soon as a client raises a request.',
-    switchable: true, default: true,
+    switchable: true, default: true, testable: true,
   },
   alert_changes_requested: {
     label: 'Changes requested',
     description: 'An email when a client asks for changes to a delivery.',
-    switchable: true, default: true,
+    switchable: true, default: true, testable: true,
   },
   alert_comments_in: {
     label: 'Comments are in',
     description: 'An email when a client says their feedback on a delivery is complete (and if they take it back).',
-    switchable: true, default: true,
+    switchable: true, default: true, testable: true,
   },
   alert_client_reply: {
     label: 'Client replies',
     description: 'An email when a client replies on an item that is waiting on them.',
-    switchable: true, default: true,
+    switchable: true, default: true, testable: true,
   },
   alert_due_soon: {
     label: 'Due within 48 hours',
     description: 'An email, once, when a deliverable is due within 48 hours and is not in review yet.',
-    switchable: true, default: true,
+    switchable: true, default: true, testable: true,
   },
   alert_input_overdue: {
     label: 'Client input overdue',
     description: 'An email, once, when an item has been waiting on a client for over a week.',
-    switchable: true, default: true,
+    switchable: true, default: true, testable: true,
   },
   task_nudge:        { label: 'Unacknowledged task nudge', switchable: false },
   // To the client, each with their own Approve link. Clients have no settings
   // page, so it always sends.
-  delivery_ready:    { label: 'A delivery is ready for review', switchable: false },
+  delivery_ready:    { label: 'A delivery is ready for review', switchable: false, testable: true },
   leave:             { label: 'Leave requests and decisions', switchable: false },
   expense_digest:    { label: 'Monthly expense summary', switchable: false },
   expense_submitted: { label: 'Expenses submitted early', switchable: false },
 }
+
+// The emails Testing mode redirects: the ones about the worklist and portal work.
+export const TESTABLE_KINDS = Object.entries(KINDS).filter(([, k]) => k.testable).map(([kind]) => kind)
 
 // The kinds a person can change, in Settings order.
 export const switchableKinds = ({ superadmin = false } = {}) =>
@@ -117,6 +120,34 @@ async function storedSettings(sql, kind, clerkIds) {
   return new Map(rows.map(r => [r.clerk_user_id, r.email]))
 }
 
+// ── Testing mode ─────────────────────────────────────────────────────────────
+// While Settings › Testing is on, the emails above go to the chosen test
+// addresses instead of the people they are for: one copy per intended recipient,
+// the subject says who it would have gone to, and a banner at the top says so.
+// Their own notification switches still apply (a muted email is not sent to the
+// tester either). If testing is on with nobody chosen, they are held back, not
+// sent: a switch that is on must never fall through to real people.
+
+// The routing in force: { emails } while testing is on, else null. A database
+// that has not had migration 0043 yet simply reads as off.
+export async function testRouting(sql) {
+  try {
+    const [row] = await sql`SELECT test_mode, test_emails FROM settings WHERE test_mode = true LIMIT 1`
+    if (!row?.test_mode) return null
+    const emails = Array.isArray(row.test_emails) ? row.test_emails : []
+    return { emails: [...new Set(emails.filter(e => typeof e === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim())).map(e => e.trim()))] }
+  } catch { return null }
+}
+
+export const testSubject = (subject, intendedFor) => `[TEST → ${intendedFor}] ${subject}`
+
+// The banner goes just inside <body> when there is one, else at the very top.
+export function testBanner(html, intendedFor) {
+  const banner = `<div style="background:#fff7d6;border:1px solid #e6c84a;color:#6b5600;padding:10px 14px;margin:0 0 12px;font:13px/1.4 -apple-system,Segoe UI,sans-serif">Testing mode: this email would have gone to <strong>${String(intendedFor).replace(/&/g, '&amp;').replace(/</g, '&lt;')}</strong>.</div>`
+  const at = /<body[^>]*>/i.exec(html ?? '')
+  return at ? html.slice(0, at.index + at[0].length) + banner + html.slice(at.index + at[0].length) : banner + (html ?? '')
+}
+
 // Sends one email to each recipient that wants it.
 //   to: a recipient or a list — { email, clerk_id?, name? }. clerk_id is what
 //       their settings are keyed by; without it only the kind's default applies.
@@ -135,13 +166,25 @@ export async function notify(sql, { kind, to, subject, html }) {
     ? await storedSettings(sql, kind, recipients.map(r => r.clerk_id).filter(Boolean))
     : new Map()
 
+  const routing = KINDS[kind].testable ? await testRouting(sql) : null
+
   const results = []
   for (const r of recipients) {
     if (!r.email) { results.push({ to: null, skipped: 'no_email' }); continue }
     if (!wantsEmail(kind, r.clerk_id ? stored.get(r.clerk_id) : undefined)) { results.push({ to: r.email, skipped: 'setting' }); continue }
+    if (routing && !routing.emails.length) { results.push({ to: r.email, skipped: 'test_mode_no_recipients' }); continue }
+    // In testing mode the same email goes to the testers, saying who it was for.
+    const targets = routing ? routing.emails : [r.email]
     try {
-      const info = await mailer().sendMail({ from: process.env.GMAIL_USER, to: r.email, subject, html })
-      results.push({ to: r.email, sent: true, messageId: info?.messageId ?? null })
+      let last = null
+      for (const target of targets) {
+        last = await mailer().sendMail({
+          from: process.env.GMAIL_USER, to: target,
+          subject: routing ? testSubject(subject, r.email) : subject,
+          html: routing ? testBanner(html, r.email) : html,
+        })
+      }
+      results.push({ to: r.email, sent: true, messageId: last?.messageId ?? null, ...(routing ? { redirected_to: targets } : {}) })
     } catch (err) {
       console.error(`[notify] ${kind} to ${r.email} failed:`, err.message)
       results.push({ to: r.email, error: err.message })

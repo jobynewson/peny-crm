@@ -939,6 +939,23 @@ always the source of truth and nothing is ever read back from Google.
   the Worklist tab's send form), so the round, the email and its buttons are
   identical. If the send fails the deliverable just made is removed.
 
+### Testing mode (`drizzle/0043`, Settings › Company › Testing)
+- A superadmin switch (`settings.test_mode`, default off) and a list of addresses
+  (`settings.test_emails`: ticked team members, plus any other address). While it
+  is on, `notify()` (`api/_notify.js`, the one place email is sent) sends the
+  **testable** kinds to those addresses instead of the people they are for:
+  `delivery_ready` (with its real Approve links), every `alert_*`,
+  `task_assigned` and `due_digest`. One copy per intended recipient, subject
+  `[TEST → who@it.was.for]`, a yellow banner at the top of the body. Leave,
+  expenses, mentions, reminders and the rest are untouched.
+- Their notification switches still apply (a person who muted a kind does not
+  cause a test copy). **With testing on and nobody chosen the emails are held back
+  (`skipped: 'test_mode_no_recipients'`), never sent to the real people.** A
+  database that has not had `0043` reads as off.
+- A yellow "Testing mode" chip sits in the header on every page while it is on,
+  linking to Settings, so it is not left on. Guarded in the UI only, like the
+  leads setting (the query proxy checks who, not what).
+
 ### How far ahead dated work shows (7 / 14 / 30 / 60 days)
 - One choice, four values (`WINDOW_DAYS` in `api/_retainer-rules.js`, mirrored in
   `src/utils/window-days.js`; a test compares them). Each screen has its own

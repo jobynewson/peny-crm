@@ -61,6 +61,7 @@ export class HeaderView {
           ${TABS.map(t => `<a class="app-tab" href="${t.href}" data-nav="${t.view}"${t.id === active ? ' aria-current="page"' : ''}${t.id === 'tasks' ? ` aria-label="${esc(this.requestsLabel())}"` : ''}>${t.label}${t.id === 'tasks' ? this.requestsCountHtml() : ''}</a>`).join('')}
         </nav>
         <div class="app-header-actions">
+          ${this.testModeChipHtml()}
           <button type="button" class="hdr-search" id="hdr-search" title="Search or jump to (${mac ? '⌘K' : 'Ctrl K'})" aria-keyshortcuts="${mac ? 'Meta+K' : 'Control+K'}">
             ${icon('search', 16)}<span class="hdr-search-text">Search or jump to…</span><kbd>${mac ? '⌘K' : 'Ctrl K'}</kbd>
           </button>
@@ -143,6 +144,20 @@ export class HeaderView {
       badge.hidden = !n
       badge.textContent = n > 99 ? '99+' : String(n)
     })
+  }
+
+  // A reminder, on every page, that Testing mode is redirecting the work's emails
+  // (Settings › Company › Testing), so it is not left on by mistake.
+  testModeChipHtml() {
+    if (!this.app.settings?.test_mode) return ''
+    const n = (this.app.settings.test_emails || []).length
+    return `<a class="hdr-test" href="#settings" data-nav="settings" data-test-chip title="${n ? `The work’s emails are going to ${n} test address${n === 1 ? '' : 'es'}` : 'The work’s emails are being held back'}. Click to change.">Testing mode</a>`
+  }
+
+  refreshTestMode() {
+    document.querySelectorAll('[data-test-chip]').forEach(el => el.remove())
+    const html = this.testModeChipHtml()
+    if (html) document.querySelector('.app-header-actions')?.insertAdjacentHTML('afterbegin', html)
   }
 
   // Keep the approvals dot and label in step when leave requests change.

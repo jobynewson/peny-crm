@@ -803,6 +803,10 @@ export async function runMigrations() {
   await sql`ALTER TYPE delivery_response ADD VALUE IF NOT EXISTS 'comments_in'`
   await sql`ALTER TYPE deliverable_status ADD VALUE IF NOT EXISTS 'comments_in'`
 
+  // ── Testing mode: redirect the work's emails (drizzle/0043) ─────────────────
+  await sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS test_mode BOOLEAN NOT NULL DEFAULT FALSE`
+  await sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS test_emails JSONB NOT NULL DEFAULT '[]'::jsonb`
+
   // ── Approve can carry a comment (drizzle/0042) ──────────────────────────────
   await sql`ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS approved_comment TEXT`
 

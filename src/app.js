@@ -21,6 +21,7 @@ import { icon } from './views/icons.js'
 import { closeFloating } from './views/popover.js'
 import { searchCommands } from './views/search-commands.js'
 import { mountWhatsDue } from './views/whats-due.js'
+import { testPanelHtml, chosenEmails } from './views/test-mode.js'
 import { legacyRetainersTarget, legacyRequestsTarget } from './utils/worklist-route.js'
 import { matchCommands } from './utils/command-search.js'
 import { segTabs, bindSegTabs } from './views/toolbar.js'
@@ -2438,6 +2439,8 @@ export class App {
           </div>
         </div>` : ''
 
+    const testingPanel = isAdmin ? testPanelHtml(s, this.allUsers) : ''
+
     const budgetPanel = isAdmin ? `
         <div class="panel">
           <div class="panel-header"><span class="panel-title">Budget template</span></div>
@@ -2460,7 +2463,7 @@ export class App {
     if (tab === 'account') {
       mc.innerHTML = grid(`${accountPanel}${notificationsPanel}`)
     } else if (tab === 'company') {
-      mc.innerHTML = grid(`${companyDetailsPanel}${timersPanel}${leadsPanel}`)
+      mc.innerHTML = grid(`${companyDetailsPanel}${timersPanel}${leadsPanel}${testingPanel}`)
     } else if (tab === 'invoicing') {
       mc.innerHTML = grid(`${invoicingDefaultsPanel}${expenseFxPanels}`)
     } else if (tab === 'budget') {
@@ -2487,6 +2490,8 @@ export class App {
     mc.querySelector('#settings-save-expenses-btn')?.addEventListener('click', () => this._saveExpenseSettings(mc))
     mc.querySelector('#settings-save-fx-btn')?.addEventListener('click', () => this._saveFxSettings(mc))
     mc.querySelector('#s-show-leads')?.addEventListener('change', e => this._saveShowLeads(e.target))
+    mc.querySelector('#s-test-mode')?.addEventListener('change', () => this._saveTestMode(mc))
+    mc.querySelector('#s-test-save')?.addEventListener('click', () => this._saveTestMode(mc))
     mc.querySelector('#settings-save-leave-btn')?.addEventListener('click', () => this._saveLeaveSettings(mc))
 
     if (isAdmin && tab === 'users') {
@@ -3078,6 +3083,25 @@ export class App {
       this.settings = updated
       this.toast(show ? 'Company leads are on' : 'Company leads are hidden')
     } catch (e) { console.error(e); box.checked = !show; this.toast('Error saving the setting') }
+  }
+
+  // Testing mode and who the emails go to (api/_notify.js redirects them). Saves as
+  // soon as it is ticked or "Save" is pressed. A superadmin setting, guarded here.
+  async _saveTestMode(mc) {
+    const box = mc.querySelector('#s-test-mode')
+    if (this.appUser?.role !== 'superadmin') { if (box) box.checked = !!this.settings?.test_mode; return }
+    const ticked = [...mc.querySelectorAll('[data-test-user]:checked')].map(el => el.dataset.testUser)
+    const { emails, rejected } = chosenEmails(ticked, mc.querySelector('#s-test-extra')?.value)
+    if (rejected.length) { this.toast(`Not an email address: ${rejected.join(', ')}`); return }
+    const on = !!box?.checked
+    try {
+      const [updated] = await upsertSettings(this.userId, { test_mode: on, test_emails: emails })
+      this.settings = updated
+      const warn = mc.querySelector('#s-test-warn')
+      if (warn) warn.hidden = !(on && !emails.length)
+      this.header?.refreshTestMode?.()
+      this.toast(on ? (emails.length ? `Testing mode is on: emails go to ${emails.join(', ')}` : 'Testing mode is on, but nobody is chosen, so those emails are held back') : 'Testing mode is off. Emails go to the people they are for')
+    } catch (e) { console.error(e); if (box) box.checked = !on; this.toast('Error saving the setting') }
   }
 
   async _saveFxSettings(mc) {

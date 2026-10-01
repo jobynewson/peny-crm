@@ -6,7 +6,7 @@ const sendMail = vi.fn(async ({ to }) => ({ messageId: `id-${to}` }))
 const createTransport = vi.fn(() => ({ sendMail }))
 vi.mock('nodemailer', () => ({ default: { createTransport }, createTransport }))
 
-const { KINDS, switchableKinds, wantsEmail, notify } = await import('./_notify.js')
+const { KINDS, switchableKinds, wantsEmail, notify, TESTABLE_KINDS, testBanner, testSubject } = await import('./_notify.js')
 
 const API = path.dirname(new URL(import.meta.url).pathname)
 
@@ -96,5 +96,87 @@ describe('notify', () => {
   })
   it('refuses a kind it does not know', async () => {
     await expect(notify(sql, { kind: 'spam', to: ana, subject: 'x', html: '' })).rejects.toThrow()
+  })
+})
+
+describe('testing mode', () => {
+  // The settings row, as the testing query would read it.
+  let testRow = null
+  const testSql = async strings => {
+    const text = strings.join('')
+    if (text.includes('test_mode')) return testRow ? [testRow] : []
+    return text.includes('notification_settings') ? rows : []
+  }
+  beforeEach(() => { testRow = null })
+  const sent = () => sendMail.mock.calls.map(([m]) => ({ to: m.to, subject: m.subject, html: m.html }))
+
+  it('redirects only the emails about the worklist and portal work', () => {
+    expect(TESTABLE_KINDS.sort()).toEqual([
+      'alert_changes_requested', 'alert_client_reply', 'alert_comments_in', 'alert_due_soon', 'alert_input_overdue',
+      'alert_new_request', 'delivery_ready', 'due_digest', 'task_assigned',
+    ])
+    for (const kind of ['leave', 'expense_digest', 'expense_submitted', 'note_reminder', 'task_mentioned']) expect(TESTABLE_KINDS).not.toContain(kind)
+  })
+
+  it('sends nothing different while it is off', async () => {
+    const out = await notify(testSql, { kind: 'delivery_ready', to: ana, subject: 'Ready', html: '<p>x</p>' })
+    expect(sent()).toEqual([{ to: 'ana@peny.com', subject: 'Ready', html: '<p>x</p>' }])
+    expect(out[0].redirected_to).toBeUndefined()
+  })
+
+  it('sends one copy per intended person to the testers, saying who it was for', async () => {
+    testRow = { test_mode: true, test_emails: ['joby@peny.com'] }
+    const out = await notify(testSql, { kind: 'delivery_ready', to: [ana, ben], subject: 'Ready for your review', html: '<html><body><p>Hi</p></body></html>' })
+    expect(sent().map(m => [m.to, m.subject])).toEqual([
+      ['joby@peny.com', '[TEST → ana@peny.com] Ready for your review'],
+      ['joby@peny.com', '[TEST → ben@peny.com] Ready for your review'],
+    ])
+    expect(sent()[0].html).toContain('<body><div')
+    expect(sent()[0].html).toContain('would have gone to <strong>ana@peny.com</strong>')
+    expect(sent()[0].html).toContain('<p>Hi</p>')
+    expect(out).toEqual([
+      { to: 'ana@peny.com', sent: true, messageId: 'id-joby@peny.com', redirected_to: ['joby@peny.com'] },
+      { to: 'ben@peny.com', sent: true, messageId: 'id-joby@peny.com', redirected_to: ['joby@peny.com'] },
+    ])
+  })
+
+  it('can send to several testers', async () => {
+    testRow = { test_mode: true, test_emails: ['joby@peny.com', 'sam@peny.com', 'joby@peny.com', 'not an address'] }
+    await notify(testSql, { kind: 'alert_new_request', to: ana, subject: 'New', html: '<p>x</p>' })
+    expect(sent().map(m => m.to)).toEqual(['joby@peny.com', 'sam@peny.com'])
+  })
+
+  it('holds the email back, rather than sending it to the real person, when nobody is chosen', async () => {
+    testRow = { test_mode: true, test_emails: [] }
+    const out = await notify(testSql, { kind: 'delivery_ready', to: [ana], subject: 'Ready', html: '' })
+    expect(sendMail).not.toHaveBeenCalled()
+    expect(out).toEqual([{ to: 'ana@peny.com', skipped: 'test_mode_no_recipients' }])
+  })
+
+  it('still respects a person who has switched that email off', async () => {
+    testRow = { test_mode: true, test_emails: ['joby@peny.com'] }
+    rows = [{ clerk_user_id: 'user_ben', email: false }]
+    const out = await notify(testSql, { kind: 'task_assigned', to: [ana, ben], subject: 'Task', html: '' })
+    expect(sent().map(m => m.subject)).toEqual(['[TEST → ana@peny.com] Task'])
+    expect(out[1]).toEqual({ to: 'ben@peny.com', skipped: 'setting' })
+  })
+
+  it('leaves every other kind of email alone', async () => {
+    testRow = { test_mode: true, test_emails: ['joby@peny.com'] }
+    await notify(testSql, { kind: 'leave', to: ana, subject: 'Leave', html: '' })
+    await notify(testSql, { kind: 'expense_digest', to: ben, subject: 'Expenses', html: '' })
+    expect(sent().map(m => m.to)).toEqual(['ana@peny.com', 'ben@peny.com'])
+  })
+
+  it('reads as off if the database cannot say (not migrated yet)', async () => {
+    const broken = async strings => { if (strings.join('').includes('test_mode')) throw new Error('no such column'); return [] }
+    await notify(broken, { kind: 'delivery_ready', to: ana, subject: 'Ready', html: '' })
+    expect(sent().map(m => m.to)).toEqual(['ana@peny.com'])
+  })
+
+  it('puts the banner at the top when there is no body tag, and escapes the address', () => {
+    expect(testBanner('<p>x</p>', 'a@b.test').startsWith('<div')).toBe(true)
+    expect(testBanner('<p>x</p>', '<i>@b.test')).toContain('&lt;i>@b.test')
+    expect(testSubject('S', 'a@b.test')).toBe('[TEST → a@b.test] S')
   })
 })
