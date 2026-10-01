@@ -31,12 +31,12 @@
     .q-lines td.r { text-align:right; font-variant-numeric:tabular-nums }
     .q-lines tr:last-child td { border-bottom:none }
     .q-line-note { font-size:11px; color:#aaa; margin-top:2px }
-    .q-disc { font-size:11px; color:#e07060 }
     .q-disc-note { font-size:12px; font-style:italic; line-height:1.5; color:#777; padding:2px 0 8px; border-bottom:0.5px solid #f5f5f3; white-space:pre-line }
 
     /* Totals */
     .q-totals { background:#fff; border:0.5px solid #e8e8e4; border-radius:10px; padding:20px 24px; margin-bottom:16px }
     .q-tot-row { display:flex; justify-content:space-between; padding:7px 0; border-bottom:0.5px solid #f5f5f3; font-size:13px }
+    .q-tot-row.big { font-size:15px; font-weight:700; padding:10px 0 }
     .q-tot-row:last-child { border-bottom:none; font-size:15px; font-weight:700; padding-top:12px }
     .q-tot-label { color:#555 }
     .q-tot-val { font-variant-numeric:tabular-nums }
@@ -182,7 +182,6 @@ function render() {
               <td>
                 ${esc(l.item)}
                 ${l.notes?`<div class="q-line-note">${esc(l.notes)}</div>`:''}
-                ${disc>0?`<div class="q-disc">${disc}% discount applied</div>`:''}
               </td>
               <td class="r">${disc>=100?gbp(0):t>0?gbp(t):''}</td>
             </tr>`
@@ -193,8 +192,11 @@ function render() {
   }).join('')
 
   const totalsHTML = `<div class="q-totals">
-    <div class="q-tot-row"><span class="q-tot-label">Net total</span><span class="q-tot-val">${gbp(net)}</span></div>
-    ${discTotal>0 ? `<div class="q-tot-row"><span class="q-tot-label">Includes discount</span><span class="q-tot-val">\u2212${gbp(discTotal)}</span></div>${discNote?`<div class="q-disc-note">${esc(discNote)}</div>`:''}` : ''}
+    ${discTotal>0
+      ? `<div class="q-tot-row big"><span class="q-tot-label">Total before discount</span><span class="q-tot-val">${gbp(net+discTotal)}</span></div>
+    <div class="q-tot-row big"><span class="q-tot-label">Discount</span><span class="q-tot-val">\u2212${gbp(discTotal)}</span></div>${discNote?`<div class="q-disc-note">${esc(discNote)}</div>`:''}
+    <div class="q-tot-row big"><span class="q-tot-label">Net total</span><span class="q-tot-val">${gbp(net)}</span></div>`
+      : `<div class="q-tot-row"><span class="q-tot-label">Net total</span><span class="q-tot-val">${gbp(net)}</span></div>`}
     ${(parseFloat(budget.markup)||0)>0 ? `<div class="q-tot-row"><span class="q-tot-label">Production fee (${budget.markup}%)</span><span class="q-tot-val">${gbp(mu)}</span></div>` : ''}
     ${ins>0 ? `<div class="q-tot-row"><span class="q-tot-label">Insurance (2.5%)</span><span class="q-tot-val">${gbp(ins)}</span></div>` : ''}
     ${custom>0 ? `<div class="q-tot-row"><span class="q-tot-label">Additional (${budget.custom_pct}%)</span><span class="q-tot-val">${gbp(custom)}</span></div>` : ''}

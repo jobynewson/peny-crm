@@ -1333,10 +1333,14 @@ export class BudgetsView {
     const vatVal = b.vat ? afterCustom*0.2 : 0, tot = afterCustom+vatVal
     // Discounts (per-line and master) are already inside the net total; the totals say how much that was.
     const discVal = budDiscount(b), discNote = (b.discount_note||'').trim()
-    const discRowHTML = (rowCls, kCls, vCls = '') => discVal > 0
-      ? `<div class="${rowCls}"><span class="${kCls}">Includes discount</span><span${vCls?` class="${vCls}"`:''}>\u2212${gbpA(discVal)}</span></div>`
-        + (discNote ? `<div class="${rowCls === 'pdf-cover-total-row' ? 'pdf-cover-disc-note' : 'pdf-detail-disc-note'}">${esc(discNote)}</div>` : '')
-      : ''
+    // Cover only: with a discount, the totals lead with Total before discount, the Discount and the Net total,
+    // each as prominent as the Grand total. Per-line discounts and the detail pages never mention it.
+    const coverNetHTML = discVal > 0
+      ? `<div class="pdf-cover-total-row big"><span class="tk">Total before discount</span><span class="tv">${gbpA(net + discVal)}</span></div>
+            <div class="pdf-cover-total-row big"><span class="tk">Discount</span><span class="tv">\u2212${gbpA(discVal)}</span></div>`
+        + (discNote ? `<div class="pdf-cover-disc-note">${esc(discNote)}</div>` : '')
+        + `<div class="pdf-cover-total-row big"><span class="tk">Net total</span><span class="tv">${gbpA(net)}</span></div>`
+      : `<div class="pdf-cover-total-row"><span class="tk">Net total</span><span class="tv">${gbpA(net)}</span></div>`
     const today = new Date()
     const months = ['January','February','March','April','May','June','July','August','September','October','November','December']
     const dateStr = today.getDate()+' '+months[today.getMonth()]+' '+today.getFullYear()
@@ -1359,8 +1363,7 @@ export class BudgetsView {
             ${activeSecs.map(sec=>`<tr><td class="sec-code">${sec.code}</td><td class="sec-name">${sec.label}</td><td class="sec-total">${gbpA(secNet(sec,pdfTr,pdfPr))}</td></tr>`).join('')}
           </tbody></table>
           <div class="pdf-cover-totals">
-            <div class="pdf-cover-total-row"><span class="tk">Net total</span><span class="tv">${gbpA(net)}</span></div>
-            ${discRowHTML('pdf-cover-total-row','tk','tv')}
+            ${coverNetHTML}
             ${(parseFloat(b.markup)||0)>0?`<div class="pdf-cover-total-row"><span class="tk">Production fee (${b.markup}%)</span><span class="tv">${gbpA(mu)}</span></div>`:''}
             ${(parseFloat(b.custom_pct)||0)>0?`<div class="pdf-cover-total-row"><span class="tk">Add-on (${b.custom_pct}%)</span><span class="tv">${gbpA(customVal)}</span></div>`:''}
             ${b.insurance&&insVal>0?`<div class="pdf-cover-total-row"><span class="tk">Insurance (2.5%)</span><span class="tv">${gbpA(insVal)}</span></div>`:""}
@@ -1429,7 +1432,6 @@ export class BudgetsView {
         ${detailSecHTML}
         <div class="pdf-detail-totals">
           <div class="pdf-detail-total-row"><span class="dk">Net total</span><span>${gbpA(net)}</span></div>
-          ${discRowHTML('pdf-detail-total-row','dk')}
           ${(parseFloat(b.markup)||0)>0?`<div class="pdf-detail-total-row"><span class="dk">Production fee (${b.markup}%)</span><span>${gbpA(mu)}</span></div>`:''}
           ${(parseFloat(b.custom_pct)||0)>0?`<div class="pdf-detail-total-row"><span class="dk">Add-on (${b.custom_pct}%)</span><span>${gbpA(customVal)}</span></div>`:''}
           ${b.insurance&&insVal>0?`<div class="pdf-detail-total-row"><span class="dk">Insurance (2.5%)</span><span>${gbpA(insVal)}</span></div>`:""}
