@@ -2446,6 +2446,7 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 .pdf-cover-total-row .tk { color: rgba(255,255,255,0.5); }
 .pdf-cover-total-row .tv { font-variant-numeric: tabular-nums; }
 .pdf-cover-total-row.grand { font-size: 22px; font-weight: 500; padding: 14px 0 0; }
+.pdf-cover-disc-note { font-size: 12px; font-style: italic; line-height: 1.5; color: rgba(255,255,255,0.5); padding: 0 0 6px; white-space: pre-line; }
 .pdf-cover-footer { margin-top: 32px; display: flex; justify-content: space-between; align-items: flex-end; page-break-inside: avoid; break-inside: avoid; }
 .pdf-cover-meta { font-size: 11px; color: rgba(255,255,255,0.3); line-height: 1.8; }
 .pdf-valid { font-size: 11px; color: rgba(255,255,255,0.35); text-align: right; line-height: 1.8; }
@@ -2474,6 +2475,7 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 .pdf-detail-total-row:last-child { border-bottom: none; }
 .pdf-detail-total-row.grand { font-size: 16px; font-weight: 500; padding-top: 12px; }
 .pdf-detail-total-row .dk { color: #6b6b66; }
+.pdf-detail-disc-note { font-size: 10.5px; font-style: italic; line-height: 1.5; color: #6b6b66; padding: 2px 0 6px; border-bottom: 0.5px solid #f0efe9; white-space: pre-line; }
 .pdf-detail-footer { margin-top: 40px; display: flex; justify-content: space-between; font-size: 9px; color: #c0c0b8; border-top: 0.5px solid #e0dfda; padding-top: 10px; page-break-inside: avoid; break-inside: avoid; }
 .pdf-page-marker { page-break-inside: avoid; break-inside: avoid; }
 /* Repeated detail header at the top of each continuation page. padding-top is set

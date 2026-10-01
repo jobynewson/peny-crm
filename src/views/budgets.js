@@ -40,7 +40,8 @@ const gbpRate = n => {
 }
 const moy = () => { const d = new Date(); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] + ' ' + d.getFullYear() }
 
-function lineTotal(l, travelRate, prepRate) {
+// A line's value before its discount, and the discount taken off it (same clamp as lineTotal).
+function lineGross(l, travelRate, prepRate) {
   const prep  = parseFloat(l.prepDays)  || 0
   const shoot = parseFloat(l.days)      || 0
   const td    = parseFloat(l.travelDays)|| 0
@@ -50,11 +51,13 @@ function lineTotal(l, travelRate, prepRate) {
   const r   = parseFloat(l.rate)  || 0
   const tr  = parseFloat(travelRate) || 50
   const pr  = parseFloat(prepRate)   || 100
-  const disc = Math.min(Math.max(parseFloat(l.discount)||0, 0), 100)
-  const gross = useDays
+  return useDays
     ? prep*qty*r*(pr/100) + shoot*qty*r + td*(tr/100)*r
     : qty*r
-  return gross * (1 - disc/100)
+}
+const lineDiscPct = l => Math.min(Math.max(parseFloat(l.discount)||0, 0), 100)
+function lineTotal(l, travelRate, prepRate) {
+  return lineGross(l, travelRate, prepRate) * (1 - lineDiscPct(l)/100)
 }
 function secNet(s, travelRate, prepRate) { return (s.lines||[]).reduce((t,l) => t + lineTotal(l, travelRate, prepRate), 0) }
 function budNet(b)  {
@@ -62,6 +65,16 @@ function budNet(b)  {
   const pr = parseFloat(b.prep_rate)||100   // || catches NaN unlike ??
   return (b.sections||[]).filter(s=>s.enabled).reduce((t,s) => t + secNet(s, tr, pr), 0)
 }
+// Total taken off by discounts, per-line and master alike (the master % is copied onto every line).
+function budDiscount(b) {
+  const tr = parseFloat(b.travel_rate)||50
+  const pr = parseFloat(b.prep_rate)||100
+  return (b.sections||[]).filter(s=>s.enabled).reduce((t,s) =>
+    t + (s.lines||[]).reduce((u,l) => u + lineGross(l, tr, pr) * lineDiscPct(l)/100, 0), 0)
+}
+// Has a discount been entered anywhere (the master % or any line)? Decides whether the explainer note is offered.
+const hasDiscount = b => (parseFloat(b.discount)||0) > 0
+  || (b.sections||[]).some(s => (s.lines||[]).some(l => (parseFloat(l.discount)||0) > 0))
 function budTotal(b) {
   const n = budNet(b)
   const insVal      = b.insurance ? n * 0.025 : 0
@@ -77,7 +90,7 @@ const hasValue = l => {
 }
 const hasVisibleValue = l => hasValue(l) || ((parseFloat(l.qty)||0) > 0 && (parseFloat(l.discount)||0) >= 100 && (parseFloat(l.rate)||0) > 0)
 
-export { budTotal, budNet }
+export { budTotal, budNet, budDiscount, hasDiscount }
 
 export class BudgetsView {
   constructor(app) {
@@ -410,7 +423,7 @@ export class BudgetsView {
         name: b.name + ' (copy)',
         client_id: b.client_id,
         markup: b.markup, custom_pct: b.custom_pct, vat: b.vat, insurance: b.insurance ?? false,
-        travel_rate: b.travel_rate ?? 50, prep_rate: b.prep_rate ?? 100, discount: b.discount ?? 0,
+        travel_rate: b.travel_rate ?? 50, prep_rate: b.prep_rate ?? 100, discount: b.discount ?? 0, discount_note: b.discount_note ?? null,
         sections: JSON.parse(JSON.stringify(b.sections || [])),
         prepared_by: b.prepared_by, quote_email: b.quote_email,
         notes: b.notes,
@@ -740,6 +753,7 @@ export class BudgetsView {
     const edTr = parseFloat(b.travel_rate)||50
     const edPr = parseFloat(b.prep_rate)||100
     const activeSecs = sections.filter(s => s.enabled && secNet(s, edTr, edPr) > 0)
+    const discVal = budDiscount(b)
 
     mc.innerHTML = `
       <div class="bh-row">
@@ -762,6 +776,10 @@ export class BudgetsView {
             <div class="mu-field"><label style="display:flex;align-items:center;gap:7px;cursor:pointer"><input type="checkbox" id="be-insurance" ${b.insurance?'checked':''} style="cursor:pointer" /> Insurance (2.5%)</label></div>
             <span style="font-size:11px;color:var(--text-tertiary);margin-left:auto">Enter days to use day-rate mode per line</span>
           </div>
+          <div id="be-disc-note-wrap" style="${hasDiscount(b)?'':'display:none;'}margin-bottom:14px">
+            <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">Discount explainer note <span style="text-transform:none;letter-spacing:0">· printed under the discount in the quote</span></div>
+            <textarea class="bl-in w" id="be-discount-note" rows="2" placeholder="e.g. Loyalty discount for repeat clients, or why the rate has been reduced" style="font-size:12px;padding:6px 8px;resize:vertical;font-family:var(--font)">${esc(b.discount_note||'')}</textarea>
+          </div>
           <div id="be-sections">
             ${sections.map((s,si) => this.sectionHTML(b, s, si)).join('')}
           </div>
@@ -772,6 +790,7 @@ export class BudgetsView {
             <div class="bsum-head">Summary</div>
             ${activeSecs.length ? activeSecs.map(s=>`<div class="bsum-row"><span class="sk">${s.code} ${s.label.split('—')[0].split(' ').slice(0,3).join(' ').trim()}</span><span class="sv">${gbpA(secNet(s,edTr))}</span></div>`).join('') : '<div style="padding:10px 15px;font-size:12px;color:var(--text-tertiary)">No sections active</div>'}
             <div class="bsum-row" style="border-top:0.5px solid var(--border-light)"><span class="sk">Net total</span><span class="sv">${gbpA(net)}</span></div>
+            ${discVal>0 ? `<div class="bsum-row"><span class="sk">Includes discount</span><span class="sv">−${gbpA(discVal)}</span></div>` : ''}
             ${(parseFloat(b.markup)||0)>0 ? `<div class="bsum-row"><span class="sk">Production fee (${b.markup}%)</span><span class="sv">${gbpA(mu)}</span></div>` : ''}
             ${(parseFloat(b.custom_pct)||0)>0 ? `<div class="bsum-row"><span class="sk">Add-on (${b.custom_pct}%)</span><span class="sv">${gbpA(customVal)}</span></div>` : ''}
             ${b.insurance&&insVal>0?`<div class="bsum-row"><span class="sk">Insurance (2.5%)</span><span class="sv">${gbpA(insVal)}</span></div>`:""}
@@ -929,6 +948,8 @@ export class BudgetsView {
       const insVal = b.insurance ? net*0.025 : 0, afterFee = net+insVal+mu
       const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
     const vatVal = b.vat ? afterCustom*0.2 : 0, tot = afterCustom+vatVal
+      const noteWrap = mc.querySelector('#be-disc-note-wrap')
+      if (noteWrap) noteWrap.style.display = hasDiscount(b) ? '' : 'none'
       const card = mc.querySelector('.bsum-card')
       if (!card) return
       const activeSecs = sections.filter(s => s.enabled && secNet(s, rsTr, rsPr) > 0)
@@ -936,6 +957,7 @@ export class BudgetsView {
         <div class="bsum-head">Summary</div>
         ${activeSecs.length ? activeSecs.map(s=>`<div class="bsum-row"><span class="sk">${s.code} ${s.label.split('—')[0].split(' ').slice(0,3).join(' ').trim()}</span><span class="sv">${gbpA(secNet(s,rsTr))}</span></div>`).join('') : '<div style="padding:10px 15px;font-size:12px;color:var(--text-tertiary)">No sections active</div>'}
         <div class="bsum-row" style="border-top:0.5px solid var(--border-light)"><span class="sk">Net total</span><span class="sv">${gbpA(net)}</span></div>
+        ${budDiscount(b)>0?`<div class="bsum-row"><span class="sk">Includes discount</span><span class="sv">−${gbpA(budDiscount(b))}</span></div>`:''}
         ${(parseFloat(b.markup)||0)>0?`<div class="bsum-row"><span class="sk">Production fee (${b.markup}%)</span><span class="sv">${gbpA(mu)}</span></div>`:''}
         ${(parseFloat(b.custom_pct)||0)>0?`<div class="bsum-row"><span class="sk">Add-on (${b.custom_pct}%)</span><span class="sv">${gbpA(customVal)}</span></div>`:''}
         ${b.insurance&&insVal>0?`<div class="bsum-row"><span class="sk">Insurance (2.5%)</span><span class="sv">${gbpA(insVal)}</span></div>`:""}
@@ -978,6 +1000,7 @@ export class BudgetsView {
     })
     mc.querySelector('#be-preparedby')?.addEventListener('change', e => { b.prepared_by = e.target.value; save() })
     mc.querySelector('#be-email')?.addEventListener('change',      e => { b.quote_email = e.target.value; save() })
+    mc.querySelector('#be-discount-note')?.addEventListener('change', e => { b.discount_note = e.target.value.trim(); save() })
 
     // Version history
     this._loadVersionList(mc, b)
@@ -987,7 +1010,7 @@ export class BudgetsView {
       try {
         const snapshot = {
           name: b.name, markup: b.markup, custom_pct: b.custom_pct, vat: b.vat,
-          travel_rate: b.travel_rate??50, discount: b.discount??0,
+          travel_rate: b.travel_rate??50, discount: b.discount??0, discount_note: b.discount_note??null,
           sections: b.sections, prepared_by: b.prepared_by, quote_email: b.quote_email, notes: b.notes,
         }
         await saveBudgetVersion(this.app.userId, b.id, snapshot, name, false)
@@ -1196,7 +1219,7 @@ export class BudgetsView {
       // Save current state as auto-snapshot before overwriting
       const currentSnap = {
         name: b.name, markup: b.markup, custom_pct: b.custom_pct, vat: b.vat,
-        travel_rate: b.travel_rate??50, discount: b.discount??0,
+        travel_rate: b.travel_rate??50, discount: b.discount??0, discount_note: b.discount_note??null,
         sections: b.sections, prepared_by: b.prepared_by, quote_email: b.quote_email, notes: b.notes,
       }
       await saveBudgetVersion(this.app.userId, b.id, currentSnap, 'Before restore', true)
@@ -1216,7 +1239,7 @@ export class BudgetsView {
       const data = {
         name: b.name,
         markup: b.markup, custom_pct: b.custom_pct, vat: b.vat, insurance: b.insurance ?? false,
-        travel_rate: b.travel_rate ?? 50, prep_rate: b.prep_rate ?? 100, discount: b.discount ?? 0,
+        travel_rate: b.travel_rate ?? 50, prep_rate: b.prep_rate ?? 100, discount: b.discount ?? 0, discount_note: b.discount_note ?? null,
         signed_off: b.signed_off ?? false,
         signed_off_at: b.signed_off_at ?? null,
         signed_off_by: b.signed_off_by ?? null,
@@ -1308,6 +1331,12 @@ export class BudgetsView {
     const insVal = b.insurance ? net*0.025 : 0, afterFee = net+insVal+mu
     const customVal = afterFee*((parseFloat(b.custom_pct)||0)/100), afterCustom = afterFee+customVal
     const vatVal = b.vat ? afterCustom*0.2 : 0, tot = afterCustom+vatVal
+    // Discounts (per-line and master) are already inside the net total; the totals say how much that was.
+    const discVal = budDiscount(b), discNote = (b.discount_note||'').trim()
+    const discRowHTML = (rowCls, kCls, vCls = '') => discVal > 0
+      ? `<div class="${rowCls}"><span class="${kCls}">Includes discount</span><span${vCls?` class="${vCls}"`:''}>\u2212${gbpA(discVal)}</span></div>`
+        + (discNote ? `<div class="${rowCls === 'pdf-cover-total-row' ? 'pdf-cover-disc-note' : 'pdf-detail-disc-note'}">${esc(discNote)}</div>` : '')
+      : ''
     const today = new Date()
     const months = ['January','February','March','April','May','June','July','August','September','October','November','December']
     const dateStr = today.getDate()+' '+months[today.getMonth()]+' '+today.getFullYear()
@@ -1331,6 +1360,7 @@ export class BudgetsView {
           </tbody></table>
           <div class="pdf-cover-totals">
             <div class="pdf-cover-total-row"><span class="tk">Net total</span><span class="tv">${gbpA(net)}</span></div>
+            ${discRowHTML('pdf-cover-total-row','tk','tv')}
             ${(parseFloat(b.markup)||0)>0?`<div class="pdf-cover-total-row"><span class="tk">Production fee (${b.markup}%)</span><span class="tv">${gbpA(mu)}</span></div>`:''}
             ${(parseFloat(b.custom_pct)||0)>0?`<div class="pdf-cover-total-row"><span class="tk">Add-on (${b.custom_pct}%)</span><span class="tv">${gbpA(customVal)}</span></div>`:''}
             ${b.insurance&&insVal>0?`<div class="pdf-cover-total-row"><span class="tk">Insurance (2.5%)</span><span class="tv">${gbpA(insVal)}</span></div>`:""}
@@ -1377,7 +1407,7 @@ export class BudgetsView {
             const t=lineTotal(l,pdfTr,pdfPr)
             const disc = parseFloat(l.discount)||0
             return `<div class="pdf-line">
-              <div class="pdf-line-item">${esc(l.item)}${l.notes?`<div class="pdf-line-sub">${esc(l.notes)}</div>`:''}${useDaysPDF&&prep>0?`<div class="pdf-line-sub">Prep: ${prep}d @ ${pdfPr}%</div>`:''}${useDaysPDF&&td>0?`<div class="pdf-line-sub">Travel: ${td}d @ ${pdfTr}%</div>`:''}${disc>0?`<div class="pdf-line-sub">Discount: ${disc}%</div>`:''}</div>
+              <div class="pdf-line-item">${esc(l.item)}${l.notes?`<div class="pdf-line-sub">${esc(l.notes)}</div>`:''}${useDaysPDF&&prep>0?`<div class="pdf-line-sub">Prep: ${prep}d @ ${pdfPr}%</div>`:''}${useDaysPDF&&td>0?`<div class="pdf-line-sub">Travel: ${td}d @ ${pdfTr}%</div>`:''}</div>
               <div class="pdf-line-num">${useDaysPDF&&(prep>0||d>0)?(prep+d)+'d':''}</div>
               <div class="pdf-line-num">${useDaysPDF?(q!==1?q:''):q}</div>
               <div class="pdf-line-num">${useDaysPDF&&prep>0?gbpA(r*prep*q*(pdfPr/100)):''} ${useDaysPDF&&td>0?gbpA(r*td*(pdfTr/100)):(r>0?gbpRate(r):'')}</div>
@@ -1399,6 +1429,7 @@ export class BudgetsView {
         ${detailSecHTML}
         <div class="pdf-detail-totals">
           <div class="pdf-detail-total-row"><span class="dk">Net total</span><span>${gbpA(net)}</span></div>
+          ${discRowHTML('pdf-detail-total-row','dk')}
           ${(parseFloat(b.markup)||0)>0?`<div class="pdf-detail-total-row"><span class="dk">Production fee (${b.markup}%)</span><span>${gbpA(mu)}</span></div>`:''}
           ${(parseFloat(b.custom_pct)||0)>0?`<div class="pdf-detail-total-row"><span class="dk">Add-on (${b.custom_pct}%)</span><span>${gbpA(customVal)}</span></div>`:''}
           ${b.insurance&&insVal>0?`<div class="pdf-detail-total-row"><span class="dk">Insurance (2.5%)</span><span>${gbpA(insVal)}</span></div>`:""}

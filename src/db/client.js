@@ -38,7 +38,7 @@ export const db = drizzle(sql, { schema })
 // them only while the database's recorded version is behind this one; the
 // normal boot is a single read. src/db/migrations-version.test.js fails if the
 // statements change and this doesn't.
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2
 
 export async function runMigrations() {
   let current = 0
@@ -430,6 +430,8 @@ async function applyMigrations() {
   await sql`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS invoiced BOOLEAN NOT NULL DEFAULT false`
   await sql`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS invoiced_at TIMESTAMPTZ`
   await sql`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS invoiced_by TEXT`
+  // Why a discount was given — printed under the discount row (drizzle/0044)
+  await sql`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS discount_note TEXT`
 
   // ── Tasks (Slate task board) ───────────────────────────────────────────────
   // One table behind the desktop board and the mobile list. See claude.md.
