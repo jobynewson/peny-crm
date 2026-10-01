@@ -43,19 +43,32 @@ async function bootstrap() {
   }
   const permissions = resolvePermissions(appUser)
 
-  // 1. Ensure schema is up to date (idempotent, safe to run every startup).
-  await runMigrations()
+  // Start fetching the app's code now: it's the biggest file on the page and
+  // doesn't depend on any of the data below, so it downloads while that loads.
+  // The catch only keeps an early failure from being reported as unhandled;
+  // the await further down still throws it.
+  const appModule = import('./app.js')
+  appModule.catch(() => {})
 
-  // 2. Get/create workspace — returns the shared owner ID used for all data
-  //    First user to ever sign in becomes the workspace owner automatically
-  const workspaceId = await getOrCreateWorkspace(clerkUserId)
-
-  // First-ever run: drop in a demo planning board + canvas so the features aren't empty
-  await seedDemoBoard(workspaceId).catch(e => console.warn('Demo board seed failed:', e))
-  await seedDemoCanvas(workspaceId).catch(e => console.warn('Demo canvas seed failed:', e))
+  // 1 + 2. Bring the schema up to date (a single read when it already is; see
+  //    runMigrations) and find the workspace — the shared owner ID used for all
+  //    data; the first user to sign in becomes the owner. `workspace` is an
+  //    original table that migrations never create, so the two don't depend on
+  //    each other.
+  const [, workspaceId] = await Promise.all([
+    runMigrations(),
+    getOrCreateWorkspace(clerkUserId),
+  ])
 
   // 3. Load all shared workspace data in parallel
   //    Companies come through /api (new data never goes through db/client.js).
+  //    The demo seeds ride along: first-ever run only, to drop in a demo
+  //    planning board + canvas so the features aren't empty. They run after the
+  //    migrations (a new table may be needed) and cost no extra wait.
+  const seeds = Promise.all([
+    seedDemoBoard(workspaceId).catch(e => console.warn('Demo board seed failed:', e)),
+    seedDemoCanvas(workspaceId).catch(e => console.warn('Demo canvas seed failed:', e)),
+  ])
   const [contactsData, projectsData, budgetsData, settingsData, allUsersData, socialPostsData, marketingCardsData, teamCalendarData, leaveRequestsData, publicHolidaysData, companiesData] = await Promise.all([
     getContacts(workspaceId),
     getProjects(workspaceId),
@@ -70,7 +83,8 @@ async function bootstrap() {
     listCompanies().catch(e => { console.warn('Companies failed to load:', e); return [] }),
   ])
 
-  const { App } = await import('./app.js')
+  await seeds
+  const { App } = await appModule
   const app = new App({
     userId: workspaceId,
     clerkUserId,

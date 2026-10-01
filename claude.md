@@ -133,6 +133,14 @@ portal.html               # Client portal HTML shell (/portal, /portal/<token>)
   (`src/main.js`). Anything added there must be safe to re-run every time.
 - Use `uuid_generate_v4()`, not `gen_random_uuid()` — it is what every existing
   table uses.
+- **Boot runs them only when the database is behind.** `runMigrations()` reads
+  one row (`schema_version`, created by the first run) and
+  returns if it's at or past `SCHEMA_VERSION`; otherwise it runs
+  `applyMigrations()` and records the version last. Every statement is a
+  browser → function → Neon round trip, so running ~155 of them on every load
+  made the first open slow. **When you add a statement to `applyMigrations()`,
+  bump `SCHEMA_VERSION`**: `src/db/migrations-version.test.js` pins a hash of
+  the statements and tells you the new one to paste in.
 - `main.js` awaits `runMigrations()` without a catch, so a statement that
   throws stops the app loading for everyone.
 - Changing an existing column or constraint (not just adding one) needs a

@@ -33,7 +33,40 @@ const sql = neon('postgresql://slate:none@database.invalid/slate')
 export const db = drizzle(sql, { schema })
 
 // ── Schema migrations ─────────────────────────────────────────────────────────
+// Bump this whenever you add to applyMigrations() below. The statements are
+// idempotent but each is a browser → function → Neon round trip, so boot runs
+// them only while the database's recorded version is behind this one; the
+// normal boot is a single read. src/db/migrations-version.test.js fails if the
+// statements change and this doesn't.
+export const SCHEMA_VERSION = 1
+
 export async function runMigrations() {
+  let current = 0
+  try {
+    const [row] = await sql`SELECT max(version)::int AS version FROM schema_version`
+    current = row?.version ?? 0
+  } catch {
+    // No version table yet (or the read failed): run everything, which is safe.
+  }
+  if (current >= SCHEMA_VERSION) return
+
+  await applyMigrations()
+
+  // Recorded last, so a boot that threw part-way runs them all again next time.
+  // GREATEST so an older tab can never wind the version back.
+  await sql`
+    CREATE TABLE IF NOT EXISTS schema_version (
+      id      BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
+      version INTEGER NOT NULL
+    )
+  `
+  await sql`
+    INSERT INTO schema_version (id, version) VALUES (TRUE, ${SCHEMA_VERSION})
+    ON CONFLICT (id) DO UPDATE SET version = GREATEST(schema_version.version, EXCLUDED.version)
+  `
+}
+
+async function applyMigrations() {
   await sql`
     CREATE TABLE IF NOT EXISTS marketing_cards (
       id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
