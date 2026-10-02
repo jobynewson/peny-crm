@@ -194,6 +194,8 @@ export const budgets = pgTable('budgets', {
   discount:    numeric('discount', { precision: 5, scale: 2 }).notNull().default('0'),
   // Shown under the discount row on the PDF and the client quote link. Only offered once a discount exists.
   discount_note: text('discount_note'),
+  // Client quote prices discounted lines before (true) or after (false) their discount.
+  lines_pre_discount: boolean('lines_pre_discount').notNull().default(false),
   sections:    jsonb('sections').notNull().default([]),
   // GBP→USD/EUR rate locked in at creation (or last manual refresh): { ts, date, source:'ECB'|'estimate', rates }.
   // Null on budgets created before this column existed — those fall back to a live-fetched rate until refreshed.

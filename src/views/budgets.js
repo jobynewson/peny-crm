@@ -60,6 +60,7 @@ function lineTotal(l, travelRate, prepRate) {
   return lineGross(l, travelRate, prepRate) * (1 - lineDiscPct(l)/100)
 }
 function secNet(s, travelRate, prepRate) { return (s.lines||[]).reduce((t,l) => t + lineTotal(l, travelRate, prepRate), 0) }
+function secGross(s, travelRate, prepRate) { return (s.lines||[]).reduce((t,l) => t + lineGross(l, travelRate, prepRate), 0) }
 function budNet(b)  {
   const tr = parseFloat(b.travel_rate)||50
   const pr = parseFloat(b.prep_rate)||100   // || catches NaN unlike ??
@@ -423,7 +424,7 @@ export class BudgetsView {
         name: b.name + ' (copy)',
         client_id: b.client_id,
         markup: b.markup, custom_pct: b.custom_pct, vat: b.vat, insurance: b.insurance ?? false,
-        travel_rate: b.travel_rate ?? 50, prep_rate: b.prep_rate ?? 100, discount: b.discount ?? 0, discount_note: b.discount_note ?? null,
+        travel_rate: b.travel_rate ?? 50, prep_rate: b.prep_rate ?? 100, discount: b.discount ?? 0, discount_note: b.discount_note ?? null, lines_pre_discount: b.lines_pre_discount ?? false,
         sections: JSON.parse(JSON.stringify(b.sections || [])),
         prepared_by: b.prepared_by, quote_email: b.quote_email,
         notes: b.notes,
@@ -777,6 +778,10 @@ export class BudgetsView {
             <span style="font-size:11px;color:var(--text-tertiary);margin-left:auto">Enter days to use day-rate mode per line</span>
           </div>
           <div id="be-disc-note-wrap" style="${hasDiscount(b)?'':'display:none;'}margin-bottom:14px">
+            <label class="sw-row" title="How discounted line items are priced on the quote PDF and the client link">
+              <span class="sw"><input type="checkbox" id="be-pre-discount" ${b.lines_pre_discount?'checked':''} /><span class="sw-track"></span></span>
+              <span>Show discounted line items at their <strong>pre-discount</strong> price <span style="color:var(--text-tertiary)">(off = post-discount)</span></span>
+            </label>
             <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">Discount explainer note <span style="text-transform:none;letter-spacing:0">· printed under the discount in the quote</span></div>
             <textarea class="bl-in w" id="be-discount-note" rows="2" placeholder="e.g. Loyalty discount for repeat clients, or why the rate has been reduced" style="font-size:12px;padding:6px 8px;resize:vertical;font-family:var(--font)">${esc(b.discount_note||'')}</textarea>
           </div>
@@ -1000,6 +1005,7 @@ export class BudgetsView {
     })
     mc.querySelector('#be-preparedby')?.addEventListener('change', e => { b.prepared_by = e.target.value; save() })
     mc.querySelector('#be-email')?.addEventListener('change',      e => { b.quote_email = e.target.value; save() })
+    mc.querySelector('#be-pre-discount')?.addEventListener('change', e => { b.lines_pre_discount = e.target.checked; save() })
     mc.querySelector('#be-discount-note')?.addEventListener('change', e => { b.discount_note = e.target.value.trim(); save() })
 
     // Version history
@@ -1010,7 +1016,7 @@ export class BudgetsView {
       try {
         const snapshot = {
           name: b.name, markup: b.markup, custom_pct: b.custom_pct, vat: b.vat,
-          travel_rate: b.travel_rate??50, discount: b.discount??0, discount_note: b.discount_note??null,
+          travel_rate: b.travel_rate??50, discount: b.discount??0, discount_note: b.discount_note??null, lines_pre_discount: b.lines_pre_discount??false,
           sections: b.sections, prepared_by: b.prepared_by, quote_email: b.quote_email, notes: b.notes,
         }
         await saveBudgetVersion(this.app.userId, b.id, snapshot, name, false)
@@ -1219,7 +1225,7 @@ export class BudgetsView {
       // Save current state as auto-snapshot before overwriting
       const currentSnap = {
         name: b.name, markup: b.markup, custom_pct: b.custom_pct, vat: b.vat,
-        travel_rate: b.travel_rate??50, discount: b.discount??0, discount_note: b.discount_note??null,
+        travel_rate: b.travel_rate??50, discount: b.discount??0, discount_note: b.discount_note??null, lines_pre_discount: b.lines_pre_discount??false,
         sections: b.sections, prepared_by: b.prepared_by, quote_email: b.quote_email, notes: b.notes,
       }
       await saveBudgetVersion(this.app.userId, b.id, currentSnap, 'Before restore', true)
@@ -1239,7 +1245,7 @@ export class BudgetsView {
       const data = {
         name: b.name,
         markup: b.markup, custom_pct: b.custom_pct, vat: b.vat, insurance: b.insurance ?? false,
-        travel_rate: b.travel_rate ?? 50, prep_rate: b.prep_rate ?? 100, discount: b.discount ?? 0, discount_note: b.discount_note ?? null,
+        travel_rate: b.travel_rate ?? 50, prep_rate: b.prep_rate ?? 100, discount: b.discount ?? 0, discount_note: b.discount_note ?? null, lines_pre_discount: b.lines_pre_discount ?? false,
         signed_off: b.signed_off ?? false,
         signed_off_at: b.signed_off_at ?? null,
         signed_off_by: b.signed_off_by ?? null,
@@ -1335,6 +1341,10 @@ export class BudgetsView {
     const discVal = budDiscount(b), discNote = (b.discount_note||'').trim()
     // Cover only: with a discount, the totals lead with Total before discount, the Discount and the Net total,
     // each as prominent as the Grand total. Per-line discounts and the detail pages never mention it.
+    // Pre-discount mode prices every line and section at its undiscounted value, so the cover's sections add up
+    // to Total before discount; the detail totals then spell out the discount so they still add up.
+    const pre = !!b.lines_pre_discount && discVal > 0
+    const secVal = sec => pre ? secGross(sec,pdfTr,pdfPr) : secNet(sec,pdfTr,pdfPr)
     const coverNetHTML = discVal > 0
       ? `<div class="pdf-cover-total-row big"><span class="tk">Total before discount</span><span class="tv">${gbpA(net + discVal)}</span></div>
             <div class="pdf-cover-total-row big"><span class="tk">Discount</span><span class="tv">\u2212${gbpA(discVal)}</span></div>`
@@ -1360,7 +1370,7 @@ export class BudgetsView {
           ${b.notes?`<div style="font-size:13px;color:rgba(255,255,255,0.55);margin-bottom:28px;line-height:1.6">${esc(b.notes).replace(/\n/g,'<br>')}</div>`:''}
           <hr class="pdf-cover-divider" />
           <table class="pdf-cover-summary"><tbody>
-            ${activeSecs.map(sec=>`<tr><td class="sec-code">${sec.code}</td><td class="sec-name">${sec.label}</td><td class="sec-total">${gbpA(secNet(sec,pdfTr,pdfPr))}</td></tr>`).join('')}
+            ${activeSecs.map(sec=>`<tr><td class="sec-code">${sec.code}</td><td class="sec-name">${sec.label}</td><td class="sec-total">${gbpA(secVal(sec))}</td></tr>`).join('')}
           </tbody></table>
           <div class="pdf-cover-totals">
             ${coverNetHTML}
@@ -1396,7 +1406,7 @@ export class BudgetsView {
           <div class="pdf-section-header">
             <span class="pdf-section-code">${sec.code}</span>
             <span class="pdf-section-name">${sec.label}</span>
-            <span class="pdf-section-total">${gbpA(secNet(sec,pdfTr,pdfPr))}</span>
+            <span class="pdf-section-total">${gbpA(secVal(sec))}</span>
           </div>
           <div class="pdf-col-heads">
             <div class="pdf-col-head" style="text-align:left">Item</div>
@@ -1407,14 +1417,14 @@ export class BudgetsView {
           ${al.map(l => {
             const prep=parseFloat(l.prepDays)||0,d=parseFloat(l.days)||0,q=parseFloat(l.qty)||0,r=parseFloat(l.rate)||0,td=parseFloat(l.travelDays)||0
             const useDaysPDF = l.useDays || prep>0||d>0||td>0
-            const t=lineTotal(l,pdfTr,pdfPr)
+            const t=pre?lineGross(l,pdfTr,pdfPr):lineTotal(l,pdfTr,pdfPr)
             const disc = parseFloat(l.discount)||0
             return `<div class="pdf-line">
               <div class="pdf-line-item">${esc(l.item)}${l.notes?`<div class="pdf-line-sub">${esc(l.notes)}</div>`:''}${useDaysPDF&&prep>0?`<div class="pdf-line-sub">Prep: ${prep}d @ ${pdfPr}%</div>`:''}${useDaysPDF&&td>0?`<div class="pdf-line-sub">Travel: ${td}d @ ${pdfTr}%</div>`:''}</div>
               <div class="pdf-line-num">${useDaysPDF&&(prep>0||d>0)?(prep+d)+'d':''}</div>
               <div class="pdf-line-num">${useDaysPDF?(q!==1?q:''):q}</div>
               <div class="pdf-line-num">${useDaysPDF&&prep>0?gbpA(r*prep*q*(pdfPr/100)):''} ${useDaysPDF&&td>0?gbpA(r*td*(pdfTr/100)):(r>0?gbpRate(r):'')}</div>
-              <div class="pdf-line-total">${disc>=100?gbpA(0):t>0?gbpA(t):''}</div>
+              <div class="pdf-line-total">${!pre&&disc>=100?gbpA(0):t>0?gbpA(t):''}</div>
             </div>`
           }).join('')}
         </div>`
@@ -1431,6 +1441,8 @@ export class BudgetsView {
         </div>
         ${detailSecHTML}
         <div class="pdf-detail-totals">
+          ${pre?`<div class="pdf-detail-total-row"><span class="dk">Total before discount</span><span>${gbpA(net+discVal)}</span></div>
+          <div class="pdf-detail-total-row"><span class="dk">Discount</span><span>\u2212${gbpA(discVal)}</span></div>`:''}
           <div class="pdf-detail-total-row"><span class="dk">Net total</span><span>${gbpA(net)}</span></div>
           ${(parseFloat(b.markup)||0)>0?`<div class="pdf-detail-total-row"><span class="dk">Production fee (${b.markup}%)</span><span>${gbpA(mu)}</span></div>`:''}
           ${(parseFloat(b.custom_pct)||0)>0?`<div class="pdf-detail-total-row"><span class="dk">Add-on (${b.custom_pct}%)</span><span>${gbpA(customVal)}</span></div>`:''}

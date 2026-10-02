@@ -18,7 +18,7 @@ export default async function handler(req, res) {
   const sql = neon(process.env.DATABASE_URL)
   const rows = await sql`
     SELECT b.id, b.name, b.sections, b.markup, b.custom_pct, b.vat, b.insurance,
-           b.travel_rate, b.prep_rate, b.discount_note, b.notes, b.prepared_by,
+           b.travel_rate, b.prep_rate, b.discount_note, b.lines_pre_discount, b.notes, b.prepared_by,
            b.signed_off, b.created_at, b.fx_snapshot,
            c.first_name, c.last_name, c.company,
            s.company_name, s.address, s.email, s.phone, s.website, s.vat_number
@@ -41,7 +41,7 @@ export default async function handler(req, res) {
     budget: {
       name: b.name, notes: b.notes, prepared_by: b.prepared_by,
       markup: b.markup, custom_pct: b.custom_pct, vat: b.vat,
-      insurance: b.insurance, travel_rate: b.travel_rate, prep_rate: b.prep_rate, discount_note: b.discount_note,
+      insurance: b.insurance, travel_rate: b.travel_rate, prep_rate: b.prep_rate, discount_note: b.discount_note, lines_pre_discount: b.lines_pre_discount,
       signed_off: b.signed_off, created_at: b.created_at,
       fx_snapshot,
     },

@@ -128,6 +128,8 @@ const net = sections.reduce((s,sec) => s + (sec.lines||[]).reduce((t,l) => t+lin
 // Total taken off by discounts (per-line and master); already inside `net`.
 const discTotal = sections.reduce((s,sec) => s + (sec.lines||[]).reduce((t,l) => t + lineGross(l) * Math.min(Math.max(parseFloat(l.discount)||0,0),100)/100, 0), 0)
 const discNote = (budget.discount_note||'').trim()
+// Pre-discount mode prices every line and section at its undiscounted value (the totals below spell out the discount).
+const pre = !!budget.lines_pre_discount && discTotal > 0
 const mu = net*((parseFloat(budget.markup)||0)/100)
 const ins = budget.insurance ? net*0.025 : 0
 const afterFee = net + ins + mu
@@ -165,7 +167,7 @@ function render() {
   const sectionsHTML = sections.map(sec => {
     const lines = (sec.lines||[]).filter(l => hasVisibleValue(l))
     if (!lines.length) return ''
-    const secTotal = lines.reduce((t,l) => t+lineTotal(l), 0)
+    const secTotal = lines.reduce((t,l) => t+(pre?lineGross(l):lineTotal(l)), 0)
     return `<div class="q-section">
       <div class="q-sec-head">
         <span class="q-sec-code">${esc(sec.code)}</span>
@@ -176,14 +178,14 @@ function render() {
         <thead><tr><th>Item</th><th class="r">Total</th></tr></thead>
         <tbody>
           ${lines.map(l => {
-            const t = lineTotal(l)
+            const t = pre ? lineGross(l) : lineTotal(l)
             const disc = parseFloat(l.discount)||0
             return `<tr>
               <td>
                 ${esc(l.item)}
                 ${l.notes?`<div class="q-line-note">${esc(l.notes)}</div>`:''}
               </td>
-              <td class="r">${disc>=100?gbp(0):t>0?gbp(t):''}</td>
+              <td class="r">${!pre&&disc>=100?gbp(0):t>0?gbp(t):''}</td>
             </tr>`
           }).join('')}
         </tbody>
