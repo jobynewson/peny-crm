@@ -12,6 +12,8 @@ import { TeamCalendarView } from './views/team-calendar.js'
 import { LeaveView, pendingApprovalsFor } from './views/leave.js'
 import { ExpensesView } from './views/expenses.js'
 import { OffloadLogView } from './views/offload-log.js'
+import { PersonalToolsView } from './views/personal-tools.js'
+import { TrainingView } from './views/training.js'
 import { BoardsView } from './views/boards.js'
 import { CanvasView } from './views/canvas.js'
 import { TasksView } from './views/tasks.js'
@@ -30,7 +32,7 @@ import { syncThemeColor } from './theme.js'
 const PHONE = '(max-width: 768px)'
 
 // Every route the app has used; old bookmarks keep working.
-const VIEWS = ['dashboard', 'tasks', 'calendar', 'projects', 'budgets', 'planning', 'contacts', 'marketing', 'story-planner', 'leave', 'expenses', 'password-manager', 'offload-log', 'settings', 'timetrack']
+const VIEWS = ['dashboard', 'tasks', 'calendar', 'projects', 'budgets', 'planning', 'contacts', 'marketing', 'story-planner', 'leave', 'expenses', 'password-manager', 'offload-log', 'personal-tools', 'training', 'settings', 'timetrack']
 
 export class App {
   constructor({ userId, clerkUserId, user, appUser, permissions, contacts, companies, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, leaveRequests, publicHolidays, onSignOut }) {
@@ -64,6 +66,8 @@ export class App {
     this.expensesView         = new ExpensesView(this)
     this.leaveView            = new LeaveView(this)
     this.offloadLogView       = new OffloadLogView(this)
+    this.personalToolsView    = new PersonalToolsView(this)
+    this.trainingView         = new TrainingView(this)
     this.boardsView           = new BoardsView(this)
     this.canvasView           = new CanvasView(this)
     this.tasksView            = new TasksView(this)
@@ -576,6 +580,7 @@ export class App {
       expenses: this.expensesView,
       'password-manager': this.passwordManagerView,
       'offload-log': this.offloadLogView,
+      training: this.trainingView,
       marketing: this.marketingView,
       planning: this.boardsView,
       settings: { toolbar: () => this._settingsToolbar(), bindToolbar: bar => this._bindSettingsToolbar(bar) },
@@ -884,6 +889,10 @@ export class App {
       this.expensesView.render(mc)
     } else if (this.currentView === 'offload-log') {
       this.offloadLogView.render(mc)
+    } else if (this.currentView === 'personal-tools') {
+      this.personalToolsView.render(mc)
+    } else if (this.currentView === 'training') {
+      this.trainingView.render(mc)
     } else if (this.currentView === 'leave') {
       this.leaveView.render(mc)
     } else if (this.currentView === 'calendar') {

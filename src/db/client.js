@@ -38,7 +38,7 @@ export const db = drizzle(sql, { schema })
 // them only while the database's recorded version is behind this one; the
 // normal boot is a single read. src/db/migrations-version.test.js fails if the
 // statements change and this doesn't.
-export const SCHEMA_VERSION = 3
+export const SCHEMA_VERSION = 4
 
 export async function runMigrations() {
   let current = 0
@@ -713,6 +713,41 @@ async function applyMigrations() {
     EXCEPTION WHEN OTHERS THEN
       RAISE WARNING 'carrying over the reminder roundup failed: %', SQLERRM;
     END $$
+  `
+
+  // ── Personal Tools › Training (drizzle/0046_add_training.sql) ───────────────
+  // Read and written only through /api/training (api/db.js refuses these).
+  await sql`
+    CREATE TABLE IF NOT EXISTS training_profiles (
+      clerk_user_id TEXT PRIMARY KEY,
+      sport         TEXT NOT NULL,
+      areas         JSONB NOT NULL DEFAULT '[]'::jsonb,
+      kit           JSONB NOT NULL DEFAULT '[]'::jsonb,
+      gen           JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS training_sessions (
+      id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      clerk_user_id    TEXT NOT NULL,
+      sport            TEXT NOT NULL,
+      kind             TEXT NOT NULL,
+      week             INTEGER,
+      session_key      TEXT,
+      items            JSONB,
+      started_at       TIMESTAMPTZ,
+      completed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      duration_seconds INTEGER
+    )
+  `
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS training_sessions_program_uq
+      ON training_sessions (clerk_user_id, sport, week, session_key) WHERE kind = 'program'
+  `
+  await sql`
+    CREATE INDEX IF NOT EXISTS training_sessions_user_idx
+      ON training_sessions (clerk_user_id, completed_at DESC)
   `
 
   // ── Staff invitations (drizzle/0035_add_staff_invitations.sql) ─────────────

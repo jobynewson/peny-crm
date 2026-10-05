@@ -191,6 +191,7 @@ export class HeaderView {
         ${nav('megaphone', 'Marketing', 'marketing')}
         ${nav('offload', 'Offload Log', 'offload-log')}
         ${nav('story', 'Story Planner', 'story-planner')}
+        ${nav('training', 'Personal Tools', 'personal-tools')}
       </div>
       <div class="dd-sep" role="separator"></div>
       <div class="dd-label section-label" id="dd-workspace">Workspace</div>

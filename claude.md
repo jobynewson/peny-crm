@@ -187,7 +187,7 @@ There is no sidebar. The shell is a header over the page:
   below Log time and New lose their labels, and at 900px and below the logo,
   tabs and gaps tighten. The labels stay as each button's accessible name
   and tooltip. If you add to the header, re-check it at 769px.
-- **Account menu** (avatar): Tools (Marketing, Offload Log, Story Planner),
+- **Account menu** (avatar): Tools (Marketing, Offload Log, Story Planner, Personal Tools),
   Workspace (Team & roles, Leave with the approvals badge, Expenses,
   Passwords for vault users, Dev request), Theme (System | Light | Dark), then
   Settings, Keyboard shortcuts and Sign out. Tools is where new productivity
@@ -256,6 +256,41 @@ There is no sidebar. The shell is a header over the page:
   `style.css`. `viewport-fit=cover` is set, so pad fixed chrome with
   `env(safe-area-inset-*)`. Use `dvh` with a `vh` fallback for full heights.
 
+### Personal Tools and Training
+- **Personal Tools** (`#personal-tools`, `src/views/personal-tools.js`) is a page
+  of cards for tools that belong to the signed-in person. To add a tool: add an
+  entry to `TOOLS` in that file, a route in `app.js` (`VIEWS` + `render`) and a
+  search command.
+- **Training** (`#training`) is a home strength app: an 8-week plan (A/B/C
+  sessions, Foundation / Strength / Power), Build a session, an exercise
+  library and a guided timer. Staff only, like every Slate page.
+  - `src/training/data.js`: all content (exercises, how-to details, per-sport
+    programs, stretches, sports, cool-down areas, "why it matters" lines).
+    `WHY` is the general line; `SPORT_WHY[sport][id]` overrides it (the MTB
+    lines are the original text). Edit here, not in the views.
+  - `src/training/engine.js`: prescriptions, time estimates, the cool-down
+    builder, session generation, the timer's step list (no DOM; unit-tested).
+  - `src/training/player.js` (timer), `wakelock.js` (Screen Wake Lock, with the
+    silent-video fallback only when the API is missing or refused),
+    `store.js` (instant saves, offline queue in localStorage per person),
+    `src/views/training.js` (UI).
+  - The cool-down is **built from the person's chosen areas**, not fixed per
+    session: one stretch per area, about 5 minutes; more areas than fit rotate
+    across A, B and C (`coolDown()`).
+  - Progress is per sport (`training_sessions.sport`), so changing sport starts
+    that sport's plan fresh and keeps the other's history.
+- **Data**: `training_profiles` and `training_sessions` (`drizzle/0046`, keyed by
+  Clerk id like `notification_settings`), read and written only through
+  `/api/training` (`api/training.js` + `api/_training.js`, the shared
+  `dispatch()` router). Every query is filtered by the verified session's
+  Clerk id, never an id from the browser. `api/db.js` refuses any statement
+  naming these tables (apart from the boot `CREATE … IF NOT EXISTS`), so the
+  browser's query proxy can't read them. That is an application-level guard: a
+  determined staff member who can run arbitrary SQL through `/api/db` could
+  still get round it (for example with dynamic SQL), so true isolation needs a
+  separate database role.
+- Viewers can use Training: it only touches their own rows.
+
 ### Logging time
 - The header's **Log time** button opens a 340px popover (a sheet on phones)
   with Project, Role, Date (today), Hours and optional Notes. On a project
@@ -293,7 +328,7 @@ There is no sidebar. The shell is a header over the page:
     a clean URL.
 - Current functions: `ai`, `blob`, `callsheet`, `client`, `companies`, `due`,
   `generate-ra`, `google`, `invite`, `maps`, `notification-settings`,
-  `packing`, `portal`, `quote`, `realtime`, `reminders`, `retainers`, `track`.
+  `packing`, `portal`, `quote`, `realtime`, `reminders`, `retainers`, `track`, `training`.
 - **JSON API routers** share `api/_api.js`: a route table matched on
   `${method} ${path}` (`:id` segments must be uuids), 404 / 405 + `Allow`,
   errors always `{ error: { code, message, field? } }`, and `dispatch()`,

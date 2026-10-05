@@ -28,6 +28,25 @@ const BATCH_HEADERS = {
   'neon-batch-deferrable': v => v === 'true' || v === 'false',
 }
 
+// The Training tables are personal: only /api/training touches them, filtered
+// by the verified user. Anything else naming them is refused here, except the
+// idempotent CREATE TABLE / INDEX IF NOT EXISTS (for these tables only) that
+// runMigrations() sends.
+// A guard in the application, not a database boundary: a separate database
+// role would be needed to hold against a determined staff member (see
+// claude.md › Database access).
+const PERSONAL_TABLES = /training_(profiles|sessions)/i
+const MIGRATION_DDL = [
+  /^\s*CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+training_(profiles|sessions)\s*\(/i,
+  /^\s*CREATE\s+(UNIQUE\s+)?INDEX\s+IF\s+NOT\s+EXISTS\s+\w+\s+ON\s+training_(profiles|sessions)\s*\(/i,
+]
+export function touchesPersonalTables(query) {
+  if (!PERSONAL_TABLES.test(query)) return false
+  const inner = query.trim().replace(/;$/, '')
+  const isDdl = MIGRATION_DDL.some(re => re.test(inner)) && !inner.includes(';') && !/\bSELECT\b/i.test(inner)
+  return !isDdl
+}
+
 const isQuery = q => !!q && typeof q.query === 'string' && (q.params === undefined || Array.isArray(q.params))
 const oneQuery = q => ({ query: q.query, params: q.params ?? [] })
 
@@ -60,6 +79,9 @@ export default async function handler(req, res) {
 
   const body = queryBody(readBody(req))
   if (!body) return fail(res, 422, 'bad_query', 'Expected { query, params } or { queries: [...] }')
+  if ((body.queries ?? [body]).some(q => touchesPersonalTables(q.query))) {
+    return fail(res, 403, 'personal_data', 'That data is only available through its own API')
+  }
 
   // Always the server's own connection string: the browser's placeholder
   // header is never read.

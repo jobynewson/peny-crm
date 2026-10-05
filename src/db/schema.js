@@ -949,3 +949,30 @@ export const notification_settings = pgTable('notification_settings', {
   email:         boolean('email').notNull(),
   updated_at:    timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
+
+// ── Personal Tools › Training (drizzle/0046_add_training.sql) ─────────────────
+// One profile per person (their sport, cool-down areas, kit and Build-a-session
+// settings) and one row per completed session. Both are keyed by the owner's
+// Clerk id and read and written ONLY through /api/training, which filters every
+// query by the verified session; /api/db refuses to touch them.
+export const training_profiles = pgTable('training_profiles', {
+  clerk_user_id: text('clerk_user_id').primaryKey(),
+  sport:         text('sport').notNull(),
+  areas:         jsonb('areas').notNull().default(sql`'[]'::jsonb`),
+  kit:           jsonb('kit').notNull().default(sql`'[]'::jsonb`),
+  gen:           jsonb('gen').notNull().default(sql`'{}'::jsonb`),
+  updated_at:    timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+export const training_sessions = pgTable('training_sessions', {
+  id:               uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  clerk_user_id:    text('clerk_user_id').notNull(),
+  sport:            text('sport').notNull(),
+  kind:             text('kind').notNull(),            // 'program' | 'custom'
+  week:             integer('week'),                   // program only
+  session_key:      text('session_key'),               // program only: A, B or C
+  items:            jsonb('items'),                    // exercises and prescriptions; null for "Mark done"
+  started_at:       timestamp('started_at', { withTimezone: true }),
+  completed_at:     timestamp('completed_at', { withTimezone: true }).notNull().defaultNow(),
+  duration_seconds: integer('duration_seconds'),
+})
