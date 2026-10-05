@@ -39,8 +39,8 @@ export const FIGS_B = {
     { label: '3 · Land on both feet, sink and hold', hl: ['thigh'], head: [100, 58], sh: [92, 72], hip: [78, 106], kn: [112, 100], an: [98, 128], toe: [112, 128], el: [108, 76], wr: [124, 80], kn2: [110, 100], an2: [94, 128], toe2: [108, 128], extra: down(150, 56, 100) },
   ],
   skater: [
-    { label: '1 · Sink on one leg, free foot trailing behind', hl: ['thigh'], head: [108, 38], sh: [104, 52], hip: [96, 82], kn: [114, 102], an: [102, 128], toe: [114, 128], el: [94, 62], wr: [84, 72], el2: [112, 64], wr2: [120, 56], kn2: [70, 98], an2: [50, 120], toe2: [44, 124] },
-    { label: '2 · Bound sideways, land softly on the other leg', hl: ['thigh'], head: [114, 24], sh: [110, 38], hip: [100, 66], kn: [122, 88], an: [118, 116], toe: [126, 118], el: [122, 48], wr: [134, 56], el2: [98, 50], wr2: [84, 60], kn2: [80, 90], an2: [58, 108], toe2: [52, 112], extra: arrow('M128 100 L160 100 M153 94 L160 100 L153 106') },
+    { label: '1 · Front view: sink on one leg, free foot trailing behind', flat: true, vb: '14 8 172 140', hl: ['thigh'], head: [84, 22], sh: [84, 36], hip: [84, 68], kn: [76, 97], an: [72, 128], toe: [66, 129], el: [72, 48], wr: [86, 56], kn2: [92, 98], an2: [112, 112], toe2: [118, 112], el2: [98, 46], wr2: [110, 40], extra: arrow('M84 140 L128 140 M121 134 L128 140 L121 146') },
+    { label: '2 · Bound sideways, land softly on the other leg', flat: true, vb: '14 8 172 140', hl: ['thigh'], head: [124, 22], sh: [124, 36], hip: [124, 68], kn: [132, 97], an: [136, 128], toe: [142, 129], el: [112, 48], wr: [100, 40], el2: [138, 48], wr2: [126, 56], kn2: [116, 98], an2: [96, 112], toe2: [90, 112], extra: arrow('M84 140 L128 140 M121 134 L128 140 L121 146') },
   ],
   floorpress: [
     { label: '1 · Arms straight over your chest', hl: ['uarm'], head: [33, 123], sh: [46, 124], hip: [78, 124], kn: [98, 100], an: [112, 127], toe: [122, 128], el: [46, 107], wr: [46, 90], extra: bell(46, 84, 7) + down(74, 78, 106) },
@@ -51,8 +51,8 @@ export const FIGS_B = {
     { label: '2 · Press straight up, bicep by your ear', hl: ['uarm'], back: block(64, 124, 28, 6), head: [78, 50], sh: [78, 64], hip: [78, 92], kn: [78, 124], an: [48, 127], toe: [42, 128], el: [85, 47], wr: [86, 30], kn2: [110, 98], an2: [108, 128], toe2: [120, 128], extra: bell(86, 23, 6) + up(122, 22, 56) },
   ],
   bandpress: [
-    { label: '1 · Hands at your chest, band behind you', hl: ['uarm'], back: block(16, 26, 6, 104), head: [108, 21], sh: [104, 35], hip: [98, 66], kn: [110, 96], an: [110, 127], toe: [122, 128], el: [94, 48], wr: [111, 46], kn2: [92, 98], an2: [82, 124], toe2: [90, 128], extra: bandLine('M22 44 L111 46') },
-    { label: '2 · Press both hands straight out', hl: ['uarm'], back: block(16, 26, 6, 104), head: [108, 21], sh: [104, 35], hip: [98, 66], kn: [110, 96], an: [110, 127], toe: [122, 128], el: [121, 38], wr: [138, 41], kn2: [92, 98], an2: [82, 124], toe2: [90, 128], extra: bandLine('M22 44 L138 41') + arrow('M146 56 L172 56 M165 50 L172 56 L165 62') },
+    { label: '1 · From above: hands at your chest, band across your back to the post', flat: true, vb: '14 36 172 88', hl: ['uarm'], back: block(18, 70, 12, 20), head: [108, 80], sh: [96, 56], hip: [96, 104], el: [98, 44], wr: [112, 58], extra: bandLine('M30 80 L88 80 M88 56 L88 104 M88 56 L112 58 M88 104 L112 102') + '<line class="fg-limb hl" x1="96" y1="104" x2="100" y2="114"/><line class="fg-limb hl" x1="100" y1="114" x2="112" y2="102"/>' },
+    { label: '2 · Press both hands straight out (from above)', flat: true, vb: '14 36 172 88', hl: ['uarm'], back: block(18, 70, 12, 20), head: [108, 80], sh: [96, 56], hip: [96, 104], el: [112, 52], wr: [130, 56], extra: bandLine('M30 80 L88 80 M88 56 L88 104 M88 56 L130 56 M88 104 L130 104') + '<line class="fg-limb hl" x1="96" y1="104" x2="112" y2="108"/><line class="fg-limb hl" x1="112" y1="108" x2="130" y2="104"/>' + arrow('M138 80 L168 80 M161 74 L168 80 L161 86') },
   ],
   row: [
     { label: '1 · Flat back, arm hanging straight down', hl: ['uarm', 'farm'], back: block(30, 104, 72, 26), head: [120, 63], sh: [106, 66], hip: [74, 72], kn: [96, 100], an: [96, 128], toe: [108, 128], el: [114, 83], wr: [118, 100], kn2: [60, 100], an2: [32, 101], toe2: [26, 102], el2: [106, 86], wr2: [104, 104], extra: bell(118, 107, 7) },

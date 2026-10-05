@@ -9,7 +9,9 @@
 // to aim for: torso 32, thigh 32, shin 30, upper arm 17, forearm 17.
 // `hl` names the working segments drawn in the accent colour: thigh, shin,
 // torso, uarm, farm. `extra` is raw SVG (use the helpers below) for equipment
-// and a direction arrow. `vb` overrides the viewBox to crop a frame.
+// and a direction arrow. `vb` overrides the viewBox to crop a frame. Set
+// `flat: true` for a front or top-down view, where both sides are drawn alike
+// (put the left limbs in kn/an/toe/el/wr and the right in kn2/an2/toe2/el2/wr2).
 //
 // To add an exercise: add its frames to a file in src/training/figs/ and keep
 // the id the same as in EXERCISES (training.test.js checks all of them).
@@ -29,7 +31,7 @@ const seg = (a, b, cls = '') => (a && b ? `<line class="fg-limb ${cls}" x1="${a[
 function frameSvg(f) {
   const hl = new Set(f.hl ?? [])
   const h = n => (hl.has(n) ? 'hl' : '')
-  const far = 'far'
+  const far = f.flat ? '' : 'far' // front and top-down views draw both sides alike
   let s = '<line class="fg-ground" x1="8" y1="130" x2="192" y2="130"/>'
   s += f.back ?? ''
   s += seg(f.hip, f.kn2, far) + seg(f.kn2, f.an2, far) + seg(f.an2, f.toe2, far)
