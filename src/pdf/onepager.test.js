@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { FLAGS, LIMITS, blankDocument, blocksFromEditor, blocksToEditor, buildModel, groupBlocks, inline, pageHtml } from './onepager.js'
+import { DEFAULT_EMAIL, FLAGS, LIMITS, blankDocument, blocksFromEditor, blocksToEditor, buildModel, groupBlocks, inline, pageHtml } from './onepager.js'
 import { FLAGS as API_FLAGS, LIMITS as API_LIMITS, cleanDocument } from '../../api/_pdf-documents.js'
 
 describe('limits', () => {
@@ -47,12 +47,22 @@ describe('groupBlocks', () => {
 
 describe('buildModel and pageHtml', () => {
   const doc = { title: 'A <b>title</b>', theme: 'light', content: { label: 'Proposal', subtitle: 'Sub', date: '6 October 2026', preparedBy: '', emails: '', blocks: [{ type: 'heading', text: 'H' }] } }
-  const settings = { address: '1 <i>Lane</i>\nBristol', email: 'hello@x.co', website: 'x.co', vat_number: 'GB1', prepared_by: 'Joby' }
+  const settings = { address: '1 <i>Lane</i>\nBristol', website: 'x.co', vat_number: 'GB1' }
 
-  it('falls back to Settings for prepared by and emails, and prefers what the document says', () => {
-    expect(buildModel(doc, settings)).toMatchObject({ preparedBy: 'Joby', emails: ['hello@x.co'] })
+  it('prepared by and emails are only what the document says, not Settings', () => {
+    expect(buildModel(doc, { ...settings, prepared_by: 'Studio' })).toMatchObject({ preparedBy: '', emails: [] })
     const own = buildModel({ ...doc, content: { ...doc.content, preparedBy: 'Sam', emails: 'a@x.co, b@x.co;c@x.co' } }, settings)
     expect(own).toMatchObject({ preparedBy: 'Sam', emails: ['a@x.co', 'b@x.co', 'c@x.co'] })
+  })
+  it('a new document is blank for prepared by and has hello@wearepeny.com as the email', () => {
+    expect(blankDocument().content).toMatchObject({ preparedBy: '', emails: DEFAULT_EMAIL, scale: 100 })
+    expect(DEFAULT_EMAIL).toBe('hello@wearepeny.com')
+  })
+  it('scale is put on the page as a multiplier, and kept within bounds', () => {
+    expect(pageHtml(buildModel({ ...doc, content: { ...doc.content, scale: 85 } }), { first: true, last: true })).toContain('--pdf-s:0.85')
+    expect(buildModel({ ...doc, content: { ...doc.content, scale: 5 } }).scale).toBe(LIMITS.scaleMin)
+    expect(buildModel({ ...doc, content: { ...doc.content, scale: 900 } }).scale).toBe(LIMITS.scaleMax)
+    expect(buildModel(doc).scale).toBe(100)
   })
   it('condensing the page condenses the header and footer too', () => {
     expect(buildModel({ ...doc, content: { ...doc.content, condensedPage: true } })).toMatchObject({ tight: true, headerCondensed: true, footerCondensed: true })
@@ -70,7 +80,7 @@ describe('buildModel and pageHtml', () => {
     expect(pageHtml(buildModel({ ...doc, theme: 'dark' }), { first: true, last: true })).toContain('/peny-logo-white.png')
   })
   it('shows the studio footer only on the last page, and page numbers only with several', () => {
-    const m = buildModel(doc, settings)
+    const m = buildModel({ ...doc, content: { ...doc.content, preparedBy: 'Joby' } }, settings)
     const one = pageHtml(m, { first: true, last: true, num: 1, total: 1 })
     expect(one).toContain('VAT: GB1'); expect(one).toContain('Prepared by Joby'); expect(one).not.toContain('Page 1')
     const first = pageHtml(m, { first: true, last: false, num: 1, total: 2 })

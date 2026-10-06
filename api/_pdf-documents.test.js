@@ -48,6 +48,13 @@ describe('cleanDocument', () => {
     expect(cleanDocument(doc({ content: { blocks: [], emails: 'x'.repeat(LIMITS.emails + 1) } })).field).toBe('content.emails')
     expect(FLAGS).toEqual(['condensedHeader', 'condensedFooter', 'condensedPage'])
   })
+  it('keeps a whole-number scale in range, defaulting to 100', () => {
+    expect(cleanDocument(doc()).value.content.scale).toBe(100)
+    expect(cleanDocument(doc({ content: { blocks: [], scale: 72 } })).value.content.scale).toBe(72)
+    for (const bad of [LIMITS.scaleMin - 1, LIMITS.scaleMax + 1, 80.5, '80']) {
+      expect(cleanDocument(doc({ content: { blocks: [], scale: bad } })).field).toBe('content.scale')
+    }
+  })
   it('defaults the theme to dark and trims the title', () => {
     expect(cleanDocument({ ...doc({ title: '  Hi  ', theme: undefined }) }).value).toMatchObject({ title: 'Hi', theme: 'dark' })
   })

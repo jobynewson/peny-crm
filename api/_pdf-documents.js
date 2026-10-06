@@ -19,7 +19,7 @@ export const THEMES = ['dark', 'light']
 // The layout tick boxes: a condensed header, a condensed footer, and a condensed page.
 export const FLAGS = ['condensedHeader', 'condensedFooter', 'condensedPage']
 export const BLOCK_TYPES = ['heading', 'text', 'bullets', 'table']
-export const LIMITS = { title: 200, label: 60, subtitle: 300, date: 60, preparedBy: 120, emails: 300, blocks: 60, text: 5000, items: 40, rows: 30, cell: 300, bytes: 100_000 }
+export const LIMITS = { title: 200, label: 60, subtitle: 300, date: 60, preparedBy: 120, emails: 300, scaleMin: 40, scaleMax: 120, blocks: 60, text: 5000, items: 40, rows: 30, cell: 300, bytes: 100_000 }
 
 export const ROUTES = [
   { method: 'GET',    pattern: /^pdf-documents$/,                                    handler: listDocuments },
@@ -49,6 +49,8 @@ export function cleanDocument(body) {
   if (!isStr(date, LIMITS.date)) return { field: 'content.date', message: `Date is up to ${LIMITS.date} characters` }
   if (!isStr(preparedBy, LIMITS.preparedBy)) return { field: 'content.preparedBy', message: `Prepared by is up to ${LIMITS.preparedBy} characters` }
   if (!isStr(emails, LIMITS.emails)) return { field: 'content.emails', message: `Email addresses are up to ${LIMITS.emails} characters` }
+  const scale = c.scale ?? 100
+  if (!Number.isInteger(scale) || scale < LIMITS.scaleMin || scale > LIMITS.scaleMax) return { field: 'content.scale', message: `Scale is a whole number from ${LIMITS.scaleMin} to ${LIMITS.scaleMax}` }
   for (const k of FLAGS) if (c[k] !== undefined && typeof c[k] !== 'boolean') return { field: `content.${k}`, message: `${k} must be true or false` }
   if (!Array.isArray(c.blocks) || c.blocks.length > LIMITS.blocks) return { field: 'content.blocks', message: `A document has up to ${LIMITS.blocks} blocks` }
 
@@ -71,7 +73,7 @@ export function cleanDocument(body) {
     }
   }
 
-  const content = { label, subtitle, date, preparedBy, emails, blocks }
+  const content = { label, subtitle, date, preparedBy, emails, scale, blocks }
   for (const k of FLAGS) content[k] = c[k] === true
   if (JSON.stringify(content).length > LIMITS.bytes) return { field: 'content', message: 'This document is too large to save' }
   return { value: { title, theme, content } }

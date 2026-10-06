@@ -11,8 +11,11 @@
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
 // Keep in step with LIMITS and FLAGS in api/_pdf-documents.js (its test checks).
-export const LIMITS = { title: 200, label: 60, subtitle: 300, date: 60, preparedBy: 120, emails: 300, blocks: 60, text: 5000, items: 40, rows: 30, cell: 300 }
+export const LIMITS = { title: 200, label: 60, subtitle: 300, date: 60, preparedBy: 120, emails: 300, scaleMin: 40, scaleMax: 120, blocks: 60, text: 5000, items: 40, rows: 30, cell: 300 }
 export const FLAGS = ['condensedHeader', 'condensedFooter', 'condensedPage']
+
+// A new document's footer email; "prepared by" starts blank.
+export const DEFAULT_EMAIL = 'hello@wearepeny.com'
 
 export const BLOCK_LABELS = { heading: 'Heading', text: 'Text', bullets: 'List', table: 'Table' }
 
@@ -21,7 +24,7 @@ export function todayLong(d = new Date()) {
 }
 
 export function blankDocument() {
-  return { title: '', theme: 'dark', content: { label: '', subtitle: '', date: todayLong(), preparedBy: '', emails: '', condensedHeader: false, condensedFooter: false, condensedPage: false, blocks: [{ type: 'text', text: '' }] } }
+  return { title: '', theme: 'dark', content: { label: '', subtitle: '', date: todayLong(), preparedBy: '', emails: DEFAULT_EMAIL, scale: 100, condensedHeader: false, condensedFooter: false, condensedPage: false, blocks: [{ type: 'text', text: '' }] } }
 }
 
 // Typed text: **bold** and *italic*, with line breaks kept as typed. Escaped
@@ -88,7 +91,7 @@ const list = s => String(s ?? '').split(/[,;\n]/).map(x => x.trim()).filter(Bool
 /**
  * Everything a page needs, worked out once.
  * @param {{ title: string, theme: 'dark'|'light', content: object }} doc
- * @param {object} settings  the workspace settings (address, email, website, vat_number, prepared_by)
+ * @param {object} settings  the workspace settings (address, website, vat_number)
  */
 export function buildModel(doc, settings = {}) {
   const c = doc.content ?? {}
@@ -104,8 +107,9 @@ export function buildModel(doc, settings = {}) {
     groups: groupBlocks(c.blocks),
     facts: [c.date, String(settings.address ?? '').replace(/\s*\n\s*/g, ', '), settings.website, settings.vat_number ? `VAT: ${settings.vat_number}` : '']
       .map(x => String(x ?? '').trim()).filter(Boolean),
-    emails: list(c.emails).length ? list(c.emails) : list(settings.email),
-    preparedBy: (c.preparedBy || settings.prepared_by || '').trim(),
+    emails: list(c.emails),
+    preparedBy: (c.preparedBy || '').trim(),
+    scale: Number.isInteger(c.scale) ? Math.min(LIMITS.scaleMax, Math.max(LIMITS.scaleMin, c.scale)) : 100,
   }
 }
 
@@ -138,5 +142,5 @@ function footerHtml(m, { last, num, total }) {
 /** One page: `bodyHtml` is the blocks that sit on it. */
 export function pageHtml(m, { first, last, num = 1, total = 1, bodyHtml = '' }) {
   const cls = ['pdf-one', m.dark ? 'pdf-one-dark' : 'pdf-one-light', m.tight && 'pdf-one-tight', m.headerCondensed && 'pdf-one-hc', m.footerCondensed && 'pdf-one-fc'].filter(Boolean).join(' ')
-  return `<div class="${cls}">${headerHtml(m, first)}<div class="pdf-one-body">${bodyHtml}</div>${footerHtml(m, { last, num, total })}</div>`
+  return `<div class="${cls}" style="--pdf-s:${m.scale / 100}">${headerHtml(m, first)}<div class="pdf-one-body">${bodyHtml}</div>${footerHtml(m, { last, num, total })}</div>`
 }

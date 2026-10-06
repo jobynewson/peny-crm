@@ -3318,7 +3318,9 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
    -hc condensed header, -fc condensed footer, -tight the whole page condensed.
    ════════════════════════════════════════════════════════════════════════ */
 .pdf-one-pages { width: 210mm; }
-.pdf-one { width: 210mm; min-height: 297mm; display: flex; flex-direction: column; padding: 52px 56px 40px; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-family: var(--font); }
+/* The scale slider: everything on the page, padding included, shrinks together. */
+.pdf-one > * { zoom: var(--pdf-s, 1); }
+.pdf-one { width: 210mm; min-height: 297mm; display: flex; flex-direction: column; padding: calc(52px * var(--pdf-s, 1)) calc(56px * var(--pdf-s, 1)) calc(40px * var(--pdf-s, 1)); box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-family: var(--font); }
 @media print { .pdf-one:not(:last-child) { page-break-after: always; break-after: page; } }
 .pdf-one-dark { background: #1a1a18; color: #fff; }
 .pdf-one-light { background: #fff; color: #1a1a18; }
@@ -3376,7 +3378,7 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 .pdf-one-hc .pdf-one-divider { margin: 14px 0 16px; }
 
 /* Condensed page: less padding and smaller type, to fit more on one sheet. */
-.pdf-one-tight { padding: 32px 40px 26px; }
+.pdf-one-tight { padding: calc(32px * var(--pdf-s, 1)) calc(40px * var(--pdf-s, 1)) calc(26px * var(--pdf-s, 1)); }
 .pdf-one-tight .pdf-one-h { font-size: 11.5px; margin: 14px 0 6px; padding-bottom: 4px; }
 .pdf-one-tight .pdf-one-h:first-child { margin-top: 0; }
 .pdf-one-tight .pdf-one-p, .pdf-one-tight .pdf-one-ul { font-size: 11px; line-height: 1.45; margin-bottom: 8px; }
@@ -3396,6 +3398,9 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 .pg-check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
 .pg-check input { width: 16px; height: 16px; margin: 0; flex: none; }
 .pg-check input:disabled + span { color: var(--text-muted); }
+.pg-scale { display: flex; align-items: center; gap: 10px; }
+.pg-scale input[type="range"] { flex: 1; min-width: 0; }
+.pg-scale output { min-width: 3.5em; text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; }
 .pg-block { border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; background: var(--surface-2); }
 .pg-block-head { display: flex; align-items: center; gap: 6px; }
 .pg-block-type { flex: 1; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }

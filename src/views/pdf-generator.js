@@ -88,7 +88,7 @@ export class PdfGeneratorView {
   // ones, so every one has a default.
   _metaOf(c) {
     return {
-      label: c.label ?? '', subtitle: c.subtitle ?? '', date: c.date ?? '', preparedBy: c.preparedBy ?? '', emails: c.emails ?? '',
+      label: c.label ?? '', subtitle: c.subtitle ?? '', date: c.date ?? '', preparedBy: c.preparedBy ?? '', emails: c.emails ?? '', scale: Number.isInteger(c.scale) ? c.scale : 100,
       ...Object.fromEntries(FLAGS.map(k => [k, c[k] === true])),
     }
   }
@@ -148,7 +148,6 @@ export class PdfGeneratorView {
     const d = this.draft, mc = this.mc
     if (!mc) return
     const ro = this.readOnly
-    const st = this.app.settings || {}
     const blockCount = d.blocks.length
     const blocksHtml = d.blocks.map((b, i) => {
       const field = b.type === 'heading'
@@ -175,13 +174,21 @@ export class PdfGeneratorView {
           <div class="field"><div class="field-label">Label <span class="tr-muted">(small text above the title)</span></div><input type="text" data-k="label" value="${esc(d.content.label)}" maxlength="${LIMITS.label}" placeholder="e.g. Proposal" /></div>
           <div class="field"><div class="field-label">Subtitle</div><input type="text" data-k="subtitle" value="${esc(d.content.subtitle)}" maxlength="${LIMITS.subtitle}" /></div>
           <div class="field"><div class="field-label">Date</div><input type="text" data-k="date" value="${esc(d.content.date)}" maxlength="${LIMITS.date}" /></div>
-          <div class="field"><div class="field-label">Prepared by</div><input type="text" data-k="preparedBy" value="${esc(d.content.preparedBy)}" maxlength="${LIMITS.preparedBy}" placeholder="${esc(st.prepared_by || '')}" /></div>
-          <div class="field"><div class="field-label">Email addresses <span class="tr-muted">(separate with commas)</span></div><input type="text" data-k="emails" value="${esc(d.content.emails)}" maxlength="${LIMITS.emails}" placeholder="${esc(st.email || '')}" /></div>
+          <div class="field"><div class="field-label">Prepared by</div><input type="text" data-k="preparedBy" value="${esc(d.content.preparedBy)}" maxlength="${LIMITS.preparedBy}" placeholder="Leave blank to leave it out" /></div>
+          <div class="field"><div class="field-label">Email addresses <span class="tr-muted">(separate with commas)</span></div><input type="text" data-k="emails" value="${esc(d.content.emails)}" maxlength="${LIMITS.emails}" /></div>
           <div class="field"><div class="field-label">Look</div>
             <div class="seg" role="group" aria-label="Look">
               <button type="button" class="seg-btn" data-theme="dark" aria-pressed="${d.theme !== 'light'}">Dark</button>
               <button type="button" class="seg-btn" data-theme="light" aria-pressed="${d.theme === 'light'}">Light</button>
             </div>
+          </div>
+          <div class="field"><div class="field-label"><label for="pg-scale">Scale</label></div>
+            <div class="pg-scale">
+              <input type="range" id="pg-scale" min="${LIMITS.scaleMin}" max="${LIMITS.scaleMax}" step="1" value="${d.content.scale}" aria-describedby="pg-scale-hint" />
+              <output id="pg-scale-out" for="pg-scale">${d.content.scale}%</output>
+              <button type="button" class="btn-secondary" id="pg-scale-reset"${d.content.scale === 100 ? ' disabled' : ''}>Reset</button>
+            </div>
+            <p class="pg-hint" id="pg-scale-hint">Shrinks or grows everything on the page together. Pull it down to fit a document onto one page.</p>
           </div>
           <div class="field"><div class="field-label">Layout</div>
             <div class="pg-checks">
@@ -197,7 +204,7 @@ export class PdfGeneratorView {
           <div class="pg-add" role="group" aria-label="Add a block">
             ${Object.entries(BLOCK_LABELS).map(([t, l]) => `<button type="button" class="btn-secondary" data-add="${t}"${blockCount >= LIMITS.blocks ? ' disabled' : ''}>+ ${l}</button>`).join('')}
           </div>
-          <p class="pg-hint">The logo, address, website and VAT number come from Settings. Prepared by and the email addresses fall back to Settings when left empty.</p>
+          <p class="pg-hint">The logo, address, website and VAT number come from Settings. Prepared by and the email addresses are only what you type here.</p>
         </fieldset></div>
         <div class="pg-preview-wrap">
           <p class="pg-hint pg-pages-note" id="pg-pages-note" hidden></p>
@@ -217,6 +224,14 @@ export class PdfGeneratorView {
       this._changed()
     }))
     mc.querySelectorAll('[data-f]').forEach(el => el.addEventListener('input', () => { d.blocks[Number(el.dataset.i)].text = el.value; this._changed() }))
+    const range = mc.querySelector('#pg-scale'), out = mc.querySelector('#pg-scale-out'), reset = mc.querySelector('#pg-scale-reset')
+    const setScale = v => {
+      d.content.scale = v
+      range.value = String(v); out.textContent = `${v}%`; reset.disabled = v === 100
+      this._changed()
+    }
+    range.addEventListener('input', () => setScale(Number(range.value)))
+    reset.addEventListener('click', () => setScale(100))
     mc.querySelectorAll('[data-flag]').forEach(el => el.addEventListener('change', () => {
       d.content[el.dataset.flag] = el.checked
       this._changed()
@@ -235,7 +250,15 @@ export class PdfGeneratorView {
     }))
     mc.querySelectorAll('[data-theme]').forEach(btn => btn.addEventListener('click', () => {
       d.theme = btn.dataset.theme
-      mc.querySelectorAll('[data-flag]').forEach(el => el.addEventListener('change', () => {
+      const range = mc.querySelector('#pg-scale'), out = mc.querySelector('#pg-scale-out'), reset = mc.querySelector('#pg-scale-reset')
+    const setScale = v => {
+      d.content.scale = v
+      range.value = String(v); out.textContent = `${v}%`; reset.disabled = v === 100
+      this._changed()
+    }
+    range.addEventListener('input', () => setScale(Number(range.value)))
+    reset.addEventListener('click', () => setScale(100))
+    mc.querySelectorAll('[data-flag]').forEach(el => el.addEventListener('change', () => {
       d.content[el.dataset.flag] = el.checked
       this._changed()
       if (el.dataset.flag === 'condensedPage') this._drawEditor()
