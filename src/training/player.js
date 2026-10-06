@@ -5,6 +5,7 @@
 
 import { DETAILS, whyFor } from './data.js'
 import { EX, isMain, makeSteps } from './engine.js'
+import { figureHtml, videoUrl } from './figures.js'
 import { createAwake } from './wakelock.js'
 
 const fmt = s => { s = Math.max(0, Math.ceil(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') }
@@ -13,7 +14,7 @@ const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').re
 export function howTo(ex) {
   const d = DETAILS[ex.id]
   if (!d) return ''
-  return `<div class="tr-howto"><h4>Setup</h4><p>${esc(d.setup)}</p><h4>How to do it</h4><ol>${d.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol><h4>What you should feel</h4><p>${esc(d.feel)}</p></div>`
+  return `<div class="tr-howto">${figureHtml(ex.id)}<h4>Setup</h4><p>${esc(d.setup)}</p><h4>How to do it</h4><ol>${d.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol><h4>What you should feel</h4><p>${esc(d.feel)}</p><a class="tr-video" href="${esc(videoUrl(ex))}" target="_blank" rel="noopener noreferrer">Watch a video</a></div>`
 }
 
 export class Player {
