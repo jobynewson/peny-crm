@@ -76,6 +76,8 @@ describe('staff endpoints refuse a client portal account', () => {
     ['notification-settings.js', { method: 'GET', url: '/api/notification-settings' }],
     ['training.js',    { method: 'GET', url: '/api/training' }],
     ['training.js',    { method: 'POST', query: { route: 'training/sessions' }, body: { id: '3f2504e0-4f89-11d3-9a0c-0305e82c3301', sport: 'mtb', kind: 'custom' } }],
+    ['pdf-documents.js', { method: 'GET', url: '/api/pdf-documents' }],
+    ['pdf-documents.js', { method: 'POST', query: { route: 'pdf-documents' }, body: { title: 'x', content: {} } }],
     ['retainers.js',   { method: 'GET', query: { route: 'retainers/project-counts' } }],
     ['retainers.js',   { method: 'POST', query: { route: 'retainers/deliveries/3f2504e0-4f89-11d3-9a0c-0305e82c3301/response' }, body: { response: 'approved' } }],
     ['portal.js',      { method: 'GET', query: { view: 'tasks', route: 'tasks' } }],

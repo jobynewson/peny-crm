@@ -39,6 +39,8 @@ export function searchCommands(app) {
       keywords: 'offloads backups cards media fence copies' },
     { label: 'Story Planner', hint: 'Tools', icon: 'story', run: go('story-planner'),
       keywords: 'story script structure beats plans' },
+    { label: 'PDF Generator', hint: 'Tools', icon: 'notes', run: go('pdf-generator'),
+      keywords: 'pdf one-pager onepager document print export quote invoice branded sheet' },
     { label: 'Personal Tools', hint: 'Tools', icon: 'training', run: go('personal-tools'),
       keywords: 'private personal tools hub' },
     { label: 'Training', hint: 'Personal Tools', icon: 'training', run: go('training'),

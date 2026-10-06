@@ -38,7 +38,7 @@ export const db = drizzle(sql, { schema })
 // them only while the database's recorded version is behind this one; the
 // normal boot is a single read. src/db/migrations-version.test.js fails if the
 // statements change and this doesn't.
-export const SCHEMA_VERSION = 4
+export const SCHEMA_VERSION = 5
 
 export async function runMigrations() {
   let current = 0
@@ -748,6 +748,26 @@ async function applyMigrations() {
   await sql`
     CREATE INDEX IF NOT EXISTS training_sessions_user_idx
       ON training_sessions (clerk_user_id, completed_at DESC)
+  `
+
+  // ── Tools › PDF Generator (drizzle/0047_add_pdf_documents.sql) ──────────────
+  // Read and written only through /api/pdf-documents.
+  await sql`
+    CREATE TABLE IF NOT EXISTS pdf_documents (
+      id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id     TEXT NOT NULL,
+      title       TEXT NOT NULL,
+      theme       TEXT NOT NULL DEFAULT 'dark',
+      content     JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_by  TEXT NOT NULL,
+      updated_by  TEXT NOT NULL,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE INDEX IF NOT EXISTS pdf_documents_user_idx
+      ON pdf_documents (user_id, updated_at DESC)
   `
 
   // ── Staff invitations (drizzle/0035_add_staff_invitations.sql) ─────────────

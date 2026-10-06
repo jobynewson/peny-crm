@@ -291,6 +291,28 @@ There is no sidebar. The shell is a header over the page:
   separate database role.
 - Viewers can use Training: it only touches their own rows.
 
+### PDF Generator
+- **PDF Generator** (`#pdf-generator`, `#pdf-generator/<id>`; avatar menu ›
+  Tools) makes one-page documents in the quote PDF's look and keeps them in a
+  **shared** library: everyone on staff sees and edits the same documents
+  (rows are scoped to the workspace owner, `created_by` / `updated_by` record
+  who saved). Viewers can open and print but not change.
+  - `src/pdf/onepager.js`: the document as HTML (`renderOnePager`), plus the
+    editor ↔ saved block conversion. Dark follows the quote cover, light the
+    detail pages; the logo and footer (address, email, website, VAT, prepared
+    by) always come from Settings, so branding isn't editable per document.
+    Styles are the `.pdf-one-*` block in `style.css`, **not** the quote's
+    `.pdf-*` classes, which are marked "do not restyle".
+  - `src/views/pdf-generator.js`: library list, form + live scaled A4 preview,
+    save / save as copy / delete. "Download PDF" is the quote's route: the page
+    goes into `#pdf-topsheet` and the browser's print dialog does the rest.
+  - A document is `{ title, theme, content: { label, subtitle, date, blocks } }`;
+    blocks are `heading`, `text`, `bullets` or `table` (two columns). The
+    server keeps only these keys and enforces the limits in
+    `api/_pdf-documents.js` (`src/pdf/onepager.js` repeats them; a test checks).
+- **Data**: `pdf_documents` (`drizzle/0047`), read and written only through
+  `/api/pdf-documents` (`api/pdf-documents.js` + `api/_pdf-documents.js`).
+
 ### Logging time
 - The header's **Log time** button opens a 340px popover (a sheet on phones)
   with Project, Role, Date (today), Hours and optional Notes. On a project
@@ -328,7 +350,7 @@ There is no sidebar. The shell is a header over the page:
     a clean URL.
 - Current functions: `ai`, `blob`, `callsheet`, `client`, `companies`, `due`,
   `generate-ra`, `google`, `invite`, `maps`, `notification-settings`,
-  `packing`, `portal`, `quote`, `realtime`, `reminders`, `retainers`, `track`, `training`.
+  `packing`, `portal`, `quote`, `realtime`, `reminders`, `pdf-documents`, `retainers`, `track`, `training`.
 - **JSON API routers** share `api/_api.js`: a route table matched on
   `${method} ${path}` (`:id` segments must be uuids), 404 / 405 + `Allow`,
   errors always `{ error: { code, message, field? } }`, and `dispatch()`,
