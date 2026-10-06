@@ -5,6 +5,7 @@ import {
 import { EX, COOL_BUDGET, coolDown, curWeek, est, generate, makeSteps, progSession, stretchesFor, swap } from './engine.js'
 import { TrainingStore } from './store.js'
 import { createAwake } from './wakelock.js'
+import { FIGURES, figureHtml, videoUrl } from './figures.js'
 
 const ALL_KIT = ['band', 'kb', 'db']
 const ALL_AREAS = AREAS.map(a => a.id)
@@ -307,5 +308,37 @@ describe('defaults', () => {
   })
   it('start general with three areas and all the kit', () => {
     expect(DEFAULT_PROFILE).toMatchObject({ sport: 'general', areas: ['ham', 'calf', 'shoulder'], kit: ALL_KIT })
+  })
+})
+
+describe('exercise diagrams', () => {
+  const POINTS = ['head', 'sh', 'hip', 'kn', 'an', 'toe', 'el', 'wr', 'kn2', 'an2', 'toe2', 'el2', 'wr2']
+  const SEGS = ['thigh', 'shin', 'torso', 'uarm', 'farm']
+  it('every exercise has 2 or 3 frames and every figure belongs to an exercise', () => {
+    for (const e of EXERCISES) expect(FIGURES[e.id]?.length, e.id).toBeGreaterThanOrEqual(2)
+    for (const id of Object.keys(FIGURES)) expect(EXERCISES.some(e => e.id === id), id).toBe(true)
+  })
+  it('frames use known joints, keep the head inside their own viewBox and have a caption', () => {
+    for (const [id, frames] of Object.entries(FIGURES)) {
+      expect(frames.length, id).toBeLessThanOrEqual(3)
+      for (const f of frames) {
+        expect(f.label, id).toBeTruthy()
+        expect(f.head && f.sh && f.hip, id).toBeTruthy()
+        const [vx, vy, vw, vh] = (f.vb ?? '14 8 172 128').split(' ').map(Number)
+        for (const k of POINTS) if (f[k]) {
+          expect(f[k].length, `${id}.${k}`).toBe(2)
+          if (k !== 'head') continue // zoomed frames may crop the legs on purpose
+          expect(f[k][0], `${id}.${k} x`).toBeGreaterThanOrEqual(vx); expect(f[k][0], `${id}.${k} x`).toBeLessThanOrEqual(vx + vw)
+          expect(f[k][1], `${id}.${k} y`).toBeGreaterThanOrEqual(vy); expect(f[k][1], `${id}.${k} y`).toBeLessThanOrEqual(vy + vh)
+        }
+        for (const h of f.hl ?? []) expect(SEGS, id).toContain(h)
+      }
+    }
+  })
+  it('renders svg with accessible captions, and builds a video search link', () => {
+    expect(figureHtml('goblet')).toContain('role="img"')
+    expect(figureHtml('nope')).toBe('')
+    const u = videoUrl({ name: 'Goblet squat', cat: 'squat' })
+    expect(u).toMatch(/^https:\/\/www\.youtube\.com\/results\?search_query=how%20to%20do%20Goblet%20squat/)
   })
 })

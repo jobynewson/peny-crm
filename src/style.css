@@ -3309,3 +3309,19 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 @media (max-width: 900px) { .tr-build { grid-template-columns: 1fr; gap: 8px; } }
 @media (max-width: 768px) { .tr-profile { height: 120px; } .tr-exlist li { font-size: 15px; } }
 @media (prefers-reduced-motion: reduce) { .tr-player, .tr-pl-bar i { transition: none; } }
+
+/* Exercise diagrams (src/training/figures.js) */
+.fg-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 6px 0 4px; }
+.fg-row.fg-wide { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.fg-frame { margin: 0; border: 1px solid var(--border); border-radius: 10px; padding: 6px; }
+.fg-frame svg { width: 100%; height: auto; display: block; }
+.fg-frame figcaption { font-size: 13px; color: var(--text-muted); padding: 2px 4px 4px; }
+.fg-limb { stroke: var(--text); stroke-width: 5.5; stroke-linecap: round; fill: none; }
+.fg-limb.far { stroke: var(--text-muted); opacity: .7; }
+.fg-limb.hl { stroke: var(--accent); }
+.fg-head { fill: none; stroke: var(--text); stroke-width: 5; }
+.fg-ground { stroke: var(--border); stroke-width: 3; }
+.fg-eq { fill: var(--text-muted); }
+.fg-band { stroke: var(--accent); stroke-width: 2.5; fill: none; stroke-dasharray: 5 3; }
+.fg-arrow { stroke: var(--text-muted); stroke-width: 3; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.tr-video { display: inline-block; margin: 8px 0 4px; font-size: 14px; font-weight: 600; color: var(--accent-text); }
