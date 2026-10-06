@@ -7,10 +7,10 @@
 // everyone on staff sees the same library; viewers can open and print them.
 
 import * as api from '../api/pdf-documents.js'
-import { BLOCK_LABELS, LIMITS, blankDocument, blocksFromEditor, blocksToEditor, renderOnePager } from '../pdf/onepager.js'
+import { BLOCK_LABELS, FLAGS, LIMITS, blankDocument, blocksFromEditor, blocksToEditor } from '../pdf/onepager.js'
+import { paginate } from '../pdf/paginate.js'
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-const A4_PX = 297 * 96 / 25.4
 const A4_W_PX = 210 * 96 / 25.4
 const fmtDate = v => { const d = new Date(v); return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) }
 
@@ -81,7 +81,16 @@ export class PdfGeneratorView {
   }
 
   _toDraft(d) {
-    return { id: d.id, title: d.title, theme: d.theme, content: { label: d.content.label ?? '', subtitle: d.content.subtitle ?? '', date: d.content.date ?? '' }, blocks: blocksToEditor(d.content.blocks) }
+    return { id: d.id, title: d.title, theme: d.theme, content: this._metaOf(d.content), blocks: blocksToEditor(d.content.blocks) }
+  }
+
+  // The document's fields apart from its blocks. Older saves lack the newer
+  // ones, so every one has a default.
+  _metaOf(c) {
+    return {
+      label: c.label ?? '', subtitle: c.subtitle ?? '', date: c.date ?? '', preparedBy: c.preparedBy ?? '', emails: c.emails ?? '',
+      ...Object.fromEntries(FLAGS.map(k => [k, c[k] === true])),
+    }
   }
 
   _toDoc() {
@@ -113,7 +122,7 @@ export class PdfGeneratorView {
   async _open(id) {
     if (id === null) {
       const b = blankDocument()
-      this.draft = { title: b.title, theme: b.theme, content: { label: b.content.label, subtitle: b.content.subtitle, date: b.content.date }, blocks: blocksToEditor(b.content.blocks) }
+      this.draft = { title: b.title, theme: b.theme, content: this._metaOf(b.content), blocks: blocksToEditor(b.content.blocks) }
       this.dirty = true
       history.pushState({}, '', '#pdf-generator')
     } else {
@@ -139,14 +148,17 @@ export class PdfGeneratorView {
     const d = this.draft, mc = this.mc
     if (!mc) return
     const ro = this.readOnly
+    const st = this.app.settings || {}
     const blockCount = d.blocks.length
     const blocksHtml = d.blocks.map((b, i) => {
       const field = b.type === 'heading'
         ? `<input type="text" data-f="text" data-i="${i}" value="${esc(b.text)}" maxlength="${LIMITS.text}" aria-label="Heading text" />`
         : `<textarea data-f="text" data-i="${i}" rows="${b.type === 'text' ? 4 : 5}" maxlength="${LIMITS.text}" aria-label="${BLOCK_LABELS[b.type]}" placeholder="${b.type === 'bullets' ? 'One item per line' : b.type === 'table' ? 'One row per line: Label | Value' : ''}">${esc(b.text)}</textarea>`
+      const fmt = b.type === 'heading' ? '' : `<button type="button" class="pg-block-btn pg-fmt" data-fmt="**" data-i="${i}" aria-label="Bold" title="Bold">B</button><button type="button" class="pg-block-btn pg-fmt pg-fmt-i" data-fmt="*" data-i="${i}" aria-label="Italic" title="Italic">I</button>`
       return `<div class="pg-block">
         <div class="pg-block-head">
           <span class="pg-block-type">${BLOCK_LABELS[b.type]}</span>
+          ${fmt}
           <button type="button" class="pg-block-btn" data-act="up" data-i="${i}" aria-label="Move up"${i === 0 ? ' disabled' : ''}>↑</button>
           <button type="button" class="pg-block-btn" data-act="down" data-i="${i}" aria-label="Move down"${i === blockCount - 1 ? ' disabled' : ''}>↓</button>
           <button type="button" class="pg-block-btn" data-act="remove" data-i="${i}" aria-label="Remove block">Remove</button>
@@ -163,26 +175,37 @@ export class PdfGeneratorView {
           <div class="field"><div class="field-label">Label <span class="tr-muted">(small text above the title)</span></div><input type="text" data-k="label" value="${esc(d.content.label)}" maxlength="${LIMITS.label}" placeholder="e.g. Proposal" /></div>
           <div class="field"><div class="field-label">Subtitle</div><input type="text" data-k="subtitle" value="${esc(d.content.subtitle)}" maxlength="${LIMITS.subtitle}" /></div>
           <div class="field"><div class="field-label">Date</div><input type="text" data-k="date" value="${esc(d.content.date)}" maxlength="${LIMITS.date}" /></div>
+          <div class="field"><div class="field-label">Prepared by</div><input type="text" data-k="preparedBy" value="${esc(d.content.preparedBy)}" maxlength="${LIMITS.preparedBy}" placeholder="${esc(st.prepared_by || '')}" /></div>
+          <div class="field"><div class="field-label">Email addresses <span class="tr-muted">(separate with commas)</span></div><input type="text" data-k="emails" value="${esc(d.content.emails)}" maxlength="${LIMITS.emails}" placeholder="${esc(st.email || '')}" /></div>
           <div class="field"><div class="field-label">Look</div>
             <div class="seg" role="group" aria-label="Look">
               <button type="button" class="seg-btn" data-theme="dark" aria-pressed="${d.theme !== 'light'}">Dark</button>
               <button type="button" class="seg-btn" data-theme="light" aria-pressed="${d.theme === 'light'}">Light</button>
             </div>
           </div>
-          <div class="field"><div class="field-label">Content</div></div>
+          <div class="field"><div class="field-label">Layout</div>
+            <div class="pg-checks">
+              <label class="pg-check"><input type="checkbox" data-flag="condensedHeader"${d.content.condensedPage || d.content.condensedHeader ? ' checked' : ''}${d.content.condensedPage ? ' disabled' : ''} /><span>Condensed header</span></label>
+              <label class="pg-check"><input type="checkbox" data-flag="condensedFooter"${d.content.condensedPage || d.content.condensedFooter ? ' checked' : ''}${d.content.condensedPage ? ' disabled' : ''} /><span>Condensed footer</span></label>
+              <label class="pg-check"><input type="checkbox" data-flag="condensedPage"${d.content.condensedPage ? ' checked' : ''} /><span>Condense the whole page <span class="tr-muted">(smaller type and margins, to fit more)</span></span></label>
+            </div>
+          </div>
+          <div class="field"><div class="field-label">Content</div>
+            <p class="pg-hint">Use **bold** or *italic*, or the B and I buttons on a selection. A new line stays a new line. Anything that doesn't fit flows onto the next page, starting a new page at a heading where it can.</p>
+          </div>
           ${blocksHtml}
           <div class="pg-add" role="group" aria-label="Add a block">
             ${Object.entries(BLOCK_LABELS).map(([t, l]) => `<button type="button" class="btn-secondary" data-add="${t}"${blockCount >= LIMITS.blocks ? ' disabled' : ''}>+ ${l}</button>`).join('')}
           </div>
-          <p class="pg-hint">The logo and your studio details come from Settings, so every document carries the same branding.</p>
+          <p class="pg-hint">The logo, address, website and VAT number come from Settings. Prepared by and the email addresses fall back to Settings when left empty.</p>
         </fieldset></div>
         <div class="pg-preview-wrap">
-          <p class="pg-overflow" id="pg-overflow" hidden>This runs onto a second page. Shorten it to keep a true one-pager.</p>
+          <p class="pg-hint pg-pages-note" id="pg-pages-note" hidden></p>
           <div class="pg-preview-frame" id="pg-frame" aria-label="Preview"></div>
         </div>
       </div>`
     this._bindEditor()
-    this._drawPreview()
+    this._renderPreview()
   }
 
   _bindEditor() {
@@ -194,9 +217,41 @@ export class PdfGeneratorView {
       this._changed()
     }))
     mc.querySelectorAll('[data-f]').forEach(el => el.addEventListener('input', () => { d.blocks[Number(el.dataset.i)].text = el.value; this._changed() }))
+    mc.querySelectorAll('[data-flag]').forEach(el => el.addEventListener('change', () => {
+      d.content[el.dataset.flag] = el.checked
+      this._changed()
+      if (el.dataset.flag === 'condensedPage') this._drawEditor()
+    }))
+    mc.querySelectorAll('[data-fmt]').forEach(btn => btn.addEventListener('click', () => {
+      const i = Number(btn.dataset.i), mark = btn.dataset.fmt
+      const ta = mc.querySelector(`[data-f][data-i="${i}"]`)
+      if (!ta) return
+      const { selectionStart: a, selectionEnd: z, value } = ta
+      ta.value = `${value.slice(0, a)}${mark}${value.slice(a, z)}${mark}${value.slice(z)}`
+      ta.focus()
+      ta.setSelectionRange(a + mark.length, z + mark.length)
+      d.blocks[i].text = ta.value
+      this._changed()
+    }))
     mc.querySelectorAll('[data-theme]').forEach(btn => btn.addEventListener('click', () => {
       d.theme = btn.dataset.theme
-      mc.querySelectorAll('[data-theme]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)))
+      mc.querySelectorAll('[data-flag]').forEach(el => el.addEventListener('change', () => {
+      d.content[el.dataset.flag] = el.checked
+      this._changed()
+      if (el.dataset.flag === 'condensedPage') this._drawEditor()
+    }))
+    mc.querySelectorAll('[data-fmt]').forEach(btn => btn.addEventListener('click', () => {
+      const i = Number(btn.dataset.i), mark = btn.dataset.fmt
+      const ta = mc.querySelector(`[data-f][data-i="${i}"]`)
+      if (!ta) return
+      const { selectionStart: a, selectionEnd: z, value } = ta
+      ta.value = `${value.slice(0, a)}${mark}${value.slice(a, z)}${mark}${value.slice(z)}`
+      ta.focus()
+      ta.setSelectionRange(a + mark.length, z + mark.length)
+      d.blocks[i].text = ta.value
+      this._changed()
+    }))
+    mc.querySelectorAll('[data-theme]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)))
       this._changed()
     }))
     mc.querySelectorAll('[data-add]').forEach(btn => btn.addEventListener('click', () => {
@@ -225,24 +280,32 @@ export class PdfGeneratorView {
     if (!was) this.app.updateTitle()
   }
 
+  // The pages are laid out with the browser's own layout, so redrawing waits for
+  // a pause in typing.
   _drawPreview() {
+    clearTimeout(this._previewTimer)
+    this._previewTimer = setTimeout(() => this._renderPreview(), 120)
+  }
+
+  _renderPreview() {
     const frame = this.mc?.querySelector('#pg-frame')
-    if (!frame) return
-    frame.innerHTML = renderOnePager(this._toDoc(), this.app.settings || {})
+    if (!frame || !this.draft) return
+    const { html, total } = paginate(this._toDoc(), this.app.settings || {})
+    frame.innerHTML = html
+    const note = this.mc.querySelector('#pg-pages-note')
+    if (note) { note.hidden = total < 2; note.textContent = `This document runs to ${total} pages.` }
     this._fitPreview()
   }
 
-  // The page is A4 at 96dpi; scale it down to the width on offer and size the
-  // frame to match, and say so if the content spills onto a second page.
+  // The pages are A4 at 96dpi; scale them down to the width on offer and size
+  // the frame to match.
   _fitPreview() {
     const frame = this.mc?.querySelector('#pg-frame')
-    const page = frame?.querySelector('.pdf-one')
-    if (!page) return
+    const pages = frame?.querySelector('.pdf-one-pages')
+    if (!pages) return
     const scale = Math.min(1, frame.clientWidth / A4_W_PX) || 1
-    page.style.transform = `scale(${scale})`
-    frame.style.height = `${Math.ceil(page.offsetHeight * scale)}px`
-    const over = this.mc.querySelector('#pg-overflow')
-    if (over) over.hidden = page.offsetHeight <= A4_PX + 2
+    pages.style.transform = `scale(${scale})`
+    frame.style.height = `${Math.ceil(pages.offsetHeight * scale)}px`
   }
 
   // ── Save / copy / delete ───────────────────────────────────────────────────
@@ -313,7 +376,7 @@ export class PdfGeneratorView {
     if (!d) return
     let ts = document.getElementById('pdf-topsheet')
     if (!ts) { ts = document.createElement('div'); ts.id = 'pdf-topsheet'; document.body.appendChild(ts) }
-    ts.innerHTML = renderOnePager(this._toDoc(), this.app.settings || {})
+    ts.innerHTML = paginate(this._toDoc(), this.app.settings || {}).html
     const before = document.title
     document.title = d.title.trim() || 'Document'
     window.addEventListener('afterprint', () => { document.title = before }, { once: true })

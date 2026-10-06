@@ -1,9 +1,19 @@
 import { describe, it, expect } from 'vitest'
-import { LIMITS, blankDocument, blocksFromEditor, blocksToEditor, renderOnePager } from './onepager.js'
-import { LIMITS as API_LIMITS, cleanDocument } from '../../api/_pdf-documents.js'
+import { FLAGS, LIMITS, blankDocument, blocksFromEditor, blocksToEditor, buildModel, groupBlocks, inline, pageHtml } from './onepager.js'
+import { FLAGS as API_FLAGS, LIMITS as API_LIMITS, cleanDocument } from '../../api/_pdf-documents.js'
 
 describe('limits', () => {
-  it('match the API', () => { const { bytes, ...rest } = API_LIMITS; expect(LIMITS).toEqual(rest) })
+  it('match the API', () => { const { bytes, ...rest } = API_LIMITS; expect(LIMITS).toEqual(rest); expect(FLAGS).toEqual(API_FLAGS) })
+})
+
+describe('inline formatting', () => {
+  it('makes **bold** and *italic* and nothing else', () => {
+    expect(inline('a **b** c *d* e')).toBe('a <strong>b</strong> c <em>d</em> e')
+    expect(inline('**<script>**')).toBe('<strong>&lt;script&gt;</strong>')
+    expect(inline('2 * 3 * 4')).toBe('2 * 3 * 4')
+    expect(inline('stars ** alone')).toBe('stars ** alone')
+  })
+  it('leaves line breaks for the stylesheet to keep', () => expect(inline('one\ntwo')).toBe('one\ntwo'))
 })
 
 describe('editor <-> saved blocks', () => {
@@ -24,26 +34,48 @@ describe('editor <-> saved blocks', () => {
   })
 })
 
-describe('renderOnePager', () => {
-  const doc = { title: 'A <b>title</b>', theme: 'light', content: { label: 'Proposal', subtitle: 'Sub', date: '6 October 2026', blocks: [
-    { type: 'heading', text: 'H' }, { type: 'text', text: 'Body & more' }, { type: 'bullets', items: ['x'] }, { type: 'table', rows: [['k', 'v']] }, { type: 'text', text: '  ' },
-  ] } }
+describe('groupBlocks', () => {
+  it('starts a group at each heading and skips empty blocks', () => {
+    const g = groupBlocks([
+      { type: 'text', text: 'intro' }, { type: 'heading', text: 'A' }, { type: 'text', text: 'a1' }, { type: 'text', text: '  ' },
+      { type: 'bullets', items: ['x'] }, { type: 'heading', text: 'B' }, { type: 'text', text: 'b1' },
+    ])
+    expect(g.map(x => x.length)).toEqual([1, 3, 2])
+    expect(g[1][0]).toContain('<h2')
+  })
+})
+
+describe('buildModel and pageHtml', () => {
+  const doc = { title: 'A <b>title</b>', theme: 'light', content: { label: 'Proposal', subtitle: 'Sub', date: '6 October 2026', preparedBy: '', emails: '', blocks: [{ type: 'heading', text: 'H' }] } }
+  const settings = { address: '1 <i>Lane</i>\nBristol', email: 'hello@x.co', website: 'x.co', vat_number: 'GB1', prepared_by: 'Joby' }
+
+  it('falls back to Settings for prepared by and emails, and prefers what the document says', () => {
+    expect(buildModel(doc, settings)).toMatchObject({ preparedBy: 'Joby', emails: ['hello@x.co'] })
+    const own = buildModel({ ...doc, content: { ...doc.content, preparedBy: 'Sam', emails: 'a@x.co, b@x.co;c@x.co' } }, settings)
+    expect(own).toMatchObject({ preparedBy: 'Sam', emails: ['a@x.co', 'b@x.co', 'c@x.co'] })
+  })
+  it('condensing the page condenses the header and footer too', () => {
+    expect(buildModel({ ...doc, content: { ...doc.content, condensedPage: true } })).toMatchObject({ tight: true, headerCondensed: true, footerCondensed: true })
+    expect(buildModel({ ...doc, content: { ...doc.content, condensedHeader: true } })).toMatchObject({ tight: false, headerCondensed: true, footerCondensed: false })
+  })
   it('escapes everything the user typed', () => {
-    const html = renderOnePager(doc, { address: '1 <script>', email: 'a@b.c' })
+    const html = pageHtml(buildModel(doc, settings), { first: true, last: true })
     expect(html).not.toContain('<b>title')
-    expect(html).not.toContain('<script>')
+    expect(html).not.toContain('<i>Lane')
     expect(html).toContain('A &lt;b&gt;title&lt;/b&gt;')
-    expect(html).toContain('Body &amp; more')
+    expect(html).toContain('1 &lt;i&gt;Lane&lt;/i&gt;, Bristol')
   })
   it('uses the black logo on light and the white one on dark', () => {
-    expect(renderOnePager(doc)).toContain('/peny-logo.png')
-    expect(renderOnePager({ ...doc, theme: 'dark' })).toContain('/peny-logo-white.png')
-    expect(renderOnePager({ ...doc, theme: 'dark' })).toContain('pdf-one-dark')
+    expect(pageHtml(buildModel(doc), { first: true, last: true })).toContain('/peny-logo.png')
+    expect(pageHtml(buildModel({ ...doc, theme: 'dark' }), { first: true, last: true })).toContain('/peny-logo-white.png')
   })
-  it('draws the settings footer and skips empty blocks', () => {
-    const html = renderOnePager(doc, { vat_number: 'GB1', prepared_by: 'Joby' })
-    expect(html).toContain('VAT: GB1')
-    expect(html).toContain('Prepared by Joby')
-    expect(html.match(/pdf-one-p"/g)).toHaveLength(1)
+  it('shows the studio footer only on the last page, and page numbers only with several', () => {
+    const m = buildModel(doc, settings)
+    const one = pageHtml(m, { first: true, last: true, num: 1, total: 1 })
+    expect(one).toContain('VAT: GB1'); expect(one).toContain('Prepared by Joby'); expect(one).not.toContain('Page 1')
+    const first = pageHtml(m, { first: true, last: false, num: 1, total: 2 })
+    expect(first).toContain('Page 1 of 2'); expect(first).not.toContain('VAT: GB1')
+    const last = pageHtml(m, { first: false, last: true, num: 2, total: 2 })
+    expect(last).toContain('Page 2 of 2'); expect(last).toContain('VAT: GB1'); expect(last).toContain('pdf-one-run')
   })
 })

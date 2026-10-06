@@ -1,7 +1,7 @@
 // PDF Generator routes: validation, and that every query is scoped to the
 // workspace. A fake sql records each query and its values.
 import { describe, it, expect } from 'vitest'
-import { ROUTES, cleanDocument, LIMITS } from './_pdf-documents.js'
+import { ROUTES, cleanDocument, LIMITS, FLAGS } from './_pdf-documents.js'
 import { matchRoute, accessDenied } from './_api.js'
 import { fakeRes } from './_test-db.js'
 
@@ -38,6 +38,15 @@ describe('cleanDocument', () => {
     expect(value.title).toBe('Rate card')
     expect(value.content.blocks[1]).toEqual({ type: 'text', text: 'Hello' })
     expect(Object.keys(value).sort()).toEqual(['content', 'theme', 'title'])
+  })
+  it('keeps the footer fields and layout flags, defaulting the flags to off', () => {
+    const d = doc(); d.content.preparedBy = 'Joby'; d.content.emails = 'a@b.co, c@d.co'; d.content.condensedPage = true
+    const { value } = cleanDocument(d)
+    expect(value.content).toMatchObject({ preparedBy: 'Joby', emails: 'a@b.co, c@d.co', condensedPage: true, condensedHeader: false, condensedFooter: false })
+    expect(cleanDocument(doc({ content: { blocks: [], condensedHeader: 'yes' } })).field).toBe('content.condensedHeader')
+    expect(cleanDocument(doc({ content: { blocks: [], preparedBy: 'x'.repeat(LIMITS.preparedBy + 1) } })).field).toBe('content.preparedBy')
+    expect(cleanDocument(doc({ content: { blocks: [], emails: 'x'.repeat(LIMITS.emails + 1) } })).field).toBe('content.emails')
+    expect(FLAGS).toEqual(['condensedHeader', 'condensedFooter', 'condensedPage'])
   })
   it('defaults the theme to dark and trims the title', () => {
     expect(cleanDocument({ ...doc({ title: '  Hi  ', theme: undefined }) }).value).toMatchObject({ title: 'Hi', theme: 'dark' })

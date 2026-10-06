@@ -293,22 +293,33 @@ There is no sidebar. The shell is a header over the page:
 
 ### PDF Generator
 - **PDF Generator** (`#pdf-generator`, `#pdf-generator/<id>`; avatar menu ›
-  Tools) makes one-page documents in the quote PDF's look and keeps them in a
+  Tools) makes documents in the quote PDF's look and keeps them in a
   **shared** library: everyone on staff sees and edits the same documents
   (rows are scoped to the workspace owner, `created_by` / `updated_by` record
   who saved). Viewers can open and print but not change.
-  - `src/pdf/onepager.js`: the document as HTML (`renderOnePager`), plus the
-    editor ↔ saved block conversion. Dark follows the quote cover, light the
-    detail pages; the logo and footer (address, email, website, VAT, prepared
-    by) always come from Settings, so branding isn't editable per document.
-    Styles are the `.pdf-one-*` block in `style.css`, **not** the quote's
+  - `src/pdf/onepager.js`: the pure part. `buildModel()` works out what a page
+    needs, `pageHtml()` is one page, `inline()` turns `**bold**` / `*italic*`
+    into tags (escaped first). Dark follows the quote cover, light the detail
+    pages. The logo, address, website and VAT number always come from
+    Settings; "prepared by" and the email addresses are fields on the document
+    and fall back to Settings when empty.
+  - `src/pdf/paginate.js`: lays the content across A4 pages with the browser's
+    layout (it measures real pages, so it only runs in the browser). A page
+    break falls before a heading's group (a heading and what follows it up to
+    the next heading) when the group won't fit; a group longer than a page is
+    split between blocks. With more than one page there are page numbers and a
+    running header; the studio footer closes the last page.
+  - Layout tick boxes: condensed header, condensed footer, and condensed page
+    (smaller type and margins; it implies the other two).
+  - Styles are the `.pdf-one-*` block in `style.css`, **not** the quote's
     `.pdf-*` classes, which are marked "do not restyle".
-  - `src/views/pdf-generator.js`: library list, form + live scaled A4 preview,
-    save / save as copy / delete. "Download PDF" is the quote's route: the page
-    goes into `#pdf-topsheet` and the browser's print dialog does the rest.
-  - A document is `{ title, theme, content: { label, subtitle, date, blocks } }`;
-    blocks are `heading`, `text`, `bullets` or `table` (two columns). The
-    server keeps only these keys and enforces the limits in
+  - `src/views/pdf-generator.js`: library list, form + live scaled preview,
+    save / save as copy / delete. "Download PDF" is the quote's route: the
+    pages go into `#pdf-topsheet` and the browser's print dialog does the rest.
+  - A document is `{ title, theme, content: { label, subtitle, date,
+    preparedBy, emails, condensedHeader, condensedFooter, condensedPage,
+    blocks } }`; blocks are `heading`, `text`, `bullets` or `table` (two
+    columns). The server keeps only these keys and enforces the limits in
     `api/_pdf-documents.js` (`src/pdf/onepager.js` repeats them; a test checks).
 - **Data**: `pdf_documents` (`drizzle/0047`), read and written only through
   `/api/pdf-documents` (`api/pdf-documents.js` + `api/_pdf-documents.js`).
