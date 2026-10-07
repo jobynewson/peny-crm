@@ -1,18 +1,19 @@
 // api/_requests.js
-// Client requests, on the task board. A new request is a card in the unassigned
-// tray (api/_board.js reads loadOpenRequests below); there is no separate
-// inbox. Routes behind /api/retainers (merged into _retainers.js's table), for
+// Client requests, on the task board. A new request is a card in New requests,
+// above the board's columns (api/_board.js reads loadOpenRequests below); there
+// is no separate inbox. Routes behind /api/retainers (merged into _retainers.js's table), for
 // Slate staff:
 //   GET  retainers/request-count                 { new, feedback }: the Tasks tab's bubble
 //   POST retainers/requests/:id/accept   { due_date?, project_id?, workstream_id |
 //                                          new_workstream_title?, owner_id?, title? }
 //   POST retainers/requests/:id/decline  { note }  — the client sees the note
 //
-// Accepting asks for nothing the board can't supply: the owner is whoever
-// accepts, the date is optional, the project is the request's own (or the
+// Accepting asks for nothing the board can't supply: the owner is optional (none
+// means unassigned: it lands in To do for someone to take, and the assignment
+// lead hears if nobody does), the date is optional, the project is the request's own (or the
 // company's only one, or its one retainer — asked for only when that is
 // ambiguous) and the workstream is the project's "Requests" one, made on first
-// use. Accepting creates the deliverable — owned, shown to the client — and
+// use. Accepting creates the deliverable — planned, shown to the client — and
 // from then on the deliverable is the only record of the work. A decided
 // request is history: the client sees it in the portal.
 //
@@ -35,7 +36,7 @@ export const REQUEST_ROUTES = [
 
 // ── GET retainers/request-count ──────────────────────────────────────────────
 // { new, feedback } — what the Tasks tab's bubble counts, polled: new client
-// requests waiting in the tray, and feedback waiting to be acted on (changes
+// requests waiting in New requests, and feedback waiting to be acted on (changes
 // requested, or comments are in) on deliverables that are yours or nobody's. It
 // clears itself when the next round goes out or the deliverable moves on.
 async function requestCount(req, res, { sql, user }) {
@@ -49,7 +50,7 @@ async function requestCount(req, res, { sql, user }) {
   return res.status(200).json({ new: n, feedback: f })
 }
 
-// The new requests, for the task board's tray: the one that has waited longest
+// The new requests, for the board's New requests strip: the one that has waited longest
 // first. Everything a card and its popover need, nothing more.
 export async function loadOpenRequests(sql, ws, today) {
   const rows = await sql`
@@ -64,7 +65,6 @@ export async function loadOpenRequests(sql, ws, today) {
   return rows.map(r => ({
     id: r.id,
     kind: 'request',
-    in_tray: true,
     title: r.title,
     detail: r.detail,
     company: r.company,
@@ -81,8 +81,8 @@ export async function loadOpenRequests(sql, ws, today) {
 }
 
 // ── POST retainers/requests/:id/accept ───────────────────────────────────────
-// Makes the deliverable and marks the request accepted, in one statement: owned
-// (by the caller unless told otherwise), planned, shown to the client — so the
+// Makes the deliverable and marks the request accepted, in one statement:
+// unassigned unless an owner is chosen, planned, shown to the client — so the
 // client's request visibly becomes part of their worklist. The client's own
 // words go in the internal notes. Nothing is required of the body (see the top).
 // 409 needs_project (with `projects`) when the company has several and none is
@@ -149,7 +149,7 @@ async function acceptRequest(req, res, { sql, user, params }) {
   }
   const creating = !workstreamId
 
-  const ownerId = body.owner_id || user.id
+  const ownerId = body.owner_id || null
   const dueDate = body.due_date || null
   const title = typeof body.title === 'string' && body.title.trim() ? body.title.trim() : request.title
   const notes = [
@@ -197,7 +197,7 @@ async function acceptRequest(req, res, { sql, user, params }) {
   }
   return res.status(200).json({
     ok: true, request_id: done.request_id, deliverable_id: done.deliverable_id,
-    workstream_id: done.workstream_id, company_id: request.company_id, project_id: projectId,
+    workstream_id: done.workstream_id, company_id: request.company_id, project_id: projectId, owner_id: ownerId,
     link: worklistLink({ project_id: projectId, company_id: request.company_id, id: done.deliverable_id }),
   })
 }

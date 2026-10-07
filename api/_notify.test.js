@@ -113,7 +113,7 @@ describe('testing mode', () => {
   it('redirects only the emails about the worklist and portal work', () => {
     expect(TESTABLE_KINDS.sort()).toEqual([
       'alert_changes_requested', 'alert_client_reply', 'alert_comments_in', 'alert_due_soon', 'alert_input_overdue',
-      'alert_new_request', 'delivery_ready', 'due_digest', 'task_assigned',
+      'alert_new_request', 'alert_unassigned', 'delivery_ready', 'due_digest', 'task_assigned',
     ])
     for (const kind of ['leave', 'expense_digest', 'expense_submitted', 'note_reminder', 'task_mentioned']) expect(TESTABLE_KINDS).not.toContain(kind)
   })

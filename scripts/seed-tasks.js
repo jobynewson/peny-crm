@@ -34,7 +34,7 @@ const hours = (n) => new Date(Date.now() - n * 3600_000).toISOString()
 const days  = (n) => new Date(Date.now() + n * 86400_000).toISOString()
 
 // [title, status, assigneeOffset|null, due_at, acknowledged, ageHours]
-// assigneeOffset indexes into the app_users list; null = unassigned tray.
+// assigneeOffset indexes into the app_users list; null = unassigned (in To do, marked Unassigned).
 const SEEDS = [
   ['Send the Q3 retainer report to Maple',       'todo',  0, days(1),  false, 5],
   ['Chase the missing invoice from Northwind',   'todo',  1, days(3),  true,  30],

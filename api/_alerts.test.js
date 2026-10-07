@@ -5,6 +5,7 @@ vi.mock('./_notify.js', async orig => ({ ...(await orig()), notify: vi.fn() }))
 const {
   resolveRecipients, inAlertWindow, inputAlertDays, claimStands, DEFAULT_INPUT_DAYS,
   newRequestEmail, changesRequestedEmail, clientReplyEmail, dueSoonEmail, inputOverdueEmail,
+  staleUnassigned, unassignedEmail, UNASSIGNED_WORKING_DAYS,
 } = await import('./_alerts.js')
 const { KINDS, switchableKinds, wantsEmail } = await import('./_notify.js')
 
@@ -21,6 +22,13 @@ describe('who hears', () => {
   })
   it('every superadmin when there is neither — never no one', () => {
     expect(resolveRecipients({ owner: null, lead: null, superadmins: [boss, ana] })).toEqual({ via: 'superadmins', to: [boss, ana] })
+  })
+  it('whoever looks after unassigned work, when there is no owner or lead', () => {
+    const seb = { id: 's', email: 'seb@peny.com', name: 'Seb' }
+    expect(resolveRecipients({ owner: null, lead: null, assignmentLead: seb, superadmins: [boss] })).toEqual({ via: 'assignment_lead', to: [seb] })
+    expect(resolveRecipients({ owner: null, lead: lee, assignmentLead: seb }).via).toBe('lead')
+    expect(resolveRecipients({ owner: ana, assignmentLead: seb }).via).toBe('owner')
+    expect(resolveRecipients({ assignmentLead: { id: 's' }, superadmins: [boss] }).via).toBe('superadmins')
   })
   it('someone with no email address does not count', () => {
     expect(resolveRecipients({ owner: { id: 'x', email: null }, lead: lee }).via).toBe('lead')
@@ -212,5 +220,50 @@ describe('the digest section', () => {
     const evil = '<img src=x onerror=alert(1)>'
     const html = approvalsSectionHtml([{ title: evil, company: evil, company_id: 'c', round: 1, responded_at: '2026-09-27T12:00:00Z', responded_by_name: evil, recorded: false }], 'https://slate.test')
     expect(html).not.toContain('<img')
+  })
+})
+
+describe('unassigned work', () => {
+  // Wed 7 Oct 2026. Fri 2 Oct has waited 3 working days, Mon 5 Oct two, Tue 6 Oct one.
+  const today = '2026-10-07'
+  const src = over => ({
+    tasks: [
+      { id: 't1', title: 'Book the suite', context: 'Film', since: '2026-10-05T09:00:00Z' },
+      { id: 't2', title: 'Fresh one', context: null, since: '2026-10-06T09:00:00Z' },
+    ],
+    deliverables: [
+      { id: 'd1', title: 'October reel', since: '2026-10-02T09:00:00Z', company: 'DMM', workstream: 'Monthly', project_id: 'p1', company_id: 'c1' },
+    ],
+    holidays: [], logged: [], ...over,
+  })
+
+  it('waits two working days, longest-waiting first, with where it lives', () => {
+    expect(UNASSIGNED_WORKING_DAYS).toBe(2)
+    const items = staleUnassigned(src(), today)
+    expect(items.map(i => [i.kind, i.id, i.waited])).toEqual([['deliverable', 'd1', 3], ['task', 't1', 2]])
+    expect(items[0]).toMatchObject({ context: 'DMM · Monthly', link: '#projects/p1/worklist/d1', cycle: '2026-10-02T09:00:00.000Z' })
+    expect(items[1]).toMatchObject({ context: 'Film', link: '#tasks/t1' })
+  })
+  it('counts no weekends or public holidays', () => {
+    expect(staleUnassigned(src({ holidays: ['2026-10-06'] }), today).map(i => i.id)).toEqual(['d1'])
+  })
+  it('says it once per spell without an owner', () => {
+    const logged = [{ id: 'd1', cycle: '2026-10-02T09:00:00.000Z' }, { id: 't1', cycle: '2026-09-01T09:00:00.000Z' }]
+    expect(staleUnassigned(src({ logged }), today).map(i => i.id)).toEqual(['t1'])
+  })
+  it('the email lists them, says why it came to you, and links to the board', () => {
+    const items = staleUnassigned(src(), today)
+    const mine = unassignedEmail({ items, via: 'assignment_lead' })
+    expect(mine.subject).toBe('2 things have no owner yet')
+    expect(mine.sentence).toContain('You look after unassigned work')
+    expect(mine.body).toContain('Deliverable · DMM · Monthly')
+    expect(mine.body).toContain('Unassigned for 3 working days')
+    expect(mine.href).toMatch(/#tasks$/)
+    expect(unassignedEmail({ items: items.slice(1), via: 'superadmins' })).toMatchObject({ subject: 'No owner yet: Book the suite' })
+    expect(unassignedEmail({ items, via: 'superadmins' }).sentence).toContain('Settings › Unassigned work')
+  })
+  it('is its own switch, on by default', () => {
+    expect(switchableKinds({ superadmin: false })).toContain('alert_unassigned')
+    expect(KINDS.alert_unassigned.default).toBe(true)
   })
 })

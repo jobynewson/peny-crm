@@ -1,11 +1,12 @@
 // src/views/request-cards.js
-// A client's new request on the task board: a card in the unassigned tray, with
-// Accept on the card itself. Clicking the card opens what they wrote, with
+// A client's new request on the task board: a card in New requests, above the
+// columns, with Accept on the card itself. Clicking the card opens what they wrote, with
 // Accept and Decline.
 //
-// Accept is as light as it can be and leave nothing half-set. It asks for one
-// thing, the date (filled in with the one they asked for, and optional), and
-// assigns the work to whoever pressed it. The server supplies the rest: the
+// Accept is as light as it can be and leave nothing half-set. It asks for two
+// optional things: the date (filled in with the one they asked for) and the
+// owner (Unassigned unless someone is chosen: the work then waits in To do,
+// marked Unassigned, for someone to take). The server supplies the rest: the
 // project (asking only if the client has several and none is clearly it) and
 // the project's "Requests" workstream. The deliverable can be moved or
 // re-dated on the Worklist tab afterwards.
@@ -26,7 +27,7 @@ export const linkify = text => esc(text).replace(/https?:\/\/[^\s<]+/g, match =>
 // Company, and the project when the client named one that is not simply the company again.
 const meta = r => [esc(r.company), r.project && r.project !== r.company ? esc(r.project) : null, r.sent_by ? `from ${esc(r.sent_by)}` : null].filter(Boolean).join(' · ')
 
-// The card for the tray. Not draggable: a request isn't work yet. Accept is on it.
+// The card for New requests. Not draggable: a request isn't work yet. Accept is on it.
 export function requestCardHtml(r, { canEdit = true } = {}) {
   return `
     <div class="tk-card tk-card--request" data-request-id="${esc(r.id)}" role="button" tabindex="0" title="Read the request">
@@ -89,18 +90,26 @@ export function openRequestSheet(app, anchor, r, { canEdit = true, onChanged } =
   })
 }
 
-// Accept: the date, and nothing else unless the client has several projects and
-// none is clearly it (then one more question, in the same popover).
+// Accept: the date and the owner, and nothing else unless the client has
+// several projects and none is clearly it (then one more question, in the same
+// popover).
 export function openAcceptForm(app, anchor, r, { onChanged } = {}) {
   openFloating({
     anchor, id: 'rq-accept', role: 'dialog', className: 'lt-pop rt-pop',
     html: `
       <div class="lt-head"><h2 class="lt-title" id="rq-accept-title">Accept “${esc(r.title)}”</h2></div>
       <form class="tl-form" id="rq-accept-form" novalidate>
-        <p class="tl-hint">It becomes a deliverable for you, shown to ${esc(r.company)}. Fill in the rest on the worklist later.</p>
+        <p class="tl-hint">It becomes a deliverable in To do, shown to ${esc(r.company)}. Fill in the rest on the worklist later.</p>
         <div class="tl-field">
           <label for="rq-due">Date <span class="tl-optional">(optional${r.wanted_by ? ' — they asked for this one' : ''})</span></label>
           <input type="date" id="rq-due" value="${esc(r.wanted_by || '')}" data-autofocus />
+        </div>
+        <div class="tl-field">
+          <label for="rq-owner">Owner <span class="tl-optional">(optional)</span></label>
+          <select id="rq-owner">
+            <option value="">Unassigned</option>
+            ${(app.allUsers || []).map(u => `<option value="${esc(u.id)}">${esc(u.name || u.email)}${u.id === app.appUser?.id ? ' (me)' : ''}</option>`).join('')}
+          </select>
         </div>
         <div class="tl-field" id="rq-project-field" hidden>
           <label for="rq-project">Which project?</label>
@@ -119,12 +128,17 @@ export function openAcceptForm(app, anchor, r, { onChanged } = {}) {
         submit.disabled = true
         msg.textContent = ''
         const body = { due_date: el.querySelector('#rq-due').value || null }
+        const owner = el.querySelector('#rq-owner').value
+        if (owner) body.owner_id = owner
         const project = el.querySelector('#rq-project-field').hidden ? null : el.querySelector('#rq-project').value
         if (project) body.project_id = project
         try {
           const done = await api.acceptRequest(r.id, body)
           close({ restoreFocus: false })
-          app.toast(`Accepted. It’s yours, in ${done.link ? 'the project’s worklist' : 'the worklist'}`)
+          const who = (app.allUsers || []).find(u => u.id === done.owner_id)
+          app.toast(!who ? 'Accepted. It’s in To do, unassigned'
+            : who.id === app.appUser?.id ? 'Accepted. It’s yours, in To do'
+            : `Accepted and given to ${who.name || who.email}`)
           onChanged?.(done)
         } catch (err) {
           submit.disabled = false

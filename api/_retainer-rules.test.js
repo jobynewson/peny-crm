@@ -275,25 +275,27 @@ describe('which deliverables have a board card', () => {
     expect(boardShows(d({ due_date: '2026-09-01' }), today)).toBe(true)     // late
     expect(BOARD_HORIZON_DAYS).toBe(30)
   })
-  it('puts every unowned open deliverable in the tray, whatever its date or status', () => {
+  it('shows every unowned open deliverable in its own column, marked unassigned, whatever its date or status', () => {
     for (const due_date of [null, '2026-10-05', '2028-01-01']) {
       for (const status of ['planned', 'in_progress', 'in_review', 'waiting_on_client', 'changes_requested']) {
         expect(boardShows(d({ owner_id: null, due_date, status }), today), `${status} ${due_date}`).toBe(true)
-        expect(boardCard(d({ owner_id: null, due_date, status }), today).in_tray).toBe(true)
+        const c = boardCard(d({ owner_id: null, due_date, status, created_at: '2026-09-25T10:00:00Z' }), today)
+        expect(c, `${status} ${due_date}`).toMatchObject({ unassigned: true, unassigned_since: '2026-09-25T10:00:00Z', column: boardColumn(status) })
       }
     }
   })
-  it('an unowned one in a paused or complete workstream is still in the tray; an owned one is parked', () => {
+  it('an unowned one in a paused or complete workstream is still shown; an owned one is parked', () => {
     for (const workstream_status of ['paused', 'complete']) {
       expect(boardShows(d({ owner_id: null, workstream_status }), today)).toBe(true)
-      expect(boardCard(d({ owner_id: null, workstream_status }), today).in_tray).toBe(true)
+      expect(boardCard(d({ owner_id: null, workstream_status }), today).unassigned).toBe(true)
       expect(boardShows(d({ workstream_status, status: 'in_progress' }), today)).toBe(false)
     }
   })
-  it('an approved one is a card only if someone owns it, and is not in the tray', () => {
+  it('an approved one is a card only if someone owns it, and is never unassigned', () => {
     expect(boardShows(d({ status: 'approved' }), today)).toBe(true)
     expect(boardShows(d({ status: 'approved', owner_id: null }), today)).toBe(false)
-    expect(boardCard(d({ status: 'approved' }), today).in_tray).toBe(false)
+    expect(boardCard(d({ status: 'approved' }), today)).toMatchObject({ unassigned: false, unassigned_since: null })
+    expect(boardCard(d({ status: 'approved', owner_id: null }), today).unassigned).toBe(false)
   })
   it('nothing is invisible: every open deliverable is on the board, or dated, owned and further out than four weeks', () => {
     const rows = []
@@ -308,7 +310,7 @@ describe('which deliverables have a board card', () => {
     const c = boardCard(d({ status: 'in_review', round: 2, due_date: '2026-09-27' }), today)
     expect(c).toMatchObject({
       kind: 'deliverable', column: 'doing', muted: true, chip: { label: 'With client · round 2' },
-      overdue: true, days_late: 2, link: '#retainers/c1', company: 'DMM', workstream: 'Monthly', in_tray: false,
+      overdue: true, days_late: 2, link: '#retainers/c1', company: 'DMM', workstream: 'Monthly', unassigned: false,
     })
     expect(boardCard(d({ project_id: 'p1', project: 'Retainer' }), today)).toMatchObject({ link: '#projects/p1/worklist/d', project: 'Retainer', project_id: 'p1' })
     expect(boardCard(d({ due_date: null }), today)).toMatchObject({ undated: true, due_display: 'No date', overdue: false, days_late: null })

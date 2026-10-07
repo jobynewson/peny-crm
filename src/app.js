@@ -2453,6 +2453,26 @@ export class App {
           </div>
         </div>` : ''
 
+    // Who looks after unassigned work (settings.assignment_lead_id). Work with no
+    // owner waits in To do on the task board; this person hears when something
+    // has waited two working days, and about new client requests and unowned
+    // deliverables when the company has no lead (api/_alerts.js).
+    const escAttr = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
+    const assignmentPanel = isAdmin ? `
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Unassigned work</span></div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:12px">
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Tasks and deliverables with no owner sit in To do on the task board, marked Unassigned. The person chosen here makes sure they get picked up: they're emailed once when something has had no owner for two working days, and they hear about new client requests and unowned deliverables when the company has no lead. With nobody chosen, the superadmins hear.</div>
+            <div class="field">
+              <label class="field-label" for="s-assignment-lead">Who looks after unassigned work</label>
+              <select id="s-assignment-lead">
+                <option value="">Nobody chosen (the superadmins)</option>
+                ${(this.allUsers ?? []).map(u => `<option value="${escAttr(u.id)}" ${s.assignment_lead_id === u.id ? 'selected' : ''}>${escAttr(u.name || u.email)}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+        </div>` : ''
+
     const testingPanel = isAdmin ? testPanelHtml(s, this.allUsers) : ''
 
     const budgetPanel = isAdmin ? `
@@ -2477,7 +2497,7 @@ export class App {
     if (tab === 'account') {
       mc.innerHTML = grid(`${accountPanel}${notificationsPanel}`)
     } else if (tab === 'company') {
-      mc.innerHTML = grid(`${companyDetailsPanel}${timersPanel}${leadsPanel}${testingPanel}`)
+      mc.innerHTML = grid(`${companyDetailsPanel}${timersPanel}${assignmentPanel}${leadsPanel}${testingPanel}`)
     } else if (tab === 'invoicing') {
       mc.innerHTML = grid(`${invoicingDefaultsPanel}${expenseFxPanels}`)
     } else if (tab === 'budget') {
@@ -2504,6 +2524,7 @@ export class App {
     mc.querySelector('#settings-save-expenses-btn')?.addEventListener('click', () => this._saveExpenseSettings(mc))
     mc.querySelector('#settings-save-fx-btn')?.addEventListener('click', () => this._saveFxSettings(mc))
     mc.querySelector('#s-show-leads')?.addEventListener('change', e => this._saveShowLeads(e.target))
+    mc.querySelector('#s-assignment-lead')?.addEventListener('change', e => this._saveAssignmentLead(e.target))
     mc.querySelector('#s-test-mode')?.addEventListener('change', () => this._saveTestMode(mc))
     mc.querySelector('#s-test-save')?.addEventListener('click', () => this._saveTestMode(mc))
     mc.querySelector('#settings-save-leave-btn')?.addEventListener('click', () => this._saveLeaveSettings(mc))
@@ -3097,6 +3118,20 @@ export class App {
       this.settings = updated
       this.toast(show ? 'Company leads are on' : 'Company leads are hidden')
     } catch (e) { console.error(e); box.checked = !show; this.toast('Error saving the setting') }
+  }
+
+  // Who looks after unassigned work. Saves as soon as it's chosen; a superadmin
+  // setting, guarded here like the others.
+  async _saveAssignmentLead(select) {
+    const previous = this.settings?.assignment_lead_id ?? ''
+    if (this.appUser?.role !== 'superadmin') { select.value = previous; return }
+    const id = select.value || null
+    try {
+      const [updated] = await upsertSettings(this.userId, { assignment_lead_id: id })
+      this.settings = updated
+      const who = (this.allUsers ?? []).find(u => u.id === id)
+      this.toast(who ? `${who.name || who.email} now looks after unassigned work` : 'Nobody chosen: the superadmins will hear about unassigned work')
+    } catch (e) { console.error(e); select.value = previous; this.toast('Error saving the setting') }
   }
 
   // Testing mode and who the emails go to (api/_notify.js redirects them). Saves as

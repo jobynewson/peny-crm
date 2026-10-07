@@ -56,7 +56,7 @@ describeDb('the board\'s deliverable cards', () => {
   })
   afterAll(async () => { await wipe(); await sql.end() })
 
-  it('lists cards with their column, tray and chips, and only for active workstreams', async () => {
+  it('lists cards with their column, chips and whether anyone owns them, and only for active workstreams', async () => {
     await add('Planned soon', { due: iso(3) })
     await add('Doing', { status: 'in_progress' })
     await add('Waiting', { status: 'waiting_on_client' })
@@ -68,7 +68,9 @@ describeDb('the board\'s deliverable cards', () => {
     expect(by['Planned soon']).toMatchObject({ column: 'todo', muted: false, chip: null, company: 'BdTest DMM', workstream: 'Monthly' })
     expect(by.Doing.column).toBe('doing')
     expect(by.Waiting).toMatchObject({ column: 'doing', muted: true, chip: { key: 'waiting_on_client' } })
-    expect(by.Nobody).toMatchObject({ in_tray: true, owner_id: null })
+    expect(by.Nobody).toMatchObject({ column: 'todo', unassigned: true, owner_id: null })
+    expect(by.Nobody.unassigned_since).toBeTruthy()
+    expect(by.Doing).toMatchObject({ unassigned: false, unassigned_since: null })
   })
 
   it('hides a far-off dated plan but never an undated, unowned or started one', async () => {
@@ -91,12 +93,12 @@ describeDb('the board\'s deliverable cards', () => {
     expect((await call('GET', 'retainers/board', undefined, { days: '60' })).body.days).toBe(60)
   })
 
-  it('an unowned deliverable in a paused workstream is in the tray; an owned one is parked', async () => {
+  it('an unowned deliverable in a paused workstream is still on the board, unassigned; an owned one is parked', async () => {
     await add('Nobody paused', { stream: paused.id, owner: null })
     await add('Owned paused', { stream: paused.id })
     const list = await cards()
     expect(list.map(c => c.title)).toEqual(['Nobody paused'])
-    expect(list[0]).toMatchObject({ in_tray: true, workstream_status: 'paused' })
+    expect(list[0]).toMatchObject({ unassigned: true, column: 'todo', workstream_status: 'paused' })
   })
 
   it('keeps approved work in Done for 30 days, and only if owned', async () => {
@@ -138,18 +140,19 @@ describeDb('the board\'s deliverable cards', () => {
       expect([r.statusCode, r.body.card.status]).toEqual([200, 'waiting_on_client'])
     })
 
-    it('dragging an unowned card out of the tray claims it — but not if the move is refused', async () => {
+    it('moving an unowned card to another column claims it — but not if the move is refused', async () => {
       CURRENT = staff(ben)
       const claimable = await add('Unowned', { owner: null })
       const r = await call('POST', `retainers/deliverables/${claimable}/board-move`, { column: 'doing' })
-      expect(r.body.card).toMatchObject({ owner_id: ben.id, status: 'in_progress', in_tray: false })
+      expect(r.body.card).toMatchObject({ owner_id: ben.id, status: 'in_progress', unassigned: false })
       const stuck = await add('Unowned review', { owner: null, status: 'in_review' })
       const refused = await call('POST', `retainers/deliverables/${stuck}/board-move`, { column: 'todo' })
       expect(refused.statusCode).toBe(409)
       expect((await status(stuck)).owner_id).toBeNull()
-      // an unowned card dropped in the column it is already in is just claimed
-      const claimedOnly = await call('POST', `retainers/deliverables/${stuck}/board-move`, { column: 'doing' })
-      expect(claimedOnly.body.card).toMatchObject({ owner_id: ben.id, status: 'in_review' })
+      // dropped back in the column it is already in: nothing changes, nobody takes it
+      const stays = await call('POST', `retainers/deliverables/${stuck}/board-move`, { column: 'doing' })
+      expect(stays.body.card).toMatchObject({ owner_id: null, status: 'in_review', unassigned: true })
+      expect((await status(stuck)).owner_id).toBeNull()
     })
 
     it('never takes an owned card from its owner', async () => {

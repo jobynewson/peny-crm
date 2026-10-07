@@ -38,7 +38,7 @@ export const db = drizzle(sql, { schema })
 // them only while the database's recorded version is behind this one; the
 // normal boot is a single read. src/db/migrations-version.test.js fails if the
 // statements change and this doesn't.
-export const SCHEMA_VERSION = 5
+export const SCHEMA_VERSION = 6
 
 export async function runMigrations() {
   let current = 0
@@ -898,6 +898,9 @@ async function applyMigrations() {
   // ── Testing mode: redirect the work's emails (drizzle/0043) ─────────────────
   await sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS test_mode BOOLEAN NOT NULL DEFAULT FALSE`
   await sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS test_emails JSONB NOT NULL DEFAULT '[]'::jsonb`
+
+  // ── Who looks after unassigned work (drizzle/0048) ─────────────────────────
+  await sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS assignment_lead_id UUID REFERENCES app_users(id) ON DELETE SET NULL`
 
   // ── Approve can carry a comment (drizzle/0042) ──────────────────────────────
   await sql`ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS approved_comment TEXT`

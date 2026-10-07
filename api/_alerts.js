@@ -1,7 +1,8 @@
 // api/_alerts.js
 // The urgent alerts: emails that go out as the thing happens (a new client
 // request, changes requested, a client's reply) or on the hourly run (due
-// within 48 hours and not in review, client input overdue). Everything else
+// within 48 hours and not in review, client input overdue, work with no owner
+// for two working days). Everything else
 // waits for the daily digest, approvals included.
 //
 // All of it goes through notify() in _notify.js, so each person's own settings
@@ -9,9 +10,15 @@
 // each can be muted, and none depends on the digest setting.
 //
 // Who hears: the deliverable's owner. If it has none, the company's lead — but
-// only while leads are switched on (Settings › Company; api/_leads.js). With
-// leads off, or no lead with an email, every superadmin — and the log says so.
-// Nothing is ever sent to no one.
+// only while leads are switched on (Settings › Company; api/_leads.js). Then
+// whoever looks after unassigned work (settings.assignment_lead_id, Settings ›
+// Unassigned work). With none of those, every superadmin — and the log says
+// so. Nothing is ever sent to no one.
+//
+// Unassigned work has its own timed alert: a task or deliverable with no owner
+// for two working days is mentioned once, to the assignment lead only (else
+// the superadmins) — the company lead is for a client's work, not for who
+// picks up what.
 //
 // The timed alerts are once per item: alert_log has one row per (kind, item,
 // cycle). The cycle re-arms an item that changes — a new due date, or going
@@ -25,18 +32,32 @@ import { escapeHtml, appBaseUrl } from './_task-mail.js'
 import { workspaceId } from './_api.js'
 import { leadsShown } from './_leads.js'
 import { worklistLink } from './_retainer-rules.js'
-import { TIME_ZONE, londonDate, addDays, formatDay } from './_dates.js'
+import { TIME_ZONE, londonDate, addDays, formatDay, workingDaysBetween } from './_dates.js'
 
 // ── Who, and when ────────────────────────────────────────────────────────────
 
-// { via, to } — owner, else lead, else the superadmins. Someone without an
-// email address can't be told anything, so they don't count.
-export function resolveRecipients({ owner = null, lead = null, superadmins = [] }) {
+// { via, to } — owner, else lead, else the assignment lead, else the
+// superadmins. Someone without an email address can't be told anything, so
+// they don't count.
+export function resolveRecipients({ owner = null, lead = null, assignmentLead = null, superadmins = [] }) {
   const usable = u => !!u?.email
   if (usable(owner)) return { via: 'owner', to: [owner] }
   if (usable(lead)) return { via: 'lead', to: [lead] }
+  if (usable(assignmentLead)) return { via: 'assignment_lead', to: [assignmentLead] }
   return { via: 'superadmins', to: superadmins.filter(usable) }
 }
+
+// Whoever looks after unassigned work (Settings › Unassigned work), or null.
+export async function loadAssignmentLead(sql) {
+  const ws = await workspaceId(sql)
+  const [lead] = await sql`
+    SELECT u.id, u.clerk_id, u.name, u.email
+    FROM settings s JOIN app_users u ON u.id = s.assignment_lead_id
+    WHERE s.user_id = ${ws}`
+  return lead ?? null
+}
+
+const loadSuperadmins = sql => sql`SELECT id, clerk_id, name, email FROM app_users WHERE role = 'superadmin' AND email IS NOT NULL`
 
 export async function loadRecipients(sql, { ownerId = null, companyId = null }) {
   const [owner] = ownerId ? await sql`SELECT id, clerk_id, name, email FROM app_users WHERE id = ${ownerId}` : []
@@ -49,9 +70,20 @@ export async function loadRecipients(sql, { ownerId = null, companyId = null }) 
     : []
   const first = resolveRecipients({ owner, lead })
   if (first.via !== 'superadmins') return first
-  const superadmins = await sql`SELECT id, clerk_id, name, email FROM app_users WHERE role = 'superadmin' AND email IS NOT NULL`
-  const out = resolveRecipients({ owner, lead, superadmins })
-  console.warn(`[alerts] no owner${showLeads ? ' or lead' : ''} with an email for company ${companyId ?? '?'}; sending to ${out.to.length} superadmin(s)`)
+  const assignmentLead = await loadAssignmentLead(sql)
+  const second = resolveRecipients({ owner, lead, assignmentLead })
+  if (second.via !== 'superadmins') return second
+  const out = resolveRecipients({ owner, lead, assignmentLead, superadmins: await loadSuperadmins(sql) })
+  console.warn(`[alerts] no owner${showLeads ? ', lead' : ''} or assignment lead with an email for company ${companyId ?? '?'}; sending to ${out.to.length} superadmin(s)`)
+  return out
+}
+
+// Who hears about unassigned work: the assignment lead, else the superadmins.
+export async function loadOverseers(sql) {
+  const assignmentLead = await loadAssignmentLead(sql)
+  if (assignmentLead?.email) return { via: 'assignment_lead', to: [assignmentLead] }
+  const out = resolveRecipients({ superadmins: await loadSuperadmins(sql) })
+  console.warn(`[alerts] nobody looks after unassigned work; sending to ${out.to.length} superadmin(s)`)
   return out
 }
 
@@ -118,8 +150,8 @@ export function newRequestEmail({ request, company }) {
     title: 'A new client request',
     subtitle: company,
     sentence: viaLink
-      ? `Someone using the ${escapeHtml(company)} project link sent a request and gave the name ${escapeHtml(request.submitted_by_name || 'nothing')}. The name isn’t checked. It is waiting in the task board’s Unassigned tray.`
-      : `${escapeHtml(request.submitted_by_name || 'Someone')} at ${escapeHtml(company)} has sent a request. It is waiting in the task board’s Unassigned tray.`,
+      ? `Someone using the ${escapeHtml(company)} project link sent a request and gave the name ${escapeHtml(request.submitted_by_name || 'nothing')}. The name isn’t checked. It is waiting in New requests on the task board.`
+      : `${escapeHtml(request.submitted_by_name || 'Someone')} at ${escapeHtml(company)} has sent a request. It is waiting in New requests on the task board.`,
     body: card(request.title, [request.wanted_by && `They'd like it by ${formatDay(request.wanted_by, today())}`], request.detail),
     href: `${appBaseUrl()}/#tasks`,
     linkLabel: 'Open the task board',
@@ -188,11 +220,36 @@ export function inputOverdueEmail({ d, days }) {
   }
 }
 
+// Work with no owner, to whoever looks after it. `items` from staleUnassigned();
+// `via` is loadOverseers()'s, so the superadmins are told why it's them.
+export function unassignedEmail({ items, via = 'assignment_lead' }) {
+  const one = items.length === 1
+  const why = via === 'assignment_lead'
+    ? 'You look after unassigned work, so it’s over to you: give it to someone, or take it yourself.'
+    : 'Nobody has been chosen to look after unassigned work (Settings › Unassigned work), so this comes to the superadmins.'
+  return {
+    subject: one ? `No owner yet: ${items[0].title}` : `${items.length} things have no owner yet`,
+    title: 'Unassigned work',
+    subtitle: one ? '1 item' : `${items.length} items`,
+    sentence: `${one ? 'This has' : 'These have'} had no owner for ${UNASSIGNED_WORKING_DAYS} working days or more. ${why}`,
+    body: items.map(i => card(i.title, [
+      [i.kind === 'task' ? 'Task' : 'Deliverable', i.context].filter(Boolean).join(' · '),
+      `Unassigned for ${i.waited} working day${i.waited === 1 ? '' : 's'}`,
+    ])).join(''),
+    href: `${appBaseUrl()}/#tasks`,
+    linkLabel: 'Open the task board',
+  }
+}
+
 // ── Sending ──────────────────────────────────────────────────────────────────
 
 // → notify()'s results, one per recipient. Never throws for a failed send.
 async function send(sql, { kind, ownerId = null, companyId, email }) {
   const { to } = await loadRecipients(sql, { ownerId, companyId })
+  return deliver(sql, { kind, to, email })
+}
+
+async function deliver(sql, { kind, to, email }) {
   const results = []
   for (const person of to) {
     const [r] = await notify(sql, {
@@ -228,7 +285,8 @@ export async function loadDeliverableContext(sql, id) {
 export async function alertNewRequest(sql, { request, companyName }) {
   const email = newRequestEmail({ request, company: companyName })
   // A request has no deliverable yet, so no owner: it goes to the company's
-  // lead when leads are on, else to the superadmins.
+  // lead when leads are on, else whoever looks after unassigned work, else the
+  // superadmins.
   return send(sql, { kind: 'alert_new_request', companyId: request.company_id, email })
 }
 
@@ -277,6 +335,73 @@ export async function sendOwnerAssigned(sql, { deliverableId, assignedBy }) {
   return [r]
 }
 
+// ── Unassigned work ──────────────────────────────────────────────────────────
+// A task or deliverable with no owner sits in To do on the board. Once it has
+// waited this many working days (weekdays that aren't a public holiday) the
+// assignment lead hears, once per spell without an owner.
+export const UNASSIGNED_WORKING_DAYS = 2
+
+// Open work with no owner, and since when. A task's spell starts when it was
+// made or last had its owner removed; a deliverable keeps no history, so its
+// spell is counted from when it was made. Deliverables in a paused or complete
+// workstream are parked on purpose and left out.
+export async function loadUnassigned(sql, ws) {
+  const [tasks, deliverables, holidays, logged] = await Promise.all([
+    sql`
+      SELECT t.id, t.title, p.name AS context,
+             COALESCE((SELECT max(e.created_at) FROM task_events e WHERE e.task_id = t.id AND e.type = 'unassigned'), t.created_at) AS since
+      FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
+      WHERE t.user_id = ${ws} AND t.assignee_id IS NULL AND t.status <> 'done' AND t.archived_at IS NULL`,
+    sql`
+      SELECT d.id, d.title, d.created_at AS since, w.title AS workstream, w.project_id, wc.company_id,
+             COALESCE(c.name, p.name) AS company
+      FROM deliverables d
+      JOIN workstreams w ON w.id = d.workstream_id
+      JOIN workstream_company wc ON wc.workstream_id = w.id
+      LEFT JOIN companies c ON c.id = wc.company_id
+      LEFT JOIN projects p ON p.id = w.project_id
+      WHERE w.user_id = ${ws} AND w.status = 'active' AND d.owner_id IS NULL AND d.status <> 'approved'`,
+    sql`SELECT holiday_date::text AS day FROM public_holidays WHERE user_id = ${ws}`,
+    sql`SELECT subject_id::text AS id, cycle FROM alert_log WHERE kind = 'alert_unassigned'`,
+  ])
+  return { tasks, deliverables, holidays: holidays.map(h => h.day), logged }
+}
+
+// The ones that have waited long enough and haven't been mentioned for this
+// spell, longest-waiting first. Pure. `cycle` is the spell's start.
+export function staleUnassigned({ tasks = [], deliverables = [], holidays = [], logged = [] }, today, days = UNASSIGNED_WORKING_DAYS) {
+  const seen = new Set(logged.map(l => `${l.id}|${l.cycle}`))
+  const iso = v => new Date(v).toISOString()
+  const item = (kind, row, extra) => ({
+    kind, id: row.id, title: row.title, cycle: iso(row.since),
+    waited: workingDaysBetween(londonDate(row.since), today, holidays), ...extra,
+  })
+  return [
+    ...tasks.map(t => item('task', t, { context: t.context || null, link: `#tasks/${t.id}` })),
+    ...deliverables.map(d => item('deliverable', d, { context: [d.company, d.workstream].filter(Boolean).join(' · '), link: worklistLink(d) })),
+  ]
+    .filter(i => i.waited >= days && !seen.has(`${i.id}|${i.cycle}`))
+    .sort((a, b) => b.waited - a.waited || a.title.localeCompare(b.title))
+}
+
+// One email for everything that crossed the line since the last run. Claims
+// first (so two runs can't both send), gives them all back if nobody could be
+// told.
+async function alertUnassigned(sql, { ws, day }) {
+  const items = staleUnassigned(await loadUnassigned(sql, ws), day)
+  const claimed = []
+  for (const i of items) if (await claim(sql, 'alert_unassigned', i.id, i.cycle)) claimed.push(i)
+  if (!claimed.length) return { sent: 0 }
+  let results = []
+  try {
+    const { via, to } = await loadOverseers(sql)
+    results = await deliver(sql, { kind: 'alert_unassigned', to, email: unassignedEmail({ items: claimed, via }) })
+  } finally {
+    if (!claimStands(results)) for (const i of claimed) await release(sql, 'alert_unassigned', i.id, i.cycle)
+  }
+  return { sent: results.filter(r => r.sent).length }
+}
+
 // ── The hourly run ───────────────────────────────────────────────────────────
 
 const STATUS_LABEL = {
@@ -319,7 +444,7 @@ export async function runTimedAlerts(sql, { now = new Date(), env = process.env 
   const day = londonDate(now)
   const days = inputAlertDays(env)
   const cutoff = new Date(now.getTime() - days * 86400000).toISOString()
-  const summary = { due_soon: 0, input_overdue: 0 }
+  const summary = { due_soon: 0, input_overdue: 0, unassigned: 0 }
 
   // Due within 48 hours (today, tomorrow or the day after) and not yet in
   // review. Already-late items are the digest's business, not an alert.
@@ -366,6 +491,8 @@ export async function runTimedAlerts(sql, { now = new Date(), env = process.env 
     })
     summary.input_overdue += r.sent
   }
+
+  summary.unassigned = (await alertUnassigned(sql, { ws, day })).sent
   return summary
 }
 

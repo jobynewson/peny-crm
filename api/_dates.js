@@ -37,6 +37,20 @@ export function daysBetween(from, to) {
   return Math.round((utc(to) - utc(from)) / 86400000)
 }
 
+// Working days after `from` up to and including `to`: weekdays that aren't in
+// `holidays` ('YYYY-MM-DD' strings). Something made on a Friday has waited one
+// working day on Monday and two on Tuesday. 0 when `to` isn't after `from`.
+export function workingDaysBetween(from, to, holidays = []) {
+  const off = new Set(holidays)
+  let n = 0
+  for (let day = addDays(from, 1); day <= to; day = addDays(day, 1)) {
+    const [y, m, d] = day.split('-').map(Number)
+    const weekday = new Date(Date.UTC(y, m - 1, d)).getUTCDay()
+    if (weekday !== 0 && weekday !== 6 && !off.has(day)) n++
+  }
+  return n
+}
+
 // 'YYYY-MM' → that month's last day.
 export function lastDayOfMonth(yearMonth) {
   const [y, m] = yearMonth.split('-').map(Number)

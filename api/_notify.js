@@ -72,6 +72,13 @@ export const KINDS = {
     description: 'An email, once, when an item has been waiting on a client for over a week.',
     switchable: true, default: true, testable: true,
   },
+  // To whoever looks after unassigned work (Settings › Unassigned work), else
+  // the superadmins.
+  alert_unassigned: {
+    label: 'Unassigned work',
+    description: 'An email, once, when a task or deliverable has had no owner for two working days. Only sent to whoever looks after unassigned work.',
+    switchable: true, default: true, testable: true,
+  },
   task_nudge:        { label: 'Unacknowledged task nudge', switchable: false },
   // To the client, each with their own Approve link. Clients have no settings
   // page, so it always sends.

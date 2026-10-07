@@ -19,7 +19,7 @@ vi.mock('./_notify.js', async orig => ({
   },
 }))
 
-const { runTimedAlerts, alertNewRequest, alertChangesRequested, alertClientReply, loadRecipients } = await import('./_alerts.js')
+const { runTimedAlerts, alertNewRequest, alertChangesRequested, alertClientReply, loadRecipients, loadOverseers } = await import('./_alerts.js')
 const { workspaceId } = await import('./_api.js')
 
 const describeDb = TEST_DB ? describe : describe.skip
@@ -57,6 +57,8 @@ describeDb('urgent alerts', () => {
   })
   beforeEach(async () => {
     sent.length = 0
+    await sql`UPDATE settings SET assignment_lead_id = NULL WHERE user_id = ${ws}`
+    await sql`DELETE FROM tasks WHERE title LIKE 'AlertTest %'`
     outcome = r => ({ to: r.email, sent: true })
     await sql`DELETE FROM deliverables WHERE workstream_id IN (${stream.id}, ${paused.id})`
     await sql`DELETE FROM alert_log`
@@ -64,6 +66,8 @@ describeDb('urgent alerts', () => {
   })
   afterAll(async () => {
     await setShowLeads(sql, false)
+    await sql`UPDATE settings SET assignment_lead_id = NULL WHERE user_id = ${ws}`
+    await sql`DELETE FROM tasks WHERE title LIKE 'AlertTest %'`
     await sql`DELETE FROM alert_log`
     await sql`DELETE FROM workstreams WHERE company_id IN (SELECT id FROM companies WHERE name LIKE 'AlertTest %')`
     await sql`DELETE FROM companies WHERE name LIKE 'AlertTest %'`
@@ -79,7 +83,7 @@ describeDb('urgent alerts', () => {
       const r = await loadRecipients(sql, { ownerId: null, companyId: co.id })
       expect(r.via).toBe('superadmins')
       expect(r.to.map(p => p.email)).toContain('boss@alert.test')
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('no owner or lead'))
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('no owner, lead or assignment lead'))
       warn.mockRestore()
     })
 
@@ -97,6 +101,68 @@ describeDb('urgent alerts', () => {
         await setShowLeads(sql, true)
         expect((await loadRecipients(sql, { ownerId: null, companyId: co.id })).to.map(p => p.email)).toEqual(['lee@alert.test'])
       } finally { await setShowLeads(sql, true); warn.mockRestore() }
+    })
+  })
+
+  describe('whoever looks after unassigned work', () => {
+    const chooseSeb = async () => {
+      const [seb] = await sql`
+        INSERT INTO app_users (clerk_id, email, name, role) VALUES ('alert_seb', 'seb@alert.test', 'Seb', 'user')
+        ON CONFLICT (clerk_id) DO UPDATE SET email = EXCLUDED.email RETURNING id`
+      await sql`INSERT INTO settings (user_id) VALUES (${ws}) ON CONFLICT (user_id) DO NOTHING`
+      await sql`UPDATE settings SET assignment_lead_id = ${seb.id} WHERE user_id = ${ws}`
+      return seb
+    }
+    afterAll(async () => { await sql`UPDATE settings SET assignment_lead_id = NULL WHERE user_id = ${ws}`; await sql`DELETE FROM app_users WHERE clerk_id = 'alert_seb'` })
+
+    it('hears about unowned work when the company has no lead, before the superadmins', async () => {
+      await chooseSeb()
+      await sql`UPDATE companies SET lead_id = NULL WHERE id = ${co.id}`
+      const r = await loadRecipients(sql, { ownerId: null, companyId: co.id })
+      expect(r).toMatchObject({ via: 'assignment_lead' })
+      expect(r.to.map(p => p.email)).toEqual(['seb@alert.test'])
+      // An owner, or a company lead, still comes first.
+      expect((await loadRecipients(sql, { ownerId: ana.id, companyId: co.id })).via).toBe('owner')
+      await sql`UPDATE companies SET lead_id = ${lee.id} WHERE id = ${co.id}`
+      expect((await loadRecipients(sql, { ownerId: null, companyId: co.id })).via).toBe('lead')
+      expect((await loadOverseers(sql)).to.map(p => p.email)).toEqual(['seb@alert.test'])
+    })
+
+    it('is emailed once about work that has had no owner for two working days, in one email', async () => {
+      await chooseSeb()
+      // NOON is Tue 29 Sep: Fri 25th has waited two working days, Mon 28th one.
+      const at = day => `2026-09-${day}T09:00:00Z`
+      await sql`INSERT INTO deliverables (workstream_id, title, owner_id, status, created_at) VALUES
+        (${stream.id}, 'Old reel', NULL, 'planned', ${at(25)}),
+        (${stream.id}, 'New reel', NULL, 'planned', ${at(28)}),
+        (${stream.id}, 'Owned reel', ${ana.id}, 'planned', ${at(21)}),
+        (${paused.id}, 'Parked reel', NULL, 'planned', ${at(21)})`
+      await sql`INSERT INTO tasks (user_id, title, status, created_at) VALUES
+        (${ws}, 'AlertTest old task', 'todo', ${at(24)}),
+        (${ws}, 'AlertTest done task', 'done', ${at(21)})`
+
+      expect((await runTimedAlerts(sql, { now: NOON })).unassigned).toBe(1)
+      const mail = sent.filter(m => m.kind === 'alert_unassigned')
+      expect(mail.map(m => [m.to, m.subject])).toEqual([['seb@alert.test', '2 things have no owner yet']])
+      for (const t of ['Old reel', 'AlertTest old task']) expect(mail[0].html).toContain(t)
+      for (const t of ['New reel', 'Owned reel', 'Parked reel', 'done task']) expect(mail[0].html).not.toContain(t)
+
+      // Not again on the next run; the newer one joins once it has waited.
+      sent.length = 0
+      expect((await runTimedAlerts(sql, { now: new Date(NOON.getTime() + 3600000) })).unassigned).toBe(0)
+      expect((await runTimedAlerts(sql, { now: new Date('2026-09-30T11:00:00Z') })).unassigned).toBe(1)
+      expect(sent.filter(m => m.kind === 'alert_unassigned').map(m => m.subject)).toEqual(['No owner yet: New reel'])
+    })
+
+    it('goes to the superadmins when nobody is chosen, and is tried again if it could not be sent', async () => {
+      await sql`INSERT INTO tasks (user_id, title, status, created_at) VALUES (${ws}, 'AlertTest stale task', 'todo', '2026-09-21T09:00:00Z')`
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      outcome = r => ({ to: r.email, error: 'Gmail said no' })
+      expect((await runTimedAlerts(sql, { now: NOON })).unassigned).toBe(0)
+      outcome = r => ({ to: r.email, sent: true })
+      await runTimedAlerts(sql, { now: NOON })
+      expect(sent.filter(m => m.kind === 'alert_unassigned').map(m => m.to)).toContain('boss@alert.test')
+      warn.mockRestore()
     })
   })
 
@@ -138,7 +204,7 @@ describeDb('urgent alerts', () => {
       await deliverable({ title: 'Paused stream', due: daysFrom(1), workstream: paused.id })
 
       const first = await runTimedAlerts(sql, { now: NOON })
-      expect(first).toEqual({ due_soon: 4, input_overdue: 0 })
+      expect(first).toEqual({ due_soon: 4, input_overdue: 0, unassigned: 0 })
       const subjects = sent.map(s => s.subject).join('\n')
       for (const t of ['Today', 'Tomorrow', 'Day after', 'Changes']) expect(subjects).toContain(t)
       for (const t of ['Too far', 'Late', 'In review', 'Approved', 'Undated', 'Paused']) expect(subjects).not.toContain(t)
@@ -146,7 +212,7 @@ describeDb('urgent alerts', () => {
 
       // the next hourly run: nothing again
       sent.length = 0
-      expect(await runTimedAlerts(sql, { now: new Date(NOON.getTime() + 3600000) })).toEqual({ due_soon: 0, input_overdue: 0 })
+      expect(await runTimedAlerts(sql, { now: new Date(NOON.getTime() + 3600000) })).toEqual({ due_soon: 0, input_overdue: 0, unassigned: 0 })
       expect(sent).toEqual([])
     })
     it('starts over when the due date moves', async () => {
@@ -168,7 +234,7 @@ describeDb('urgent alerts', () => {
     it('alerts once when an item has waited seven days, not before', async () => {
       await deliverable({ title: 'Eight days', status: 'waiting_on_client', since: ago(8) })
       await deliverable({ title: 'Six days', status: 'waiting_on_client', since: ago(6) })
-      expect(await runTimedAlerts(sql, { now: NOON })).toEqual({ due_soon: 0, input_overdue: 1 })
+      expect(await runTimedAlerts(sql, { now: NOON })).toEqual({ due_soon: 0, input_overdue: 1, unassigned: 0 })
       expect(sent[0].subject).toContain('Eight days')
       sent.length = 0
       await runTimedAlerts(sql, { now: new Date(NOON.getTime() + 86400000) })   // "not daily"

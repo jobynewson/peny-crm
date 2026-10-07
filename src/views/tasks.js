@@ -11,6 +11,7 @@
 // acknowledgement, event writing and notification fan-out are server-owned.
 
 import * as api from '../api/tasks.js'
+import { updateDeliverable } from '../api/retainers.js'
 import { openFloating, floatingOpen } from './popover.js'
 import { readWindow, saveWindow, windowToggleHtml } from '../utils/window-days.js'
 import { requestCardHtml, requestRowHtml, bindRequestCards } from './request-cards.js'
@@ -57,6 +58,12 @@ function dueLabel(due, status) {
   return { text: new Date(due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), overdue: false }
 }
 
+// "Unassigned", and how long it has waited once that is a day or more.
+export function unassignedLabel(since, now = Date.now()) {
+  const days = since ? Math.floor((now - new Date(since)) / 86400000) : 0
+  return days >= 1 ? `Unassigned · ${days}d` : 'Unassigned'
+}
+
 function initials(user) {
   if (!user) return '?'
   const source = user.name || user.email || ''
@@ -83,13 +90,13 @@ const bySlate = (e) => e.type === 'nudged' || (e.type === 'archived' && !!e.payl
 const EVENT_TEXT = {
   created:        () => 'created this task',
   assigned:       (e, name) => `assigned this to ${name}`,
-  unassigned:     () => 'removed the assignee',
+  unassigned:     () => 'removed the owner',
   acknowledged:   () => 'acknowledged this',
   status_changed: (e) => `moved this to ${COLUMNS.find(c => c.id === e.payload?.to)?.label ?? e.payload?.to}`,
   commented:      () => 'commented',
   due_changed:    (e) => e.payload?.to ? 'changed the due date' : 'cleared the due date',
   archived:       (e) => e.payload?.auto ? `archived this after ${e.payload.after_days ?? ARCHIVE_AFTER_DAYS} days in Done` : 'archived this',
-  nudged:         () => 'reminded the assignee to acknowledge this',
+  nudged:         () => 'reminded the owner to acknowledge this',
 }
 
 export class TasksView {
@@ -120,7 +127,7 @@ export class TasksView {
 
     this.filters = this._loadFilters()
     this.window = readWindow(LS_WINDOW, 30)
-    this.requests = []         // new client requests waiting in the tray (api/_requests.js)
+    this.requests = []         // new client requests, above the columns (api/_requests.js)
   }
 
   // ── Shell selection ────────────────────────────────────────────────────────
@@ -342,10 +349,10 @@ export class TasksView {
     return !!task.assignee_id && !task.acknowledged_at
   }
 
+  // Unassigned tasks sit in their column like any other, marked Unassigned.
   columnTasks(status) {
     return this.visibleTasks()
       .filter(t => t.status === status)
-      .filter(t => !(status === 'todo' && !t.assignee_id))   // unassigned live in the tray
       .sort((a, b) => (a.position - b.position) || (new Date(a.created_at) - new Date(b.created_at)))
   }
 
@@ -361,11 +368,7 @@ export class TasksView {
   }
 
   columnCards(column) {
-    return this.visibleCards().filter(c => c.column === column && !c.in_tray)
-  }
-
-  trayCards() {
-    return this.visibleCards().filter(c => c.in_tray)
+    return this.visibleCards().filter(c => c.column === column)
   }
 
   // New client requests. "Just mine" and the assignee filter never hide them
@@ -382,12 +385,6 @@ export class TasksView {
     await this._loadCards()
     this._refreshBoard()
     this.app.refreshRequestCount?.()
-  }
-
-  unassignedTasks() {
-    return this.visibleTasks()
-      .filter(t => !t.assignee_id && t.status !== 'done')
-      .sort((a, b) => a.position - b.position)
   }
 
   // ── Entry point ────────────────────────────────────────────────────────────
@@ -450,9 +447,9 @@ export class TasksView {
     return `
       <div class="tk-quickadd">
         <input type="text" id="tk-qa-title" class="tk-qa-input"
-               placeholder="Raise a request…  (press Enter)" autocomplete="off" maxlength="500" />
+               placeholder="Add a task…  (press Enter)" autocomplete="off" maxlength="500" />
         <div class="tk-qa-opts">
-          <select id="tk-qa-assignee" class="tk-qa-select" title="Assignee (optional)">
+          <select id="tk-qa-assignee" class="tk-qa-select" title="Owner (optional)">
             <option value="">Unassigned</option>
             ${users.map(u => `<option value="${esc(u.id)}">${esc(u.name || u.email)}</option>`).join('')}
           </select>
@@ -503,22 +500,20 @@ export class TasksView {
 
   // ── Desktop shell ──────────────────────────────────────────────────────────
 
+  // New client requests sit in a strip above the columns: they aren't work
+  // until someone accepts them. Everything else, owned or not, is in a column.
   _renderDesktop(mc) {
-    const unassigned = this.unassignedTasks()
-    const trayCards = this.trayCards()
     const requests = this.visibleRequests()
-    const trayCount = unassigned.length + trayCards.length + requests.length
     mc.innerHTML = `
       <div class="tk-wrap">
         ${this._quickAddHtml()}
-        <div class="tk-tray ${trayCount ? '' : 'tk-tray--empty'}" data-tray="1">
-          <div class="tk-tray-label">Unassigned${trayCount ? ` · ${trayCount}` : ''}</div>
-          <div class="tk-tray-body" data-drop-tray="1">
-            ${trayCount
-              ? requests.map(r => requestCardHtml(r, { canEdit: this.canAnswerRequests })).join('') + trayCards.map(c => this._deliverableCardHtml(c, true)).join('') + unassigned.map(t => this._cardHtml(t, true)).join('')
-              : `<div class="tk-tray-empty">Nothing waiting to be picked up.</div>`}
+        ${requests.length ? `
+        <div class="tk-tray tk-requests" aria-label="New client requests">
+          <div class="tk-tray-label">New requests · ${requests.length}</div>
+          <div class="tk-tray-body">
+            ${requests.map(r => requestCardHtml(r, { canEdit: this.canAnswerRequests })).join('')}
           </div>
-        </div>
+        </div>` : ''}
         ${this.cardsError ? `<p class="tk-col-note">Deliverables couldn't be loaded just now, so only tasks are shown here.</p>` : ''}
         <div class="tk-cols">
           ${COLUMNS.map(col => {
@@ -555,7 +550,7 @@ export class TasksView {
     const projects = this.app.projects || []
     return `
       <button type="button" class="tk-chip ${this.filters.mine ? 'tk-chip--on' : ''}" id="tk-f-mine" aria-pressed="${this.filters.mine}">Just mine</button>
-      <label class="visually-hidden" for="tk-f-person">Assignee</label>
+      <label class="visually-hidden" for="tk-f-person">Owner</label>
       <select class="tk-qa-select" id="tk-f-person">
         <option value="">Anyone</option>
         ${users.map(u => `<option value="${esc(u.id)}" ${this.filters.person === u.id ? 'selected' : ''}>${esc(u.name || u.email)}</option>`).join('')}
@@ -592,23 +587,27 @@ export class TasksView {
     bar.querySelector('#tk-shell-toggle')?.addEventListener('click', () => this.setShell('mobile'))
   }
 
-  // Card face: title, assignee initials, due date if set, comment count if > 0,
-  // and the unacknowledged accent + New pill.
-  _cardHtml(task, inTray = false) {
+  // Card face: title, owner initials, due date if set, comment count if > 0,
+  // and the unacknowledged accent + New pill. With no owner: Unassigned (and
+  // for how long) and Assign to me.
+  _cardHtml(task) {
     const assignee = this.userById(task.assignee_id)
     const due = dueLabel(task.due_at, task.status)
     const unack = this.isUnacknowledged(task)
     const project = (this.app.projects || []).find(p => p.id === task.project_id)
+    const open = !task.assignee_id && task.status !== 'done'
     return `
-      <div class="tk-card ${unack ? 'tk-card--unack' : ''}" data-task-id="${esc(task.id)}" data-in-tray="${inTray ? '1' : ''}" draggable="true">
+      <div class="tk-card ${unack ? 'tk-card--unack' : ''} ${open ? 'tk-card--unassigned' : ''}" data-task-id="${esc(task.id)}" draggable="true">
         <div class="tk-card-title">${esc(task.title)}</div>
         ${project ? `<div class="tk-card-project">${esc(project.name)}</div>` : ''}
         <div class="tk-card-meta">
           ${unack ? `<span class="tk-pill">New</span>` : ''}
           ${due ? `<span class="tk-due ${due.overdue ? 'tk-due--over' : due.soon ? 'tk-due--soon' : ''}">${esc(due.text)}</span>` : ''}
           ${task.comment_count > 0 ? `<span class="tk-count" title="${task.comment_count} comment${task.comment_count > 1 ? 's' : ''}">💬 ${task.comment_count}</span>` : ''}
+          ${open ? `<span class="tk-unassigned">${esc(unassignedLabel(task.created_at))}</span>` : ''}
           <div style="flex:1"></div>
           ${assignee ? `<span class="tk-avatar" title="${esc(assignee.name || assignee.email)}">${esc(initials(assignee))}</span>` : ''}
+          ${open && this.me() ? `<button type="button" class="tk-take" data-take-task="${esc(task.id)}">Assign to me</button>` : ''}
         </div>
       </div>`
   }
@@ -617,23 +616,38 @@ export class TasksView {
   // card. It says which client and workstream, and — for the statuses that are
   // the client's move — where it really is. Clicking opens the project’s Worklist tab
   // rather than a second editor; there is no acknowledgement, no comments.
-  _deliverableCardHtml(card, inTray = false) {
+  _deliverableCardHtml(card) {
     const owner = this.userById(card.owner_id)
     const due = card.undated
       ? { text: 'No date', undated: true }
       : { text: card.overdue ? `${card.days_late}d overdue` : card.due_display, overdue: card.overdue }
     return `
-      <div class="tk-card tk-card--deliverable ${card.muted ? 'tk-card--muted' : ''}" data-card-id="${esc(card.id)}" data-card-link="${esc(card.link)}" data-in-tray="${inTray ? '1' : ''}" draggable="true" title="Opens ${esc(card.company)}'s worklist">
+      <div class="tk-card tk-card--deliverable ${card.muted ? 'tk-card--muted' : ''} ${card.unassigned ? 'tk-card--unassigned' : ''}" data-card-id="${esc(card.id)}" data-card-link="${esc(card.link)}" draggable="true" title="Opens ${esc(card.company)}'s worklist">
         <div class="tk-card-title">${esc(card.title)}</div>
         <div class="tk-card-project">${esc(card.company)} · ${esc(card.workstream)}${card.workstream_status && card.workstream_status !== 'active' ? ` (${esc(card.workstream_status)})` : ''}</div>
         <div class="tk-card-meta">
           <span class="tk-pill tk-pill--deliverable">Deliverable</span>
           ${card.chip ? `<span class="tk-chip-status tk-chip-status--${esc(card.chip.key)}">${esc(card.chip.label)}</span>` : ''}
           <span class="tk-due ${due.overdue ? 'tk-due--over' : due.undated ? 'tk-due--undated' : ''}">${esc(due.text)}</span>
+          ${card.unassigned ? `<span class="tk-unassigned">${esc(unassignedLabel(card.unassigned_since))}</span>` : ''}
           <div style="flex:1"></div>
           ${owner ? `<span class="tk-avatar" title="${esc(owner.name || owner.email)}">${esc(initials(owner))}</span>` : ''}
+          ${card.unassigned && this.me() ? `<button type="button" class="tk-take" data-take-card="${esc(card.id)}">Assign to me</button>` : ''}
         </div>
       </div>`
+  }
+
+  // "Assign to me" on a card with no owner, on any shell. Tasks and
+  // deliverables each have their own way to take one.
+  _bindTake(root) {
+    root.querySelectorAll('[data-take-task]').forEach(b => b.addEventListener('click', e => {
+      e.stopPropagation()
+      this._claimTask(b.dataset.takeTask)
+    }))
+    root.querySelectorAll('[data-take-card]').forEach(b => b.addEventListener('click', e => {
+      e.stopPropagation()
+      this._takeCard(b.dataset.takeCard)
+    }))
   }
 
   _bindCards(mc) {
@@ -650,16 +664,18 @@ export class TasksView {
       })
     })
     bindRequestCards(this.app, mc, this.requests, { canEdit: this.canAnswerRequests, onChanged: () => this._requestsChanged() })
+    this._bindTake(mc)
   }
 
   // ── Drag and drop ──────────────────────────────────────────────────────────
-  // Between columns changes status; within a column changes position. Dragging
-  // out of the unassigned tray also claims the task for whoever dragged it.
+  // Between columns changes status; within a column changes position. Moving
+  // an unassigned card to another column also claims it for whoever moved it:
+  // picking it up is starting it.
 
   _bindDnD(mc) {
     const clear = () => {
       mc.querySelectorAll('.tk-card').forEach(c => c.classList.remove('tk-card--over'))
-      mc.querySelectorAll('.tk-col-body, .tk-tray-body').forEach(z => z.classList.remove('tk-drop--over'))
+      mc.querySelectorAll('.tk-col-body').forEach(z => z.classList.remove('tk-drop--over'))
     }
 
     mc.querySelectorAll('.tk-card[data-task-id]').forEach(card => {
@@ -731,8 +747,9 @@ export class TasksView {
     else                 position = (prev.position + next.position) / 2
 
     const patch = { status: destStatus, position }
-    // Dragging out of the unassigned tray claims it.
-    const claiming = !task.assignee_id && this.me()
+    // Moving an unassigned task to another column claims it; reordering it
+    // within To do doesn't.
+    const claiming = !task.assignee_id && destStatus !== task.status && this.me()
     if (claiming) patch.assignee_id = this.me()
 
     // Optimistic — the board must feel immediate.
@@ -803,12 +820,14 @@ export class TasksView {
   }
 
   // ── Mobile shell ───────────────────────────────────────────────────────────
-  // No columns, no horizontal scroll. One vertical list of MY tasks, grouped so
-  // the thing that needs a reply is unmissable at the top.
+  // No columns, no horizontal scroll. One vertical list of MY tasks, plus
+  // anything nobody has taken yet (marked Unassigned, with Assign to me),
+  // grouped so the thing that needs a reply is unmissable at the top.
 
   _mobileGroups() {
     const me = this.me()
     const mine = this.tasks.filter(t => !t.archived_at && t.assignee_id === me)
+    const free = this.tasks.filter(t => !t.archived_at && !t.assignee_id && t.status !== 'done')
 
     const needsReply = mine.filter(t => this.isUnacknowledged(t))
     const acked = mine.filter(t => !this.isUnacknowledged(t))
@@ -822,16 +841,18 @@ export class TasksView {
       return new Date(a.due_at) - new Date(b.due_at)
     }
 
-    // My deliverables sit above my tasks in each group, in the server's order.
-    const mineCards = this.cards.filter(c => c.owner_id === me)
+    // My deliverables (and unassigned ones) sit above the tasks in each group,
+    // in the server's order; unassigned tasks come after mine.
+    const mineCards = this.cards.filter(c => c.owner_id === me || c.unassigned)
     const withCards = (column, tasks) => [...mineCards.filter(c => c.column === column), ...tasks]
+    const tasksIn = status => [...acked.filter(t => t.status === status).sort(byDue), ...free.filter(t => t.status === status).sort(byDue)]
 
     return [
       // New client requests come first: they are waiting for someone to say yes.
       { id: 'requests', label: 'New requests', items: this.requests },
       { id: 'needs', label: 'Needs a reply', items: needsReply.sort(byDue) },
-      { id: 'doing', label: 'Doing',         items: withCards('doing', acked.filter(t => t.status === 'doing').sort(byDue)) },
-      { id: 'todo',  label: 'To do',         items: withCards('todo', acked.filter(t => t.status === 'todo').sort(byDue)) },
+      { id: 'doing', label: 'Doing',         items: withCards('doing', tasksIn('doing')) },
+      { id: 'todo',  label: 'To do',         items: withCards('todo', tasksIn('todo')) },
       { id: 'done',  label: 'Done',          items: withCards('done', acked.filter(t => t.status === 'done').sort(byDue)), collapsed: true },
     ]
   }
@@ -844,7 +865,7 @@ export class TasksView {
 
     mc.innerHTML = `
       <div class="tk-m-wrap">
-        ${!anything ? `<div class="empty-state" style="padding:60px 20px">Nothing assigned to you.</div>` : ''}
+        ${!anything ? `<div class="empty-state" style="padding:60px 20px">Nothing for you, and nothing unassigned.</div>` : ''}
         ${open.filter(g => g.items.length).map(g => `
           <div class="tk-m-group">
             <div class="tk-m-group-head ${['needs', 'requests'].includes(g.id) ? 'tk-m-group-head--alert' : ''}">
@@ -877,6 +898,7 @@ export class TasksView {
       el.addEventListener('click', () => this.app.openLink(el.dataset.cardLink))
     })
     bindRequestCards(this.app, mc, this.requests, { canEdit: this.canAnswerRequests, onChanged: () => this._requestsChanged() })
+    this._bindTake(mc)
     // "Got it" is inline on the row — one tap, no navigation.
     mc.querySelectorAll('[data-ack-id]').forEach(btn => {
       btn.addEventListener('click', async e => {
@@ -898,6 +920,7 @@ export class TasksView {
       esc(card.company),
       card.chip ? esc(card.chip.label) : null,
       card.undated ? 'No date' : card.overdue ? `${card.days_late}d overdue` : esc(card.due_display),
+      card.unassigned ? esc(unassignedLabel(card.unassigned_since)) : null,
     ].filter(Boolean).join(' · ')
     return `
       <div class="tk-m-row tk-m-row--deliverable ${card.muted ? 'tk-m-row--muted' : ''}" role="link" tabindex="0" data-card-link="${esc(card.link)}">
@@ -905,6 +928,7 @@ export class TasksView {
           <div class="tk-m-row-title">${esc(card.title)}</div>
           <div class="tk-m-row-meta ${card.overdue ? 'tk-m-row-meta--over' : ''}">${meta}</div>
         </div>
+        ${card.unassigned && this.me() ? `<button type="button" class="tk-got-it" data-take-card="${esc(card.id)}">Assign to me</button>` : ''}
       </div>`
   }
 
@@ -912,10 +936,12 @@ export class TasksView {
     const due = dueLabel(task.due_at, task.status)
     const unack = this.isUnacknowledged(task)
     const project = (this.app.projects || []).find(p => p.id === task.project_id)
+    const open = !task.assignee_id && task.status !== 'done'
     const meta = [
       project ? esc(project.name) : null,
       due ? esc(due.text) : null,
       task.comment_count > 0 ? `💬 ${task.comment_count}` : null,
+      open ? esc(unassignedLabel(task.created_at)) : null,
     ].filter(Boolean).join(' · ')
 
     return `
@@ -925,6 +951,7 @@ export class TasksView {
           ${meta ? `<div class="tk-m-row-meta ${due?.overdue ? 'tk-m-row-meta--over' : ''}">${meta}</div>` : ''}
         </div>
         ${unack ? `<button class="tk-got-it" data-ack-id="${esc(task.id)}">Got it</button>` : ''}
+        ${open && this.me() ? `<button class="tk-got-it" data-take-task="${esc(task.id)}">Assign to me</button>` : ''}
       </div>`
   }
 
@@ -1091,7 +1118,7 @@ export class TasksView {
               ${COLUMNS.map(c => `<option value="${c.id}" ${task.status === c.id ? 'selected' : ''}>${c.label}</option>`).join('')}
             </select>
 
-            <label class="tk-d-label">Assignee</label>
+            <label class="tk-d-label">Owner</label>
             <select class="tk-qa-select" id="tk-d-assignee">
               <option value="">Unassigned</option>
               ${users.map(u => `<option value="${esc(u.id)}" ${task.assignee_id === u.id ? 'selected' : ''}>${esc(u.name || u.email)}</option>`).join('')}
@@ -1416,7 +1443,7 @@ export class TasksView {
   // TeamCalendarView.renderDashboardSection.
   //
   // Shows what needs doing, not everything: the viewer's own open tasks plus
-  // the unassigned tray (which belongs to everyone and is claimable from here).
+  // the unassigned ones (which belong to everyone and can be taken from here).
   // Done is left out — the dashboard is about outstanding work.
 
   DASH_LIMIT = 5
@@ -1461,7 +1488,7 @@ export class TasksView {
         items: mine.filter(t => !this.isUnacknowledged(t) && t.status === 'doing').sort(byDue) },
       { id: 'todo', label: 'To do', dot: 'var(--accent)',
         items: mine.filter(t => !this.isUnacknowledged(t) && t.status === 'todo').sort(byDue) },
-      { id: 'free', label: 'Up for grabs', dot: 'var(--cat-amber)',
+      { id: 'free', label: 'Unassigned', dot: 'var(--cat-amber)',
         items: this.tasks.filter(t => !t.archived_at && !t.assignee_id && t.status !== 'done').sort(byDue) },
     ]
   }
@@ -1485,12 +1512,12 @@ export class TasksView {
       <div class="tk-dash-card">
         <div class="tk-dash-add">
           <input type="text" id="tk-qa-title" class="tk-dash-input"
-                 placeholder="Raise a request…  (press Enter)" autocomplete="off" maxlength="500" />
+                 placeholder="Add a task…  (press Enter)" autocomplete="off" maxlength="500" />
           <button class="btn-primary tk-qa-btn" id="tk-qa-add">Add</button>
         </div>
 
         ${total === 0
-          ? `<div class="tk-dash-empty">Nothing outstanding. Raise a request above.</div>`
+          ? `<div class="tk-dash-empty">Nothing outstanding. Add a task above.</div>`
           : groups.filter(g => g.items.length).map(g => `
             <div class="tk-dash-group">
               <div class="tk-dash-group-head">
@@ -1529,7 +1556,7 @@ export class TasksView {
         </div>
         ${unack ? `<button class="tk-got-it tk-got-it--sm" data-ack-id="${esc(task.id)}">Got it</button>` : ''}
         ${groupId === 'free'
-          ? `<button class="tk-dash-act" data-claim-id="${esc(task.id)}">Claim</button>`
+          ? `<button class="tk-dash-act" data-claim-id="${esc(task.id)}">Assign to me</button>`
           : `<button class="tk-dash-act" data-done-id="${esc(task.id)}">Done</button>`}
       </div>`
   }
@@ -1619,8 +1646,8 @@ export class TasksView {
     }
   }
 
-  // Claiming assigns the task to whoever clicked — the same thing dragging out
-  // of the unassigned tray does on the desktop board.
+  // Assign to me: the task becomes whoever clicked's — the same thing moving an
+  // unassigned card to another column does on the desktop board.
   async _claimTask(id) {
     const task = this.tasks.find(t => t.id === id)
     const me = this.me()
@@ -1651,6 +1678,24 @@ export class TasksView {
       Object.assign(task, snapshot)
       this._refreshBoard()
       this.app.toast(err.message || 'Could not claim that task')
+    }
+  }
+
+  // Assign to me on an unassigned deliverable. The server owns the record (and
+  // tells nobody: you gave it to yourself), so reload the cards afterwards.
+  async _takeCard(id) {
+    const me = this.me()
+    const card = this.cards.find(c => c.id === id)
+    if (!card || !me) return
+    try {
+      await this._write(() => updateDeliverable(id, { owner_id: me }))
+      await this._loadCards()
+      this._refreshBoard()
+      this.app.toast('Yours now')
+    } catch (err) {
+      this.app.toast(err.message || 'Could not assign that to you')
+      await this._loadCards()
+      this._refreshBoard()
     }
   }
 }

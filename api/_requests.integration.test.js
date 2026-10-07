@@ -98,7 +98,7 @@ describeDb('client requests on the task board', () => {
       expect(r.statusCode).toBe(200)
       expect(r.body.requests.map(x => x.title)).toEqual(['First', 'Second'])
       expect(r.body.requests[0]).toMatchObject({
-        kind: 'request', in_tray: true, company: 'RqTest Alpha', sent_by: 'Dana Client', wanted_by: '2026-10-30',
+        kind: 'request', company: 'RqTest Alpha', sent_by: 'Dana Client', wanted_by: '2026-10-30',
         source: 'login', project_id: null,
       })
       expect(r.body.requests[0].detail).toContain('https://x.test/brief')
@@ -165,17 +165,21 @@ describeDb('client requests on the task board', () => {
       expect(await deliverablesIn(r.body.workstream_id)).toHaveLength(1)
     })
 
-    it('asks for nothing: the owner is whoever accepts, no date is fine, and it goes in the project\'s "Requests" workstream', async () => {
+    it('asks for nothing: no owner means unassigned (in To do), no date is fine, and it goes in the project\'s "Requests" workstream', async () => {
       const p = await project('RqTest Film', alpha.id)
       const id = await makeRequest()
       const r = await call('POST', `retainers/requests/${id}/accept`, {})
       expect(r.statusCode).toBe(200)
       const [d] = await deliverablesIn(r.body.workstream_id)
-      expect(d).toMatchObject({ owner_id: ana.id, due_date: null, status: 'planned', client_visible: true, title: 'Cut-down of the film' })
+      expect(d).toMatchObject({ owner_id: null, due_date: null, status: 'planned', client_visible: true, title: 'Cut-down of the film' })
+      expect(r.body.owner_id).toBeNull()
       const [w] = await sql`SELECT title, project_id FROM workstreams WHERE id = ${r.body.workstream_id}`
       expect(w).toEqual({ title: 'Requests', project_id: p.id })
       expect(r.body.link).toBe(`#projects/${p.id}/worklist/${d.id}`)
-      expect(sent).toEqual([])                               // you gave it to yourself
+      expect(sent).toEqual([])                               // nobody to tell yet
+      // On the board it is a card in To do, marked unassigned.
+      const board = await call('GET', 'retainers/board')
+      expect(board.body.cards.find(c => c.id === d.id)).toMatchObject({ column: 'todo', unassigned: true })
       // The next one reuses it.
       const second = await call('POST', `retainers/requests/${await makeRequest({ title: 'Another' })}/accept`, { due_date: '2026-10-09' })
       expect(second.body.workstream_id).toBe(r.body.workstream_id)

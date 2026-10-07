@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   isDateString, londonDate, addDays, daysBetween, lastDayOfMonth, toDateString,
-  formatDay, formatShortDay, formatMonth,
+  formatDay, formatShortDay, formatMonth, workingDaysBetween,
 } from './_dates.js'
 
 describe('isDateString', () => {
@@ -56,5 +56,20 @@ describe('display', () => {
     expect(formatShortDay('2026-11-07', today)).toBe('7 Nov')
     expect(formatMonth('2026-10-31', today)).toBe('October')
     expect(formatMonth('2027-01-31', today)).toBe('January 2027')
+  })
+})
+
+describe('workingDaysBetween', () => {
+  // 2026-10-02 is a Friday.
+  it('counts the weekdays after the first day, up to and including the last', () => {
+    expect(workingDaysBetween('2026-10-02', '2026-10-02')).toBe(0)
+    expect(workingDaysBetween('2026-10-02', '2026-10-04')).toBe(0)   // the weekend
+    expect(workingDaysBetween('2026-10-02', '2026-10-05')).toBe(1)   // Monday
+    expect(workingDaysBetween('2026-10-02', '2026-10-06')).toBe(2)   // Tuesday
+    expect(workingDaysBetween('2026-10-05', '2026-10-07')).toBe(2)   // Mon → Wed
+  })
+  it('skips public holidays, and is 0 when the last day is not after the first', () => {
+    expect(workingDaysBetween('2026-10-02', '2026-10-06', ['2026-10-05'])).toBe(1)
+    expect(workingDaysBetween('2026-10-07', '2026-10-01')).toBe(0)
   })
 })

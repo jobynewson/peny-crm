@@ -310,7 +310,8 @@ export function validateAccept(body, { userIds = [] } = {}) {
   if (creating && body.workstream_id) return { field: 'workstream_id', message: 'Pick a workstream or make a new one, not both' }
   if (creating && body.new_workstream_title.trim().length > TITLE_MAX) return { field: 'new_workstream_title', message: 'That title is too long' }
   // Accepting from the board asks for nothing: no workstream means the project's
-  // "Requests" one, no owner means whoever is accepting, no date means undated.
+  // "Requests" one, no owner means unassigned (it waits in To do for someone to
+  // take it), no date means undated.
   // What is given must still be valid.
   if (!creating && body.workstream_id != null && body.workstream_id !== '' && !isUuid(body.workstream_id)) return { field: 'workstream_id', message: 'Choose the workstream, or make a new one' }
   if (body.owner_id != null && body.owner_id !== '' && (!isUuid(body.owner_id) || !userIds.includes(body.owner_id))) return { field: 'owner_id', message: 'Choose who will do it' }
@@ -402,9 +403,9 @@ export function statusAfterBoardDrag({ from, column }) {
 }
 
 // Which deliverables have a card, so that nothing is invisible:
-//   - unowned and open: in the unassigned tray, whatever its date or status
-//     and whichever workstream it is in (paused or complete included: it needs
-//     someone before anything else)
+//   - unowned and open: in its column (To do, or Doing once started) marked
+//     Unassigned, whatever its date and whichever workstream it is in (paused
+//     or complete included: it needs someone before anything else)
 //   - owned and started (anything but planned): on the board
 //   - owned, planned and undated: on the board — with no date nothing else
 //     (What's due) would ever show it
@@ -498,7 +499,10 @@ export function boardCard(d, today, now = new Date()) {
     project: d.project ?? null,
     project_id: d.project_id ?? null,
     owner_id: d.owner_id ?? null,
-    in_tray: !d.owner_id && d.status !== 'approved',
+    // No owner: drawn in its column with an Unassigned badge and "Assign to
+    // me". `unassigned_since` is how long it has waited (when it was made).
+    unassigned: !d.owner_id && d.status !== 'approved',
+    unassigned_since: !d.owner_id && d.status !== 'approved' ? (d.created_at ?? null) : null,
     status: d.status,
     status_label: STATUS_LABELS[d.status],
     column: boardColumn(d.status),

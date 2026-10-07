@@ -59,6 +59,10 @@ export const settings = pgTable('settings', {
   // Testing mode (drizzle/0043): the worklist/portal emails go to test_emails instead.
   test_mode: boolean('test_mode').notNull().default(false),
   test_emails: jsonb('test_emails').notNull().default([]),
+  // Who looks after unassigned work (drizzle/0048): they hear when a task or
+  // deliverable has had no owner for two working days, and about anything
+  // unowned that has no company lead. NULL = the superadmins.
+  assignment_lead_id: uuid('assignment_lead_id').references(() => app_users.id, { onDelete: 'set null' }),
   ...timestamps,
 })
 

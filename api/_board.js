@@ -11,8 +11,8 @@
 // this file only reads and writes. A drag moves a card between To do and Doing
 // (planned <-> in progress) and nothing else: approval is the client's, and
 // waiting or review need a note or a link. Anything else is refused with a
-// sentence that says what to do instead, and nothing is written. Dragging an
-// unowned card out of the tray also claims it, but only if the move is allowed.
+// sentence that says what to do instead, and nothing is written. Moving an
+// unowned card to another column also claims it, but only if the move is allowed.
 //
 // NOT a Vercel function — the `_` prefix keeps it out of function detection.
 
@@ -33,7 +33,7 @@ export const BOARD_ROUTES = [
 async function loadRows(sql, ws, { id = null } = {}) {
   return sql`
     SELECT d.id, d.title, d.owner_id, d.status, d.due_kind, d.due_date::text AS due_date, d.due_label, d.cadence,
-           d.waiting_since, d.delivered_at, d.updated_at,
+           d.waiting_since, d.delivered_at, d.updated_at, d.created_at,
            w.title AS workstream, w.status AS workstream_status, w.project_id, wc.company_id, p.name AS project, COALESCE(c.name, p.name) AS company,
            (SELECT max(dv.round) FROM deliveries dv WHERE dv.deliverable_id = d.id) AS round,
            (SELECT max(dv.responded_at) FROM deliveries dv WHERE dv.deliverable_id = d.id AND dv.client_response = 'comments_in') AS comments_since
@@ -57,7 +57,8 @@ async function getBoard(req, res, { sql }) {
     .filter(d => boardShows(d, today, days))
     .map(d => boardCard(d, today, now))
     .sort(compareBoardCards)
-  // New client requests wait in the tray too, as cards of their own kind.
+  // New client requests wait above the columns, in New requests: they aren't
+  // work until someone accepts them.
   const requests = await loadOpenRequests(sql, ws, today)
   return res.status(200).json({ today, days, cards, requests })
 }
@@ -65,8 +66,8 @@ async function getBoard(req, res, { sql }) {
 // ── POST retainers/deliverables/:id/board-move ───────────────────────────────
 // { column: 'todo' | 'doing' | 'done' } → { card } (the card as it now is), or
 // 409 board_refused with the sentence to show. Moving something already in the
-// column it was dropped in is fine and changes nothing (except claiming it, if
-// it had no owner).
+// column it was dropped in is fine and changes nothing. Moving an unowned card
+// to another column claims it: picking it up is starting it.
 async function moveCard(req, res, { sql, user, params }) {
   const body = readBody(req)
   if (!body) return invalid(res, 'body', 'Request body is not valid JSON')
@@ -79,7 +80,7 @@ async function moveCard(req, res, { sql, user, params }) {
   const move = statusAfterBoardDrag({ from: d.status, column: body.column })
   if (move.refused) return fail(res, 409, 'board_refused', move.refused, { reason: move.code })
 
-  const claiming = !d.owner_id
+  const claiming = !d.owner_id && move.status !== d.status
   if (move.status !== d.status || claiming) {
     const patch = statusPatch({ from: d.status, to: move.status })
     const [row] = await sql`

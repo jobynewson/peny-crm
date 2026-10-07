@@ -590,8 +590,8 @@ Required (set in `.env.local` for local development, Vercel dashboard for produc
   deliverables and rounds (`#projects/<id>/worklist`, and
   `#projects/<id>/worklist/<deliverableId>` opens that deliverable) over
   `/api/retainers` — see "Retainer worklists" below. Client requests are
-  cards in the task board's tray (`request-cards.js`); there is no Requests view
-  or tab (`#requests` redirects to `#tasks`).
+  cards in the task board's New requests strip (`request-cards.js`); there is no
+  Requests view or tab (`#requests` redirects to `#tasks`).
 - `password-manager.js` - Password management
 - `offload-log.js` - Offload Log (read-only table of backup reports from Fence)
 
@@ -1054,9 +1054,9 @@ always the source of truth and nothing is ever read back from Google.
   `GET retainers/projects/:id/owed`; anything else means that screen's default.
 - On the board the window only hides **owned, planned, dated** deliverables that
   are further out (`boardShows(d, today, days)`); tasks, started work, undated and
-  unowned work are never hidden by it. An unowned open deliverable shows in the
-  tray whatever its workstream's status; an owned one in a paused or complete
-  workstream is parked on purpose and has no card.
+  unowned work are never hidden by it. An unowned open deliverable shows in its
+  column, marked Unassigned, whatever its workstream's status; an owned one in a
+  paused or complete workstream is parked on purpose and has no card.
 - The Overview's **Owed** list (`owedList` in the rules, `src/views/owed.js`):
   open deliverables from active workstreams, overdue first, undated last, five
   shown, waiting-on-client kept in (muted), "See all N" into the Worklist tab.
@@ -1412,13 +1412,16 @@ is the guard), `requests` decision columns, `deliverables.client_reply`,
   the **Tasks** tab's bubble, from `GET retainers/request-count` → `{ new, feedback }`: new requests, plus
   feedback waiting to be acted on — `changes_requested` or `comments_in` deliverables that are yours or nobody's; it clears when the next round goes out).
   There is no separate inbox: `GET retainers/board` returns `requests` (the new
-  ones, oldest first) beside `cards`, and each is a card in the **Unassigned**
-  tray (and "New requests" first on the phone list), marked "Sent via project
-  link" when it was. They ignore "Just mine" and the assignee filter; only the
+  ones, oldest first) beside `cards`, and each is a card in the **New requests**
+  strip above the columns (shown only when there are some; "New requests" first
+  on the phone list), marked "Sent via project link" when it was. Only requests
+  wait there: everything else, owned or not, is in a column. They ignore "Just mine" and the assignee filter; only the
   project filter hides one. Not draggable (a request isn't work yet).
   **Accept** is on the card: one popover with the date (filled with the one they
-  asked for, optional); the body is optional all round, the server supplies the
-  rest: owner = whoever accepts, project = the request's own / the company's only
+  asked for, optional) and the owner (optional, Unassigned by default); the body
+  is optional all round, the server supplies the rest: no owner = unassigned (a
+  card in To do, marked Unassigned, for someone to take; the assignment lead
+  hears if nobody does — see "Unassigned work"), project = the request's own / the company's only
   project / its one retainer (409 `needs_project` with the list when it can't tell,
   and the popover asks; 422 when the company has no project), workstream = the
   project's "Requests" one (made on first use); a named `workstream_id` still
@@ -1426,9 +1429,9 @@ is the guard), `requests` decision columns, `deliverables.client_reply`,
   planned) and marks the request accepted in ONE statement. **Decline** asks for
   the note the client reads. Clicking a card shows their full words with both.
   After accepting, the deliverable is the only record; Planned to Doing on the
-  board already sets In progress for the client. The new owner gets the "Tasks
-  assigned to you" email (not when it is you). The new-request alert email still
-  goes to the lead / superadmins, and opens the board.
+  board already sets In progress for the client. A chosen owner gets the "Tasks
+  assigned to you" email (not when it is you). The new-request alert email
+  goes to the lead / assignment lead / superadmins, and opens the board.
 - **Waiting on you**: `POST /api/client/deliverables/:id/reply` keeps the latest
   note (cleared with `waiting_note` by `statusPatch`), never shown on a project
   link, alerts the owner every time.
@@ -1436,10 +1439,12 @@ is the guard), `requests` decision columns, `deliverables.client_reply`,
   mutable, independent of the digest. Routing: deliverable owner, else the
   company lead — only while `settings.show_leads` is on (off by default; it
   hides the lead in the UI, stops new companies getting one, and lets a lead be
-  removed; `api/_leads.js`) — else every superadmin (logged). Immediate: new request, changes
+  removed; `api/_leads.js`) — else whoever looks after unassigned work
+  (`settings.assignment_lead_id`) — else every superadmin (logged). Immediate: new request, changes
   requested, client reply. Hourly (`/api/reminders?type=alerts`, needs
   `CRON_SECRET`, runs every day, sends 07:00–20:00 London only): due within 48 h
-  and not in review; client input older than `CLIENT_INPUT_ALERT_DAYS` (7). Once
+  and not in review; client input older than `CLIENT_INPUT_ALERT_DAYS` (7);
+  unassigned work (`alert_unassigned`, see "Unassigned work"). Once
   per item via `alert_log` (cycle = due date / `waiting_since`); a claim is given
   back if nothing could be sent. Approvals go in the 09:00 digest ("Approved since
   your last digest", Monday covers the weekend).
@@ -1472,8 +1477,11 @@ is the guard), `requests` decision columns, `deliverables.client_reply`,
   refusal are in `_retainer-rules.js` (`boardColumn`, `boardShows`,
   `statusAfterBoardDrag`); the browser holds no copy. A drag only moves planned
   <-> in progress; anything else is refused with a sentence (shown in a notice
-  that stays until dismissed). Unowned open deliverables sit in the tray; dragging
-  one out claims it. No acknowledgement, bell notifications or comments for cards.
+  that stays until dismissed). Unowned open deliverables sit in their column,
+  marked Unassigned (`unassigned`, `unassigned_since` on the card) with **Assign
+  to me** (a `PATCH retainers/deliverables/:id { owner_id }`); moving one to
+  another column also claims it, dropping it where it already is doesn't. No
+  acknowledgement, bell notifications or comments for cards.
   Not on the Dashboard task widget (What's due already lists them).
 
 ### Kanban boards
@@ -1500,6 +1508,34 @@ On phones all three share one behaviour: `mountStatusSwitch()`
 and shows one column at a time. It's called at the end of each board's
 render; give each column element the attribute you pass as `colAttr`
 (`data-col` or `data-status-col`).
+
+### Unassigned work (`drizzle/0048`, Settings › Company › Unassigned work)
+- **Nothing waits in a tray.** A task or deliverable with no owner is a card in
+  its column (To do, usually) like any other, marked **Unassigned · Nd** with an
+  amber edge and **Assign to me**. That covers team-added tasks with no owner,
+  unowned deliverables and accepted client requests (which are unassigned unless
+  an owner is picked when accepting). Only new client requests wait above the
+  columns, in **New requests**: they aren't work until someone accepts them.
+- Taking one: **Assign to me** on the card (board, phone list, the Dashboard's
+  Tasks section), choosing an owner, or moving it to another column (picking it
+  up is starting it; reordering within To do doesn't claim it). The phone list
+  shows your own work plus anything unassigned.
+- **Who looks after it**: `settings.assignment_lead_id` (an `app_users` id,
+  `ON DELETE SET NULL`), chosen by a superadmin in Settings › Company ›
+  Unassigned work; NULL means the superadmins. They get `alert_unassigned`
+  (switchable, default on): one email per hourly run listing every task or
+  deliverable that has had no owner for `UNASSIGNED_WORKING_DAYS` (2) working
+  days (weekdays, `public_holidays` excluded; `workingDaysBetween` in
+  `api/_dates.js`), once per spell without an owner (`alert_log`, cycle = when
+  the spell began: a task's creation or its last `unassigned` event; a
+  deliverable keeps no history, so its creation). Done or archived tasks,
+  approved deliverables and deliverables in paused or complete workstreams are
+  left out. `staleUnassigned()` is the pure part.
+- They are also the step after the company lead for the other alerts about
+  unowned work (`resolveRecipients`: owner → company lead (when leads are on) →
+  assignment lead → superadmins), which includes new client requests.
+- Words: **Owner** and **Unassigned** everywhere in the UI (the task API still
+  calls it `assignee_id`); the quick add says "Add a task…".
 
 ## Tasks system
 - Tasks live in one `tasks` table. The board, the mobile list and (later)
