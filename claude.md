@@ -298,12 +298,21 @@ There is no sidebar. The shell is a header over the page:
   (rows are scoped to the workspace owner, `created_by` / `updated_by` record
   who saved). Viewers can open and print but not change.
   - `src/pdf/onepager.js`: the pure part. `buildModel()` works out what a page
-    needs, `pageHtml()` is one page, `inline()` turns `**bold**` / `*italic*`
+    needs, `pageHtml()` is one page, `inline()` turns the stored text markup
+    (`**bold**`, `_italic_`, the older `*italic*`, `\*` for a plain character)
     into tags (escaped first). Dark follows the quote cover, light the detail
     pages. The logo, address, website and VAT number always come from
     Settings; "prepared by" (blank by default) and the email addresses (a new
     document starts with `hello@wearepeny.com`) are fields on the document and
     show only what is typed there.
+  - Text, list and table blocks are **rich text boxes** (`src/pdf/richbox.js`,
+    a contenteditable with B / I buttons and Ctrl+B / Ctrl+I; Enter is a line
+    break, paste is plain text). `src/pdf/richtext.js` converts between the
+    box's HTML and the stored markup, so a saved document is still a plain
+    string; the box's own bold / italic style is spelled per piece of text
+    (`**a** **_b_**`) so it always reads back. Typed `*`, `_` and `\` are
+    escaped. Headings are plain inputs. The fields use `spellcheck` with
+    `lang="en-GB"`, i.e. the browser's own dictionary.
   - `src/pdf/paginate.js`: lays the content across A4 pages with the browser's
     layout (it measures real pages, so it only runs in the browser). A page
     break falls before a heading's group (a heading and what follows it up to

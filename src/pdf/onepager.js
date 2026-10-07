@@ -27,12 +27,17 @@ export function blankDocument() {
   return { title: '', theme: 'dark', content: { label: '', subtitle: '', date: todayLong(), preparedBy: '', emails: DEFAULT_EMAIL, scale: 100, condensedHeader: false, condensedFooter: false, condensedPage: false, blocks: [{ type: 'text', text: '' }] } }
 }
 
-// Typed text: **bold** and *italic*, with line breaks kept as typed. Escaped
-// first, so nothing but these two tags can come out.
+// Typed text: **bold** and _italic_ (the older *italic* still reads), with
+// line breaks kept as typed. A backslash before * _ or \ makes it a plain
+// character. Escaped first, so nothing but strong, em and br can come out.
+// The rich text boxes write this (see richtext.js).
 export function inline(s) {
   return esc(s)
-    .replace(/\*\*(?=\S)(.+?)(?<=\S)\*\*/g, '<strong>$1</strong>')
-    .replace(/(^|[^*\w])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![*\w])/g, '$1<em>$2</em>')
+    .replace(/\\([\\*_])/g, (_, c) => ({ '\\': '&#92;', '*': '&#42;', _: '&#95;' }[c]))
+    .replace(/\*\*\*(?=\S)([\s\S]+?)(?<=\S)\*\*\*/g, '<strong><em>$1</em></strong>')
+    .replace(/\*\*(?=\S)([\s\S]+?)(?<=\S)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^\w])_(?=\S)([^_]+?)(?<=\S)_(?!\w)/g, '$1<em>$2</em>')
+    .replace(/\*(?=\S)([^*]+?)(?<=\S)\*/g, '<em>$1</em>')
 }
 
 // Lists and tables are typed as lines in a textarea ("Label | Value" for a

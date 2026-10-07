@@ -9,6 +9,7 @@
 import * as api from '../api/pdf-documents.js'
 import { BLOCK_LABELS, FLAGS, LIMITS, blankDocument, blocksFromEditor, blocksToEditor } from '../pdf/onepager.js'
 import { paginate } from '../pdf/paginate.js'
+import { formatState, mountRichBox, toggleFormat } from '../pdf/richbox.js'
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 const A4_W_PX = 210 * 96 / 25.4
@@ -133,8 +134,14 @@ export class PdfGeneratorView {
     this.app.updateTitle()
   }
 
+  _unwatchSelection() {
+    if (this._onSelection) document.removeEventListener('selectionchange', this._onSelection)
+    this._onSelection = null
+  }
+
   async _close() {
     if (this.dirty && !this.readOnly && !await this.app.confirm({ title: 'Leave without saving?', message: 'Your changes to this document have not been saved.', confirmLabel: 'Leave', danger: false })) return
+    this._unwatchSelection()
     this.draft = null
     this.dirty = false
     history.pushState({}, '', '#pdf-generator')
@@ -151,9 +158,9 @@ export class PdfGeneratorView {
     const blockCount = d.blocks.length
     const blocksHtml = d.blocks.map((b, i) => {
       const field = b.type === 'heading'
-        ? `<input type="text" data-f="text" data-i="${i}" value="${esc(b.text)}" maxlength="${LIMITS.text}" aria-label="Heading text" />`
-        : `<textarea data-f="text" data-i="${i}" rows="${b.type === 'text' ? 4 : 5}" maxlength="${LIMITS.text}" aria-label="${BLOCK_LABELS[b.type]}" placeholder="${b.type === 'bullets' ? 'One item per line' : b.type === 'table' ? 'One row per line: Label | Value' : ''}">${esc(b.text)}</textarea>`
-      const fmt = b.type === 'heading' ? '' : `<button type="button" class="pg-block-btn pg-fmt" data-fmt="**" data-i="${i}" aria-label="Bold" title="Bold">B</button><button type="button" class="pg-block-btn pg-fmt pg-fmt-i" data-fmt="*" data-i="${i}" aria-label="Italic" title="Italic">I</button>`
+        ? `<input type="text" data-f="text" data-i="${i}" value="${esc(b.text)}" maxlength="${LIMITS.text}" aria-label="Heading text" spellcheck="true" lang="en-GB" />`
+        : `<div class="pg-rich" data-rich data-i="${i}" role="textbox" aria-multiline="true" aria-label="${BLOCK_LABELS[b.type]}" spellcheck="true" lang="en-GB" data-placeholder="${b.type === 'bullets' ? 'One item per line' : b.type === 'table' ? 'One row per line: Label | Value' : ''}"></div>`
+      const fmt = b.type === 'heading' ? '' : `<button type="button" class="pg-block-btn pg-fmt" data-fmt="bold" data-i="${i}" aria-label="Bold" aria-pressed="false" title="Bold (Ctrl+B)">B</button><button type="button" class="pg-block-btn pg-fmt pg-fmt-i" data-fmt="italic" data-i="${i}" aria-label="Italic" aria-pressed="false" title="Italic (Ctrl+I)">I</button>`
       return `<div class="pg-block">
         <div class="pg-block-head">
           <span class="pg-block-type">${BLOCK_LABELS[b.type]}</span>
@@ -170,12 +177,12 @@ export class PdfGeneratorView {
       <p style="margin:0 0 14px"><a href="#pdf-generator" id="pg-back" class="tr-muted">← All documents</a></p>
       <div class="pg-layout">
         <div class="panel pg-form"><fieldset${ro ? ' disabled' : ''}>
-          <div class="field"><div class="field-label">Title</div><input type="text" data-k="title" value="${esc(d.title)}" maxlength="${LIMITS.title}" placeholder="Document title" /></div>
-          <div class="field"><div class="field-label">Label <span class="tr-muted">(small text above the title)</span></div><input type="text" data-k="label" value="${esc(d.content.label)}" maxlength="${LIMITS.label}" placeholder="e.g. Proposal" /></div>
-          <div class="field"><div class="field-label">Subtitle</div><input type="text" data-k="subtitle" value="${esc(d.content.subtitle)}" maxlength="${LIMITS.subtitle}" /></div>
-          <div class="field"><div class="field-label">Date</div><input type="text" data-k="date" value="${esc(d.content.date)}" maxlength="${LIMITS.date}" /></div>
-          <div class="field"><div class="field-label">Prepared by</div><input type="text" data-k="preparedBy" value="${esc(d.content.preparedBy)}" maxlength="${LIMITS.preparedBy}" placeholder="Leave blank to leave it out" /></div>
-          <div class="field"><div class="field-label">Email addresses <span class="tr-muted">(separate with commas)</span></div><input type="text" data-k="emails" value="${esc(d.content.emails)}" maxlength="${LIMITS.emails}" /></div>
+          <div class="field"><div class="field-label">Title</div><input type="text" data-k="title" spellcheck="true" lang="en-GB" value="${esc(d.title)}" maxlength="${LIMITS.title}" placeholder="Document title" /></div>
+          <div class="field"><div class="field-label">Label <span class="tr-muted">(small text above the title)</span></div><input type="text" data-k="label" spellcheck="true" lang="en-GB" value="${esc(d.content.label)}" maxlength="${LIMITS.label}" placeholder="e.g. Proposal" /></div>
+          <div class="field"><div class="field-label">Subtitle</div><input type="text" data-k="subtitle" spellcheck="true" lang="en-GB" value="${esc(d.content.subtitle)}" maxlength="${LIMITS.subtitle}" /></div>
+          <div class="field"><div class="field-label">Date</div><input type="text" data-k="date" spellcheck="false" value="${esc(d.content.date)}" maxlength="${LIMITS.date}" /></div>
+          <div class="field"><div class="field-label">Prepared by</div><input type="text" data-k="preparedBy" spellcheck="true" lang="en-GB" value="${esc(d.content.preparedBy)}" maxlength="${LIMITS.preparedBy}" placeholder="Leave blank to leave it out" /></div>
+          <div class="field"><div class="field-label">Email addresses <span class="tr-muted">(separate with commas)</span></div><input type="text" data-k="emails" spellcheck="false" value="${esc(d.content.emails)}" maxlength="${LIMITS.emails}" /></div>
           <div class="field"><div class="field-label">Look</div>
             <div class="seg" role="group" aria-label="Look">
               <button type="button" class="seg-btn" data-theme="dark" aria-pressed="${d.theme !== 'light'}">Dark</button>
@@ -198,7 +205,7 @@ export class PdfGeneratorView {
             </div>
           </div>
           <div class="field"><div class="field-label">Content</div>
-            <p class="pg-hint">Use **bold** or *italic*, or the B and I buttons on a selection. A new line stays a new line. Anything that doesn't fit flows onto the next page, starting a new page at a heading where it can.</p>
+            <p class="pg-hint">Select text and use B and I (or Ctrl+B and Ctrl+I) for bold and italic. Enter starts a new line. Anything that doesn't fit flows onto the next page, starting a new page at a heading where it can.</p>
           </div>
           ${blocksHtml}
           <div class="pg-add" role="group" aria-label="Add a block">
@@ -223,7 +230,24 @@ export class PdfGeneratorView {
       if (k === 'title') d.title = el.value; else d.content[k] = el.value
       this._changed()
     }))
-    mc.querySelectorAll('[data-f]').forEach(el => el.addEventListener('input', () => { d.blocks[Number(el.dataset.i)].text = el.value; this._changed() }))
+    // Headings are plain single-line fields; the other blocks are rich text boxes.
+    mc.querySelectorAll('input[data-f]').forEach(el => el.addEventListener('input', () => { d.blocks[Number(el.dataset.i)].text = el.value; this._changed() }))
+    mc.querySelectorAll('[data-rich]').forEach(el => {
+      const i = Number(el.dataset.i)
+      mountRichBox(el, d.blocks[i].text, { editable: !this.readOnly, onInput: markup => { d.blocks[i].text = markup.slice(0, LIMITS.text); this._changed() } })
+    })
+    mc.querySelectorAll('[data-fmt]').forEach(btn => {
+      // The button must not take the selection from the box.
+      btn.addEventListener('mousedown', e => e.preventDefault())
+      btn.addEventListener('click', () => {
+        const box = mc.querySelector(`[data-rich][data-i="${btn.dataset.i}"]`)
+        if (!box || this.readOnly) return
+        toggleFormat(box, btn.dataset.fmt)
+        this._syncFormatButtons()
+      })
+    })
+    this._watchSelection()
+
     const range = mc.querySelector('#pg-scale'), out = mc.querySelector('#pg-scale-out'), reset = mc.querySelector('#pg-scale-reset')
     const setScale = v => {
       d.content.scale = v
@@ -237,50 +261,15 @@ export class PdfGeneratorView {
       this._changed()
       if (el.dataset.flag === 'condensedPage') this._drawEditor()
     }))
-    mc.querySelectorAll('[data-fmt]').forEach(btn => btn.addEventListener('click', () => {
-      const i = Number(btn.dataset.i), mark = btn.dataset.fmt
-      const ta = mc.querySelector(`[data-f][data-i="${i}"]`)
-      if (!ta) return
-      const { selectionStart: a, selectionEnd: z, value } = ta
-      ta.value = `${value.slice(0, a)}${mark}${value.slice(a, z)}${mark}${value.slice(z)}`
-      ta.focus()
-      ta.setSelectionRange(a + mark.length, z + mark.length)
-      d.blocks[i].text = ta.value
-      this._changed()
-    }))
     mc.querySelectorAll('[data-theme]').forEach(btn => btn.addEventListener('click', () => {
       d.theme = btn.dataset.theme
-      const range = mc.querySelector('#pg-scale'), out = mc.querySelector('#pg-scale-out'), reset = mc.querySelector('#pg-scale-reset')
-    const setScale = v => {
-      d.content.scale = v
-      range.value = String(v); out.textContent = `${v}%`; reset.disabled = v === 100
-      this._changed()
-    }
-    range.addEventListener('input', () => setScale(Number(range.value)))
-    reset.addEventListener('click', () => setScale(100))
-    mc.querySelectorAll('[data-flag]').forEach(el => el.addEventListener('change', () => {
-      d.content[el.dataset.flag] = el.checked
-      this._changed()
-      if (el.dataset.flag === 'condensedPage') this._drawEditor()
-    }))
-    mc.querySelectorAll('[data-fmt]').forEach(btn => btn.addEventListener('click', () => {
-      const i = Number(btn.dataset.i), mark = btn.dataset.fmt
-      const ta = mc.querySelector(`[data-f][data-i="${i}"]`)
-      if (!ta) return
-      const { selectionStart: a, selectionEnd: z, value } = ta
-      ta.value = `${value.slice(0, a)}${mark}${value.slice(a, z)}${mark}${value.slice(z)}`
-      ta.focus()
-      ta.setSelectionRange(a + mark.length, z + mark.length)
-      d.blocks[i].text = ta.value
-      this._changed()
-    }))
-    mc.querySelectorAll('[data-theme]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)))
+      mc.querySelectorAll('[data-theme]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)))
       this._changed()
     }))
     mc.querySelectorAll('[data-add]').forEach(btn => btn.addEventListener('click', () => {
       d.blocks.push({ type: btn.dataset.add, text: '' })
       this._changed(); this._drawEditor()
-      mc.querySelectorAll('[data-f]')[d.blocks.length - 1]?.focus()
+      mc.querySelector(`[data-i="${d.blocks.length - 1}"][data-rich], input[data-f][data-i="${d.blocks.length - 1}"]`)?.focus()
     }))
     mc.querySelectorAll('[data-act]').forEach(btn => btn.addEventListener('click', () => {
       const i = Number(btn.dataset.i), act = btn.dataset.act
@@ -293,6 +282,24 @@ export class PdfGeneratorView {
       this._ro = new ResizeObserver(() => this._fitPreview())
       this._ro.observe(mc.querySelector('#pg-frame'))
     }
+  }
+
+  // B and I show as pressed while the caret or selection is in bold or italic text.
+  _watchSelection() {
+    if (this._onSelection) document.removeEventListener('selectionchange', this._onSelection)
+    this._onSelection = () => this._syncFormatButtons()
+    document.addEventListener('selectionchange', this._onSelection)
+  }
+
+  _syncFormatButtons() {
+    const mc = this.mc
+    if (!mc) return
+    const box = document.activeElement?.closest?.('[data-rich]')
+    mc.querySelectorAll('[data-fmt]').forEach(btn => btn.setAttribute('aria-pressed', 'false'))
+    if (!box || !mc.contains(box)) return
+    const st = formatState()
+    mc.querySelector(`[data-fmt="bold"][data-i="${box.dataset.i}"]`)?.setAttribute('aria-pressed', String(!!st.bold))
+    mc.querySelector(`[data-fmt="italic"][data-i="${box.dataset.i}"]`)?.setAttribute('aria-pressed', String(!!st.italic))
   }
 
   _changed() {

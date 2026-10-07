@@ -7,11 +7,30 @@ describe('limits', () => {
 })
 
 describe('inline formatting', () => {
-  it('makes **bold** and *italic* and nothing else', () => {
-    expect(inline('a **b** c *d* e')).toBe('a <strong>b</strong> c <em>d</em> e')
+  it('makes **bold**, _italic_ and the older *italic*, and nothing else', () => {
+    expect(inline('a **b** c _d_ e *f* g')).toBe('a <strong>b</strong> c <em>d</em> e <em>f</em> g')
     expect(inline('**<script>**')).toBe('<strong>&lt;script&gt;</strong>')
-    expect(inline('2 * 3 * 4')).toBe('2 * 3 * 4')
+    expect(inline('2 * 3 * 4 and 1 _ 2 _ 3')).toBe('2 * 3 * 4 and 1 _ 2 _ 3')
     expect(inline('stars ** alone')).toBe('stars ** alone')
+  })
+  it('nests properly: bold and italic together, and one inside the other', () => {
+    expect(inline('***both***')).toBe('<strong><em>both</em></strong>')
+    expect(inline('**_both_**')).toBe('<strong><em>both</em></strong>')
+    expect(inline('**a _b_ c**')).toBe('<strong>a <em>b</em> c</strong>')
+    expect(inline('_a **b** c_')).toBe('<em>a <strong>b</strong> c</em>')
+    expect(inline('**a**_b_ and _c_**d**')).toBe('<strong>a</strong><em>b</em> and <em>c</em><strong>d</strong>')
+  })
+  it('lets bold and italic run across a line break', () => {
+    expect(inline('**one\ntwo**')).toBe('<strong>one\ntwo</strong>')
+    expect(inline('_one\ntwo_')).toBe('<em>one\ntwo</em>')
+  })
+  it('reads italic inside a word with * and leaves snake_case alone', () => {
+    expect(inline('it*al*ic')).toBe('it<em>al</em>ic')
+    expect(inline('my_file_name.pdf')).toBe('my_file_name.pdf')
+  })
+  it('treats a backslash before * _ or \\ as plain text', () => {
+    expect(inline('5 \\* 3 and \\_x\\_ and a\\\\b')).toBe('5 &#42; 3 and &#95;x&#95; and a&#92;b')
+    expect(inline('**a \\* b**')).toBe('<strong>a &#42; b</strong>')
   })
   it('leaves line breaks for the stylesheet to keep', () => expect(inline('one\ntwo')).toBe('one\ntwo'))
 })
