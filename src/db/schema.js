@@ -704,8 +704,20 @@ export const user_notes = pgTable('user_notes', {
   sort_order: integer('sort_order').notNull().default(0),
   due_date:   date('due_date'),
   reminder:   boolean('reminder').notNull().default(false),
+  // Shown on the office screen until public_until (two weeks after it was switched on).
+  is_public:    boolean('is_public').notNull().default(false),
+  public_until: timestamp('public_until', { withTimezone: true }),
   created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updated_at: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// ── Office screen videos (YouTube links, one set per person's Clerk ID) ───────
+export const office_videos = pgTable('office_videos', {
+  id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  clerk_id:   text('clerk_id').notNull(),
+  video_id:   text('video_id').notNull(),
+  url:        text('url').notNull(),
+  created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
 // ── Offload Log ───────────────────────────────────────────────────────────────

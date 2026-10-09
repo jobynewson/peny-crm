@@ -14,6 +14,7 @@ import { ExpensesView } from './views/expenses.js'
 import { OffloadLogView } from './views/offload-log.js'
 import { PersonalToolsView } from './views/personal-tools.js'
 import { TrainingView } from './views/training.js'
+import { OfficeVideosView } from './views/office-videos.js'
 import { PdfGeneratorView } from './views/pdf-generator.js'
 import { BoardsView } from './views/boards.js'
 import { CanvasView } from './views/canvas.js'
@@ -33,7 +34,7 @@ import { syncThemeColor } from './theme.js'
 const PHONE = '(max-width: 768px)'
 
 // Every route the app has used; old bookmarks keep working.
-const VIEWS = ['dashboard', 'tasks', 'calendar', 'projects', 'budgets', 'planning', 'contacts', 'marketing', 'story-planner', 'leave', 'expenses', 'password-manager', 'offload-log', 'personal-tools', 'training', 'pdf-generator', 'settings', 'timetrack']
+const VIEWS = ['dashboard', 'tasks', 'calendar', 'projects', 'budgets', 'planning', 'contacts', 'marketing', 'story-planner', 'leave', 'expenses', 'password-manager', 'offload-log', 'personal-tools', 'training', 'office-videos', 'pdf-generator', 'settings', 'timetrack']
 
 export class App {
   constructor({ userId, clerkUserId, user, appUser, permissions, contacts, companies, projects, budgets, settings, allUsers, socialPosts, marketingCards, teamCalendarEntries, leaveRequests, publicHolidays, onSignOut }) {
@@ -69,6 +70,7 @@ export class App {
     this.offloadLogView       = new OffloadLogView(this)
     this.personalToolsView    = new PersonalToolsView(this)
     this.trainingView         = new TrainingView(this)
+    this.officeVideosView     = new OfficeVideosView(this)
     this.pdfGeneratorView     = new PdfGeneratorView(this)
     this.boardsView           = new BoardsView(this)
     this.canvasView           = new CanvasView(this)
@@ -896,6 +898,8 @@ export class App {
       this.personalToolsView.render(mc)
     } else if (this.currentView === 'training') {
       this.trainingView.render(mc)
+    } else if (this.currentView === 'office-videos') {
+      this.officeVideosView.render(mc)
     } else if (this.currentView === 'pdf-generator') {
       this.pdfGeneratorView.render(mc)
     } else if (this.currentView === 'leave') {
@@ -1960,6 +1964,8 @@ export class App {
   }
 
   _renderNotesList() {
+    // A note is on the office screen while it's switched on and hasn't run out.
+    const _notePublic = n => !!n.is_public && !!n.public_until && new Date(n.public_until) > new Date()
     const list = document.getElementById('notes-list')
     if (!list) return
     if (!this._notes?.length) {
@@ -1995,6 +2001,10 @@ export class App {
             <label class="notes-reminder">
               <input type="checkbox" class="notes-reminder-input" data-note-id="${n.id}" ${n.reminder?'checked':''} />
               Remind 36h before
+            </label>
+            <label class="notes-reminder" title="Shows this note on the big office screen for two weeks">
+              <input type="checkbox" class="notes-public-input" data-note-id="${n.id}" ${_notePublic(n)?'checked':''} />
+              ${_notePublic(n) ? `On the office screen until ${new Date(n.public_until).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}` : n.is_public ? 'Office screen (expired, tick to show again)' : 'Show on office screen (2 weeks)'}
             </label>
           </div>
           <div class="notes-card-footer">
@@ -2044,6 +2054,13 @@ export class App {
     })
     list.querySelectorAll('.notes-due-input').forEach(input => {
       input.addEventListener('change', () => this._saveNote(input.dataset.noteId, { due_date: input.value || null }))
+    })
+    list.querySelectorAll('.notes-public-input').forEach(cb => {
+      cb.addEventListener('change', async () => {
+        const until = cb.checked ? new Date(Date.now() + 14 * 86400000).toISOString() : null
+        await this._saveNote(cb.dataset.noteId, { is_public: cb.checked, public_until: until })
+        this._renderNotesList()
+      })
     })
     list.querySelectorAll('.notes-reminder-input').forEach(cb => {
       cb.addEventListener('change', () => this._saveNote(cb.dataset.noteId, { reminder: cb.checked }))
@@ -2114,6 +2131,7 @@ export class App {
           return createUserNote(this.clerkUserId, {
             title: note.title || '', content: note.content || '',
             due_date: note.due_date || null, reminder: note.reminder || false,
+            is_public: note.is_public || false, public_until: note.public_until || null,
             sort_order: 0,
           })
         })()

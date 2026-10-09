@@ -367,6 +367,25 @@ There is no sidebar. The shell is a header over the page:
   them out if there's a real reason to:
   - The public office dashboard lives in `api/_dashboard.js` and is invoked by
     `api/portal.js` when `?view=dashboard`.
+    The page is `public/dashboard.html`: a light, warm, TV-sized layout
+    (rem scales with screen width) with Deadlines (the payload's `deadlines`:
+    deliverables and edit deadlines only), This week, Retainers and a footer
+    of timers. Live Projects and Time Tracked are no longer shown there.
+    New client requests (the board's New requests strip, `loadOpenRequests`)
+    show in a pink panel above Deadlines. The screen asks for just them every
+    10 seconds (`?view=dashboard&only=requests`) and redraws when the list
+    changes, so a request appears within about 10 seconds. No Ably involved.
+    Notes: a note's "Show on office screen" tick (Notes panel) sets
+    `user_notes.is_public` and `public_until` (two weeks on); the screen shows
+    unexpired ones with the author's first name (`publicNotes`). Videos:
+    Personal Tools › Office screen videos (`#office-videos`,
+    `src/views/office-videos.js`) keeps each person's YouTube links in
+    `office_videos` via `/api/office-videos` (`api/_office-videos.js`,
+    filtered by the caller's Clerk id; `api/db.js` keeps staff queries off the
+    table). The screen plays everyone's, muted, in a loop (YouTube IFrame
+    API) and is built once so the player is never rebuilt on refresh. The
+    page also keeps the screen awake (Wake Lock), reloads itself about 04:00,
+    and warns when data stops arriving for 10 minutes.
   - The Offload Log ingest lives in `api/_offloads.js` and is invoked by
     `api/portal.js` when `?view=offloads`. `POST /api/offloads` is a
     `vercel.json` rewrite onto `/api/portal?view=offloads`, which gives Fence

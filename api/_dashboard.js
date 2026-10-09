@@ -14,6 +14,8 @@
 
 import { getYoutubeViews } from './_youtube.js'
 import { dueFeed, dueMeta } from './_due-feed.js'
+import { addDays, daysBetween, londonDate } from './_dates.js'
+import { loadOpenRequests } from './_requests.js'
 
 // Mirror the app's calendar palette (src/views/team-calendar.js).
 const TYPE_COLORS = { shoot: '#4CAF50', post_production: '#C47E3A', leave: '#0891b2', other: '#7B6EAB' }
@@ -45,6 +47,38 @@ function retainerPeriodStart(retainerStart, now) {
   return ps
 }
 
+// New client requests for the office screen: the same ones as the board's New
+// requests strip, oldest first, with only what a TV needs.
+async function openRequests(sql, uid) {
+  const rows = await loadOpenRequests(sql, uid, londonDate())
+  return rows.map(r => ({
+    id: r.id, title: r.title, company: r.company || r.project || null, sent_by: r.sent_by,
+    sent_at: r.sent_at instanceof Date ? r.sent_at.toISOString() : r.sent_at,
+  }))
+}
+
+// Notes people switched on for the office screen (and that haven't run out),
+// newest first, with who wrote them. Nothing else about a note leaves the app.
+async function publicNotes(sql) {
+  const rows = await sql`
+    SELECT n.id, n.title, n.content, u.name AS author
+    FROM user_notes n
+    LEFT JOIN app_users u ON u.clerk_id = n.clerk_id
+    WHERE n.is_public AND n.public_until > NOW()
+    ORDER BY n.updated_at DESC
+    LIMIT 12`
+  return rows.map(r => ({
+    id: r.id, title: r.title || '', content: r.content || '',
+    author: r.author ? String(r.author).split(/\s+/)[0] : null,
+  }))
+}
+
+// Everyone's office-screen YouTube ids, oldest first, each once.
+async function officeVideoIds(sql) {
+  const rows = await sql`SELECT DISTINCT ON (video_id) video_id, created_at FROM office_videos ORDER BY video_id, created_at`
+  return rows.sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).map(r => r.video_id)
+}
+
 // Invoked by api/portal.js. CORS, method check and rate limiting are already
 // handled by the caller; `sql` is a ready neon() client.
 export async function handleDashboard(req, res, sql) {
@@ -57,6 +91,10 @@ export async function handleDashboard(req, res, sql) {
   const wsRows = await sql`SELECT owner_id FROM workspace ORDER BY created_at ASC LIMIT 1`
   if (!wsRows[0]) return res.status(404).json({ error: 'No workspace found' })
   const uid = wsRows[0].owner_id
+
+  // The screen asks for just this every few seconds, so a new client request
+  // shows up almost straight away without reloading everything else.
+  if (req.query.only === 'requests') return res.status(200).json({ requests: await openRequests(sql, uid) })
 
   const settingsRows = await sql`
     SELECT company_name, countdown_timer, days_since_timer, youtube_ticker
@@ -223,8 +261,16 @@ export async function handleDashboard(req, res, sql) {
   // ── What's due: the same feed as the app's Dashboard and the 09:00 email ────
   // (api/_due-feed.js) — everyone's, overdue plus the next two weeks. Kept
   // under the `deliverables` key the screen already reads.
-  const { items: dueItems } = await dueFeed(sql, { ws: uid, days: 14 })
+  const { items: dueItems, today: feedToday } = await dueFeed(sql, { ws: uid, days: 14 })
   const deliverables = dueItems.map(i => ({ text: i.title, project: dueMeta(i), due: i.date }))
+  // The office screen's Deadlines: deliverables and edit deadlines only (dates
+  // on boards, marketing items and checklists don't matter here).
+  const deadlines = dueItems
+    .filter(i => i.type === 'deliverable' || i.type === 'edit_deadline')
+    .map(i => ({
+      title: i.title, type_label: i.type_label, context: i.context || null, date: i.date,
+      days: i.days, overdue: i.overdue, due_label: i.due_label, owner: i.owner?.name || null,
+    }))
 
   // ── Calendar entries (this week → +35d) ──────────────────────────────────────
   const calRows = await sql`
@@ -327,6 +373,18 @@ export async function handleDashboard(req, res, sql) {
 
   calendar.sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0))
 
+  // Shoot days count as deadlines on the office screen too (today and the next
+  // 14 days), alongside the deliverables and edit deadlines above.
+  const dueTo = addDays(feedToday, 14)
+  for (const e of calendar) {
+    if (e.type !== 'shoot' || e.start < feedToday || e.start > dueTo) continue
+    deadlines.push({
+      title: e.label.replace(/^Shoot — /, ''), type_label: 'Shoot', context: e.assignee || null,
+      date: e.start, days: daysBetween(feedToday, e.start), overdue: false, due_label: null, owner: null,
+    })
+  }
+  deadlines.sort((x, y) => x.date.localeCompare(y.date))
+
   // Public holidays in range — shown as calendar context.
   const holRows = await sql`
     SELECT holiday_date, name FROM public_holidays
@@ -343,6 +401,10 @@ export async function handleDashboard(req, res, sql) {
     teamMembers,
     liveProjects,
     deliverables,
+    deadlines,
+    requests: await openRequests(sql, uid),
+    notes: await publicNotes(sql),
+    videos: await officeVideoIds(sql),
     calendar,
     holidays,
     timeTracked,
