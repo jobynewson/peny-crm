@@ -56,6 +56,17 @@
     .av { width: 2.7rem; height: 2.7rem; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 1.05rem; color: #fff }
     .more { color: var(--mut); font-size: 1.1rem; font-weight: 700; padding: .2rem .4rem }
 
+    /* New requests */
+    .req { background: linear-gradient(100deg, #ffe0ef, #ffeccf); border: .2rem solid var(--pink); animation: req-pulse 2.4s infinite }
+    .req h2 { color: #c42d77 }
+    .req .badge { background: var(--pink); color: #fff; border-radius: 99px; padding: 0 .8rem; font-size: 1.3rem; letter-spacing: 0 }
+    .reqrow { display: flex; gap: 1rem }
+    .rc { flex: 1; min-width: 0; background: #ffffffcc; border-radius: 1rem; padding: .7rem 1.1rem }
+    .rc .t { font-size: 1.6rem; font-weight: 800; line-height: 1.15 }
+    .rc .m { color: #9a5a7c; font-size: 1.05rem; margin-top: .2rem; font-weight: 700 }
+    .rc .new { background: var(--pink); color: #fff; font-size: .8rem; font-weight: 800; border-radius: .4rem; padding: .1rem .5rem; margin-right: .5rem; vertical-align: middle }
+    @keyframes req-pulse { 50% { box-shadow: 0 0 0 .7rem #ec4e9a30 } }
+
     /* Week */
     .week { display: grid; grid-template-columns: repeat(7, 1fr); gap: .5rem; flex: 1; min-height: 0 }
     .wd { background: var(--panel2); border-radius: 1rem; padding: .55rem .6rem; min-width: 0; overflow: hidden }
@@ -255,8 +266,22 @@
       </div>`
     }
 
+    // "4 min", "3 hours", "2 days": how long a request has been waiting.
+    function waited(iso) {
+      const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000))
+      if (mins < 1) return 'just now'
+      if (mins < 60) return `${mins} min`
+      const h = Math.round(mins / 60)
+      if (h < 48) return `${h} hour${h === 1 ? '' : 's'}`
+      return `${Math.round(h / 24)} days`
+    }
+
+    let shownRequestIds = ''
+
     function render(d, stale) {
       const today = d.today
+      const reqs = d.requests || []
+      shownRequestIds = reqs.map(r => r.id).join(',')
 
       // ── Timers ─────────────────────────────────────────────────────
       const tm = d.timers || {}
@@ -302,7 +327,7 @@
       const items = d.deadlines || []
       const over = items.filter(i => i.days < 0), now = items.filter(i => i.days === 0)
       const soon = items.filter(i => i.days > 0 && i.days <= 7), later = items.filter(i => i.days > 7)
-      const LIMIT = 9   // what fits on a 1080p screen; the rest becomes "+ n more"
+      const LIMIT = reqs.length ? 5 : 9   // what fits on a 1080p screen; the rest becomes "+ n more"
       let room = LIMIT
       const block = (title, list) => {
         if (!list.length || room <= 0) return ''
@@ -353,7 +378,13 @@
             </div>
           </header>
           <div class="main">
-            <div class="col"><section class="panel grow"><h2>Deadlines <span class="n">${items.length}</span></h2><div class="dl">${dlHTML}</div></section></div>
+            <div class="col">
+              ${reqs.length ? `<section class="panel req"><h2>New requests <span class="badge">${reqs.length}</span></h2>
+                <div class="reqrow">${reqs.slice(0, 3).map(r => `<div class="rc"><div class="t">${Date.now() - new Date(r.sent_at).getTime() < 300000 ? '<span class="new">NEW</span>' : ''}${esc(r.title)}</div>
+                  <div class="m">${esc([r.company, 'waiting ' + waited(r.sent_at)].filter(Boolean).join(' · '))}</div></div>`).join('')}</div>
+                ${reqs.length > 3 ? `<div class="more" style="margin-top:.4rem">+ ${reqs.length - 3} more</div>` : ''}</section>` : ''}
+              <section class="panel grow"><h2>Deadlines <span class="n">${items.length}</span></h2><div class="dl">${dlHTML}</div></section>
+            </div>
             <div class="col">
               <section class="panel grow"><h2>This week</h2><div class="week">${week.join('')}</div></section>
               ${retHTML ? `<section class="panel"><h2>Retainers</h2><div class="ret">${retHTML}</div></section>` : ''}
@@ -366,8 +397,20 @@
       tickCountdown()
     }
 
+    // New client requests: ask for just those every 10 seconds. When the list
+    // has changed, redraw the whole screen so the layout makes room for it.
+    async function checkRequests() {
+      try {
+        const res = await fetch(`/api/portal?view=dashboard&only=requests&token=${encodeURIComponent(token)}`)
+        if (!res.ok) return
+        const { requests } = await res.json()
+        if (lastGood && requests.map(r => r.id).join(',') !== shownRequestIds) load()
+      } catch { /* the next check tries again */ }
+    }
+
     load()
     setInterval(load, REFRESH_MS)
+    setInterval(checkRequests, 10 * 1000)
     setInterval(clock, 15000)
     setInterval(tickCountdown, 1000)
   </script>

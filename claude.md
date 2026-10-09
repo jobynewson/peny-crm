@@ -371,6 +371,10 @@ There is no sidebar. The shell is a header over the page:
     (rem scales with screen width) with Deadlines (the payload's `deadlines`:
     deliverables and edit deadlines only), This week, Retainers and a footer
     of timers. Live Projects and Time Tracked are no longer shown there.
+    New client requests (the board's New requests strip, `loadOpenRequests`)
+    show in a pink panel above Deadlines. The screen asks for just them every
+    10 seconds (`?view=dashboard&only=requests`) and redraws when the list
+    changes, so a request appears within about 10 seconds. No Ably involved.
   - The Offload Log ingest lives in `api/_offloads.js` and is invoked by
     `api/portal.js` when `?view=offloads`. `POST /api/offloads` is a
     `vercel.json` rewrite onto `/api/portal?view=offloads`, which gives Fence

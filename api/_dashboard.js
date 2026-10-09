@@ -14,7 +14,8 @@
 
 import { getYoutubeViews } from './_youtube.js'
 import { dueFeed, dueMeta } from './_due-feed.js'
-import { addDays, daysBetween } from './_dates.js'
+import { addDays, daysBetween, londonDate } from './_dates.js'
+import { loadOpenRequests } from './_requests.js'
 
 // Mirror the app's calendar palette (src/views/team-calendar.js).
 const TYPE_COLORS = { shoot: '#4CAF50', post_production: '#C47E3A', leave: '#0891b2', other: '#7B6EAB' }
@@ -46,6 +47,16 @@ function retainerPeriodStart(retainerStart, now) {
   return ps
 }
 
+// New client requests for the office screen: the same ones as the board's New
+// requests strip, oldest first, with only what a TV needs.
+async function openRequests(sql, uid) {
+  const rows = await loadOpenRequests(sql, uid, londonDate())
+  return rows.map(r => ({
+    id: r.id, title: r.title, company: r.company || r.project || null, sent_by: r.sent_by,
+    sent_at: r.sent_at instanceof Date ? r.sent_at.toISOString() : r.sent_at,
+  }))
+}
+
 // Invoked by api/portal.js. CORS, method check and rate limiting are already
 // handled by the caller; `sql` is a ready neon() client.
 export async function handleDashboard(req, res, sql) {
@@ -58,6 +69,10 @@ export async function handleDashboard(req, res, sql) {
   const wsRows = await sql`SELECT owner_id FROM workspace ORDER BY created_at ASC LIMIT 1`
   if (!wsRows[0]) return res.status(404).json({ error: 'No workspace found' })
   const uid = wsRows[0].owner_id
+
+  // The screen asks for just this every few seconds, so a new client request
+  // shows up almost straight away without reloading everything else.
+  if (req.query.only === 'requests') return res.status(200).json({ requests: await openRequests(sql, uid) })
 
   const settingsRows = await sql`
     SELECT company_name, countdown_timer, days_since_timer, youtube_ticker
@@ -365,6 +380,7 @@ export async function handleDashboard(req, res, sql) {
     liveProjects,
     deliverables,
     deadlines,
+    requests: await openRequests(sql, uid),
     calendar,
     holidays,
     timeTracked,
