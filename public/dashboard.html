@@ -251,7 +251,7 @@
       return `<div class="d ${w.cls}">
         <div class="when">${esc(w.big)}<small>${esc(w.small)}</small></div>
         <div><div class="what">${esc(i.title)}</div><div class="who">${esc([i.type_label, i.context].filter(Boolean).join(' · '))}</div></div>
-        ${avatar(i.owner)}
+        ${i.type_label === 'Shoot' ? '<div class="av" style="background:#2fb67c" title="Shoot">🎬</div>' : avatar(i.owner)}
       </div>`
     }
 

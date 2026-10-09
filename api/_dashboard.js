@@ -14,6 +14,7 @@
 
 import { getYoutubeViews } from './_youtube.js'
 import { dueFeed, dueMeta } from './_due-feed.js'
+import { addDays, daysBetween } from './_dates.js'
 
 // Mirror the app's calendar palette (src/views/team-calendar.js).
 const TYPE_COLORS = { shoot: '#4CAF50', post_production: '#C47E3A', leave: '#0891b2', other: '#7B6EAB' }
@@ -223,7 +224,7 @@ export async function handleDashboard(req, res, sql) {
   // ── What's due: the same feed as the app's Dashboard and the 09:00 email ────
   // (api/_due-feed.js) — everyone's, overdue plus the next two weeks. Kept
   // under the `deliverables` key the screen already reads.
-  const { items: dueItems } = await dueFeed(sql, { ws: uid, days: 14 })
+  const { items: dueItems, today: feedToday } = await dueFeed(sql, { ws: uid, days: 14 })
   const deliverables = dueItems.map(i => ({ text: i.title, project: dueMeta(i), due: i.date }))
   // The office screen's Deadlines: deliverables and edit deadlines only (dates
   // on boards, marketing items and checklists don't matter here).
@@ -334,6 +335,18 @@ export async function handleDashboard(req, res, sql) {
   }
 
   calendar.sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0))
+
+  // Shoot days count as deadlines on the office screen too (today and the next
+  // 14 days), alongside the deliverables and edit deadlines above.
+  const dueTo = addDays(feedToday, 14)
+  for (const e of calendar) {
+    if (e.type !== 'shoot' || e.start < feedToday || e.start > dueTo) continue
+    deadlines.push({
+      title: e.label.replace(/^Shoot — /, ''), type_label: 'Shoot', context: e.assignee || null,
+      date: e.start, days: daysBetween(feedToday, e.start), overdue: false, due_label: null, owner: null,
+    })
+  }
+  deadlines.sort((x, y) => x.date.localeCompare(y.date))
 
   // Public holidays in range — shown as calendar context.
   const holRows = await sql`
