@@ -15,6 +15,7 @@
     { "source": "/api/retainers/(.*)",     "destination": "/api/retainers?route=retainers/$1" },
     { "source": "/api/companies/(.*)",     "destination": "/api/companies?route=companies/$1" },
     { "source": "/api/training/(.*)",      "destination": "/api/training?route=training/$1" },
+    { "source": "/api/office-videos/(.*)", "destination": "/api/office-videos?route=office-videos/$1" },
     { "source": "/api/pdf-documents/(.*)", "destination": "/api/pdf-documents?route=pdf-documents/$1" },
     { "source": "/api/client/(.*)",        "destination": "/api/client?route=client/$1" },
     { "source": "/api/(.*)", "destination": "/api/$1" },

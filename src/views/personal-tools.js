@@ -7,6 +7,7 @@ import { icon } from './icons.js'
 
 export const TOOLS = [
   { id: 'training', title: 'Training', description: 'An 8-week home strength plan, a session builder and a guided timer. Your sport, your kit, your progress.', icon: 'training', href: '#training' },
+  { id: 'office-videos', title: 'Office screen videos', description: 'Add YouTube links for inspiration. The office screen plays everyone\'s in a loop.', icon: 'eye', href: '#office-videos' },
 ]
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')

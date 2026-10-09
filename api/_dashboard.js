@@ -57,6 +57,28 @@ async function openRequests(sql, uid) {
   }))
 }
 
+// Notes people switched on for the office screen (and that haven't run out),
+// newest first, with who wrote them. Nothing else about a note leaves the app.
+async function publicNotes(sql) {
+  const rows = await sql`
+    SELECT n.id, n.title, n.content, u.name AS author
+    FROM user_notes n
+    LEFT JOIN app_users u ON u.clerk_id = n.clerk_id
+    WHERE n.is_public AND n.public_until > NOW()
+    ORDER BY n.updated_at DESC
+    LIMIT 12`
+  return rows.map(r => ({
+    id: r.id, title: r.title || '', content: r.content || '',
+    author: r.author ? String(r.author).split(/\s+/)[0] : null,
+  }))
+}
+
+// Everyone's office-screen YouTube ids, oldest first, each once.
+async function officeVideoIds(sql) {
+  const rows = await sql`SELECT DISTINCT ON (video_id) video_id, created_at FROM office_videos ORDER BY video_id, created_at`
+  return rows.sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).map(r => r.video_id)
+}
+
 // Invoked by api/portal.js. CORS, method check and rate limiting are already
 // handled by the caller; `sql` is a ready neon() client.
 export async function handleDashboard(req, res, sql) {
@@ -381,6 +403,8 @@ export async function handleDashboard(req, res, sql) {
     deliverables,
     deadlines,
     requests: await openRequests(sql, uid),
+    notes: await publicNotes(sql),
+    videos: await officeVideoIds(sql),
     calendar,
     holidays,
     timeTracked,

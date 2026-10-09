@@ -45,6 +45,8 @@ export function searchCommands(app) {
       keywords: 'private personal tools hub' },
     { label: 'Training', hint: 'Personal Tools', icon: 'training', run: go('training'),
       keywords: 'strength workout exercise gym fitness plan session timer stretches cool-down mtb climbing running' },
+    { label: 'Office screen videos', hint: 'Personal Tools', icon: 'training', run: go('office-videos'),
+      keywords: 'youtube video inspiration office screen tv links playlist' },
     { label: 'Leave', hint: 'Workspace', icon: 'leave', run: go('leave'),
       keywords: 'holiday holidays time off annual leave absence vacation approvals sick' },
     { label: 'Expenses', hint: 'Workspace', icon: 'receipt', run: go('expenses'),

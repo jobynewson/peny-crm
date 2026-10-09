@@ -67,6 +67,21 @@
     .rc .new { background: var(--pink); color: #fff; font-size: .8rem; font-weight: 800; border-radius: .4rem; padding: .1rem .5rem; margin-right: .5rem; vertical-align: middle }
     @keyframes req-pulse { 50% { box-shadow: 0 0 0 .7rem #ec4e9a30 } }
 
+
+    /* Video, notes */
+    .vid { padding: 0; aspect-ratio: 2 / 1; background: #1b1530; border: none }
+    .vid #yt, .vid iframe { width: 100%; height: 100%; border: 0; display: block }
+    .notes { display: grid; grid-template-columns: repeat(3, 1fr); gap: .9rem }
+    .sticky { padding: .8rem 1rem; border-radius: .7rem; color: #2a2410; font-size: 1.15rem; font-weight: 700; line-height: 1.25; box-shadow: 0 .4rem 1rem #6b4a2530; min-height: 5rem; overflow: hidden; transform: rotate(-1deg) }
+    .sticky:nth-child(2) { transform: rotate(1deg) } .sticky:nth-child(3) { transform: rotate(-.5deg) }
+    .sticky b { display: block; font-size: 1.25rem }
+    .sticky .c { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line }
+    .sticky small { display: block; margin-top: .3rem; font-size: .8rem; opacity: .65; font-weight: 800; text-transform: uppercase }
+    #reqs:empty { display: none }
+    [hidden] { display: none !important }
+    .foot .ret-pill { font-weight: 700; color: var(--text) }
+    .foot .ret-pill i { display: inline-block; width: .7rem; height: .7rem; border-radius: 50%; margin-right: .35rem }
+
     /* Week */
     .week { display: grid; grid-template-columns: repeat(7, 1fr); gap: .5rem; flex: 1; min-height: 0 }
     .wd { background: var(--panel2); border-radius: 1rem; padding: .55rem .6rem; min-width: 0; overflow: hidden }
@@ -278,21 +293,101 @@
 
     let shownRequestIds = ''
 
+    // ── The screen is built once; each load refreshes its parts. The video
+    // player lives in a part that is never rebuilt, so it keeps playing. ─────
+    const NOTE_COLOURS = ['#ffe27a', '#ff9ec8', '#9fe6c7', '#b9d4ff', '#ffc9a0']
+    let skeletonBuilt = false, lastOkAt = Date.now(), loadedAt = Date.now()
+    let notesList = [], notesPage = 0
+
+    function buildSkeleton() {
+      root.className = ''; root.style = ''
+      root.innerHTML = `
+        <div class="screen">
+          <header class="hdr">
+            <div class="hdr-co" id="co"></div>
+            <div class="hdr-right">
+              <span class="hdr-stale" id="stale" hidden>⚠ not updating, showing the last update</span>
+              <span class="hdr-date" id="hdate"></span>
+              <span class="hdr-clock" id="dash-clock">--:--</span>
+            </div>
+          </header>
+          <div class="main">
+            <div class="col">
+              <div id="reqs"></div>
+              <section class="panel grow"><h2>Deadlines <span class="n" id="dl-n"></span></h2><div class="dl" id="dl"></div></section>
+            </div>
+            <div class="col">
+              <section class="panel vid" id="vidpanel" hidden><div id="yt"></div></section>
+              <section class="panel" id="notespanel" hidden><h2>Notes</h2><div class="notes" id="notes"></div></section>
+              <section class="panel grow"><h2>This week</h2><div class="week" id="week"></div></section>
+            </div>
+          </div>
+          <footer class="foot" id="foot"></footer>
+        </div>`
+      skeletonBuilt = true
+    }
+    const put = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html }
+
+    // ── YouTube: muted, looping through everyone's links ─────────────────────
+    let ytPlayer = null, ytKey = '', ytApi = null
+    function loadYtApi() {
+      if (ytApi) return ytApi
+      ytApi = new Promise(resolve => {
+        window.onYouTubeIframeAPIReady = () => resolve()
+        const t = document.createElement('script'); t.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(t)
+      })
+      return ytApi
+    }
+    async function setVideos(ids) {
+      const panel = document.getElementById('vidpanel'); if (!panel) return
+      panel.hidden = !ids.length
+      const key = ids.join(',')
+      if (key === ytKey) return
+      ytKey = key
+      if (!ids.length) { try { ytPlayer?.pauseVideo() } catch {} ; return }
+      if (ytPlayer) { try { ytPlayer.loadPlaylist(ids); ytPlayer.setLoop(true) } catch {} ; return }
+      await loadYtApi()
+      if (ytPlayer) return
+      ytPlayer = new YT.Player('yt', {
+        videoId: ids[0],
+        playerVars: { autoplay: 1, mute: 1, controls: 0, playsinline: 1, rel: 0, modestbranding: 1, loop: 1, playlist: ids.join(',') },
+        events: {
+          onReady: e => { e.target.mute(); e.target.setLoop(true); e.target.playVideo() },
+          // A video that can't be embedded or was removed: move on to the next.
+          onError: e => { try { e.target.nextVideo() } catch {} },
+        },
+      })
+    }
+
+    function renderNotes() {
+      const panel = document.getElementById('notespanel'); if (!panel) return
+      panel.hidden = !notesList.length
+      if (!notesList.length) return
+      const pages = Math.ceil(notesList.length / 3)
+      notesPage = notesPage % pages
+      const show = notesList.slice(notesPage * 3, notesPage * 3 + 3)
+      put('notes', show.map((n, i) => `<div class="sticky" style="background:${NOTE_COLOURS[(notesPage * 3 + i) % NOTE_COLOURS.length]}">
+        ${n.title ? `<b>${esc(n.title)}</b>` : ''}<div class="c">${esc(n.content)}</div>${n.author ? `<small>${esc(n.author)}</small>` : ''}</div>`).join(''))
+    }
+
     function render(d, stale) {
+      if (!skeletonBuilt || !document.getElementById('dl')) buildSkeleton()
+      if (!stale) { lastOkAt = Date.now(); document.getElementById('stale').hidden = true }
       const today = d.today
       const reqs = d.requests || []
       shownRequestIds = reqs.map(r => r.id).join(',')
 
+      put('co', `${esc(d.company)}<b>.</b>`)
+      put('hdate', parseDay(today).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }))
+
       // ── Timers ─────────────────────────────────────────────────────
       const tm = d.timers || {}
-      // Reset cd state on fresh data load (not stale)
       if (!stale && tm.countdown) {
         const tgt = new Date(tm.countdown.target)
         if (!isNaN(tgt.getTime())) { cdTarget = tgt.getTime(); cdName = tm.countdown.name; cdCelebrated = false }
       } else if (!stale && !tm.countdown) {
         cdTarget = null
       }
-
       let dsHTML = ''
       if (tm.daysSince) {
         const since = parseDay(tm.daysSince.since)
@@ -322,22 +417,34 @@
               </div></div></div>`
           : `<div id="cd-widget-wrap"></div>`
       }
+      // Retainer hours that need a look (over, or past their alert), worst first.
+      const retHTML = (d.retainers || [])
+        .filter(r => r.allocation > 0 && r.pct >= r.alert)
+        .slice(0, 3)
+        .map(r => `<span class="ret-pill"><i style="background:${r.pct > 100 ? 'var(--red)' : 'var(--amber)'}"></i>${esc(r.name)} ${r.pct}%</span>`).join('')
+      put('foot', `${cdHTML}${dsHTML}${ytHTML}${retHTML}<span class="live">Live · updated ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>`)
+
+      // ── New requests ───────────────────────────────────────────────
+      put('reqs', reqs.length ? `<section class="panel req"><h2>New requests <span class="badge">${reqs.length}</span></h2>
+        <div class="reqrow">${reqs.slice(0, 3).map(r => `<div class="rc"><div class="t">${Date.now() - new Date(r.sent_at).getTime() < 300000 ? '<span class="new">NEW</span>' : ''}${esc(r.title)}</div>
+          <div class="m">${esc([r.company, 'waiting ' + waited(r.sent_at)].filter(Boolean).join(' · '))}</div></div>`).join('')}</div>
+        ${reqs.length > 3 ? `<div class="more" style="margin-top:.4rem">+ ${reqs.length - 3} more</div>` : ''}</section>` : '')
 
       // ── Deadlines: overdue, today, then what's coming ──────────────
       const items = d.deadlines || []
       const over = items.filter(i => i.days < 0), now = items.filter(i => i.days === 0)
       const soon = items.filter(i => i.days > 0 && i.days <= 7), later = items.filter(i => i.days > 7)
-      const LIMIT = reqs.length ? 5 : 9   // what fits on a 1080p screen; the rest becomes "+ n more"
-      let room = LIMIT
+      let room = reqs.length ? 5 : 9   // what fits on a 1080p screen; the rest becomes "+ n more"
       const block = (title, list) => {
         if (!list.length || room <= 0) return ''
         const shown = list.slice(0, room); room -= shown.length
         const rest = list.length - shown.length
         return `${title ? `<div class="grp">${title}</div>` : ''}${shown.map(deadlineRow).join('')}${rest ? `<div class="more">+ ${rest} more</div>` : ''}`
       }
-      const dlHTML = items.length
+      put('dl-n', String(items.length))
+      put('dl', items.length
         ? block('Overdue', over) + block('Today', now) + block('Next 7 days', soon) + block('Later', later)
-        : `<div class="empty">Nothing due in the next two weeks. 🎉</div>`
+        : `<div class="empty">Nothing due in the next two weeks. 🎉</div>`)
 
       // ── Week strip (Mon–Sun) ───────────────────────────────────────
       const start = parseDay(d.range.start)
@@ -348,7 +455,7 @@
         const dt = new Date(start); dt.setDate(dt.getDate() + i)
         const ds = isoDate(dt)
         const evs = (d.calendar || []).filter(e => e.start <= ds && e.end >= ds)
-        const shown = evs.slice(0, 4)
+        const shown = evs.slice(0, 2)
         week.push(`<div class="wd${ds === today ? ' t' : ''}${dt.getDay() % 6 === 0 ? ' we' : ''}">
           <b>${DOW[dt.getDay()].toUpperCase()}</b><div class="dt">${dt.getDate()}</div>
           ${holByDay[ds] ? `<div class="hol">${esc(holByDay[ds])}</div>` : ''}
@@ -356,49 +463,19 @@
           ${evs.length > shown.length ? `<div class="more">+ ${evs.length - shown.length}</div>` : ''}
         </div>`)
       }
+      put('week', week.join(''))
 
-      // ── Retainers ──────────────────────────────────────────────────
-      const rets = (d.retainers || []).filter(r => r.allocation != null && r.allocation > 0).slice(0, 5)
-      const retHTML = rets.length ? rets.map(r => {
-        const over = r.pct > 100, warn = r.pct >= r.alert
-        const col = over ? 'var(--red)' : warn ? 'var(--amber)' : 'var(--green)'
-        return `<div class="ret-row"><div class="top"><span>${esc(r.name)}</span><span>${r.pct}% · ${r.used}/${r.allocation}h</span></div>
-          <div class="bar"><i style="width:${Math.min(100, r.pct)}%;background:${col}"></i></div></div>`
-      }).join('') : ''
-
-      root.className = ''; root.style = ''
-      root.innerHTML = `
-        <div class="screen">
-          <header class="hdr">
-            <div class="hdr-co">${esc(d.company)}<b>.</b></div>
-            <div class="hdr-right">
-              ${stale ? '<span class="hdr-stale">⚠ reconnecting…</span>' : ''}
-              <span class="hdr-date">${parseDay(today).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}</span>
-              <span class="hdr-clock" id="dash-clock">--:--</span>
-            </div>
-          </header>
-          <div class="main">
-            <div class="col">
-              ${reqs.length ? `<section class="panel req"><h2>New requests <span class="badge">${reqs.length}</span></h2>
-                <div class="reqrow">${reqs.slice(0, 3).map(r => `<div class="rc"><div class="t">${Date.now() - new Date(r.sent_at).getTime() < 300000 ? '<span class="new">NEW</span>' : ''}${esc(r.title)}</div>
-                  <div class="m">${esc([r.company, 'waiting ' + waited(r.sent_at)].filter(Boolean).join(' · '))}</div></div>`).join('')}</div>
-                ${reqs.length > 3 ? `<div class="more" style="margin-top:.4rem">+ ${reqs.length - 3} more</div>` : ''}</section>` : ''}
-              <section class="panel grow"><h2>Deadlines <span class="n">${items.length}</span></h2><div class="dl">${dlHTML}</div></section>
-            </div>
-            <div class="col">
-              <section class="panel grow"><h2>This week</h2><div class="week">${week.join('')}</div></section>
-              ${retHTML ? `<section class="panel"><h2>Retainers</h2><div class="ret">${retHTML}</div></section>` : ''}
-            </div>
-          </div>
-          <footer class="foot">${cdHTML}${dsHTML}${ytHTML}<span class="live">${stale ? 'offline, showing the last update' : 'Live · updated ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</span></footer>
-        </div>`
+      // ── Notes and videos ───────────────────────────────────────────
+      notesList = d.notes || []
+      renderNotes()
+      setVideos(d.videos || [])
 
       clock()
       tickCountdown()
     }
 
     // New client requests: ask for just those every 10 seconds. When the list
-    // has changed, redraw the whole screen so the layout makes room for it.
+    // has changed, redraw so the layout makes room for it.
     async function checkRequests() {
       try {
         const res = await fetch(`/api/portal?view=dashboard&only=requests&token=${encodeURIComponent(token)}`)
@@ -408,11 +485,28 @@
       } catch { /* the next check tries again */ }
     }
 
+    // Keep the screen awake, and say so if the data stops arriving.
+    async function keepAwake() {
+      try { if ('wakeLock' in navigator) await navigator.wakeLock.request('screen') } catch { /* not allowed: the TV's own setting decides */ }
+    }
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake() })
+
+    function housekeeping() {
+      const stale = document.getElementById('stale')
+      if (stale) stale.hidden = Date.now() - lastOkAt < 10 * 60 * 1000
+      // Reload once a night (about 04:00) so a screen left on for weeks stays fresh.
+      const n = new Date()
+      if (n.getHours() === 4 && n.getMinutes() < 2 && Date.now() - loadedAt > 3600 * 1000) location.reload()
+    }
+
     load()
+    keepAwake()
     setInterval(load, REFRESH_MS)
     setInterval(checkRequests, 10 * 1000)
     setInterval(clock, 15000)
     setInterval(tickCountdown, 1000)
+    setInterval(housekeeping, 30 * 1000)
+    setInterval(() => { notesPage++; renderNotes() }, 20 * 1000)
   </script>
 </body>
 </html>

@@ -11,7 +11,7 @@ const source = readFileSync(new URL('./client.js', import.meta.url), 'utf8')
 
 // Update both together: bump SCHEMA_VERSION in client.js, then paste the hash
 // this test prints.
-const PINNED = { version: 6, hash: '8475c503cdbf4500' }
+const PINNED = { version: 7, hash: 'e686f1184fcd9745' }
 
 function migrationsBody() {
   const start = source.indexOf('async function applyMigrations() {')

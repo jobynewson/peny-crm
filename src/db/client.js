@@ -38,7 +38,7 @@ export const db = drizzle(sql, { schema })
 // them only while the database's recorded version is behind this one; the
 // normal boot is a single read. src/db/migrations-version.test.js fails if the
 // statements change and this doesn't.
-export const SCHEMA_VERSION = 6
+export const SCHEMA_VERSION = 7
 
 export async function runMigrations() {
   let current = 0
@@ -919,6 +919,20 @@ async function applyMigrations() {
       FROM workstreams w
       LEFT JOIN projects p ON p.id = w.project_id
   `
+
+  // ── The office screen's notes and videos (drizzle/0049) ───────────────────
+  await sql`ALTER TABLE user_notes ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT FALSE`
+  await sql`ALTER TABLE user_notes ADD COLUMN IF NOT EXISTS public_until TIMESTAMPTZ`
+  await sql`
+    CREATE TABLE IF NOT EXISTS office_videos (
+      id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      clerk_id   TEXT NOT NULL,
+      video_id   TEXT NOT NULL,
+      url        TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS office_videos_clerk_idx ON office_videos (clerk_id)`
 }
 
 // One-time demo data so the first visit to Planning isn't an empty screen.
@@ -1640,6 +1654,8 @@ export async function createUserNote(clerkId, data = {}) {
       sort_order: data.sort_order ?? 0,
       due_date: data.due_date ?? null,
       reminder: data.reminder ?? false,
+      is_public: data.is_public ?? false,
+      public_until: data.public_until ?? null,
     })
     .returning()
   return row

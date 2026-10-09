@@ -107,4 +107,9 @@ describe('/api/db keeps off the Training tables', () => {
     expect(touchesPersonalTables('CREATE UNIQUE INDEX IF NOT EXISTS training_sessions_program_uq ON training_sessions (a) WHERE kind = \'program\'')).toBe(false)
     expect(touchesPersonalTables('SELECT * FROM user_notes')).toBe(false)
   })
+  it('keeps the office videos to /api/office-videos too', () => {
+    expect(touchesPersonalTables('SELECT * FROM office_videos')).toBe(true)
+    expect(touchesPersonalTables('CREATE TABLE IF NOT EXISTS office_videos (id UUID PRIMARY KEY)')).toBe(false)
+    expect(touchesPersonalTables('CREATE INDEX IF NOT EXISTS office_videos_clerk_idx ON office_videos (clerk_id)')).toBe(false)
+  })
 })
