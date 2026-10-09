@@ -225,6 +225,14 @@ export async function handleDashboard(req, res, sql) {
   // under the `deliverables` key the screen already reads.
   const { items: dueItems } = await dueFeed(sql, { ws: uid, days: 14 })
   const deliverables = dueItems.map(i => ({ text: i.title, project: dueMeta(i), due: i.date }))
+  // The office screen's Deadlines: deliverables and edit deadlines only (dates
+  // on boards, marketing items and checklists don't matter here).
+  const deadlines = dueItems
+    .filter(i => i.type === 'deliverable' || i.type === 'edit_deadline')
+    .map(i => ({
+      title: i.title, type_label: i.type_label, context: i.context || null, date: i.date,
+      days: i.days, overdue: i.overdue, due_label: i.due_label, owner: i.owner?.name || null,
+    }))
 
   // ── Calendar entries (this week → +35d) ──────────────────────────────────────
   const calRows = await sql`
@@ -343,6 +351,7 @@ export async function handleDashboard(req, res, sql) {
     teamMembers,
     liveProjects,
     deliverables,
+    deadlines,
     calendar,
     holidays,
     timeTracked,

@@ -367,6 +367,10 @@ There is no sidebar. The shell is a header over the page:
   them out if there's a real reason to:
   - The public office dashboard lives in `api/_dashboard.js` and is invoked by
     `api/portal.js` when `?view=dashboard`.
+    The page is `public/dashboard.html`: a light, warm, TV-sized layout
+    (rem scales with screen width) with Deadlines (the payload's `deadlines`:
+    deliverables and edit deadlines only), This week, Retainers and a footer
+    of timers. Live Projects and Time Tracked are no longer shown there.
   - The Offload Log ingest lives in `api/_offloads.js` and is invoked by
     `api/portal.js` when `?view=offloads`. `POST /api/offloads` is a
     `vercel.json` rewrite onto `/api/portal?view=offloads`, which gives Fence
