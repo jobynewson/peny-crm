@@ -185,6 +185,7 @@ function boardHtml(view) {
     : 'Nothing needs you right now.'
   return `
     ${view.scope.kind === 'company' && !view.scope.can_respond ? '<p class="pt-notice">You’re viewing this as the client. Answers can only be given by the client.</p>' : ''}
+    ${view.scope.kind === 'project' ? '<p class="pt-notice pt-signin-note">This link is view-only. To approve work or ask for changes, sign in to the portal. <a class="pt-btn pt-btn--primary" href="/portal">Sign in</a></p>' : ''}
     <p class="pt-summary">${summary}</p>
     <nav class="pt-jump" aria-label="Jump to">${jump.map(([n, label, id]) => `<a href="#${id}" class="pt-jump-link${label === 'Needs you' && n ? ' pt-jump-link--alert' : ''}">${label}<span>${n}</span></a>`).join('')}</nav>
     <div class="pt-board">

@@ -67,6 +67,24 @@ describe('the portal: requests', () => {
   })
 })
 
+describe('the portal: project link', () => {
+  const link = scope => ({
+    scope, today: '2026-09-29', title: 'Film', studio: {}, project: { name: 'Film' },
+    client: null, workstreams: [], work_log: [], schedule: null, requests: [],
+  })
+  const draw = v => renderView(v, { signedIn: false, canSwitch: false })
+
+  it('tells a project link holder to sign in to approve, with a button to /portal', () => {
+    const out = draw(link({ kind: 'project', can_respond: false }))
+    expect(out).toContain('view-only')
+    expect(out).toContain('href="/portal"')
+  })
+
+  it('does not show that note to a signed-in client', () => {
+    expect(html(view({}))).not.toContain('view-only')
+  })
+})
+
 describe('the portal: waiting on you', () => {
   const stills = over => ({
     id: 'd2', title: 'Stills', format: null, due: 'No date', status: 'waiting_on_you', status_label: 'Waiting on you',

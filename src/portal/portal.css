@@ -48,6 +48,7 @@ a { color: var(--accent-text); }
 /* ── A company's worklist ── */
 .pt-main { max-width: 760px; margin: 0 auto; padding: 20px 16px 32px; }
 .pt-summary { margin: 0 0 16px; font-size: 15px; font-weight: 500; }
+.pt-signin-note { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .pt-notice { margin: 0 0 16px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--warning-soft); color: var(--warning); font-size: 14px; }
 .pt-ws { margin-bottom: 18px; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
 .pt-ws-head { display: flex; align-items: center; gap: 8px; padding: 14px 16px 4px; }
