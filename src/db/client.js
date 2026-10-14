@@ -38,7 +38,7 @@ export const db = drizzle(sql, { schema })
 // them only while the database's recorded version is behind this one; the
 // normal boot is a single read. src/db/migrations-version.test.js fails if the
 // statements change and this doesn't.
-export const SCHEMA_VERSION = 6
+export const SCHEMA_VERSION = 7
 
 export async function runMigrations() {
   let current = 0
@@ -836,16 +836,6 @@ async function applyMigrations() {
   await sql`ALTER TABLE workstreams ALTER COLUMN company_id DROP NOT NULL`
   await sql`
     DO $$ BEGIN
-      IF EXISTS (SELECT 1 FROM pg_constraint
-                  WHERE conname = 'workstreams_project_id_projects_id_fk' AND confdeltype <> 'r') THEN
-        ALTER TABLE workstreams DROP CONSTRAINT workstreams_project_id_projects_id_fk;
-        ALTER TABLE workstreams ADD CONSTRAINT workstreams_project_id_projects_id_fk
-          FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT;
-      END IF;
-    END $$
-  `
-  await sql`
-    DO $$ BEGIN
       ALTER TABLE workstreams ADD CONSTRAINT workstreams_owner_chk
         CHECK (company_id IS NOT NULL OR project_id IS NOT NULL);
     EXCEPTION WHEN duplicate_object THEN NULL;
@@ -898,6 +888,19 @@ async function applyMigrations() {
   // ── Testing mode: redirect the work's emails (drizzle/0043) ─────────────────
   await sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS test_mode BOOLEAN NOT NULL DEFAULT FALSE`
   await sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS test_emails JSONB NOT NULL DEFAULT '[]'::jsonb`
+
+  // ── Deleting a project deletes its worklist (drizzle/0049) ──────────────────
+  // 0037 made this RESTRICT; it is CASCADE now.
+  await sql`
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM pg_constraint
+                  WHERE conname = 'workstreams_project_id_projects_id_fk' AND confdeltype <> 'c') THEN
+        ALTER TABLE workstreams DROP CONSTRAINT workstreams_project_id_projects_id_fk;
+        ALTER TABLE workstreams ADD CONSTRAINT workstreams_project_id_projects_id_fk
+          FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE;
+      END IF;
+    END $$
+  `
 
   // ── Who looks after unassigned work (drizzle/0048) ─────────────────────────
   await sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS assignment_lead_id UUID REFERENCES app_users(id) ON DELETE SET NULL`
@@ -1043,21 +1046,20 @@ export async function updateProject(workspaceId, id, data) {
     .where(and(eq(projects.id, id), eq(projects.user_id, workspaceId)))
     .returning()
 }
-export async function deleteProject(workspaceId, id) {
-  // A project's worklist (workstreams, deliverables, the rounds sent) can't be
-  // reached once the project is gone, and the database refuses too
-  // (workstreams.project_id is ON DELETE RESTRICT); this is so the message says why.
+// What deleting a project takes with it besides the project itself: its
+// worklist (workstreams, deliverables) is removed too (workstreams.project_id is
+// ON DELETE CASCADE), so the delete dialog says how much.
+export async function getProjectWorklistCounts(workspaceId, id) {
   const [held] = await sql`
     SELECT count(DISTINCT w.id)::int AS workstreams, count(d.id)::int AS deliverables
-    FROM workstreams w LEFT JOIN deliverables d ON d.workstream_id = w.id
+    FROM workstreams w
+    JOIN projects p ON p.id = w.project_id AND p.user_id = ${workspaceId}
+    LEFT JOIN deliverables d ON d.workstream_id = w.id
     WHERE w.project_id = ${id}
   `
-  if (held?.workstreams > 0) {
-    const n = held.deliverables
-    const err = new Error(`This project has a worklist (${held.workstreams} workstream${held.workstreams === 1 ? '' : 's'}, ${n} deliverable${n === 1 ? '' : 's'}). Delete those on its Worklist tab first, or mark the project complete instead.`)
-    err.code = 'has_worklist'
-    throw err
-  }
+  return { workstreams: held?.workstreams ?? 0, deliverables: held?.deliverables ?? 0 }
+}
+export async function deleteProject(workspaceId, id) {
   return db.delete(projects)
     .where(and(eq(projects.id, id), eq(projects.user_id, workspaceId)))
 }

@@ -3485,6 +3485,7 @@ export class App {
     const {
       title = 'Are you sure?', message = '',
       confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = true,
+      typeToConfirm = '',   // e.g. 'DELETE': the OK button stays disabled until it is typed exactly
     } = opts
     const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
     return new Promise(resolve => {
@@ -3496,6 +3497,8 @@ export class App {
           <div class="confirm-body">
             <div class="confirm-title">${esc(title)}</div>
             ${message ? `<div class="confirm-msg">${esc(message)}</div>` : ''}
+            ${typeToConfirm ? `<label class="confirm-msg" style="display:block;margin-top:12px">Type <strong>${esc(typeToConfirm)}</strong> to confirm
+              <input type="text" data-confirm="input" autocomplete="off" autocapitalize="off" spellcheck="false" style="display:block;width:100%;margin-top:6px;box-sizing:border-box"></label>` : ''}
           </div>
           <div class="confirm-actions">
             <button class="btn-cancel" data-confirm="cancel">${esc(cancelLabel)}</button>
@@ -3511,16 +3514,23 @@ export class App {
         resolve(val)
       }
       // Capture phase + stopPropagation so the global Esc handler doesn't also fire.
+      const input = backdrop.querySelector('[data-confirm="input"]')
+      const okBtn = backdrop.querySelector('[data-confirm="ok"]')
+      const canConfirm = () => !typeToConfirm || input.value === typeToConfirm
       const onKey = e => {
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(false) }
-        else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); close(true) }
+        else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); if (canConfirm()) close(true) }
       }
       backdrop.addEventListener('click', e => { if (e.target === backdrop) close(false) })
       backdrop.querySelector('[data-confirm="cancel"]').addEventListener('click', () => close(false))
-      backdrop.querySelector('[data-confirm="ok"]').addEventListener('click', () => close(true))
+      okBtn.addEventListener('click', () => { if (canConfirm()) close(true) })
+      if (typeToConfirm) {
+        okBtn.disabled = true
+        input.addEventListener('input', () => { okBtn.disabled = !canConfirm() })
+      }
       document.addEventListener('keydown', onKey, true)
       document.body.appendChild(backdrop)
-      setTimeout(() => backdrop.querySelector('[data-confirm="ok"]')?.focus(), 10)
+      setTimeout(() => (input || okBtn)?.focus(), 10)
     })
   }
 

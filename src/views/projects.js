@@ -1,4 +1,4 @@
-import { createProject, updateProject, deleteProject, renumberProjectKanban, linkBudgetToProject, unlinkBudgetFromProject, logActivity, getActivityLog, getTimeEntries, setTrackToken, deleteTimeEntry, getWorkLog, addWorkLogEntry, deleteWorkLogEntry, updateBudget } from '../db/client.js'
+import { createProject, updateProject, deleteProject, getProjectWorklistCounts, renumberProjectKanban, linkBudgetToProject, unlinkBudgetFromProject, logActivity, getActivityLog, getTimeEntries, setTrackToken, deleteTimeEntry, getWorkLog, addWorkLogEntry, deleteWorkLogEntry, updateBudget } from '../db/client.js'
 import { companyFieldHtml, bindCompanyField, setCompanyField, resolveCompanyField, companyById } from './company-field.js'
 import { PostProductionView } from './post-production.js'
 import { Worklist } from './worklist.js'
@@ -1310,7 +1310,7 @@ export class ProjectsView {
       } catch(e) { console.error(e); this.app.toast('Error duplicating project') }
     })
     mc.querySelector('#pv-delete')?.addEventListener('click', async () => {
-      if (!await this.app.confirm({ title: `Delete project '${p.name}'?`, message: 'This cannot be undone.', confirmLabel: 'Delete' })) return
+      if (!await this._confirmDeleteProject(p)) return
       try {
         await deleteProject(this.app.userId, p.id)
         this.app.projects = this.app.projects.filter(x => x.id !== p.id)
@@ -1318,7 +1318,23 @@ export class ProjectsView {
         history.pushState({ view: 'projects' }, '', '#projects')
         this.renderKanban(mc); this.app.updateTitle()
         this.app.toast('Project deleted')
-      } catch (e) { console.error(e); this.app.toast(e.code === 'has_worklist' ? e.message : 'Error deleting project') }
+      } catch (e) { console.error(e); this.app.toast('Error deleting project') }
+    })
+  }
+
+  // Deleting takes the project's worklist with it, so the user has to type DELETE.
+  async _confirmDeleteProject(p) {
+    let held = { workstreams: 0, deliverables: 0 }
+    try { held = await getProjectWorklistCounts(this.app.userId, p.id) } catch (e) { console.error(e) }
+    const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`
+    const alsoGoes = held.workstreams
+      ? ` Its worklist goes too (${plural(held.workstreams, 'workstream')}, ${plural(held.deliverables, 'deliverable')}), along with the review rounds sent on them.`
+      : ''
+    return this.app.confirm({
+      title: `Delete project '${p.name}'?`,
+      message: `This cannot be undone.${alsoGoes}`,
+      confirmLabel: 'Delete',
+      typeToConfirm: 'DELETE',
     })
   }
 
@@ -4966,7 +4982,7 @@ export class ProjectsView {
 
   async deleteProject(id, mc) {
     const p = this.app.projects.find(x => x.id === id)
-    if (!await this.app.confirm({ title: p ? `Delete project '${p.name}'?` : 'Delete project?', message: 'This cannot be undone.', confirmLabel: 'Delete' })) return
+    if (!await this._confirmDeleteProject(p ?? { id, name: 'this project' })) return
     try {
       await deleteProject(this.app.userId, id)
       this.app.projects = this.app.projects.filter(p => p.id !== id)
@@ -4974,6 +4990,6 @@ export class ProjectsView {
       this.render(mc)
       this.app.updateTitle()
       this.app.toast('Project deleted')
-    } catch (e) { console.error(e); this.app.toast(e.code === 'has_worklist' ? e.message : 'Error deleting project') }
+    } catch (e) { console.error(e); this.app.toast('Error deleting project') }
   }
 }

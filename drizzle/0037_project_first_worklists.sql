@@ -6,7 +6,7 @@
 --
 --   workstreams.company_id   now optional. Existing rows keep theirs. New rows
 --                            are made with a project (the routes require it).
---   workstreams.project_id   ON DELETE RESTRICT (was SET NULL). With no
+--   workstreams.project_id   ON DELETE RESTRICT (was SET NULL; CASCADE since 0049). With no
 --                            company, a workstream whose project is deleted
 --                            could never be reached again, so a project with a
 --                            worklist can't be deleted until the worklist is.

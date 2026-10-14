@@ -842,8 +842,9 @@ export const workstreams = pgTable('workstreams', {
   // a company with a worklist is refused (RESTRICT).
   company_id: uuid('company_id').references(() => companies.id, { onDelete: 'restrict' }),
   // The project the worklist is for; its portal link shows these workstreams.
-  // RESTRICT: a project with a worklist can't be deleted until the worklist is.
-  project_id: uuid('project_id').references(() => projects.id, { onDelete: 'restrict' }),
+  // CASCADE (drizzle/0049): deleting a project deletes its worklist, deliverables
+  // and rounds; the app asks the user to type DELETE first.
+  project_id: uuid('project_id').references(() => projects.id, { onDelete: 'cascade' }),
   title:      text('title').notNull(),
   brief:      text('brief'),                       // shown to the client
   status:     workstream_status('status').notNull().default('active'),

@@ -1201,8 +1201,10 @@ always the source of truth and nothing is ever read back from Google.
   older workstream. Every query that needs a workstream's company joins that
   view with LEFT JOINs, so a project with no company still has a worklist and
   a link (no company login). Never join `workstreams.company_id` directly.
-  `workstreams.project_id` is ON DELETE RESTRICT: a project with a worklist
-  can't be deleted until the worklist is (`deleteProject()` says so). A
+  `workstreams.project_id` is ON DELETE CASCADE (drizzle/0049): deleting a
+  project deletes its worklist, deliverables and rounds, behind a "type DELETE"
+  confirm (`typeToConfirm` on `app.confirm()`; counts from
+  `getProjectWorklistCounts()`). A
   deliverable links to `#projects/<id>/worklist/<deliverableId>`
   (`worklistLink()` in `_retainer-rules.js`); `#retainers/<companyId>` (in
   emails already sent) redirects to that company's project

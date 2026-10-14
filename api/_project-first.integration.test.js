@@ -1,6 +1,6 @@
 // What drizzle/0037 lets the database allow and refuse: a worklist that belongs
 // to a project with no company, requests that belong to a project, and a
-// project that can't be deleted out from under its worklist. Runs against a
+// project whose delete takes its worklist with it (0049). Runs against a
 // real Postgres; skipped unless SLATE_TEST_DATABASE_URL is set (_test-db.js).
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
@@ -45,11 +45,14 @@ describeDb('project-first worklists', () => {
     await fails(sql`INSERT INTO workstreams (user_id, title) VALUES (${WS}, 'Nowhere')`, /workstreams_owner_chk/)
   })
 
-  it('refuses to delete a project that has a worklist, and allows it once the worklist is gone', async () => {
+  it('deletes a project\'s worklist, deliverables and rounds with it', async () => {
     const [w] = await sql`INSERT INTO workstreams (user_id, project_id, title) VALUES (${WS}, ${project.id}, 'Edit days') RETURNING id`
-    await fails(sql`DELETE FROM projects WHERE id = ${project.id}`, /workstreams_project_id_projects_id_fk/)
-    await sql`DELETE FROM workstreams WHERE id = ${w.id}`
+    const [d] = await sql`INSERT INTO deliverables (workstream_id, title) VALUES (${w.id}, 'Cutdown') RETURNING id`
+    await sql`INSERT INTO deliveries (deliverable_id, url, round) VALUES (${d.id}, 'https://example.com/v1', 1)`
     await sql`DELETE FROM projects WHERE id = ${project.id}`
+    expect(await sql`SELECT 1 FROM workstreams WHERE id = ${w.id}`).toHaveLength(0)
+    expect(await sql`SELECT 1 FROM deliverables WHERE id = ${d.id}`).toHaveLength(0)
+    expect(await sql`SELECT 1 FROM deliveries WHERE deliverable_id = ${d.id}`).toHaveLength(0)
   })
 
   it('takes a request for a project with no company, marked as sent via link', async () => {
