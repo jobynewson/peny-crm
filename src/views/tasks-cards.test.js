@@ -13,6 +13,36 @@ const card = over => ({
 })
 const view = cards => { const v = new TasksView(app); v.cards = cards; return v }
 
+describe('the Awaiting feedback column', () => {
+  const awaiting = card({ id: 'd9', column: 'awaiting', status: 'in_review', muted: true, chip: { key: 'in_review', label: 'With client · round 1' } })
+  it('holds the deliverables that are with the client, between Doing and Done', () => {
+    const v = view([card(), awaiting])
+    expect(v.columnCards('awaiting').map(c => c.id)).toEqual(['d9'])
+    expect(v.columnCards('doing').map(c => c.id)).toEqual(['d1'])
+  })
+  it('is drawn as a fourth column, with its own drop zone', () => {
+    const v = view([awaiting])
+    v.tasks = []; v.requests = []
+    const mc = { innerHTML: '' }
+    v.shell = () => 'desktop'
+    v._bindQuickAdd = v._bindCards = v._bindDnD = () => {}
+    v._quickAddHtml = () => ''
+    v._renderDesktop(mc)
+    expect(mc.innerHTML).toContain('Awaiting feedback')
+    expect(mc.innerHTML).toContain('data-drop-col="awaiting"')
+    expect(mc.innerHTML.indexOf('data-drop-col="doing"')).toBeLessThan(mc.innerHTML.indexOf('data-drop-col="awaiting"'))
+    expect(mc.innerHTML.indexOf('data-drop-col="awaiting"')).toBeLessThan(mc.innerHTML.indexOf('data-drop-col="done"'))
+  })
+  it('refuses a task dropped there, in one line, and leaves the task alone', async () => {
+    const toasts = []
+    const v = new TasksView({ ...app, toast: m => toasts.push(m) })
+    v.tasks = [{ id: 't1', status: 'doing', assignee_id: 'me', position: 1 }]
+    await v._moveTask('t1', 'awaiting', null)
+    expect(toasts).toEqual(['Awaiting feedback is for deliverables the client is looking at. Tasks go from Doing to Done.'])
+    expect(v.tasks[0].status).toBe('doing')
+  })
+})
+
 describe('deliverable cards on the board', () => {
   it('sit in their column above tasks, unowned ones too, and count in the header numbers', () => {
     const v = view([card(), card({ id: 'd2', column: 'todo', status: 'planned' }), card({ id: 'd3', owner_id: null, unassigned: true, column: 'todo', status: 'planned' })])

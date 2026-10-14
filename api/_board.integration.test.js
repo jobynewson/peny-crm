@@ -67,7 +67,7 @@ describeDb('the board\'s deliverable cards', () => {
     expect(Object.keys(by).sort()).toEqual(['Doing', 'Nobody', 'Planned soon', 'Waiting'])
     expect(by['Planned soon']).toMatchObject({ column: 'todo', muted: false, chip: null, company: 'BdTest DMM', workstream: 'Monthly' })
     expect(by.Doing.column).toBe('doing')
-    expect(by.Waiting).toMatchObject({ column: 'doing', muted: true, chip: { key: 'waiting_on_client' } })
+    expect(by.Waiting).toMatchObject({ column: 'awaiting', muted: true, chip: { key: 'waiting_on_client' } })
     expect(by.Nobody).toMatchObject({ column: 'todo', unassigned: true, owner_id: null })
     expect(by.Nobody.unassigned_since).toBeTruthy()
     expect(by.Doing).toMatchObject({ unassigned: false, unassigned_since: null })
@@ -124,6 +124,7 @@ describeDb('the board\'s deliverable cards', () => {
       const cases = [
         ['planned', 'done', 'approve'], ['in_progress', 'done', 'approve'],
         ['in_review', 'todo', 'with_client'], ['waiting_on_client', 'todo', 'with_client'],
+        ['in_review', 'doing', 'with_client'], ['planned', 'awaiting', 'awaiting'], ['in_progress', 'awaiting', 'awaiting'],
         ['changes_requested', 'todo', 'changes'], ['approved', 'doing', 'approved'],
       ]
       for (const [from, column, reason] of cases) {
@@ -136,7 +137,7 @@ describeDb('the board\'s deliverable cards', () => {
 
     it('dropping a card where it already is does nothing', async () => {
       const id = await add('Waiting', { status: 'waiting_on_client' })
-      const r = await call('POST', `retainers/deliverables/${id}/board-move`, { column: 'doing' })
+      const r = await call('POST', `retainers/deliverables/${id}/board-move`, { column: 'awaiting' })
       expect([r.statusCode, r.body.card.status]).toEqual([200, 'waiting_on_client'])
     })
 
@@ -150,7 +151,7 @@ describeDb('the board\'s deliverable cards', () => {
       expect(refused.statusCode).toBe(409)
       expect((await status(stuck)).owner_id).toBeNull()
       // dropped back in the column it is already in: nothing changes, nobody takes it
-      const stays = await call('POST', `retainers/deliverables/${stuck}/board-move`, { column: 'doing' })
+      const stays = await call('POST', `retainers/deliverables/${stuck}/board-move`, { column: 'awaiting' })
       expect(stays.body.card).toMatchObject({ owner_id: null, status: 'in_review', unassigned: true })
       expect((await status(stuck)).owner_id).toBeNull()
     })

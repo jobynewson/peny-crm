@@ -2807,7 +2807,7 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 }
 .tk-take:hover { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 
-.tk-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; align-items: start; }
+.tk-cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; align-items: start; }
 .tk-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .tk-col-head {
   font-family: var(--font-mono); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary);

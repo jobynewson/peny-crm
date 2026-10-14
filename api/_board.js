@@ -20,7 +20,7 @@ import { UUID, fail, invalid, readBody, workspaceId } from './_api.js'
 import { londonDate } from './_dates.js'
 import { loadOpenRequests } from './_requests.js'
 import {
-  BOARD_COLUMNS, BOARD_DONE_DAYS, BOARD_HORIZON_DAYS, boardShows, parseWindowDays, boardCard, compareBoardCards, statusAfterBoardDrag, statusPatch,
+  BOARD_COLUMNS, BOARD_DONE_DAYS, isDelivered, BOARD_HORIZON_DAYS, boardShows, parseWindowDays, boardCard, compareBoardCards, statusAfterBoardDrag, statusPatch,
 } from './_retainer-rules.js'
 
 export const BOARD_ROUTES = [
@@ -64,20 +64,20 @@ async function getBoard(req, res, { sql }) {
 }
 
 // ── POST retainers/deliverables/:id/board-move ───────────────────────────────
-// { column: 'todo' | 'doing' | 'done' } → { card } (the card as it now is), or
+// { column: 'todo' | 'doing' | 'awaiting' | 'done' } → { card } (the card as it now is), or
 // 409 board_refused with the sentence to show. Moving something already in the
 // column it was dropped in is fine and changes nothing. Moving an unowned card
 // to another column claims it: picking it up is starting it.
 async function moveCard(req, res, { sql, user, params }) {
   const body = readBody(req)
   if (!body) return invalid(res, 'body', 'Request body is not valid JSON')
-  if (!BOARD_COLUMNS.includes(body.column)) return invalid(res, 'column', 'Drop it in To do, Doing or Done')
+  if (!BOARD_COLUMNS.includes(body.column)) return invalid(res, 'column', 'Drop it in To do, Doing, Awaiting feedback or Done')
 
   const ws = await workspaceId(sql)
   const [d] = await loadRows(sql, ws, { id: params.id })
   if (!d || !boardShows(d, londonDate(), BOARD_HORIZON_DAYS)) return fail(res, 404, 'not_found', 'That deliverable is not on the board any more')
 
-  const move = statusAfterBoardDrag({ from: d.status, column: body.column })
+  const move = statusAfterBoardDrag({ from: d.status, column: body.column, delivered: isDelivered(d) })
   if (move.refused) return fail(res, 409, 'board_refused', move.refused, { reason: move.code })
 
   const claiming = !d.owner_id && move.status !== d.status

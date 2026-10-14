@@ -35,6 +35,14 @@ const COLUMNS = [
   { id: 'doing', label: 'Doing' },
   { id: 'done',  label: 'Done' },
 ]
+// The board adds Awaiting feedback, which is for deliverables only: a task has
+// no such status, so COLUMNS (task statuses) stays as it is.
+const BOARD_COLS = [
+  { id: 'todo',     label: 'To do' },
+  { id: 'doing',    label: 'Doing' },
+  { id: 'awaiting', label: 'Awaiting feedback' },
+  { id: 'done',     label: 'Done' },
+]
 
 const POSITION_GAP = 1024
 // Done tasks leave the board after this many days (ARCHIVE_AFTER_DAYS in
@@ -516,7 +524,7 @@ export class TasksView {
         </div>` : ''}
         ${this.cardsError ? `<p class="tk-col-note">Deliverables couldn't be loaded just now, so only tasks are shown here.</p>` : ''}
         <div class="tk-cols">
-          ${COLUMNS.map(col => {
+          ${BOARD_COLS.map(col => {
             const items = this.columnTasks(col.id)
             const cards = this.columnCards(col.id)
             return `
@@ -733,6 +741,10 @@ export class TasksView {
   async _moveTask(taskId, destStatus, beforeId) {
     const task = this.tasks.find(t => t.id === taskId)
     if (!task) return
+    if (destStatus === 'awaiting') {
+      this.app.toast('Awaiting feedback is for deliverables the client is looking at. Tasks go from Doing to Done.')
+      return
+    }
 
     const snapshot = { ...task }
     const siblings = this.columnTasks(destStatus).filter(t => t.id !== taskId)
@@ -853,6 +865,7 @@ export class TasksView {
       { id: 'needs', label: 'Needs a reply', items: needsReply.sort(byDue) },
       { id: 'doing', label: 'Doing',         items: withCards('doing', tasksIn('doing')) },
       { id: 'todo',  label: 'To do',         items: withCards('todo', tasksIn('todo')) },
+      { id: 'awaiting', label: 'Awaiting feedback', items: withCards('awaiting', []) },
       { id: 'done',  label: 'Done',          items: withCards('done', acked.filter(t => t.status === 'done').sort(byDue)), collapsed: true },
     ]
   }

@@ -342,19 +342,30 @@ export function validateReply(body) {
 //   in_progress                               → Doing
 //   changes_requested                         → Doing (chip: changes requested)
 //   comments_in                               → Doing (chip: comments in, with how long)
-//   waiting_on_client, in_review              → Doing, muted (with the client)
+//   waiting_on_client, in_review              → Awaiting feedback (muted, with how long)
+//   delivered (ticked, not approved)          → Awaiting feedback (muted), unless the
+//                                               client has since sent feedback
 //   approved                                  → Done
 //
-// Dragging only ever moves planned <-> in_progress. The rest are the client's
-// moves, or need a note or a link, so they happen on the project’s Worklist tab.
+// Awaiting feedback is for deliverables only: a task never goes there, and
+// nothing is dragged in or out of it (it fills itself when a round is sent or
+// work is delivered, and empties when the client answers). Dragging only ever
+// moves planned <-> in_progress. The rest are the client's moves, or need a note
+// or a link, so they happen on the project’s Worklist tab.
 
-export const BOARD_COLUMNS = ['todo', 'doing', 'done']
+export const BOARD_COLUMNS = ['todo', 'doing', 'awaiting', 'done']
 
 const BOARD_COLUMN = {
   planned: 'todo', in_progress: 'doing', changes_requested: 'doing', comments_in: 'doing',
-  waiting_on_client: 'doing', in_review: 'doing', approved: 'done',
+  waiting_on_client: 'awaiting', in_review: 'awaiting', approved: 'done',
 }
-export const boardColumn = status => BOARD_COLUMN[status] ?? 'todo'
+// A status, or a deliverable row (which may also be delivered: out with the
+// client unless they have answered with feedback since).
+export function boardColumn(d) {
+  const { status, delivered_at = null } = typeof d === 'string' ? { status: d } : d
+  if (delivered_at && status !== 'approved' && status !== 'changes_requested' && status !== 'comments_in') return 'awaiting'
+  return BOARD_COLUMN[status] ?? 'todo'
+}
 
 // A card that is with the client, so the owner isn't the one holding it.
 export const isWithClient = status => status === 'waiting_on_client' || status === 'in_review'
@@ -373,7 +384,10 @@ export function boardChip(d, now = new Date()) {
   if (d.status === 'in_review') {
     return { key: 'in_review', label: d.round ? `With client · round ${d.round}` : 'With client' }
   }
-  if (isDelivered(d)) return { key: 'delivered', label: 'Delivered · awaiting approval' }
+  if (isDelivered(d)) {
+    const days = d.delivered_at ? Math.max(0, Math.floor((now - new Date(d.delivered_at)) / 86400000)) : null
+    return { key: 'delivered', label: days == null ? 'Delivered · awaiting approval' : `Delivered · awaiting approval · ${days}d` }
+  }
   return null
 }
 
@@ -381,25 +395,29 @@ export function boardChip(d, now = new Date()) {
 // where to go instead. Short enough for a phone.
 export const DRAG_REFUSALS = {
   approve:   'Only the client can approve this — record their answer on the project’s Worklist tab.',
-  with_client: 'This is with the client, so it stays in Doing until they answer — the project’s Worklist tab has the detail.',
+  with_client: 'This is with the client, so it stays in Awaiting feedback until they answer. See the project’s Worklist tab.',
+  awaiting:  'Work lands in Awaiting feedback when you send a round or mark it delivered, on the Worklist tab.',
   changes:   'The client has sent feedback, so it stays in Doing until you send the next round.',
   approved:  'This is approved — reopen it from the project’s Worklist tab if it needs more work.',
 }
 
-// A card dropped in `column`. → { status } to write (status may equal the
-// current one: nothing to do), or { refused: <one of DRAG_REFUSALS> }.
-export function statusAfterBoardDrag({ from, column }) {
+// A card dropped in `column`. `delivered` is whether it has been ticked
+// delivered. → { status } to write (status may equal the current one: nothing
+// to do), or { refused: <one of DRAG_REFUSALS> }.
+export function statusAfterBoardDrag({ from, column, delivered = false }) {
   if (!BOARD_COLUMNS.includes(column)) return { refused: DRAG_REFUSALS.with_client, code: 'with_client' }
-  if (boardColumn(from) === column) return { status: from }
+  const here = boardColumn({ status: from, delivered_at: delivered ? true : null })
+  if (here === column) return { status: from }
   const refuse = code => ({ refused: DRAG_REFUSALS[code], code })
 
   if (from === 'approved') return refuse('approved')
+  if (column === 'awaiting') return refuse('awaiting')
   if (column === 'done') return refuse('approve')
+  if (here === 'awaiting') return refuse('with_client')
   if (from === 'planned' && column === 'doing') return { status: 'in_progress' }
   if (from === 'in_progress' && column === 'todo') return { status: 'planned' }
   // Everything else is a card in Doing being dragged to To do.
-  if (from === 'changes_requested' || from === 'comments_in') return refuse('changes')
-  return refuse('with_client')
+  return refuse('changes')
 }
 
 // Which deliverables have a card, so that nothing is invisible:
@@ -505,7 +523,7 @@ export function boardCard(d, today, now = new Date()) {
     unassigned_since: !d.owner_id && d.status !== 'approved' ? (d.created_at ?? null) : null,
     status: d.status,
     status_label: STATUS_LABELS[d.status],
-    column: boardColumn(d.status),
+    column: boardColumn(d),
     muted: isWithClient(d.status) || isDelivered(d),
     chip,
     due_date: d.due_date ?? null,

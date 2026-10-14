@@ -1489,7 +1489,16 @@ is the guard), `requests` decision columns, `deliverables.client_reply`,
 - **Task board cards** (`api/_board.js`): deliverables are cards read from the
   deliverables table. The column mapping, which cards appear, and every drag
   refusal are in `_retainer-rules.js` (`boardColumn`, `boardShows`,
-  `statusAfterBoardDrag`); the browser holds no copy. A drag only moves planned
+  `statusAfterBoardDrag`); the browser holds no copy. **Four columns: To do,
+  Doing, Awaiting feedback, Done.** Awaiting feedback is for deliverables only:
+  `in_review`, `waiting_on_client`, and anything ticked delivered and not yet
+  approved (`boardColumn(d)` takes a row, so a delivered card with
+  `changes_requested` or `comments_in` is back in Doing). Cards there are muted
+  and say how long ("Waiting on client · 3d", "Delivered · awaiting approval ·
+  4d"). It fills and empties itself: nothing is dragged in or out, and a task
+  dropped there is refused client-side (tasks have no such status; the desktop
+  board's `BOARD_COLS` adds the column, `COLUMNS` stays the task statuses). On
+  the phone list it is a group after To do. A drag only moves planned
   <-> in progress; anything else is refused with a sentence (shown in a notice
   that stays until dismissed). Unowned open deliverables sit in their column,
   marked Unassigned (`unassigned`, `unassigned_since` on the card) with **Assign

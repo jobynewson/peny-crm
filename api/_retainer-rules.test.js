@@ -184,32 +184,46 @@ describe('client requests', () => {
 describe('the task board mapping', () => {
   it('puts every status in a column', () => {
     expect(Object.fromEntries(DELIVERABLE_STATUSES.map(s => [s, boardColumn(s)]))).toEqual({
-      planned: 'todo', in_progress: 'doing', waiting_on_client: 'doing',
-      in_review: 'doing', changes_requested: 'doing', comments_in: 'doing', approved: 'done',
+      planned: 'todo', in_progress: 'doing', waiting_on_client: 'awaiting',
+      in_review: 'awaiting', changes_requested: 'doing', comments_in: 'doing', approved: 'done',
     })
+  })
+  it('puts delivered work in Awaiting feedback until the client answers with feedback or approves', () => {
+    const at = '2026-10-01T10:00:00Z'
+    for (const status of ['planned', 'in_progress', 'in_review', 'waiting_on_client']) {
+      expect(boardColumn({ status, delivered_at: at }), status).toBe('awaiting')
+    }
+    expect(boardColumn({ status: 'changes_requested', delivered_at: at })).toBe('doing')
+    expect(boardColumn({ status: 'comments_in', delivered_at: at })).toBe('doing')
+    expect(boardColumn({ status: 'approved', delivered_at: at })).toBe('done')
+    expect(boardColumn({ status: 'in_progress', delivered_at: null })).toBe('doing')
   })
   it('mutes the cards that are with the client', () => {
     expect(DELIVERABLE_STATUSES.filter(isWithClient)).toEqual(['waiting_on_client', 'in_review'])
   })
-  it('chips say where a card in Doing really is', () => {
+  it('chips say where a card in Doing or Awaiting feedback really is', () => {
     const now = new Date('2026-09-28T12:00:00Z')
     expect(boardChip({ status: 'planned' }, now)).toBeNull()
     expect(boardChip({ status: 'in_progress' }, now)).toBeNull()
     expect(boardChip({ status: 'changes_requested' }, now).label).toBe('Changes requested')
     expect(boardChip({ status: 'waiting_on_client', waiting_since: '2026-09-25T09:00:00Z' }, now).label).toBe('Waiting on client · 3d')
     expect(boardChip({ status: 'in_review', round: 2 }, now).label).toBe('With client · round 2')
+    expect(boardChip({ status: 'in_progress', delivered_at: '2026-09-24T12:00:00Z' }, now).label).toBe('Delivered · awaiting approval · 4d')
   })
   it('a drag moves planned <-> in_progress and nothing else', () => {
     expect(statusAfterBoardDrag({ from: 'planned', column: 'doing' })).toEqual({ status: 'in_progress' })
     expect(statusAfterBoardDrag({ from: 'in_progress', column: 'todo' })).toEqual({ status: 'planned' })
     // dropped where it already is: nothing to do, and no complaint
     for (const s of DELIVERABLE_STATUSES) expect(statusAfterBoardDrag({ from: s, column: boardColumn(s) })).toEqual({ status: s })
+    expect(statusAfterBoardDrag({ from: 'in_progress', column: 'awaiting', delivered: true })).toEqual({ status: 'in_progress' })
   })
   it('refuses every other move, saying what to do instead', () => {
     const cases = [
       ['planned', 'done', 'approve'], ['in_progress', 'done', 'approve'], ['in_review', 'done', 'approve'],
       ['waiting_on_client', 'done', 'approve'], ['changes_requested', 'done', 'approve'],
       ['in_review', 'todo', 'with_client'], ['waiting_on_client', 'todo', 'with_client'],
+      ['in_review', 'doing', 'with_client'], ['waiting_on_client', 'doing', 'with_client'],
+      ['planned', 'awaiting', 'awaiting'], ['in_progress', 'awaiting', 'awaiting'], ['changes_requested', 'awaiting', 'awaiting'],
       ['changes_requested', 'todo', 'changes'],
       ['approved', 'todo', 'approved'], ['approved', 'doing', 'approved'],
     ]
@@ -219,6 +233,15 @@ describe('the task board mapping', () => {
       expect(r.refused).toBe(DRAG_REFUSALS[code])
     }
   })
+  it('delivered work stays in Awaiting feedback until the client answers', () => {
+    for (const column of ['todo', 'doing']) {
+      expect(statusAfterBoardDrag({ from: 'in_progress', column, delivered: true })).toMatchObject({ code: 'with_client' })
+      expect(statusAfterBoardDrag({ from: 'planned', column, delivered: true })).toMatchObject({ code: 'with_client' })
+    }
+    expect(statusAfterBoardDrag({ from: 'in_progress', column: 'done', delivered: true })).toMatchObject({ code: 'approve' })
+    // feedback has come back: it is in Doing again, and behaves like any card there
+    expect(statusAfterBoardDrag({ from: 'changes_requested', column: 'doing', delivered: true })).toEqual({ status: 'changes_requested' })
+  })
   it('the refusals point at the project’s Worklist tab, and are one phone-sized line', () => {
     for (const msg of Object.values(DRAG_REFUSALS)) {
       expect(msg).toMatch(/Worklist tab|until they answer|until you send/)
@@ -227,7 +250,7 @@ describe('the task board mapping', () => {
   })
   it('an unknown column is refused, not written', () => {
     expect(statusAfterBoardDrag({ from: 'planned', column: 'nope' }).status).toBeUndefined()
-    expect(BOARD_COLUMNS).toEqual(['todo', 'doing', 'done'])
+    expect(BOARD_COLUMNS).toEqual(['todo', 'doing', 'awaiting', 'done'])
   })
 })
 
@@ -309,7 +332,7 @@ describe('which deliverables have a board card', () => {
   it('the card carries the column, muting, chip, due text and a link to the deliverable on its project’s Worklist tab', () => {
     const c = boardCard(d({ status: 'in_review', round: 2, due_date: '2026-09-27' }), today)
     expect(c).toMatchObject({
-      kind: 'deliverable', column: 'doing', muted: true, chip: { label: 'With client · round 2' },
+      kind: 'deliverable', column: 'awaiting', muted: true, chip: { label: 'With client · round 2' },
       overdue: true, days_late: 2, link: '#retainers/c1', company: 'DMM', workstream: 'Monthly', unassigned: false,
     })
     expect(boardCard(d({ project_id: 'p1', project: 'Retainer' }), today)).toMatchObject({ link: '#projects/p1/worklist/d', project: 'Retainer', project_id: 'p1' })
@@ -431,7 +454,7 @@ describe('delivered (the staff tick) is separate from approved (the client\'s an
     const d = { id: 'd', title: 'Reel', status: 'planned', owner_id: 'u1', due_kind: 'exact', due_date: '2027-06-01', delivered_at: at, company: 'DMM', workstream: 'Edits' }
     expect(boardShows(d, '2026-09-30')).toBe(true)
     expect(boardShows({ ...d, delivered_at: null }, '2026-09-30')).toBe(false)
-    expect(boardCard(d, '2026-09-30')).toMatchObject({ muted: true, chip: { key: 'delivered' } })
+    expect(boardCard(d, '2026-09-30')).toMatchObject({ muted: true, column: 'awaiting', chip: { key: 'delivered' } })
     expect(boardChip({ ...d, delivered_at: null })).toBeNull()
     const o = owedList([d], '2026-09-30', 60)
     expect(o).toMatchObject({ total: 1 })
