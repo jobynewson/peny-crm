@@ -1434,6 +1434,18 @@ is the guard), `requests` decision columns, `deliverables.client_reply`,
   board already sets In progress for the client. A chosen owner gets the "Tasks
   assigned to you" email (not when it is you). The new-request alert email
   goes to the lead / assignment lead / superadmins, and opens the board.
+- **Emails to the client about a request** (`api/_request-mail.js`): the person
+  who sent it (`requests.submitted_by`, address read from Clerk) is emailed when it
+  arrives (`request_received`: we have it, we're checking the deadline against
+  capacity), when it is accepted (`request_accepted`: booked in, the deadline
+  confirmed or our own date, a link to the item) and when it is declined
+  (`request_declined`: our note). Not the rest of the company, and never a
+  project-link request (a typed name, no address). Non-switchable and `testable`
+  like `delivery_ready`. `emailRequestUpdate` never throws and checks the stage
+  against the request's status, so a failed email never fails the request or the
+  decision. The portal shows the same on the request itself: a pending line while
+  Submitted, and "booked in · <stage> · due <date>" once accepted
+  (`accepted.status_label` from `requestsJson`).
 - **Waiting on you**: `POST /api/client/deliverables/:id/reply` keeps the latest
   note (cleared with `waiting_note` by `statusPatch`), never shown on a project
   link, alerts the owner every time.

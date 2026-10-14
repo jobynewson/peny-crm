@@ -118,6 +118,7 @@ a { color: var(--accent-text); }
 .pt-request-detail { margin: 8px 0 0; font-size: 14px; white-space: pre-line; overflow-wrap: anywhere; }
 .pt-request-detail a, .pt-request-declined a { color: var(--accent-text); }
 .pt-request-accepted { margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--cat-green-soft); font-size: 14px; }
+.pt-request-pending { margin-top: 10px; font-size: 14px; color: var(--text-muted); }
 .pt-request-accepted a { margin-left: 4px; color: var(--accent-text); font-weight: 500; }
 .pt-request-declined { margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--surface-2); font-size: 14px; white-space: pre-line; }
 .pt-earlier--requests { padding: 0 16px 12px; }

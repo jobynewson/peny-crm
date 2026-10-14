@@ -26,6 +26,7 @@ import { UUID, fail, invalid, readBody, workspaceId } from './_api.js'
 import { formatDay } from './_dates.js'
 import { requestLabel, requestSourceLabel, validateAccept, validateDecline, worklistLink } from './_retainer-rules.js'
 import { sendOwnerAssigned } from './_alerts.js'
+import { emailRequestUpdate } from './_request-mail.js'
 
 const ID = `(?<id>${UUID})`
 export const REQUEST_ROUTES = [
@@ -195,6 +196,7 @@ async function acceptRequest(req, res, { sql, user, params }) {
   } catch (err) {
     console.error('[requests] owner email failed:', err?.message)   // accepted either way
   }
+  await emailRequestUpdate(sql, { requestId: done.request_id, stage: 'accepted' })   // the client; never throws
   return res.status(200).json({
     ok: true, request_id: done.request_id, deliverable_id: done.deliverable_id,
     workstream_id: done.workstream_id, company_id: request.company_id, project_id: projectId, owner_id: ownerId,
@@ -216,7 +218,10 @@ async function declineRequest(req, res, { sql, user, params }) {
            decided_by = ${user.id}, decided_at = NOW(), updated_at = NOW()
     WHERE id = ${params.id} AND user_id = ${ws} AND status = 'new'
     RETURNING id`
-  if (row) return res.status(200).json({ ok: true, request_id: row.id })
+  if (row) {
+    await emailRequestUpdate(sql, { requestId: row.id, stage: 'declined' })   // the client; never throws
+    return res.status(200).json({ ok: true, request_id: row.id })
+  }
 
   const [exists] = await sql`SELECT status FROM requests WHERE id = ${params.id} AND user_id = ${ws}`
   if (!exists) return fail(res, 404, 'not_found', 'Request not found')

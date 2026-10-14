@@ -42,6 +42,7 @@ import { isRateLimited, getClientIp } from './_ratelimit.js'
 import { companyScope, projectScope, deliveryScope, respondToDelivery, respondToDeliverable, undoCommentsIn, submitRequest, replyToWaiting } from './_worklist.js'
 import { hashToken } from './_delivery-mail.js'
 import { alertNewRequest, alertChangesRequested, alertClientReply, alertCommentsIn } from './_alerts.js'
+import { emailRequestUpdate } from './_request-mail.js'
 import { readClientView, readLinkView } from './_client-view.js'
 
 // `kinds` is which scopes a route serves (checked before its handler runs):
@@ -342,6 +343,7 @@ async function raiseRequest(req, res, { sql, scope }) {
   } catch (err) {
     console.error('[client] new-request alert failed:', err?.message)   // the request is saved either way
   }
+  await emailRequestUpdate(sql, { requestId: result.request.id, stage: 'received' })   // never throws
   return res.status(201).json({ ok: true, view: await readClientView(sql, scope) })
 }
 

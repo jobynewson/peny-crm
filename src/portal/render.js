@@ -328,9 +328,11 @@ function requestHtml(r) {
       </div>
       <div class="pt-d-meta">${meta}</div>
       ${r.detail ? `<p class="pt-request-detail">${linkify(r.detail)}</p>` : ''}
+      ${r.status === 'submitted' ? `
+        <div class="pt-request-pending">We’ve got it. We’re checking ${r.wanted_by ? 'your deadline' : 'the timing'} against the team’s capacity and will confirm shortly.</div>` : ''}
       ${r.accepted ? `
         <div class="pt-request-accepted">
-          We’ve taken this on${r.accepted.due && r.accepted.due !== 'No date' ? ` — due ${esc(r.accepted.due)}` : ''}.
+          We’ve got this booked in${[r.accepted.status_label, r.accepted.due && r.accepted.due !== 'No date' ? `due ${r.accepted.due}` : null].filter(Boolean).map(t => ` · ${esc(t)}`).join('')}.
           <a href="#d-${esc(r.accepted.deliverable_id)}">See it on the board ↗</a>
         </div>` : ''}
       ${r.status === 'declined' && r.note ? `<div class="pt-request-declined"><strong>Our note:</strong> ${linkify(r.note)}</div>` : ''}

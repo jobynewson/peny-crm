@@ -105,7 +105,7 @@ export function inputAlertDays(env = process.env) {
 
 // ── The emails ───────────────────────────────────────────────────────────────
 
-function wrap({ title, subtitle, greeting, bodyHtml, href, linkLabel }) {
+export function wrap({ title, subtitle, greeting, bodyHtml, href, linkLabel }) {
   return `
 <!DOCTYPE html>
 <html>
@@ -128,7 +128,7 @@ function wrap({ title, subtitle, greeting, bodyHtml, href, linkLabel }) {
 </html>`
 }
 
-const card = (heading, lines = [], quote = null) => `
+export const card = (heading, lines = [], quote = null) => `
     <div style="border:1px solid #eee;border-left:3px solid #E5484D;border-radius:0 6px 6px 0;padding:12px 14px;margin:0 0 10px">
       <div style="font-size:15px;font-weight:600;color:#1a1a1a">${escapeHtml(heading)}</div>
       ${lines.filter(Boolean).map(l => `<div style="font-size:12px;color:#999;margin-top:4px">${escapeHtml(l)}</div>`).join('')}

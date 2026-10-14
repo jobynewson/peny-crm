@@ -83,6 +83,11 @@ export const KINDS = {
   // To the client, each with their own Approve link. Clients have no settings
   // page, so it always sends.
   delivery_ready:    { label: 'A delivery is ready for review', switchable: false, testable: true },
+  // To the client who sent a request: that we have it, and what we decided.
+  // Clients have no settings page, so these always send.
+  request_received:  { label: 'A client request was received', switchable: false, testable: true },
+  request_accepted:  { label: 'A client request was accepted', switchable: false, testable: true },
+  request_declined:  { label: 'A client request was declined', switchable: false, testable: true },
   leave:             { label: 'Leave requests and decisions', switchable: false },
   expense_digest:    { label: 'Monthly expense summary', switchable: false },
   expense_submitted: { label: 'Expenses submitted early', switchable: false },
