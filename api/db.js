@@ -35,10 +35,10 @@ const BATCH_HEADERS = {
 // A guard in the application, not a database boundary: a separate database
 // role would be needed to hold against a determined staff member (see
 // claude.md › Database access).
-const PERSONAL_TABLES = /(training_(profiles|sessions)|push_subscriptions)/i
+const PERSONAL_TABLES = /(training_(profiles|sessions)|push_subscriptions|push_log)/i
 const MIGRATION_DDL = [
-  /^\s*CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(training_(profiles|sessions)|push_subscriptions)\s*\(/i,
-  /^\s*CREATE\s+(UNIQUE\s+)?INDEX\s+IF\s+NOT\s+EXISTS\s+\w+\s+ON\s+(training_(profiles|sessions)|push_subscriptions)\s*\(/i,
+  /^\s*CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(training_(profiles|sessions)|push_subscriptions|push_log)\s*\(/i,
+  /^\s*CREATE\s+(UNIQUE\s+)?INDEX\s+IF\s+NOT\s+EXISTS\s+\w+\s+ON\s+(training_(profiles|sessions)|push_subscriptions|push_log)\s*\(/i,
 ]
 export function touchesPersonalTables(query) {
   if (!PERSONAL_TABLES.test(query)) return false

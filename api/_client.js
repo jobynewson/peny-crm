@@ -41,7 +41,7 @@ import { verifyClerkSession } from './_auth.js'
 import { isRateLimited, getClientIp } from './_ratelimit.js'
 import { companyScope, projectScope, deliveryScope, respondToDelivery, respondToDeliverable, undoCommentsIn, submitRequest, replyToWaiting } from './_worklist.js'
 import { hashToken } from './_delivery-mail.js'
-import { alertNewRequest, alertChangesRequested, alertClientReply, alertCommentsIn } from './_alerts.js'
+import { alertNewRequest, alertChangesRequested, alertClientReply, alertCommentsIn, alertApproved } from './_alerts.js'
 import { emailRequestUpdate } from './_request-mail.js'
 import { readClientView, readLinkView } from './_client-view.js'
 
@@ -169,7 +169,8 @@ async function respond(req, res, { sql, scope, params }) {
     const { status, code, message, field } = result.error
     return fail(res, status, code, message, field ? { field } : {})
   }
-  // Changes asked for, and comments being in, are urgent; an approval waits for the digest.
+  // Changes asked for, comments being in and approvals are all told straight away.
+  if (body.response === 'approved') await tellApproved(sql, result.delivery.deliverable_id, by.name, body.comment)
   if (body.response === 'changes_requested') {
     try {
       await alertChangesRequested(sql, { deliverableId: result.delivery.deliverable_id, comment: body.comment.trim(), by: by.name })
@@ -179,6 +180,15 @@ async function respond(req, res, { sql, scope, params }) {
   }
   if (body.response === 'comments_in') await tellCommentsIn(sql, result.delivery.deliverable_id, by.name)
   return res.status(200).json({ ok: true, view: await readClientView(sql, scope) })
+}
+
+// The owner hears straight away that something was approved. Never fails the answer.
+async function tellApproved(sql, deliverableId, name, comment) {
+  try {
+    await alertApproved(sql, { deliverableId, by: name, comment: typeof comment === 'string' && comment.trim() ? comment.trim() : null })
+  } catch (err) {
+    console.error('[client] approved alert failed:', err?.message)   // the answer is saved either way
+  }
 }
 
 // The owner hears straight away that feedback is complete (or that it is not).
@@ -205,7 +215,7 @@ async function undoComments(req, res, { sql, scope, params }) {
 // ── POST /api/client/deliverables/:id/response ───────────────────────────────
 // { response: 'approved' | 'changes_requested', comment } — the client's answer
 // to a deliverable Peny have marked delivered, when there is no round to answer.
-// Changes tell the owner straight away; an approval waits for the digest.
+// Changes and approvals tell the owner straight away.
 // Returns the fresh view.
 async function respondDelivered(req, res, { sql, scope, params }) {
   const body = readBody(req)
@@ -216,6 +226,7 @@ async function respondDelivered(req, res, { sql, scope, params }) {
     const { status, code, message, field } = result.error
     return fail(res, status, code, message, field ? { field } : {})
   }
+  if (body.response === 'approved') await tellApproved(sql, result.deliverable.id, by.name, body.comment)
   if (body.response === 'changes_requested') {
     try {
       await alertChangesRequested(sql, { deliverableId: result.deliverable.id, comment: body.comment.trim(), by: by.name })
@@ -273,6 +284,7 @@ async function approveViaLink(req, res, { sql, scope }) {
     const { status, code, message, field } = result.error
     return fail(res, status, code, message, field ? { field } : {})
   }
+  await tellApproved(sql, result.delivery.deliverable_id, by.name, body.comment)
   return res.status(200).json({ ok: true, link: await readLinkView(sql, scope) })
 }
 

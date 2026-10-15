@@ -185,6 +185,18 @@ export function commentsInEmail({ d, by, undone = false }) {
   }
 }
 
+export function approvedEmail({ d, by, comment = null }) {
+  return {
+    subject: `${d.company} approved: ${d.title}`,
+    title: 'Approved',
+    subtitle: `${d.company} · ${d.workstream}`,
+    sentence: `${escapeHtml(by || 'The client')} has approved this.`,
+    body: card(d.title, [d.due_date && `Due ${formatDay(d.due_date, today())}`], comment),
+    href: retainersLink(d),
+    linkLabel: 'Open the deliverable',
+  }
+}
+
 export function clientReplyEmail({ d, reply, by }) {
   return {
     subject: `${d.company} replied: ${d.title}`,
@@ -313,6 +325,14 @@ export async function alertCommentsIn(sql, { deliverableId, by, undone = false }
   const d = await loadDeliverableContext(sql, deliverableId)
   if (!d) return []
   return send(sql, { kind: 'alert_comments_in', ownerId: d.owner_id, companyId: d.company_id, email: commentsInEmail({ d, by, undone }) })
+}
+
+// An approval used to wait for the daily digest, which is paused, so it is
+// said straight away like the other answers.
+export async function alertApproved(sql, { deliverableId, by, comment = null }) {
+  const d = await loadDeliverableContext(sql, deliverableId)
+  if (!d) return []
+  return send(sql, { kind: 'alert_approved', ownerId: d.owner_id, companyId: d.company_id, email: approvedEmail({ d, by, comment }) })
 }
 
 export async function alertClientReply(sql, { deliverableId, reply, by }) {

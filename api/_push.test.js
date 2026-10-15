@@ -12,12 +12,13 @@ const { pushFor } = await import('./_alerts.js')
 const { ROUTES, endpointHash } = await import('./_push-routes.js')
 
 // A fake database: the subscriptions on file, the stored settings, every write.
-let subs, settings, writes, testMode
+let subs, settings, writes, testMode, testers
 const sql = async (strings, ...values) => {
   const text = strings.join('?')
   if (text.includes('FROM push_subscriptions WHERE clerk_user_id')) return subs.filter(s => s.clerk_user_id === values[0])
   if (text.includes('FROM notification_settings')) return settings
-  if (text.includes('FROM settings WHERE test_mode')) return testMode ? [{ test_mode: true, test_emails: [] }] : []
+  if (text.includes('FROM settings WHERE test_mode')) return testMode ? [{ test_mode: true, test_emails: testMode === true ? [] : testMode }] : []
+  if (text.includes('FROM app_users')) return testers
   writes.push({ text: text.replace(/\s+/g, ' ').trim(), values })
   return []
 }
@@ -31,6 +32,7 @@ beforeEach(() => {
   settings = []
   writes = []
   testMode = false
+  testers = []
   sendNotification.mockReset()
   sendNotification.mockResolvedValue({ statusCode: 201 })
   sendMail.mockClear()
@@ -136,11 +138,36 @@ describe('notify with push', () => {
     expect(out.sent).toBe(true)
     expect(out.push.failed).toBe(1)
   })
-  it('does not push in testing mode, where the real person must hear nothing', async () => {
+  it('in testing mode the testers get the push, titled with who it was for, and the real person nothing', async () => {
+    testMode = ['tess@peny.com']
+    testers = [{ clerk_id: 'user_tess' }]
+    subs = [sub('t1', { clerk_user_id: 'user_tess' })]
+    const [out] = await notify(sql, { kind: 'task_assigned', to: ana, subject: 's', html: 'h', push: alert })
+    expect(out.push).toMatchObject({ redirected_to: 1, sent: 1 })
+    expect(sendNotification).toHaveBeenCalledTimes(1)
+    expect(sendNotification.mock.calls[0][0].endpoint).toBe('https://push.example/t1')
+    expect(JSON.parse(sendNotification.mock.calls[0][1]).title).toBe('[TEST → ana@peny.com] New task for you')
+    expect(writes.some(w => w.text.startsWith('INSERT INTO push_log') && w.values.includes('user_ana') && w.values.includes('skipped'))).toBe(true)
+  })
+  it('in testing mode with no tester who has an account, nobody is pushed', async () => {
     testMode = true
     const [out] = await notify(sql, { kind: 'task_assigned', to: ana, subject: 's', html: 'h', push: alert })
-    expect(out.push).toEqual({ skipped: 'test_mode' })
+    expect(out.push).toEqual({ skipped: 'test_mode_no_recipients' })
     expect(sendNotification).not.toHaveBeenCalled()
+  })
+  it('records what happened, including why it was skipped', async () => {
+    settings = [{ clerk_user_id: 'user_ana', email: null, push: false }]
+    await notify(sql, { kind: 'task_assigned', to: ana, subject: 's', html: 'h', push: alert })
+    subs = []
+    settings = []
+    await notify(sql, { kind: 'task_assigned', to: ana, subject: 's', html: 'h', push: alert })
+    const logs = writes.filter(w => w.text.startsWith('INSERT INTO push_log'))
+    expect(logs.map(l => l.values[3])).toEqual(['skipped', 'skipped'])
+    expect(logs.map(l => l.values[4])).toEqual(['setting', 'no_devices'])
+  })
+  it('keeps only the newest 30 per person', async () => {
+    await sendPush(sql, { clerkId: 'user_ana', kind: 'test', title: 't', body: 'b', url: '/' })
+    expect(writes.some(w => w.text.startsWith('DELETE FROM push_log') && w.text.includes('LIMIT 30'))).toBe(true)
   })
   it('has no push for someone without an account id', async () => {
     const [out] = await notify(sql, { kind: 'task_assigned', to: { email: 'x@y.com' }, subject: 's', html: 'h', push: alert })
@@ -159,7 +186,7 @@ describe('which kinds push', () => {
   it('is exactly the task and attention alerts', () => {
     const kinds = Object.entries(KINDS).filter(([, k]) => k.push).map(([k]) => k).sort()
     expect(kinds).toEqual([
-      'alert_changes_requested', 'alert_client_reply', 'alert_comments_in', 'alert_due_soon', 'alert_input_overdue',
+      'alert_approved', 'alert_changes_requested', 'alert_client_reply', 'alert_comments_in', 'alert_due_soon', 'alert_input_overdue',
       'alert_new_request', 'alert_unassigned', 'task_assigned', 'task_mentioned',
     ])
   })

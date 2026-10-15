@@ -978,8 +978,19 @@ always the source of truth and nothing is ever read back from Google.
   row and the device is dropped after `MAX_FAILURES` in a row. The table is in
   `PERSONAL_TABLES` in `api/db.js`, so a browser can never read others' addresses
   through the query proxy.
-- **Testing mode** sends **no** push for testable kinds: the testers get the
-  email redirect, and the real person's phone stays quiet.
+- **Testing mode**: for testable kinds the push goes to the testers' phones (the
+  tester addresses that match a Slate account), titled `[TEST → who]`, and the
+  real person's phone stays quiet, the same as the email redirect.
+- **Why didn't I get it?** `push_log` (`drizzle/0051`) keeps each person's last 30
+  push attempts with the outcome (sent / failed / skipped and why); Settings ›
+  Notifications lists the newest 15. No row means the person was not a recipient
+  (alerts go to the deliverable's owner, else the company lead, else the
+  assignment lead, else the superadmins).
+- **When**: an alert caused by a client's button (new request, changes, comments
+  in, reply, approval) is sent inside that request, email and push together, so it
+  lands in seconds. `alert_due_soon`, `alert_input_overdue` and `alert_unassigned`
+  come from the hourly cron (07:00 to 20:00 London). `alert_approved` replaces the
+  approvals section of the paused daily digest.
 - **A tap opens the thing itself**: task alerts go to `#tasks/<id>`, a new client
   request to `#tasks/request/<id>` (its accept / decline sheet), deliverable alerts
   to that deliverable on its project's Worklist tab, a single unassigned item to

@@ -973,6 +973,18 @@ export const push_subscriptions = pgTable('push_subscriptions', {
   failures:      integer('failures').notNull().default(0),
 })
 
+// ── Recent push notifications (drizzle/0051_add_push_log.sql) ────────────────
+// The last 30 per person and what happened to each. Written by api/_push.js.
+export const push_log = pgTable('push_log', {
+  id:            uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  clerk_user_id: text('clerk_user_id').notNull(),
+  kind:          text('kind'),
+  title:         text('title'),
+  outcome:       text('outcome').notNull(),
+  detail:        text('detail'),
+  created_at:    timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 // ── Personal Tools › Training (drizzle/0046_add_training.sql) ─────────────────
 // One profile per person (their sport, cool-down areas, kit and Build-a-session
 // settings) and one row per completed session. Both are keyed by the owner's

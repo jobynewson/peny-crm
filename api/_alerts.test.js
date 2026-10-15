@@ -13,6 +13,18 @@ const ana = { id: 'a', email: 'ana@peny.com', name: 'Ana' }
 const lee = { id: 'l', email: 'lee@peny.com', name: 'Lee' }
 const boss = { id: 'b', email: 'boss@peny.com', name: 'Boss' }
 
+describe('an approval is told straight away', () => {
+  it('says who approved what, with their comment, and opens the deliverable', async () => {
+    const { approvedEmail } = await import('./_alerts.js')
+    const d = { id: 'd1', title: 'Hero film', company: 'DMM', workstream: 'Launch', project_id: 'p1', company_id: 'c1', due_date: '2026-10-30' }
+    const e = approvedEmail({ d, by: 'Sam', comment: 'Love it' })
+    expect(e.subject).toBe('DMM approved: Hero film')
+    expect(e.sentence).toContain('Sam has approved')
+    expect(e.body).toContain('Love it')
+    expect(e.href).toMatch(/#projects\/p1\/worklist\/d1$/)
+  })
+})
+
 describe('who hears', () => {
   it('the owner, when there is one', () => {
     expect(resolveRecipients({ owner: ana, lead: lee, superadmins: [boss] })).toEqual({ via: 'owner', to: [ana] })

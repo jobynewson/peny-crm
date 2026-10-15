@@ -51,11 +51,39 @@ export const payloadFor = ({ title, body, url }) => JSON.stringify({
   url: safeUrl(url),
 })
 
+// One line in the person's own recent-notifications list (Settings ›
+// Notifications), so "why didn't I get that?" has an answer. Newest 30 kept.
+//   outcome: 'sent' | 'failed' | 'skipped' | 'error'; detail says why.
+export async function logPush(sql, { clerkId, kind, title, outcome, detail = null }) {
+  try {
+    await sql`
+      INSERT INTO push_log (clerk_user_id, kind, title, outcome, detail)
+      VALUES (${clerkId}, ${kind ?? null}, ${clip(title, 120)}, ${outcome}, ${detail ? clip(detail, 200) : null})
+    `
+    await sql`
+      DELETE FROM push_log WHERE clerk_user_id = ${clerkId}
+        AND id NOT IN (SELECT id FROM push_log WHERE clerk_user_id = ${clerkId} ORDER BY created_at DESC, id DESC LIMIT 30)
+    `
+  } catch (err) { console.warn('[push] could not write the log:', err.message) }
+}
+
 // Sends to one person's devices.
 //   → { skipped: 'not_configured' | 'no_devices' }
 //   | { sent, failed, removed, devices: [{ id, ok, status?, error? }] }
 // Never throws.
 export async function sendPush(sql, { clerkId, kind, title, body, url }) {
+  const out = await deliverPush(sql, { clerkId, kind, title, body, url })
+  const detail = out.skipped ?? out.error
+    ?? (out.failed || out.removed ? [out.failed && `${out.failed} failed`, out.removed && `${out.removed} removed`].filter(Boolean).join(', ') : null)
+  await logPush(sql, {
+    clerkId, kind, title,
+    outcome: out.error ? 'error' : out.skipped ? 'skipped' : out.sent ? 'sent' : 'failed',
+    detail: out.devices?.find(d => d.error)?.error ?? detail,
+  })
+  return out
+}
+
+async function deliverPush(sql, { clerkId, kind, title, body, url }) {
   try {
     if (!ready()) return { skipped: 'not_configured' }
     const subs = await sql`

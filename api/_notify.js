@@ -12,7 +12,7 @@
 // NOT a Vercel function — the `_` prefix keeps it out of function detection.
 
 import nodemailer from 'nodemailer'
-import { sendPush } from './_push.js'
+import { sendPush, logPush } from './_push.js'
 
 // Every kind of email Slate sends. A `switchable` kind is listed in Settings ›
 // Notifications and each person can turn it off (or on, if it defaults off);
@@ -55,6 +55,11 @@ export const KINDS = {
     label: 'New client requests',
     description: 'An email as soon as a client raises a request.',
     switchable: true, default: true, push: true, testable: true,
+  },
+  alert_approved: {
+    label: 'Client approvals',
+    description: 'An email as soon as a client approves a delivery.',
+    switchable: true, default: true, testable: true, push: true,
   },
   alert_changes_requested: {
     label: 'Changes requested',
@@ -206,8 +211,12 @@ export async function notify(sql, { kind, to, subject, html, push }) {
   const results = []
   for (const r of recipients) {
     const mine = r.clerk_id ? stored.get(r.clerk_id) : undefined
-    const result = await emailOne(kind, r, { subject, html, routing, setting: mine?.email })
-    if (wantPush) result.push = await pushOne(sql, kind, r, { push, routing, setting: mine?.push })
+    // Together, so a slow mail server never holds the phone alert back.
+    const [result, pushed] = await Promise.all([
+      emailOne(kind, r, { subject, html, routing, setting: mine?.email }),
+      wantPush ? pushOne(sql, kind, r, { push, routing, setting: mine?.push }) : null,
+    ])
+    if (wantPush) result.push = pushed
     results.push(result)
   }
   return results
@@ -237,12 +246,27 @@ async function emailOne(kind, r, { subject, html, routing, setting }) {
   }
 }
 
-// → { skipped: 'no_account' | 'setting' | 'test_mode' } | sendPush()'s outcome.
-// In testing mode a push goes nowhere: it would reach the real person's phone,
-// and the testers' redirect is an email thing.
+// → { skipped: 'no_account' | 'setting' | 'test_mode_no_recipients' } | sendPush()'s outcome.
+// In testing mode the real person's phone stays quiet and the testers' phones
+// get it instead, titled with who it was for (the email does the same).
 async function pushOne(sql, kind, r, { push, routing, setting }) {
   if (!r.clerk_id) return { skipped: 'no_account' }
-  if (!wantsPush(kind, setting)) return { skipped: 'setting' }
-  if (routing) return { skipped: 'test_mode' }
-  return sendPush(sql, { clerkId: r.clerk_id, kind, ...push })
+  if (!wantsPush(kind, setting)) {
+    await logPush(sql, { clerkId: r.clerk_id, kind, title: push.title, outcome: 'skipped', detail: 'setting' })
+    return { skipped: 'setting' }
+  }
+  if (!routing) return sendPush(sql, { clerkId: r.clerk_id, kind, ...push })
+
+  const testers = routing.emails.length
+    ? await sql`SELECT clerk_id FROM app_users WHERE lower(email) = ANY(${routing.emails.map(e => e.toLowerCase())}::text[]) AND clerk_id IS NOT NULL`
+    : []
+  if (!testers.length) {
+    await logPush(sql, { clerkId: r.clerk_id, kind, title: push.title, outcome: 'skipped', detail: 'test_mode_no_recipients' })
+    return { skipped: 'test_mode_no_recipients' }
+  }
+  const sent = await Promise.all(testers.map(t =>
+    sendPush(sql, { clerkId: t.clerk_id, kind, ...push, title: testSubject(push.title, r.email ?? 'someone') })))
+  // The real person is told nothing; their log says why.
+  await logPush(sql, { clerkId: r.clerk_id, kind, title: push.title, outcome: 'skipped', detail: 'test_mode' })
+  return { redirected_to: testers.length, sent: sent.reduce((n, o) => n + (o.sent ?? 0), 0) }
 }

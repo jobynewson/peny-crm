@@ -991,6 +991,12 @@ kbd { font-family: var(--font-mono); }
 .push-devs { display: flex; flex-direction: column; gap: 6px; }
 .push-dev { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--text-primary); }
 .push-bad { color: var(--danger); }
+.push-ok { color: var(--text-secondary); }
+.push-log { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.push-log-head { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.push-log-row { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; align-items: baseline; }
+.push-log-when { color: var(--text-tertiary); min-width: 70px; }
+.push-log-what { color: var(--text-primary); }
 .notif-desc { display: block; font-size: 12px; color: var(--text-tertiary); line-height: 1.5; margin-top: 2px; }
 
 /* ── Company field (src/views/company-field.js) ── */

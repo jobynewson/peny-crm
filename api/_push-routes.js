@@ -35,11 +35,20 @@ async function devicesFor(sql, clerkId) {
   return rows.map(({ endpoint, ...d }) => ({ ...d, endpoint_hash: endpointHash(endpoint) }))
 }
 
+// What happened to your last few notifications: sent, failed, or skipped and why.
+async function logFor(sql, clerkId) {
+  return sql`
+    SELECT kind, title, outcome, detail, created_at FROM push_log
+    WHERE clerk_user_id = ${clerkId} ORDER BY created_at DESC, id DESC LIMIT 15
+  `
+}
+
 async function status(req, res, { sql, user }) {
   return res.status(200).json({
     configured: pushConfigured(),
     publicKey: vapidPublicKey(),
     devices: await devicesFor(sql, user.clerk_id),
+    log: await logFor(sql, user.clerk_id),
   })
 }
 
@@ -85,5 +94,5 @@ async function sendTest(req, res, { sql, user }) {
     clerkId: user.clerk_id, kind: 'test',
     title: 'Slate test notification', body: 'If you can read this, push is working on this device.', url: '/#settings',
   })
-  return res.status(200).json({ result, devices: await devicesFor(sql, user.clerk_id) })
+  return res.status(200).json({ result, devices: await devicesFor(sql, user.clerk_id), log: await logFor(sql, user.clerk_id) })
 }

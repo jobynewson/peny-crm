@@ -38,7 +38,7 @@ export const db = drizzle(sql, { schema })
 // them only while the database's recorded version is behind this one; the
 // normal boot is a single read. src/db/migrations-version.test.js fails if the
 // statements change and this doesn't.
-export const SCHEMA_VERSION = 8
+export const SCHEMA_VERSION = 9
 
 export async function runMigrations() {
   let current = 0
@@ -921,6 +921,20 @@ async function applyMigrations() {
   await sql`CREATE INDEX IF NOT EXISTS push_subscriptions_user_idx ON push_subscriptions (clerk_user_id)`
   await sql`ALTER TABLE notification_settings ADD COLUMN IF NOT EXISTS push BOOLEAN`
   await sql`ALTER TABLE notification_settings ALTER COLUMN email DROP NOT NULL`
+
+  // ── The recent push notifications each person was sent (drizzle/0051) ───────
+  await sql`
+    CREATE TABLE IF NOT EXISTS push_log (
+      id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      clerk_user_id  TEXT NOT NULL,
+      kind           TEXT,
+      title          TEXT,
+      outcome        TEXT NOT NULL,
+      detail         TEXT,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS push_log_user_idx ON push_log (clerk_user_id, created_at DESC)`
 
   // ── Who looks after unassigned work (drizzle/0048) ─────────────────────────
   await sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS assignment_lead_id UUID REFERENCES app_users(id) ON DELETE SET NULL`

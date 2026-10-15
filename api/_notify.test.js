@@ -112,7 +112,7 @@ describe('testing mode', () => {
 
   it('redirects only the emails about the worklist and portal work', () => {
     expect(TESTABLE_KINDS.sort()).toEqual([
-      'alert_changes_requested', 'alert_client_reply', 'alert_comments_in', 'alert_due_soon', 'alert_input_overdue',
+      'alert_approved', 'alert_changes_requested', 'alert_client_reply', 'alert_comments_in', 'alert_due_soon', 'alert_input_overdue',
       'alert_new_request', 'alert_unassigned', 'delivery_ready', 'due_digest', 'request_accepted', 'request_declined',
       'request_received', 'task_assigned',
     ])

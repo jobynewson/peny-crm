@@ -3166,7 +3166,26 @@ export class App {
       head = `<div class="push-state"><span><strong>Get alerts on this device.</strong><span class="push-sub">New tasks, mentions and client alerts, even when Slate is closed.</span></span>
         <span class="push-actions"><button class="btn-primary" id="push-on">Turn on push</button></span></div>`
     }
-    box.innerHTML = head + (status.devices.length ? `<div class="push-devs">${status.devices.map(deviceLine).join('')}</div>` : '')
+    const outcomeText = l => {
+      if (l.outcome === 'sent') return '<span class="push-ok">Delivered</span>'
+      const why = {
+        setting: 'Push is switched off for this alert in your settings',
+        no_devices: 'No device is set up for push',
+        not_configured: 'Push is not set up on this Slate',
+        test_mode: 'Testing mode is on, so it went to the testers instead',
+        test_mode_no_recipients: 'Testing mode is on but no tester has a Slate account',
+      }[l.detail]
+      if (l.outcome === 'skipped') return `<span class="push-sub">Not sent. ${esc(why || l.detail || '')}</span>`
+      return `<span class="push-bad">Failed${l.detail ? `: ${esc(l.detail)}` : ''}</span>`
+    }
+    const logHtml = `
+      <div class="push-log">
+        <div class="push-log-head">Your recent notifications</div>
+        ${(status.log ?? []).length ? status.log.map(l => `
+          <div class="push-log-row"><span class="push-log-when">${esc(ago(l.created_at))}</span><span class="push-log-what">${esc(l.title || l.kind || '')}</span>${outcomeText(l)}</div>`).join('')
+          : '<div class="push-note">Nothing yet. An alert goes to a deliverable’s owner, else the company’s lead, else whoever looks after unassigned work, else the superadmins, so if you were not that person nothing shows here.</div>'}
+      </div>`
+    box.innerHTML = head + (status.devices.length ? `<div class="push-devs">${status.devices.map(deviceLine).join('')}</div>` : '') + logHtml
 
     const act = (sel, fn, busy) => box.querySelector(sel)?.addEventListener('click', async ev => {
       const btn = ev.currentTarget
