@@ -960,6 +960,39 @@ always the source of truth and nothing is ever read back from Google.
 - Viewers don't get Settings (the account menu hides it), so their emails stay
   at the defaults.
 
+### Web push for staff (`drizzle/0050`)
+- Staff get task and attention alerts on their phone or browser **as well as** by
+  email. `notify()` takes an optional `push: { title, body, url }`; for kinds with
+  `push: true` in `KINDS` (task assigned, mentioned, and every `alert_*`) it also
+  calls `sendPush()` in `api/_push.js` (the `web-push` package). Email and push
+  are independent: a failure in one never stops the other, and a push works on a
+  deployment with no mail set up. Results carry a `push` outcome per recipient.
+- **Per person, per kind**: `notification_settings.push` (null = on). Settings ›
+  Notifications shows an Email and a Push switch on each row, plus a "this device"
+  block: turn push on for this browser, send a test, and a list of every device
+  with when it last got something or why it last failed. `email` is nullable
+  now, so a row that only sets push leaves email on its default.
+- **Devices**: `push_subscriptions` (one row per browser, unique `endpoint`),
+  managed by `/api/push/*` (`api/push.js`, routes in `_push-routes.js`). A 404/410
+  from the browser removes the device at once; other failures are recorded on the
+  row and the device is dropped after `MAX_FAILURES` in a row. The table is in
+  `PERSONAL_TABLES` in `api/db.js`, so a browser can never read others' addresses
+  through the query proxy.
+- **Testing mode** sends **no** push for testable kinds: the testers get the
+  email redirect, and the real person's phone stays quiet.
+- **Browser side**: `public/sw.js` (shows the notification; a tap opens the task
+  or page via a fresh load of its URL), `public/manifest.webmanifest` + icons
+  (installable, which iPhones need before they allow push), `src/push.js`
+  (permission, subscribe, `syncPushDevice()` on every start).
+- **Setup**: `node scripts/generate-vapid-keys.js`, then set `VAPID_PUBLIC_KEY`,
+  `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` in Vercel. Without them push is simply off.
+  Changing the keys later switches every device off (people turn it back on).
+- **The 09:00 "What's due" email is paused** (`KINDS.due_digest.paused`): not sent,
+  not listed in Settings, and the cron run does nothing. Remove the flag to bring
+  it back (its integration tests are `describe.skip` in `_reminders-alerts`).
+- Not pushed: task comments/completions (in-app only), the 14:00 unacknowledged
+  nudge, reminders, leave, expenses.
+
 ### Delivered and approved are separate (`drizzle/0040`)
 - **Two things, two owners.** The staff tick is `deliverables.delivered_at`
   (set by `PATCH retainers/deliverables/:id { delivered: true|false }`, from the

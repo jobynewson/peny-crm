@@ -128,7 +128,18 @@ describeDb('the alerts job and the digest', () => {
     })
   })
 
-  describe('the digest', () => {
+  // The 09:00 email is paused (KINDS.due_digest.paused in _notify.js). These
+  // are its tests, kept for when it comes back: swap describe.skip for describe.
+  describe('the digest while paused', () => {
+    it('sends nothing', async () => {
+      at('2027-09-29T09:00:10Z')
+      await approve('Owned reel', { when: '2027-09-28T15:00:00Z' })
+      await run('deliverables')
+      expect(digests()).toEqual([])
+    })
+  })
+
+  describe.skip('the digest', () => {
     it('carries what was approved since the last one, to the owner — and to the lead when there was no owner', async () => {
       at('2027-09-29T09:00:10Z')   // Wednesday's run: window is Tue 09:00 - Wed 09:00
       await approve('Owned reel', { when: '2027-09-28T15:00:00Z' })

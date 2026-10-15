@@ -6,6 +6,12 @@
     { "path": "/api/reminders?type=task-nudge", "schedule": "0 14 * * *" },
     { "path": "/api/reminders?type=alerts", "schedule": "0 * * * *" }
   ],
+  "headers": [
+    { "source": "/sw.js", "headers": [
+      { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
+      { "key": "Service-Worker-Allowed", "value": "/" }
+    ] }
+  ],
   "rewrites": [
     { "source": "/api/offloads", "destination": "/api/portal?view=offloads" },
     { "source": "/api/tasks",              "destination": "/api/portal?view=tasks&route=tasks" },
@@ -13,6 +19,7 @@
     { "source": "/api/notifications",      "destination": "/api/portal?view=tasks&route=notifications" },
     { "source": "/api/notifications/(.*)", "destination": "/api/portal?view=tasks&route=notifications/$1" },
     { "source": "/api/retainers/(.*)",     "destination": "/api/retainers?route=retainers/$1" },
+    { "source": "/api/push/(.*)",          "destination": "/api/push?route=push/$1" },
     { "source": "/api/companies/(.*)",     "destination": "/api/companies?route=companies/$1" },
     { "source": "/api/training/(.*)",      "destination": "/api/training?route=training/$1" },
     { "source": "/api/pdf-documents/(.*)", "destination": "/api/pdf-documents?route=pdf-documents/$1" },

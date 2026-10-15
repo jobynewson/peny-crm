@@ -951,8 +951,26 @@ export const action_links = pgTable('action_links', {
 export const notification_settings = pgTable('notification_settings', {
   clerk_user_id: text('clerk_user_id').notNull(),
   kind:          text('kind').notNull(),
-  email:         boolean('email').notNull(),
+  email:         boolean('email'),   // null = the kind's default
+  push:          boolean('push'),    // null = the kind's default (drizzle/0050)
   updated_at:    timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// ── Web push (drizzle/0050_add_web_push.sql) ─────────────────────────────────
+// One row per device a person has switched push on for. Read and written only
+// through /api/push and api/_push.js.
+export const push_subscriptions = pgTable('push_subscriptions', {
+  id:            uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  clerk_user_id: text('clerk_user_id').notNull(),
+  endpoint:      text('endpoint').notNull().unique(),
+  p256dh:        text('p256dh').notNull(),
+  auth:          text('auth').notNull(),
+  user_agent:    text('user_agent'),
+  created_at:    timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  last_ok_at:    timestamp('last_ok_at', { withTimezone: true }),
+  last_error:    text('last_error'),
+  last_error_at: timestamp('last_error_at', { withTimezone: true }),
+  failures:      integer('failures').notNull().default(0),
 })
 
 // ── Personal Tools › Training (drizzle/0046_add_training.sql) ─────────────────

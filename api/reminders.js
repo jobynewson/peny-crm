@@ -1,6 +1,6 @@
 // api/reminders.js
 // Vercel Cron Jobs call this endpoint via ?type=:
-//   deliverables  — 09:00 UTC daily  — the What's due email: overdue / due ≤3 days
+//   deliverables  — 09:00 UTC daily  — the What's due email: overdue / due ≤3 days (PAUSED: see KINDS.due_digest)
 //   notes         — 21:00 UTC daily  — note reminders due in ~36h
 //   expense-digest — 09:00 UTC daily  — monthly expense summary (2nd-to-last working day only)
 //   task-nudge    — 14:00 UTC daily  — unacknowledged task nudge, then archives
@@ -16,7 +16,7 @@
 
 import { neon } from '@neondatabase/serverless'
 import { verifyClerkUser } from './_auth.js'
-import { notify, mailConfigured } from './_notify.js'
+import { notify, mailConfigured, KINDS } from './_notify.js'
 import { syncLeaveRequestGoogle } from './google.js'
 import { dueFeed, dueMeta } from './_due-feed.js'
 import { workspaceId } from './_api.js'
@@ -152,7 +152,9 @@ export default async function handler(req, res) {
   // owner isn't emailed. Outstanding unacknowledged tasks ride at the top, and
   // anyone with some is included even with nothing due — otherwise the
   // section would miss exactly the people it is for.
-  if (type === 'deliverables') {
+  // Paused (KINDS.due_digest.paused in _notify.js): the run does nothing, so it
+  // does not even read the due feed. Drop the flag to bring the email back.
+  if (type === 'deliverables' && !KINDS.due_digest.paused) {
     const ws = await workspaceId(sql)
     const { items } = await dueFeed(sql, { ws, days: 3 })
     const users = await sql`SELECT id, clerk_id, name, email, role FROM app_users`

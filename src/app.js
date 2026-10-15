@@ -91,6 +91,7 @@ export class App {
     this._loadNotes()         // notes are also indexed by ⌘K search
     this.tasksView.watchUnread()  // the header bell's count
     this.watchRequests()          // the Requests tab's count
+    import('./push.js').then(m => m.syncPushDevice())  // keep this device's push subscription current
     this._bindKeyboard()
     this._bindNavLinks()
     this._bindDateRangeLinks()
@@ -2237,9 +2238,10 @@ export class App {
     // switch saves as soon as it changes.
     const notificationsPanel = `
         <div class="panel">
-          <div class="panel-header"><span class="panel-title">Email notifications</span></div>
+          <div class="panel-header"><span class="panel-title">Notifications</span></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:12px">
-            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Choose which emails Slate sends you. Leave, expenses and the nudge for an unacknowledged task always send.</div>
+            <div id="push-device" class="push-device" aria-live="polite"></div>
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Choose which alerts Slate sends you, by email and, where it says Push, to your phone or browser. Leave, expenses and the nudge for an unacknowledged task always email.</div>
             <div id="notif-settings" class="notif-settings" aria-live="polite"><div style="font-size:12px;color:var(--text-tertiary)">Loading…</div></div>
           </div>
         </div>`
@@ -3065,27 +3067,30 @@ export class App {
     const box = mc.querySelector('#notif-settings')
     if (!box) return
     const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
+    this._loadPushDevice(mc)
     let list
     try {
       const { getNotificationSettings } = await import('./api/notification-settings.js')
       list = await getNotificationSettings()
     } catch (e) {
       console.error(e)
-      box.innerHTML = `<div style="font-size:12px;color:var(--danger)">Couldn't load your email settings.</div>`
+      box.innerHTML = `<div style="font-size:12px;color:var(--danger)">Couldn't load your notification settings.</div>`
       return
     }
     if (!box.isConnected) return
+    const sw = (kind, channel, label, on) => `
+      <label class="notif-switch"><input type="checkbox" data-notif-kind="${esc(kind)}" data-notif-channel="${channel}" ${on ? 'checked' : ''} /><span>${label}</span></label>`
     box.innerHTML = list.map(n => `
-      <label class="notif-row">
-        <input type="checkbox" data-notif-kind="${esc(n.kind)}" ${n.email ? 'checked' : ''} />
-        <span><span class="notif-label">${esc(n.label)}</span><span class="notif-desc">${esc(n.description)}</span></span>
-      </label>`).join('')
+      <div class="notif-row">
+        <span class="notif-text"><span class="notif-label">${esc(n.label)}</span><span class="notif-desc">${esc(n.description)}</span></span>
+        <span class="notif-switches">${sw(n.kind, 'email', 'Email', n.email)}${n.push == null ? '' : sw(n.kind, 'push', 'Push', n.push)}</span>
+      </div>`).join('')
     box.querySelectorAll('[data-notif-kind]').forEach(cb => {
       cb.addEventListener('change', async () => {
         cb.disabled = true
         try {
           const { setNotificationSetting } = await import('./api/notification-settings.js')
-          await setNotificationSetting(cb.dataset.notifKind, cb.checked)
+          await setNotificationSetting(cb.dataset.notifKind, { [cb.dataset.notifChannel]: cb.checked })
           this.toast('Saved')
         } catch (e) {
           console.error(e)
@@ -3094,6 +3099,84 @@ export class App {
         } finally { cb.disabled = false }
       })
     })
+  }
+
+  // "This device": whether this phone or browser gets push, with a test button
+  // and the list of every device that does (so a missing alert can be traced).
+  async _loadPushDevice(mc) {
+    const box = mc.querySelector('#push-device')
+    if (!box) return
+    const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
+    const push = await import('./push.js')
+    let status
+    try { status = await push.getPushStatus() } catch (e) {
+      console.error(e)
+      box.innerHTML = `<div class="push-note">Couldn't load your push settings.</div>`
+      return
+    }
+    if (!box.isConnected) return
+    const support = push.pushSupport()
+    const here = await push.thisDeviceHash()
+    const mine = status.devices.find(d => d.endpoint_hash === here)
+    const ago = iso => {
+      if (!iso) return null
+      const mins = Math.max(0, Math.round((Date.now() - new Date(iso)) / 60000))
+      return mins < 2 ? 'just now' : mins < 90 ? `${mins} min ago` : mins < 2880 ? `${Math.round(mins / 60)} hours ago` : `${Math.round(mins / 1440)} days ago`
+    }
+    const deviceName = ua => /iPhone/.test(ua || '') ? 'iPhone' : /iPad/.test(ua || '') ? 'iPad' : /Android/.test(ua || '') ? 'Android' : /Mac OS/.test(ua || '') ? 'Mac' : /Windows/.test(ua || '') ? 'Windows' : 'Device'
+    const deviceLine = d => {
+      const state = d.last_error ? `<span class="push-bad">Last send failed ${ago(d.last_error_at) ?? ''}: ${esc(d.last_error)}</span>`
+        : d.last_ok_at ? `Last delivered ${ago(d.last_ok_at)}` : 'Nothing sent yet'
+      return `<div class="push-dev"><span><strong>${deviceName(d.user_agent)}${d.endpoint_hash === here ? ' (this device)' : ''}</strong><span class="push-sub">${state}</span></span>
+        <button class="btn-cancel" data-push-remove="${esc(d.id)}">Remove</button></div>`
+    }
+
+    let head
+    if (!status.configured) {
+      head = `<div class="push-note">Push isn't switched on for this Slate yet. An admin needs to add its keys first.</div>`
+    } else if (mine) {
+      head = `<div class="push-state"><span><strong>Push is on for this device.</strong></span>
+        <span class="push-actions"><button class="btn-cancel" id="push-test">Send a test</button><button class="btn-cancel" id="push-off">Turn off</button></span></div>`
+    } else if (support.state !== 'ready') {
+      head = `<div class="push-note">${esc(support.message)}</div>`
+    } else {
+      head = `<div class="push-state"><span><strong>Get alerts on this device.</strong><span class="push-sub">New tasks, mentions and client alerts, even when Slate is closed.</span></span>
+        <span class="push-actions"><button class="btn-primary" id="push-on">Turn on push</button></span></div>`
+    }
+    box.innerHTML = head + (status.devices.length ? `<div class="push-devs">${status.devices.map(deviceLine).join('')}</div>` : '')
+
+    const act = (sel, fn, busy) => box.querySelector(sel)?.addEventListener('click', async ev => {
+      const btn = ev.currentTarget
+      btn.disabled = true
+      const label = btn.textContent
+      if (busy) btn.textContent = busy
+      try { await fn() } catch (e) { console.error(e); this.toastError(e.message || 'Something went wrong') }
+      finally { btn.disabled = false; btn.textContent = label }
+    })
+    act('#push-on', async () => {
+      await push.enablePush(status.publicKey)
+      this.toast('Push is on for this device')
+      // Prove it right away, so a broken setup shows now, not on the next real alert.
+      await push.sendTestPush().catch(() => {})
+      await this._loadPushDevice(mc)
+    }, 'Turning on…')
+    act('#push-off', async () => { await push.disablePush(); this.toast('Push is off for this device'); await this._loadPushDevice(mc) })
+    act('#push-test', async () => {
+      const { result } = await push.sendTestPush()
+      if (result?.sent) this.toast('Test sent. It should arrive in a moment.')
+      else if (result?.skipped === 'no_devices') this.toastError('No devices are set up for push.')
+      else this.toastError('The test could not be delivered. See the device list for why.')
+      await this._loadPushDevice(mc)
+    }, 'Sending…')
+    box.querySelectorAll('[data-push-remove]').forEach(btn => btn.addEventListener('click', async () => {
+      btn.disabled = true
+      try {
+        const id = btn.dataset.pushRemove
+        const isHere = status.devices.find(d => d.id === id)?.endpoint_hash === here
+        if (isHere) await push.disablePush(); else await push.removePushDevice(id)
+        await this._loadPushDevice(mc)
+      } catch (e) { console.error(e); btn.disabled = false; this.toastError("Couldn't remove that device") }
+    }))
   }
 
   async _saveExpenseSettings(mc) {
