@@ -63,6 +63,9 @@ export const settings = pgTable('settings', {
   // deliverable has had no owner for two working days, and about anything
   // unowned that has no company lead. NULL = the superadmins.
   assignment_lead_id: uuid('assignment_lead_id').references(() => app_users.id, { onDelete: 'set null' }),
+  // Links to the team's other apps, shown under Apps in the account menu
+  // (drizzle/0050): [{ name, url }], http(s) only.
+  app_links: jsonb('app_links').notNull().default([]),
   ...timestamps,
 })
 

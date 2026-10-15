@@ -3,6 +3,7 @@
 // takes the page background so it joins the content below.
 
 import { icon } from './icons.js'
+import { visibleAppLinks } from './app-links.js'
 import { openFloating } from './popover.js'
 import { getThemeChoice, setThemeChoice } from '../theme.js'
 import { pendingApprovalsFor } from './leave.js'
@@ -180,6 +181,14 @@ export class HeaderView {
     const act = (ic, label, action) =>
       `<button type="button" class="dd-item" role="menuitem" data-action="${action}">${icon(ic, 18)}<span>${label}</span></button>`
 
+    const apps = visibleAppLinks(app.settings)
+    const appsHtml = apps.length ? `
+      <div class="dd-sep" role="separator"></div>
+      <div class="dd-label section-label" id="dd-apps">Apps</div>
+      <div role="group" aria-labelledby="dd-apps">
+        ${apps.map(a => `<a class="dd-item" role="menuitem" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">${icon('external', 18)}<span>${esc(a.name)}</span></a>`).join('')}
+      </div>` : ''
+
     const html = `
       <div class="dd-head">
         <span class="hdr-avatar" aria-hidden="true">${esc(this.initials)}</span>
@@ -193,7 +202,7 @@ export class HeaderView {
         ${nav('story', 'Story Planner', 'story-planner')}
         ${nav('notes', 'PDF Generator', 'pdf-generator')}
         ${nav('training', 'Personal Tools', 'personal-tools')}
-      </div>
+      </div>${appsHtml}
       <div class="dd-sep" role="separator"></div>
       <div class="dd-label section-label" id="dd-workspace">Workspace</div>
       <div role="group" aria-labelledby="dd-workspace">
