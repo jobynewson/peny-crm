@@ -169,8 +169,59 @@ export function portalColumns(view) {
   }
 }
 
+// ── Grouping: project, then worklist ─────────────────────────────────────────
+// Every column groups its cards under a heading per project (with a count) and,
+// inside it, a smaller heading per worklist. Cards keep the order they arrive
+// in within a group. A heading only appears where it tells you something: with a
+// single project there are no project headings, with a single worklist no worklist
+// headings. The decision is made once per view so every column agrees.
+
+const byName = (a, b) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b, 'en', { sensitivity: 'base' }))
+
+// Pure, so it is tested without a page. Projects A–Z (none last), worklists A–Z
+// (none last) inside each, items in their original order.
+export function projectGroups(items, worklist = d => d.workstream) {
+  const projects = new Map()
+  for (const d of items) {
+    const p = d.project ?? ''
+    const w = worklist(d) ?? ''
+    if (!projects.has(p)) projects.set(p, new Map())
+    const ws = projects.get(p)
+    if (!ws.has(w)) ws.set(w, [])
+    ws.get(w).push(d)
+  }
+  return [...projects.entries()].sort(([a], [b]) => byName(a, b)).map(([name, ws]) => ({
+    name: name || 'Other work',
+    count: [...ws.values()].reduce((n, l) => n + l.length, 0),
+    worklists: [...ws.entries()].sort(([a], [b]) => byName(a, b)).map(([w, list]) => ({ name: w || 'Other', items: list })),
+  }))
+}
+
+export function groupingFor(view) {
+  const projects = new Set(), worklists = new Set()
+  for (const w of view.workstreams || []) for (const d of w.deliverables) { projects.add(w.project ?? ''); worklists.add(w.title ?? '') }
+  for (const r of view.requests || []) projects.add(r.project ?? '')
+  return { projects: projects.size > 1, worklists: worklists.size > 1 }
+}
+
+// `ctx` is groupingFor(view). `worklists: false` for things that have no worklist (requests).
+function groupedHtml(items, itemHtml, ctx, { worklists = true, quiet = false } = {}) {
+  const cls = `pt-list${quiet ? ' pt-list--quiet' : ''}`
+  const showWs = worklists && ctx.worklists
+  if (!ctx.projects && !showWs) return `<ul class="${cls}">${items.map(itemHtml).join('')}</ul>`
+  return projectGroups(items, worklists ? undefined : () => '').map(g => {
+    const inner = g.worklists.map(w => `
+        ${showWs ? `<h5 class="pt-grp-ws">${esc(w.name)} <span class="pt-muted">${w.items.length}</span></h5>` : ''}
+        <ul class="${cls}">${w.items.map(itemHtml).join('')}</ul>`).join('')
+    return ctx.projects
+      ? `<section class="pt-grp"><h4 class="pt-grp-h">${esc(g.name)} <span class="pt-muted">${g.count}</span></h4>${inner}</section>`
+      : inner
+  }).join('')
+}
+
 function boardHtml(view) {
   const c = portalColumns(view)
+  const ctx = groupingFor(view)
   const canSend = view.scope.can_request ?? view.scope.can_respond
   const jump = [
     [c.needs.length, 'Needs you', 'pt-col-progress'],
@@ -189,52 +240,41 @@ function boardHtml(view) {
     <p class="pt-summary">${summary}</p>
     <nav class="pt-jump" aria-label="Jump to">${jump.map(([n, label, id]) => `<a href="#${id}" class="pt-jump-link${label === 'Needs you' && n ? ' pt-jump-link--alert' : ''}">${label}<span>${n}</span></a>`).join('')}</nav>
     <div class="pt-board">
-      ${requestsColumnHtml(view, c, canSend)}
+      ${requestsColumnHtml(view, c, canSend, ctx)}
       <section class="pt-col pt-col--progress" id="pt-col-progress" aria-labelledby="pt-progress-h">
         <h2 class="pt-col-title" id="pt-progress-h">In progress</h2>
         ${c.needs.length ? `
           <div class="pt-needs">
             <h3 class="pt-needs-h">Needs you · ${c.needs.length}</h3>
-            <ul class="pt-list">${c.needs.map(d => deliverableHtml(d, { needs: CLIENTS_MOVE[d.status] })).join('')}</ul>
+            ${groupedHtml(c.needs, d => deliverableHtml(d, { needs: CLIENTS_MOVE[d.status], hideWs: ctx.worklists }), ctx)}
           </div>` : ''}
-        ${c.progress.length ? `<ul class="pt-list">${c.progress.map(d => deliverableHtml(d)).join('')}</ul>` : ''}
+        ${c.progress.length ? groupedHtml(c.progress, d => deliverableHtml(d, { hideWs: ctx.worklists }), ctx) : ''}
         ${!c.needs.length && !c.progress.length ? '<p class="pt-muted">Nothing in progress right now.</p>' : ''}
       </section>
       <details class="pt-col pt-col--approved" id="pt-col-approved" open data-collapse-mobile>
         <summary class="pt-col-title pt-col-summary">Approved <span class="pt-muted">${c.approved.length}</span></summary>
-        ${approvedByProject(c.approved)}
+        ${approvedByProject(c.approved, ctx)}
       </details>
     </div>`
 }
 
-// Approved work grouped by project, so a client can find what they want: one fold
-// per project (A–Z, work not in a project last), each open with its items. With
-// only one project there is nothing to group, so no heading.
-export function approvedGroups(approved) {
-  const by = new Map()
-  for (const d of approved) {
-    const key = d.project ?? ''
-    if (!by.has(key)) by.set(key, [])
-    by.get(key).push(d)
-  }
-  return [...by.entries()]
-    .sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b, 'en', { sensitivity: 'base' })))
-    .map(([name, items]) => ({ name: name || 'Other work', items }))
-}
-
-function approvedByProject(approved) {
+// Approved work: a fold per project (when there are several), worklists inside.
+function approvedByProject(approved, ctx) {
   if (!approved.length) return '<p class="pt-muted">Approved work will collect here.</p>'
-  const groups = approvedGroups(approved)
-  if (groups.length === 1) return `<ul class="pt-list pt-list--quiet">${groups[0].items.map(approvedHtml).join('')}</ul>`
+  const groups = projectGroups(approved)
+  const inner = g => g.worklists.map(w => `
+      ${ctx.worklists ? `<h5 class="pt-grp-ws">${esc(w.name)} <span class="pt-muted">${w.items.length}</span></h5>` : ''}
+      <ul class="pt-list pt-list--quiet">${w.items.map(d => approvedHtml(d, ctx)).join('')}</ul>`).join('')
+  if (!ctx.projects) return groups.map(inner).join('')
   return groups.map(g => `
     <details class="pt-proj" open>
-      <summary class="pt-proj-head"><span class="pt-proj-name">${esc(g.name)}</span> <span class="pt-muted">${g.items.length}</span></summary>
-      <ul class="pt-list pt-list--quiet">${g.items.map(approvedHtml).join('')}</ul>
+      <summary class="pt-proj-head"><span class="pt-proj-name">${esc(g.name)}</span> <span class="pt-muted">${g.count}</span></summary>
+      ${inner(g)}
     </details>`).join('')
 }
 
 // A finished one, small and quiet: what it was, where, and when it was approved.
-function approvedHtml(d) {
+function approvedHtml(d, ctx = {}) {
   const latest = d.rounds[d.rounds.length - 1]
   const when = latest?.response === 'approved' && latest.answered_at ? `Approved ${dayMonth(latest.answered_at)}` : 'Approved'
   // The link stays: what was approved is still worth opening.
@@ -242,7 +282,7 @@ function approvedHtml(d) {
   return `
     <li class="pt-d pt-d--quiet" id="d-${esc(d.id)}">
       <div class="pt-d-title">${esc(d.title)}</div>
-      <div class="pt-d-meta">${esc(d.workstream)} · ${when}</div>
+      <div class="pt-d-meta">${ctx.worklists ? '' : `${esc(d.workstream)} · `}${when}</div>
       ${link ? `<a class="pt-link pt-d-open" href="${esc(link.url)}" target="_blank" rel="noopener noreferrer">${link.frame_io ? 'Open in Frame.io' : 'Open the link'} <span aria-hidden="true">↗</span></a>` : ''}
       ${latest?.response === 'approved' && latest.comment ? `<div class="pt-quote">“${esc(latest.comment)}”</div>` : ''}
     </li>`
@@ -266,7 +306,7 @@ function companyHtml(view, { signedIn, canSwitch }) {
 // The left column: what they've asked for and is still waiting, what has not
 // started yet, and (folded) what we've answered.
 
-function requestsColumnHtml(view, c, canSend) {
+function requestsColumnHtml(view, c, canSend, ctx) {
   const asksName = view.scope.kind === 'project'   // a link can't say who is holding it
   const nothing = !c.asked.length && !c.planned.length && !c.answered.length
   return `
@@ -292,13 +332,13 @@ function requestsColumnHtml(view, c, canSend) {
             <button type="button" class="pt-btn" data-cancel-request>Cancel</button>
           </div>
         </form>` : ''}
-      ${c.asked.length ? `<ul class="pt-list">${c.asked.map(requestHtml).join('')}</ul>` : ''}
+      ${c.asked.length ? groupedHtml(c.asked, r => requestHtml(r, ctx), ctx, { worklists: false }) : ''}
       ${c.planned.length ? `
         <h3 class="pt-sub-h">Up next</h3>
-        <ul class="pt-list">${c.planned.map(d => deliverableHtml(d)).join('')}</ul>` : ''}
+        ${groupedHtml(c.planned, d => deliverableHtml(d, { hideWs: ctx.worklists }), ctx)}` : ''}
       ${c.answered.length ? `
         <h3 class="pt-sub-h">Answered</h3>
-        <ul class="pt-list">${c.answered.map(requestHtml).join('')}</ul>` : ''}
+        ${groupedHtml(c.answered, r => requestHtml(r, ctx), ctx, { worklists: false })}` : ''}
       ${nothing ? `<p class="pt-muted pt-requests-empty">${canSend ? 'Need something from us? Ask here instead of emailing — you’ll see where it stands.' : (view.scope.kind === 'project' ? 'This project has been delivered, so it isn’t taking new requests here.' : 'No requests yet.')}</p>` : ''}
     </section>`
 }
@@ -314,10 +354,10 @@ function projectFieldHtml(view) {
           <select id="rq-project">${projects.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select>`
 }
 
-function requestHtml(r) {
+function requestHtml(r, ctx = {}) {
   const meta = [
     `Sent ${dayMonth(r.sent_at)}${r.sent_by ? ` by ${esc(r.sent_by)}` : ''}`,
-    r.project ? esc(r.project) : null,
+    r.project && !ctx.projects ? esc(r.project) : null,
     r.wanted_by ? `Wanted by ${esc(fullDate(r.wanted_by))}` : null,
   ].filter(Boolean).join(' · ')
   return `
@@ -339,14 +379,14 @@ function requestHtml(r) {
     </li>`
 }
 
-function deliverableHtml(d, { needs = null } = {}) {
+function deliverableHtml(d, { needs = null, hideWs = false } = {}) {
   const latest = d.rounds[d.rounds.length - 1]
   const earlier = d.rounds.slice(0, -1).reverse()
   const meta = [d.format, d.due && d.due !== 'No date' ? `Due ${d.due}` : null].filter(Boolean).map(esc).join(' · ')
   return `
     <li class="pt-d${needs ? ' pt-d--needs' : ''}" id="d-${esc(d.id)}">
       ${needs ? `<div class="pt-needs-tag">${esc(needs)}</div>` : ''}
-      ${d.workstream ? `<div class="pt-d-ws">${esc(d.workstream)}</div>` : ''}
+      ${d.workstream && !hideWs ? `<div class="pt-d-ws">${esc(d.workstream)}</div>` : ''}
       <div class="pt-d-head">
         <h3 class="pt-d-title">${esc(d.title)}</h3>
         <span class="pt-chip pt-chip--${esc(d.status)}">${esc(d.status_label)}</span>

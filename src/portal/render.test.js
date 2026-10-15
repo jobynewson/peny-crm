@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { renderView, approveHtml, portalColumns, approvedGroups } from './render.js'
+import { renderView, approveHtml, portalColumns, projectGroups, groupingFor } from './render.js'
 
 const view = (over = {}) => ({
   scope: { kind: 'company', can_respond: true },
@@ -440,9 +440,28 @@ describe('the portal: round two', () => {
   })
 })
 
-describe('approvedGroups', () => {
-  it('groups by project name, ignoring case, with no-project work last', () => {
-    const g = approvedGroups([{ id: 1, project: 'beta' }, { id: 2, project: null }, { id: 3, project: 'Alpha' }, { id: 4, project: 'beta' }])
-    expect(g.map(x => [x.name, x.items.map(i => i.id)])).toEqual([['Alpha', [3]], ['beta', [1, 4]], ['Other work', [2]]])
+describe('grouping by project then worklist', () => {
+  it('orders projects and worklists A–Z, none last, keeping item order inside a group', () => {
+    const g = projectGroups([
+      { id: 1, project: 'beta', workstream: 'Edits' }, { id: 2, project: null, workstream: 'Misc' },
+      { id: 3, project: 'Alpha', workstream: 'Stills' }, { id: 4, project: 'beta', workstream: 'Edits' },
+      { id: 5, project: 'beta', workstream: 'Audio' },
+    ])
+    expect(g.map(x => [x.name, x.count, x.worklists.map(w => [w.name, w.items.map(i => i.id)])])).toEqual([
+      ['Alpha', 1, [['Stills', [3]]]],
+      ['beta', 3, [['Audio', [5]], ['Edits', [1, 4]]]],
+      ['Other work', 1, [['Misc', [2]]]],
+    ])
+  })
+  const ws = (title, project, ids) => ({ id: title, title, project, status: 'active', status_label: 'Active', deliverables: ids.map(id => ({ id, title: `Item ${id}`, format: null, due: 'No date', status: 'in_progress', status_label: 'In progress', waiting_for: null, reply: null, can_reply: false, rounds: [] })) })
+  it('only shows headings that say something', () => {
+    expect(groupingFor(view({ workstreams: [ws('Edits', 'P1', ['a'])] }))).toEqual({ projects: false, worklists: false })
+    expect(groupingFor(view({ workstreams: [ws('Edits', 'P1', ['a']), ws('Stills', 'P1', ['b'])] }))).toEqual({ projects: false, worklists: true })
+    expect(groupingFor(view({ workstreams: [ws('Edits', 'P1', ['a']), ws('Edits', 'P2', ['b'])], requests: [] }))).toEqual({ projects: true, worklists: false })
+  })
+  it('draws a project heading with a count and worklist headings in the In progress column', () => {
+    const out = renderView(view({ workstreams: [ws('Edits', 'P1', ['a', 'b']), ws('Stills', 'P2', ['c'])] }), {})
+    expect(out).toContain('class="pt-grp-h">P1 <span class="pt-muted">2</span>')
+    expect(out).toContain('class="pt-grp-h">P2 <span class="pt-muted">1</span>')
   })
 })

@@ -218,6 +218,10 @@ a { color: var(--accent-text); }
 .pt-needs .pt-list { border-top: none; }
 .pt-d--needs { border-left: 4px solid var(--cat-amber); background: var(--surface); margin: 0 0 1px; }
 .pt-needs-tag { margin-bottom: 4px; font-size: 12px; font-weight: 600; color: var(--cat-amber); }
+.pt-grp-h { margin: 0; padding: 10px 16px; font-size: 13px; font-weight: 600; background: var(--surface-2, var(--bg)); border-top: 1px solid var(--border); }
+.pt-grp-ws { margin: 0; padding: 8px 16px 4px; font-size: 12px; font-weight: 500; color: var(--text-muted); }
+.pt-grp > .pt-grp-ws:first-of-type { padding-top: 10px; }
+.pt-needs .pt-grp-h { background: transparent; }
 .pt-d-ws { margin-bottom: 2px; font-size: 12px; color: var(--text-muted); }
 
 /* Approved is history: narrower, quieter. */
