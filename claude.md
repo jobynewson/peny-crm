@@ -1532,6 +1532,12 @@ and shows one column at a time. It's called at the end of each board's
 render; give each column element the attribute you pass as `colAttr`
 (`data-col` or `data-status-col`).
 
+### Apps menu (`drizzle/0050`, Settings › Company › Apps)
+- `settings.app_links` is `[{ name, url }]`. The account menu shows an **Apps** group
+  (new tab, `rel="noopener noreferrer"`) to every member when it is non-empty; superadmins
+  edit it in Settings › Company. `src/views/app-links.js` keeps http(s) only: nfs://, file://
+  and javascript: links are refused (a browser can't open a network path from a page).
+
 ### Unassigned work (`drizzle/0048`, Settings › Company › Unassigned work)
 - **Nothing waits in a tray.** A task or deliverable with no owner is a card in
   its column (To do, usually) like any other, marked **Unassigned · Nd** with an

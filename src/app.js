@@ -25,6 +25,7 @@ import { closeFloating } from './views/popover.js'
 import { searchCommands } from './views/search-commands.js'
 import { mountWhatsDue } from './views/whats-due.js'
 import { testPanelHtml, chosenEmails } from './views/test-mode.js'
+import { cleanAppLinks, MAX_APP_LINKS } from './views/app-links.js'
 import { legacyRetainersTarget, legacyRequestsTarget } from './utils/worklist-route.js'
 import { matchCommands } from './utils/command-search.js'
 import { segTabs, bindSegTabs } from './views/toolbar.js'
@@ -2473,6 +2474,28 @@ export class App {
           </div>
         </div>` : ''
 
+    // Links to the team's other apps (settings.app_links), listed under Apps in
+    // the account menu for everyone. Opens in a new tab, so http(s) only.
+    const appRows = (Array.isArray(s.app_links) && s.app_links.length ? s.app_links : [{ name: '', url: '' }])
+    const appRowHtml = a => `
+              <div class="app-link-row" style="display:flex;gap:8px;align-items:center">
+                <input type="text" data-app-name placeholder="Name, e.g. Peny Fence" value="${escAttr(a.name)}" maxlength="60" style="flex:1" aria-label="App name" />
+                <input type="url" data-app-url placeholder="https://…" value="${escAttr(a.url)}" style="flex:2" aria-label="App link" />
+                <button type="button" class="btn btn-ghost" data-app-remove aria-label="Remove this app">Remove</button>
+              </div>`
+    const appsPanel = isAdmin ? `
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Apps</span></div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:12px">
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">Links to the team's other apps. They appear under Apps in the account menu for everyone signed in, and open in a new tab. The link must start with http:// or https://; a network path (nfs://, a shared folder) can't be opened from a web page.</div>
+            <div id="s-apps-list" style="display:flex;flex-direction:column;gap:8px">${appRows.map(appRowHtml).join('')}</div>
+            <div style="display:flex;gap:8px">
+              <button type="button" class="btn btn-ghost" id="s-apps-add">Add another app</button>
+              <button type="button" class="btn btn-primary" id="s-apps-save">Save apps</button>
+            </div>
+          </div>
+        </div>` : ''
+
     const testingPanel = isAdmin ? testPanelHtml(s, this.allUsers) : ''
 
     const budgetPanel = isAdmin ? `
@@ -2497,7 +2520,7 @@ export class App {
     if (tab === 'account') {
       mc.innerHTML = grid(`${accountPanel}${notificationsPanel}`)
     } else if (tab === 'company') {
-      mc.innerHTML = grid(`${companyDetailsPanel}${timersPanel}${assignmentPanel}${leadsPanel}${testingPanel}`)
+      mc.innerHTML = grid(`${companyDetailsPanel}${timersPanel}${assignmentPanel}${appsPanel}${leadsPanel}${testingPanel}`)
     } else if (tab === 'invoicing') {
       mc.innerHTML = grid(`${invoicingDefaultsPanel}${expenseFxPanels}`)
     } else if (tab === 'budget') {
@@ -2525,6 +2548,12 @@ export class App {
     mc.querySelector('#settings-save-fx-btn')?.addEventListener('click', () => this._saveFxSettings(mc))
     mc.querySelector('#s-show-leads')?.addEventListener('change', e => this._saveShowLeads(e.target))
     mc.querySelector('#s-assignment-lead')?.addEventListener('change', e => this._saveAssignmentLead(e.target))
+    mc.querySelector('#s-apps-add')?.addEventListener('click', () => this._addAppRow(mc))
+    mc.querySelector('#s-apps-save')?.addEventListener('click', () => this._saveAppLinks(mc))
+    mc.querySelector('#s-apps-list')?.addEventListener('click', e => {
+      if (!e.target.closest('[data-app-remove]')) return
+      e.target.closest('.app-link-row')?.remove()
+    })
     mc.querySelector('#s-test-mode')?.addEventListener('change', () => this._saveTestMode(mc))
     mc.querySelector('#s-test-save')?.addEventListener('click', () => this._saveTestMode(mc))
     mc.querySelector('#settings-save-leave-btn')?.addEventListener('click', () => this._saveLeaveSettings(mc))
@@ -3132,6 +3161,32 @@ export class App {
       const who = (this.allUsers ?? []).find(u => u.id === id)
       this.toast(who ? `${who.name || who.email} now looks after unassigned work` : 'Nobody chosen: the superadmins will hear about unassigned work')
     } catch (e) { console.error(e); select.value = previous; this.toast('Error saving the setting') }
+  }
+
+  // Apps listed in the account menu. Saves on "Save apps"; a superadmin setting.
+  _addAppRow(mc) {
+    const list = mc.querySelector('#s-apps-list')
+    if (!list) return
+    if (list.querySelectorAll('.app-link-row').length >= MAX_APP_LINKS) { this.toast(`Up to ${MAX_APP_LINKS} apps`); return }
+    const row = list.querySelector('.app-link-row')?.cloneNode(true)
+    if (!row) return
+    row.querySelectorAll('input').forEach(i => { i.value = '' })
+    list.appendChild(row)
+    row.querySelector('input')?.focus()
+  }
+
+  async _saveAppLinks(mc) {
+    if (this.appUser?.role !== 'superadmin') return
+    const rows = [...mc.querySelectorAll('.app-link-row')].map(r => ({
+      name: r.querySelector('[data-app-name]')?.value, url: r.querySelector('[data-app-url]')?.value,
+    }))
+    const { links, rejected } = cleanAppLinks(rows)
+    if (rejected.length) { this.toast(`Needs a name and an http(s) link: ${rejected.join(', ')}`); return }
+    try {
+      const [updated] = await upsertSettings(this.userId, { app_links: links })
+      this.settings = updated
+      this.toast(links.length ? 'Apps saved' : 'No apps listed')
+    } catch (e) { console.error(e); this.toast('Error saving the apps') }
   }
 
   // Testing mode and who the emails go to (api/_notify.js redirects them). Saves as
