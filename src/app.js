@@ -86,12 +86,21 @@ export class App {
     try { this._notesOpen = localStorage.getItem('slate-notes-open') === '1' && !window.matchMedia(PHONE).matches } catch { this._notesOpen = false }
     this._restoreFromHash()   // parse URL before first render
     this.render()
+    this._openFromAddress()   // #tasks/<id> and #tasks/request/<id> open that item over the board
     syncThemeColor()
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', syncThemeColor)
     this._loadNotes()         // notes are also indexed by ⌘K search
     this.tasksView.watchUnread()  // the header bell's count
     this.watchRequests()          // the Requests tab's count
     import('./push.js').then(m => m.syncPushDevice())  // keep this device's push subscription current
+    // A tapped push notification, while Slate is open, says where to go (public/sw.js).
+    navigator.serviceWorker?.addEventListener('message', e => {
+      if (e.data?.type !== 'open' || typeof e.data.url !== 'string') return
+      try {
+        const u = new URL(e.data.url, location.origin)
+        if (u.origin === location.origin) this.openLink(u.hash || '#dashboard')
+      } catch { /* not an address */ }
+    })
     this._bindKeyboard()
     this._bindNavLinks()
     this._bindDateRangeLinks()
@@ -771,13 +780,27 @@ export class App {
     } catch { /* offline, or not staff: keep what was shown */ }
   }
 
+  // An address that names one task or request (what a push notification or an
+  // email link gives) opens it, as openLink does for a click inside the app.
+  _openFromAddress() {
+    const [view, id, requestId] = location.hash.replace(/^#/, '').split('/')
+    if (view !== 'tasks' || !id) return
+    if (id === 'request') { if (requestId) this.tasksView.openRequest(requestId); return }
+    this.tasksView.openDetail(id)
+  }
+
   // Open an in-app link ("#view/id/tab", as the What's due feed gives them)
   // as though it had been typed in the address bar. Tasks and marketing cards
   // have no address of their own, so #tasks/<id> and #marketing/<cardId> go to
   // their page and open the task or card there.
   openLink(hash) {
-    const [view, id] = String(hash).replace(/^#/, '').split('/')
-    if (view === 'tasks' && id) { this.navigate('tasks'); this.tasksView.openDetail(id); return }
+    const [view, id, tab] = String(hash).replace(/^#/, '').split('/')
+    if (view === 'tasks' && id) {
+      this.navigate('tasks')
+      if (id === 'request') { if (tab) this.tasksView.openRequest(tab); return }
+      this.tasksView.openDetail(id)
+      return
+    }
     if (view === 'marketing' && id) { this.marketingView.pendingOpenCardId = id; this.navigate('marketing'); return }
     if (!id) { this.navigate(VIEWS.includes(view) ? view : 'dashboard'); return }
     clearInterval(this._cdInterval); this._cdInterval = null

@@ -26,12 +26,15 @@ self.addEventListener('notificationclick', event => {
     const app = open.find(c => new URL(c.url).origin === self.location.origin)
     if (app) {
       try {
-        const focused = await app.focus()
-        // The app reads its place from the address once, when it loads, so go
-        // there with a fresh load rather than just changing the hash.
-        if (focused?.navigate) { await focused.navigate(target); return }
+        // Slate is already open: bring it forward and tell it where to go. (A
+        // navigate() would do nothing when only the #part of the address
+        // changes, and the app opens the item itself.)
+        const focused = (await app.focus()) || app
+        focused.postMessage({ type: 'open', url: target })
+        return
       } catch { /* fall through to opening a new window */ }
     }
+    // Not open: a fresh load of the address opens the item (app.js _openFromAddress).
     await self.clients.openWindow(target)
   })())
 })

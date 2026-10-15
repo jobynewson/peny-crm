@@ -980,8 +980,13 @@ always the source of truth and nothing is ever read back from Google.
   through the query proxy.
 - **Testing mode** sends **no** push for testable kinds: the testers get the
   email redirect, and the real person's phone stays quiet.
-- **Browser side**: `public/sw.js` (shows the notification; a tap opens the task
-  or page via a fresh load of its URL), `public/manifest.webmanifest` + icons
+- **A tap opens the thing itself**: task alerts go to `#tasks/<id>`, a new client
+  request to `#tasks/request/<id>` (its accept / decline sheet), deliverable alerts
+  to that deliverable on its project's Worklist tab, a single unassigned item to
+  that item. The same addresses are the email links. If Slate is open the service
+  worker posts `{ type: 'open', url }` and `openLink()` goes there; if not, a fresh
+  load runs `_openFromAddress()` in `app.js`.
+- **Browser side**: `public/sw.js` (shows the notification, routes the tap), `public/manifest.webmanifest` + icons
   (installable, which iPhones need before they allow push), `src/push.js`
   (permission, subscribe, `syncPushDevice()` on every start).
 - **Setup**: `node scripts/generate-vapid-keys.js`, then set `VAPID_PUBLIC_KEY`,

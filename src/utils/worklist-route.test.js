@@ -27,7 +27,7 @@ describe('the old #retainers addresses', () => {
 describe('the old #requests addresses', () => {
   it('go to the task board, where requests are cards in the tray now', () => {
     expect(legacyRequestsTarget('#requests')).toEqual({ hash: '#tasks' })
-    expect(legacyRequestsTarget('#requests/11111111-1111-4111-8111-111111111111')).toEqual({ hash: '#tasks' })
+    expect(legacyRequestsTarget('#requests/11111111-1111-4111-8111-111111111111')).toEqual({ hash: '#tasks/request/11111111-1111-4111-8111-111111111111' })
   })
   it('leave every other address alone', () => {
     for (const h of ['#tasks', '#projects', '#retainers/c1', '', '#']) expect(legacyRequestsTarget(h)).toBeNull()

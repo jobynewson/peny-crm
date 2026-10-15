@@ -1045,6 +1045,20 @@ export class TasksView {
     this._renderDetail()
   }
 
+  // Open a new client request's sheet, by id (a new-request alert's link). It is
+  // a card in the tray once the board has loaded, so wait for it, then press it
+  // as someone would. A request that has been answered since is no longer there.
+  async openRequest(id) {
+    for (let i = 0; i < 60; i++) {
+      const card = [...document.querySelectorAll('[data-request-id]')].find(el => el.dataset.requestId === id)
+      if (card) { card.scrollIntoView?.({ block: 'center' }); card.click(); return true }
+      if (this.loaded && !this.requests.some(r => r.id === id) && i > 4) break
+      await new Promise(r => setTimeout(r, 150))
+    }
+    this.app.toast('That request has already been answered. Look for it on the board.')
+    return false
+  }
+
   closeDetail() {
     const wasOpen = !!document.getElementById('tk-detail-host')
     this.detailId = null

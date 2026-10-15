@@ -153,8 +153,9 @@ export function newRequestEmail({ request, company }) {
       ? `Someone using the ${escapeHtml(company)} project link sent a request and gave the name ${escapeHtml(request.submitted_by_name || 'nothing')}. The name isn’t checked. It is waiting in New requests on the task board.`
       : `${escapeHtml(request.submitted_by_name || 'Someone')} at ${escapeHtml(company)} has sent a request. It is waiting in New requests on the task board.`,
     body: card(request.title, [request.wanted_by && `They'd like it by ${formatDay(request.wanted_by, today())}`], request.detail),
-    href: `${appBaseUrl()}/#tasks`,
-    linkLabel: 'Open the task board',
+    // Opens the request itself, ready to accept or decline.
+    href: request.id ? `${appBaseUrl()}/#tasks/request/${request.id}` : `${appBaseUrl()}/#tasks`,
+    linkLabel: request.id ? 'Open the request' : 'Open the task board',
   }
 }
 
@@ -236,8 +237,9 @@ export function unassignedEmail({ items, via = 'assignment_lead' }) {
       [i.kind === 'task' ? 'Task' : 'Deliverable', i.context].filter(Boolean).join(' · '),
       `Unassigned for ${i.waited} working day${i.waited === 1 ? '' : 's'}`,
     ])).join(''),
-    href: `${appBaseUrl()}/#tasks`,
-    linkLabel: 'Open the task board',
+    // One item opens that item; several open the board.
+    href: one && items[0].link ? `${appBaseUrl()}/${items[0].link}` : `${appBaseUrl()}/#tasks`,
+    linkLabel: one && items[0].link ? (items[0].kind === 'task' ? 'Open the task' : 'Open the deliverable') : 'Open the task board',
   }
 }
 

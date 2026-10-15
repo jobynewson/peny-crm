@@ -103,7 +103,7 @@ describe('the wording', () => {
     id: 'd1', title: 'October reel', company: 'DMM', workstream: 'Monthly content', company_id: 'c1',
     due_date: '2026-10-01', status_label: 'In progress', waiting_note: 'Ship date for the new product',
   }
-  it('a new request says who, what and by when, and opens the task board', () => {
+  it('a new request says who, what and by when, and opens the request itself', () => {
     const e = newRequestEmail({
       company: 'DMM',
       request: { id: 'r1', title: 'Cut-down', detail: 'See https://x.test/brief', wanted_by: '2026-10-30', submitted_by_name: 'Sam' },
@@ -111,7 +111,7 @@ describe('the wording', () => {
     expect(e.subject).toBe('New request from DMM: Cut-down')
     expect(e.sentence).toContain('Sam at DMM')
     expect(e.body).toContain('https://x.test/brief')
-    expect(e.href).toMatch(/#tasks$/)
+    expect(e.href).toMatch(/#tasks\/request\/r1$/)
   })
   it('a request through a project link says so, and that the name is not checked', () => {
     const e = newRequestEmail({
@@ -258,7 +258,8 @@ describe('unassigned work', () => {
     expect(mine.sentence).toContain('You look after unassigned work')
     expect(mine.body).toContain('Deliverable · DMM · Monthly')
     expect(mine.body).toContain('Unassigned for 3 working days')
-    expect(mine.href).toMatch(/#tasks$/)
+    expect(mine.href).toMatch(/#tasks$/)   // two items: the board
+    expect(unassignedEmail({ items: items.slice(1) }).href).toMatch(/#tasks\/t1$/)   // one item: the item
     expect(unassignedEmail({ items: items.slice(1), via: 'superadmins' })).toMatchObject({ subject: 'No owner yet: Book the suite' })
     expect(unassignedEmail({ items, via: 'superadmins' }).sentence).toContain('Settings › Unassigned work')
   })

@@ -15,8 +15,10 @@ export function legacyRetainersTarget(hash, projects = []) {
 }
 
 // #requests and #requests/<id> were the client requests inbox, and links to them
-// are in emails already sent. Requests are cards in the task board's tray now.
+// are in emails already sent. Requests are cards in the task board's tray now,
+// and #tasks/request/<id> opens one (the address new-request alerts use).
 export function legacyRequestsTarget(hash) {
-  const [view] = String(hash).replace(/^#/, '').split('/')
-  return view === 'requests' ? { hash: '#tasks' } : null
+  const [view, id] = String(hash).replace(/^#/, '').split('/')
+  if (view !== 'requests') return null
+  return { hash: id ? `#tasks/request/${id}` : '#tasks' }
 }

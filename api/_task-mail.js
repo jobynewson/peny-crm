@@ -17,7 +17,7 @@ export const appBaseUrl = () => process.env.VITE_APP_URL || 'https://slate.weare
 
 // Mirrors emailWrap() in api/reminders.js so task mail looks like every other
 // Slate email.
-export function taskEmailWrap(title, subtitle, greeting, bodyHtml) {
+export function taskEmailWrap(title, subtitle, greeting, bodyHtml, { taskId = null } = {}) {
   return `
 <!DOCTYPE html>
 <html>
@@ -32,7 +32,7 @@ export function taskEmailWrap(title, subtitle, greeting, bodyHtml) {
       <p style="margin:0 0 18px;font-size:14px;color:#444;line-height:1.5">${greeting}</p>
       ${bodyHtml}
       <p style="margin:22px 0 0;font-size:12px;color:#999">
-        <a href="${appBaseUrl()}/#tasks" style="color:#3b82f6;text-decoration:none">Open the task board →</a>
+        <a href="${appBaseUrl()}/#tasks${taskId ? `/${taskId}` : ''}" style="color:#3b82f6;text-decoration:none">${taskId ? 'Open the task' : 'Open the task board'} →</a>
       </p>
     </div>
   </div>
@@ -90,7 +90,7 @@ export async function sendImmediateTaskEmails(sql, { task, actorName, notificati
       html: taskEmailWrap(
         assigned ? 'A task for you' : 'You were mentioned',
         new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
-        greeting, taskCardHtml(task),
+        greeting, taskCardHtml(task), { taskId: task.id },
       ),
     })
     if (result?.sent) sent++
