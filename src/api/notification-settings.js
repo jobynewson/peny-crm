@@ -7,5 +7,6 @@ import { request } from './http.js'
 export const getNotificationSettings = () =>
   request('/api/notification-settings').then(r => r.settings)
 
-export const setNotificationSetting = (kind, email) =>
-  request('/api/notification-settings', { method: 'PUT', body: { kind, email } }).then(r => r.settings)
+// `change` is { email } and/or { push }; whatever is left out stays as it was.
+export const setNotificationSetting = (kind, change) =>
+  request('/api/notification-settings', { method: 'PUT', body: { kind, ...change } }).then(r => r.settings)

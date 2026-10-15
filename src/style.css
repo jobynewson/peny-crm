@@ -977,9 +977,20 @@ kbd { font-family: var(--font-mono); }
 
 /* ── Settings › Email notifications ── */
 .notif-settings { display: flex; flex-direction: column; gap: 4px; }
-.notif-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; cursor: pointer; }
-.notif-row input { width: 16px; height: 16px; margin-top: 2px; flex-shrink: 0; cursor: pointer; accent-color: var(--accent); }
+.notif-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 10px 0; }
+.notif-text { min-width: 0; }
+.notif-switches { display: flex; gap: 14px; flex-shrink: 0; }
+.notif-switch { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); cursor: pointer; }
+.notif-switch input { width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); }
 .notif-label { display: block; font-size: 14px; color: var(--text-primary); }
+.push-device { display: flex; flex-direction: column; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--border-med); }
+.push-state { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 14px; color: var(--text-primary); }
+.push-actions { display: flex; gap: 8px; }
+.push-sub { display: block; font-size: 12px; font-weight: 400; color: var(--text-tertiary); line-height: 1.5; margin-top: 2px; }
+.push-note { font-size: 12px; color: var(--text-tertiary); line-height: 1.6; }
+.push-devs { display: flex; flex-direction: column; gap: 6px; }
+.push-dev { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--text-primary); }
+.push-bad { color: var(--danger); }
 .notif-desc { display: block; font-size: 12px; color: var(--text-tertiary); line-height: 1.5; margin-top: 2px; }
 
 /* ── Company field (src/views/company-field.js) ── */
@@ -2707,7 +2718,8 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
   .search-wrap input, .field input, .field select, .field textarea, .tl-field input, .tl-field select { font-size: 16px; }
   .search-wrap input, .field input, .field select, .tl-field input, .tl-field select { min-height: 44px; }
   .company-hint-btn { min-height: 44px; padding: 0 4px; }
-  .notif-row { min-height: 44px; }
+  .notif-row { min-height: 44px; flex-direction: column; gap: 8px; }
+  .push-actions button { min-height: 40px; }
 }
 
 /* ── Feature additions (ported from the former injectGlobalStyles) ──────────── */

@@ -6,7 +6,7 @@ const sendMail = vi.fn(async ({ to }) => ({ messageId: `id-${to}` }))
 const createTransport = vi.fn(() => ({ sendMail }))
 vi.mock('nodemailer', () => ({ default: { createTransport }, createTransport }))
 
-const { KINDS, switchableKinds, wantsEmail, notify, TESTABLE_KINDS, testBanner, testSubject } = await import('./_notify.js')
+const { KINDS, switchableKinds, wantsEmail, wantsPush, notify, TESTABLE_KINDS, testBanner, testSubject } = await import('./_notify.js')
 
 const API = path.dirname(new URL(import.meta.url).pathname)
 
@@ -62,7 +62,7 @@ describe('kinds', () => {
 describe('notify', () => {
   it('sends to everyone who wants it and skips who switched it off', async () => {
     rows = [{ clerk_user_id: 'user_ben', email: false }]
-    const out = await notify(sql, { kind: 'due_digest', to: [ana, ben], subject: 'Due', html: '<p>x</p>' })
+    const out = await notify(sql, { kind: 'task_assigned', to: [ana, ben], subject: 'Due', html: '<p>x</p>' })
     expect(out).toEqual([
       { to: 'ana@peny.com', sent: true, messageId: 'id-ana@peny.com' },
       { to: 'ben@peny.com', skipped: 'setting' },
@@ -90,7 +90,7 @@ describe('notify', () => {
   })
   it('does nothing when mail is not set up', async () => {
     delete process.env.GMAIL_APP_PASSWORD
-    const out = await notify(sql, { kind: 'due_digest', to: [ana, { name: 'no email' }], subject: 'x', html: '' })
+    const out = await notify(sql, { kind: 'task_assigned', to: [ana, { name: 'no email' }], subject: 'x', html: '' })
     expect(out).toEqual([{ to: 'ana@peny.com', skipped: 'not_configured' }, { to: null, skipped: 'no_email' }])
     expect(sendMail).not.toHaveBeenCalled()
   })
@@ -179,5 +179,14 @@ describe('testing mode', () => {
     expect(testBanner('<p>x</p>', 'a@b.test').startsWith('<div')).toBe(true)
     expect(testBanner('<p>x</p>', '<i>@b.test')).toContain('&lt;i>@b.test')
     expect(testSubject('S', 'a@b.test')).toBe('[TEST → a@b.test] S')
+  })
+})
+
+describe('the daily digest is paused', () => {
+  it('sends nothing and is not offered in Settings', async () => {
+    const out = await notify(sql, { kind: 'due_digest', to: [ana], subject: 'Due', html: '<p>x</p>' })
+    expect(out).toEqual([{ to: 'ana@peny.com', skipped: 'paused' }])
+    expect(sendMail).not.toHaveBeenCalled()
+    expect(switchableKinds({ superadmin: true })).not.toContain('due_digest')
   })
 })

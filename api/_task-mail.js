@@ -80,6 +80,12 @@ export async function sendImmediateTaskEmails(sql, { task, actorName, notificati
     const [result] = await notify(sql, {
       kind: assigned ? 'task_assigned' : 'task_mentioned',
       to: { email: user.email, clerk_id: user.clerk_id, name: user.name },
+      // The same alert on their phone; a tap opens the task itself.
+      push: {
+        title: assigned ? 'New task for you' : `${actorName} mentioned you`,
+        body: task.title,
+        url: `/#tasks/${task.id}`,
+      },
       subject,
       html: taskEmailWrap(
         assigned ? 'A task for you' : 'You were mentioned',

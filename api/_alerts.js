@@ -249,11 +249,22 @@ async function send(sql, { kind, ownerId = null, companyId, email }) {
   return deliver(sql, { kind, to, email })
 }
 
+// What an email says, as a push: its subject for the title, its first sentence
+// for the body, and a tap opens the same page the email's link does.
+const plain = html => String(html ?? '').replace(/<[^>]*>/g, '')
+  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&')
+export function pushFor(email) {
+  let url = '/'
+  try { const u = new URL(email.href); url = `${u.pathname}${u.search}${u.hash}` } catch { /* keep '/' */ }
+  return { title: email.subject, body: plain(email.sentence), url }
+}
+
 async function deliver(sql, { kind, to, email }) {
   const results = []
   for (const person of to) {
     const [r] = await notify(sql, {
       kind, to: { email: person.email, clerk_id: person.clerk_id, name: person.name },
+      push: pushFor(email),
       subject: email.subject,
       html: wrap({
         title: email.title, subtitle: email.subtitle, greeting: `${hello(person)}${email.sentence}`,
@@ -329,6 +340,7 @@ export async function sendOwnerAssigned(sql, { deliverableId, assignedBy }) {
   }
   const [r] = await notify(sql, {
     kind: 'task_assigned', to: { email: owner.email, clerk_id: owner.clerk_id, name: owner.name },
+    push: pushFor(email),
     subject: email.subject,
     html: wrap({ title: email.title, subtitle: email.subtitle, greeting: `${hello(owner)}${email.sentence}`, bodyHtml: email.body, href: email.href, linkLabel: email.linkLabel }),
   })

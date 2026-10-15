@@ -4,29 +4,38 @@
 // recipient's notification settings and sends through the one transport here.
 // _notify.test.js fails if any other file imports nodemailer.
 //
+// Web push rides along: a caller that passes `push` (title, body, url) also
+// sends that alert to the recipient's phones and browsers (api/_push.js), for
+// kinds marked `push: true` below. Email and push are independent; a failure in
+// one never stops the other.
+//
 // NOT a Vercel function — the `_` prefix keeps it out of function detection.
 
 import nodemailer from 'nodemailer'
+import { sendPush } from './_push.js'
 
 // Every kind of email Slate sends. A `switchable` kind is listed in Settings ›
 // Notifications and each person can turn it off (or on, if it defaults off);
 // the rest are part of a workflow someone is waiting on and always send.
-// `superadmin` kinds are only offered to superadmins.
+// `superadmin` kinds are only offered to superadmins. A `push` kind also goes
+// to people's devices (Settings › Notifications › This device) and is
+// switched on its own. A `paused` kind is not sent at all and not offered in
+// Settings; drop the flag to bring it back.
 export const KINDS = {
   due_digest: {
     label: "What's due",
     description: 'Weekday email at 09:00 with your work that is overdue or due soon.',
-    switchable: true, default: true, testable: true,
+    switchable: true, default: true, testable: true, paused: true,
   },
   task_assigned: {
     label: 'Tasks assigned to you',
     description: 'An email as soon as someone gives you a task.',
-    switchable: true, default: true, testable: true,
+    switchable: true, default: true, push: true, testable: true,
   },
   task_mentioned: {
     label: 'Mentions',
     description: 'An email when someone mentions you in a task comment.',
-    switchable: true, default: true,
+    switchable: true, default: true, push: true,
   },
   note_reminder: {
     label: 'Note reminders',
@@ -45,39 +54,39 @@ export const KINDS = {
   alert_new_request: {
     label: 'New client requests',
     description: 'An email as soon as a client raises a request.',
-    switchable: true, default: true, testable: true,
+    switchable: true, default: true, push: true, testable: true,
   },
   alert_changes_requested: {
     label: 'Changes requested',
     description: 'An email when a client asks for changes to a delivery.',
-    switchable: true, default: true, testable: true,
+    switchable: true, default: true, push: true, testable: true,
   },
   alert_comments_in: {
     label: 'Comments are in',
     description: 'An email when a client says their feedback on a delivery is complete (and if they take it back).',
-    switchable: true, default: true, testable: true,
+    switchable: true, default: true, push: true, testable: true,
   },
   alert_client_reply: {
     label: 'Client replies',
     description: 'An email when a client replies on an item that is waiting on them.',
-    switchable: true, default: true, testable: true,
+    switchable: true, default: true, push: true, testable: true,
   },
   alert_due_soon: {
     label: 'Due within 48 hours',
     description: 'An email, once, when a deliverable is due within 48 hours and is not in review yet.',
-    switchable: true, default: true, testable: true,
+    switchable: true, default: true, push: true, testable: true,
   },
   alert_input_overdue: {
     label: 'Client input overdue',
     description: 'An email, once, when an item has been waiting on a client for over a week.',
-    switchable: true, default: true, testable: true,
+    switchable: true, default: true, push: true, testable: true,
   },
   // To whoever looks after unassigned work (Settings › Unassigned work), else
   // the superadmins.
   alert_unassigned: {
     label: 'Unassigned work',
     description: 'An email, once, when a task or deliverable has had no owner for two working days. Only sent to whoever looks after unassigned work.',
-    switchable: true, default: true, testable: true,
+    switchable: true, default: true, push: true, testable: true,
   },
   task_nudge:        { label: 'Unacknowledged task nudge', switchable: false },
   // To the client, each with their own Approve link. Clients have no settings
@@ -99,7 +108,7 @@ export const TESTABLE_KINDS = Object.entries(KINDS).filter(([, k]) => k.testable
 // The kinds a person can change, in Settings order.
 export const switchableKinds = ({ superadmin = false } = {}) =>
   Object.entries(KINDS)
-    .filter(([, k]) => k.switchable && (!k.superadmin || superadmin))
+    .filter(([, k]) => k.switchable && !k.paused && (!k.superadmin || superadmin))
     .map(([kind]) => kind)
 
 // Whether someone gets this kind of email, given their stored setting (or
@@ -109,6 +118,15 @@ export function wantsEmail(kind, stored) {
   if (!def) throw new Error(`Unknown notification kind: ${kind}`)
   if (!def.switchable) return true
   return stored ?? def.default
+}
+
+// Whether someone gets this kind of push, given their stored setting (or
+// undefined when they have never changed it). Only `push` kinds are ever sent.
+export function wantsPush(kind, stored) {
+  const def = KINDS[kind]
+  if (!def) throw new Error(`Unknown notification kind: ${kind}`)
+  if (!def.push) return false
+  return stored ?? true
 }
 
 export const mailConfigured = () => !!(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD)
@@ -122,14 +140,15 @@ function mailer() {
   return transport
 }
 
-// Stored settings for these people, as Map<clerk_id, boolean>.
+// Stored settings for these people, as Map<clerk_id, { email, push }>. Either
+// is null/undefined when they have never changed it.
 async function storedSettings(sql, kind, clerkIds) {
   if (!clerkIds.length) return new Map()
   const rows = await sql`
-    SELECT clerk_user_id, email FROM notification_settings
+    SELECT clerk_user_id, email, push FROM notification_settings
     WHERE kind = ${kind} AND clerk_user_id = ANY(${clerkIds}::text[])
   `
-  return new Map(rows.map(r => [r.clerk_user_id, r.email]))
+  return new Map(rows.map(r => [r.clerk_user_id, { email: r.email ?? undefined, push: r.push ?? undefined }]))
 }
 
 // ── Testing mode ─────────────────────────────────────────────────────────────
@@ -160,47 +179,70 @@ export function testBanner(html, intendedFor) {
   return at ? html.slice(0, at.index + at[0].length) + banner + html.slice(at.index + at[0].length) : banner + (html ?? '')
 }
 
-// Sends one email to each recipient that wants it.
+// Sends one email to each recipient that wants it, and, when `push` is given
+// and the kind is a push kind, the same alert to their devices.
 //   to: a recipient or a list — { email, clerk_id?, name? }. clerk_id is what
-//       their settings are keyed by; without it only the kind's default applies.
+//       their settings are keyed by; without it only the kind's default applies
+//       and there is no push (devices belong to a person).
+//   push: { title, body, url } — what the notification says and where a tap
+//       goes (a path on this app, e.g. '/#tasks').
 // Never throws for a failed send: returns one result per recipient —
-//   { to, sent: true, messageId } | { to, skipped: 'setting' | 'not_configured' | 'no_email' } | { to, error }
-export async function notify(sql, { kind, to, subject, html }) {
+//   { to, sent: true, messageId } | { to, skipped: 'setting' | 'not_configured' | 'no_email' | 'paused' } | { to, error }
+// each with a `push` outcome added when push was asked for (see sendPush).
+export async function notify(sql, { kind, to, subject, html, push }) {
   if (!KINDS[kind]) throw new Error(`Unknown notification kind: ${kind}`)
   const recipients = (Array.isArray(to) ? to : [to]).filter(Boolean)
 
-  // No mail set up (e.g. a preview deployment): nothing to look up or send.
-  if (!mailConfigured()) {
-    return recipients.map(r => (r.email ? { to: r.email, skipped: 'not_configured' } : { to: null, skipped: 'no_email' }))
+  if (KINDS[kind].paused) {
+    return recipients.map(r => ({ to: r.email ?? null, skipped: 'paused' }))
   }
 
-  const stored = KINDS[kind].switchable
+  const wantPush = !!push && !!KINDS[kind].push
+  const stored = (KINDS[kind].switchable || wantPush)
     ? await storedSettings(sql, kind, recipients.map(r => r.clerk_id).filter(Boolean))
     : new Map()
-
   const routing = KINDS[kind].testable ? await testRouting(sql) : null
 
   const results = []
   for (const r of recipients) {
-    if (!r.email) { results.push({ to: null, skipped: 'no_email' }); continue }
-    if (!wantsEmail(kind, r.clerk_id ? stored.get(r.clerk_id) : undefined)) { results.push({ to: r.email, skipped: 'setting' }); continue }
-    if (routing && !routing.emails.length) { results.push({ to: r.email, skipped: 'test_mode_no_recipients' }); continue }
-    // In testing mode the same email goes to the testers, saying who it was for.
-    const targets = routing ? routing.emails : [r.email]
-    try {
-      let last = null
-      for (const target of targets) {
-        last = await mailer().sendMail({
-          from: process.env.GMAIL_USER, to: target,
-          subject: routing ? testSubject(subject, r.email) : subject,
-          html: routing ? testBanner(html, r.email) : html,
-        })
-      }
-      results.push({ to: r.email, sent: true, messageId: last?.messageId ?? null, ...(routing ? { redirected_to: targets } : {}) })
-    } catch (err) {
-      console.error(`[notify] ${kind} to ${r.email} failed:`, err.message)
-      results.push({ to: r.email, error: err.message })
-    }
+    const mine = r.clerk_id ? stored.get(r.clerk_id) : undefined
+    const result = await emailOne(kind, r, { subject, html, routing, setting: mine?.email })
+    if (wantPush) result.push = await pushOne(sql, kind, r, { push, routing, setting: mine?.push })
+    results.push(result)
   }
   return results
+}
+
+async function emailOne(kind, r, { subject, html, routing, setting }) {
+  // No mail set up (e.g. a preview deployment): nothing to send.
+  if (!mailConfigured()) return r.email ? { to: r.email, skipped: 'not_configured' } : { to: null, skipped: 'no_email' }
+  if (!r.email) return { to: null, skipped: 'no_email' }
+  if (!wantsEmail(kind, setting)) return { to: r.email, skipped: 'setting' }
+  if (routing && !routing.emails.length) return { to: r.email, skipped: 'test_mode_no_recipients' }
+  // In testing mode the same email goes to the testers, saying who it was for.
+  const targets = routing ? routing.emails : [r.email]
+  try {
+    let last = null
+    for (const target of targets) {
+      last = await mailer().sendMail({
+        from: process.env.GMAIL_USER, to: target,
+        subject: routing ? testSubject(subject, r.email) : subject,
+        html: routing ? testBanner(html, r.email) : html,
+      })
+    }
+    return { to: r.email, sent: true, messageId: last?.messageId ?? null, ...(routing ? { redirected_to: targets } : {}) }
+  } catch (err) {
+    console.error(`[notify] ${kind} to ${r.email} failed:`, err.message)
+    return { to: r.email, error: err.message }
+  }
+}
+
+// → { skipped: 'no_account' | 'setting' | 'test_mode' } | sendPush()'s outcome.
+// In testing mode a push goes nowhere: it would reach the real person's phone,
+// and the testers' redirect is an email thing.
+async function pushOne(sql, kind, r, { push, routing, setting }) {
+  if (!r.clerk_id) return { skipped: 'no_account' }
+  if (!wantsPush(kind, setting)) return { skipped: 'setting' }
+  if (routing) return { skipped: 'test_mode' }
+  return sendPush(sql, { clerkId: r.clerk_id, kind, ...push })
 }
