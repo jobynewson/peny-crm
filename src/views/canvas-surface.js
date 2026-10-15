@@ -644,17 +644,12 @@ export class CanvasSurface {
 
   /** @param {any} st */
   _todoRowHtml(st) {
-    const users = this.app.allUsers ?? []
     const dis = this.canEdit ? '' : 'disabled'
+    // Owner / due date are no longer editable here; rows keep any saved values in data attributes so a save doesn't wipe them.
     return `
-      <div class="cv-todo-row${st.done ? ' cv-todo-row--done' : ''}" data-st-id="${esc(st.id || '')}">
+      <div class="cv-todo-row${st.done ? ' cv-todo-row--done' : ''}" data-st-id="${esc(st.id || '')}" data-owner="${esc(st.owner_id || '')}" data-due="${esc(st.due_date || '')}">
         <input type="checkbox" class="cv-todo-done" ${st.done ? 'checked' : ''} ${dis}>
         <input class="cv-todo-text" value="${esc(st.text || '')}" placeholder="Item…" ${dis}>
-        <select class="cv-todo-owner${st.owner_id ? ' is-set' : ''}" ${dis} title="Owner">
-          <option value="">Owner</option>
-          ${users.map((/** @type {any} */ u) => `<option value="${esc(u.clerk_id)}"${st.owner_id === u.clerk_id ? ' selected' : ''}>${esc(u.name || u.email)}</option>`).join('')}
-        </select>
-        <input type="date" class="cv-todo-due${st.due_date ? ' is-set' : ''}" value="${esc(st.due_date || '')}" ${dis} title="Due date">
         ${this.canEdit ? '<button class="cv-todo-del" data-card-act="todo-del" title="Remove">×</button>' : ''}
       </div>`
   }
@@ -1699,9 +1694,6 @@ export class CanvasSurface {
     if (t.classList.contains('cv-todo-done')) {
       t.closest('.cv-todo-row')?.classList.toggle('cv-todo-row--done', /** @type {HTMLInputElement} */ (t).checked)
       this._saveTodo(id, false)
-    } else if (t.classList.contains('cv-todo-owner') || t.classList.contains('cv-todo-due')) {
-      t.classList.toggle('is-set', !!(/** @type {HTMLInputElement} */ (t).value))
-      this._saveTodo(id, false)
     }
   }
 
@@ -1819,8 +1811,8 @@ export class CanvasSurface {
       return {
         id: r.dataset.stId || crypto.randomUUID(),
         text: /** @type {HTMLInputElement | null} */ (r.querySelector('.cv-todo-text'))?.value.trim() || '',
-        owner_id: /** @type {HTMLSelectElement | null} */ (r.querySelector('.cv-todo-owner'))?.value || '',
-        due_date: /** @type {HTMLInputElement | null} */ (r.querySelector('.cv-todo-due'))?.value || '',
+        owner_id: r.dataset.owner || '',
+        due_date: r.dataset.due || '',
         done: /** @type {HTMLInputElement | null} */ (r.querySelector('.cv-todo-done'))?.checked || false,
       }
     })

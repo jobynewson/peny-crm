@@ -5,7 +5,7 @@
 // nothing else works out what's due.
 //
 // Sources: worklist deliverables (the older deliverables stored as JSON on
-// projects are no longer read), marketing sub-tasks and card due dates, canvas checklists, planning-board cards,
+// projects are no longer read), marketing sub-tasks and card due dates, planning-board cards,
 // edit deadlines (post-production blocks and Team Calendar deadlines) and
 // tasks with a due date.
 //
@@ -23,7 +23,6 @@ export const TYPE_LABELS = {
   edit_deadline:       'Edit deadline',
   marketing_task:      'Marketing',
   marketing_card:      'Marketing',
-  checklist:           'Checklist',
   board_card:          'Board',
 }
 
@@ -35,7 +34,7 @@ export const isFinishedColumn = name => FINISHED_COLUMN.test(String(name || '').
 // ── SQL ──────────────────────────────────────────────────────────────────────
 
 export async function fetchDueSources(sql, { ws, today, to }) {
-  const [worklist, marketing, checklists, boardCards, ppsPhases, calendar, tasks, users] = await Promise.all([
+  const [worklist, marketing, boardCards, ppsPhases, calendar, tasks, users] = await Promise.all([
     // Open deliverables in active workstreams (a paused or complete workstream
     // is not chasing anyone).
     sql`
@@ -53,13 +52,6 @@ export async function fetchDueSources(sql, { ws, today, to }) {
       SELECT id, title, due_date::text AS due_date, lead_owner_id, sub_tasks
       FROM marketing_cards
       WHERE user_id = ${ws} AND status <> 'done'
-    `,
-    sql`
-      SELECT ci.id, ci.sub_tasks, c.id AS canvas_id, c.name AS canvas_name
-      FROM canvas_items ci
-      JOIN canvases c ON c.id = ci.canvas_id
-      WHERE c.user_id = ${ws} AND ci.kind = 'todo'
-        AND jsonb_typeof(ci.sub_tasks) = 'array' AND jsonb_array_length(ci.sub_tasks) > 0
     `,
     sql`
       SELECT bc.id, bc.title, bc.due_date::text AS due_date, bc.assignee_id,
@@ -94,7 +86,7 @@ export async function fetchDueSources(sql, { ws, today, to }) {
     `,
     sql`SELECT id, clerk_id, name, email FROM app_users`,
   ])
-  return { worklist, marketing, checklists, boardCards, ppsPhases, calendar, tasks, users }
+  return { worklist, marketing, boardCards, ppsPhases, calendar, tasks, users }
 }
 
 // ── The pure part ────────────────────────────────────────────────────────────
@@ -143,16 +135,7 @@ export function collectDue(src, { today, to, ownerId = null }) {
     })
   }
 
-  for (const item of list(src.checklists)) {
-    list(item.sub_tasks).forEach((st, i) => {
-      if (!st?.text || st.done || !st.due_date) return
-      raw.push({
-        type: 'checklist', key: `cl:${item.id}:${st.id ?? i}`, title: st.text, context: item.canvas_name || 'Canvas checklist',
-        date: toDateString(st.due_date), owner_id: byClerk.get(st.owner_id)?.id ?? null,
-        link: `#planning/canvas/${item.canvas_id}`,
-      })
-    })
-  }
+  // Canvas checklist items no longer carry an owner or due date, so they aren't a source.
 
   for (const c of list(src.boardCards)) {
     if (isFinishedColumn(c.column_name)) continue

@@ -55,7 +55,7 @@ async function seed(ws, prefix) {
   const [canvas] = await sql`INSERT INTO canvases (user_id, name) VALUES (${ws}, ${prefix + 'Shoot plan'}) RETURNING id`
   await sql`INSERT INTO canvas_items (canvas_id, kind, sub_tasks) VALUES
     (${canvas.id}, 'todo', ${JSON.stringify([{ id: 'x', text: prefix + 'Book van', due_date: '2026-10-03', owner_id: 'user_due_ana', done: false }])}::jsonb),
-    (${canvas.id}, 'note', ${JSON.stringify([{ id: 'y', text: prefix + 'Not a checklist', due_date: '2026-10-03' }])}::jsonb)`
+    (${canvas.id}, 'note', ${JSON.stringify([{ id: 'y', text: prefix + 'Checklist rows are not a source', due_date: '2026-10-03' }])}::jsonb)`
 
   const [board] = await sql`INSERT INTO boards (user_id, name) VALUES (${ws}, ${prefix + 'Autumn'}) RETURNING id`
   const [doing] = await sql`INSERT INTO board_columns (board_id, name) VALUES (${board.id}, 'In progress') RETURNING id`
@@ -101,7 +101,6 @@ describeDb('the What\'s due feed against Postgres', () => {
       ['2026-09-21', 'task', 'Chase reply', null],
       ['2026-09-30', 'marketing_task', 'Write intro', 'Ben'],
       ['2026-10-02', 'deliverable', 'Hero film', 'Ana'],
-      ['2026-10-03', 'checklist', 'Book van', 'Ana'],
       ['2026-10-04', 'board_card', 'Script', 'Ben'],
       ['2026-10-05', 'marketing_card', 'Newsletter', 'Ana'],
       ['2026-10-06', 'edit_deadline', 'Picture lock', 'Ana'],

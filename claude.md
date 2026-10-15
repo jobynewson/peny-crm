@@ -1130,7 +1130,6 @@ always the source of truth and nothing is ever read back from Google.
   - (the deliverables that used to be stored as JSON on projects are no
     longer read — see "Worklists belong to projects");
   - marketing card due dates and sub-tasks, except cards in Done;
-  - canvas checklists (the `sub_tasks` of `todo` items);
   - planning-board cards, except in a column named Done, Complete(d),
     Finished, Delivered, Approved or Archived (columns are named by people);
   - edit deadlines: post-production blocks marked as deadlines and not
@@ -1141,7 +1140,7 @@ always the source of truth and nothing is ever read back from Google.
 - Undated work isn't in the feed. Overdue work of any age is, plus the next
   `days` (14 on the Dashboard and the office screen, 3 in the email).
 - Owners: tasks, boards, deliverables, post-production and the Team Calendar
-  store `app_users` ids; marketing and canvas checklists store Clerk ids.
+  store `app_users` ids; marketing sub-tasks store Clerk ids.
   `collectDue()` maps both, and `?owner=me` comes from the session.
 - **Dashboard**: the What's due list sits above Live Projects (after the
   calendar and Tasks sections): Everyone or Mine (remembered per browser in
@@ -1152,7 +1151,7 @@ always the source of truth and nothing is ever read back from Google.
   email per person — their overdue work and the next three days, with
   unacknowledged tasks on top. It replaced two emails (project deliverables,
   and marketing sub-tasks from the removed `api/_sub-tasks.js`) and now also
-  covers board cards, checklists, edit deadlines and dated tasks.
+  covers board cards, edit deadlines and dated tasks.
 - **Office screen**: the feed under the `deliverables` key it always read,
   everyone's, with no owners. Undated deliverables no longer show there.
 

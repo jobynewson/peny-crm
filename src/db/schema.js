@@ -656,8 +656,8 @@ export const canvases = pgTable('canvases', {
 //   'image' — image_url
 //   'link'  — url (destination); image_url reused as preview thumbnail,
 //             content reused as the fetched title
-//   'todo'  — sub_tasks checklist ([{ id, text, owner_id, due_date, done }],
-//             owner_id is a Clerk ID, same shape as marketing_cards.sub_tasks)
+//   'todo'  — sub_tasks checklist ([{ id, text, done }]; older rows may still carry owner_id / due_date, kept but no longer shown or read;
+//             owner_id was a Clerk ID)
 //   'swatch'— color (#RRGGBB); content is the swatch's name
 //   'board' — child_canvas_id: a portal to a nested canvas (content caches
 //             its name for the card face)

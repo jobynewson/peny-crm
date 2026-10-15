@@ -2064,20 +2064,9 @@ body.cv-body-lock { overflow: hidden; }
 }
 .cv-todo-row:hover .cv-todo-text:not(:disabled) { background: var(--bg-secondary); }
 .cv-todo-text:focus { border-color: var(--accent); background: var(--bg-primary) !important; }
-.cv-todo-owner, .cv-todo-due {
-  font-size: 10px; padding: 3px 5px;
-  border: 1px solid var(--border-light); border-radius: var(--radius-sm);
-  background: var(--bg-secondary); color: var(--text-secondary);
-  font-family: var(--font); outline: none;
-}
-.cv-todo-owner { max-width: 84px; flex-shrink: 0; }
-.cv-todo-due { flex-shrink: 0; max-width: 112px; }
-/* Owner / due stay out of the way until they're set or the row is in use. */
-.cv-todo-owner:not(.is-set), .cv-todo-due:not(.is-set), .cv-todo-del { display: none; }
-.cv-todo-row:hover .cv-todo-owner, .cv-todo-row:focus-within .cv-todo-owner,
-.cv-todo-row:hover .cv-todo-due, .cv-todo-row:focus-within .cv-todo-due,
+/* The delete button stays out of the way until the row is in use. */
+.cv-todo-del { display: none; }
 .cv-todo-row:hover .cv-todo-del, .cv-todo-row:focus-within .cv-todo-del { display: inline-block; }
-.cv-wrap--readonly .cv-todo-owner:not(.is-set), .cv-wrap--readonly .cv-todo-due:not(.is-set) { display: none !important; }
 .cv-todo-del {
   flex-shrink: 0; background: none; border: none; cursor: pointer;
   color: var(--text-tertiary); font-size: 14px; line-height: 1; padding: 1px 3px;
