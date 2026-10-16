@@ -1385,6 +1385,28 @@ always the source of truth and nothing is ever read back from Google.
   (`public/portal.html`) are gone; `api/portal.js` answers 404 for anything
   but its `?view=` routes.
 
+### Shared boards in the client portal (`drizzle/0052`)
+- Staff share a kanban board or a ROOT canvas with client companies from the
+  **Share** button on the board or canvas page (`src/views/share-board-modal.js`
+  → `PUT /api/board-shares/:kind/:id`, `api/_board-shares.js`, editors only).
+  One `board_shares` row per (board or canvas, company); it goes with the board,
+  canvas or company. **View only**: there is no write route. Letting clients
+  edit is a later version (needs their own live-collaboration access).
+- The portal lists them in the signed-in view (`view.boards`) and opens one
+  with `GET /api/client/boards/:kind/:id` (company scope only: project links and
+  Approve links get 404). `api/_client-boards.js` is the ONLY reader. Every
+  query carries `scope.ws` and, for a share lookup, `scope.companyId`; a nested
+  canvas is reachable only through its root's share (recursive walk up).
+  `_client-boards.test.js` reads the source for those rules.
+- What a client gets: a card's words, colour, picture, link, checklist ticks,
+  arrows and nested boards. Never owners, due dates or entity links, nor a
+  kanban card's assignee, due date, labels or links. Private-store pictures are
+  not given as links: `GET …/items/:item/image` streams them after the same check
+  and the page loads them with the sign-in (object URL).
+- The viewer is `src/portal/boards.js`: a read-only canvas (pan, pinch/wheel
+  zoom, Fit; maths from `src/utils/canvas-math.js`) and a read-only kanban, drawn
+  over the page; it holds no editing code and never imports Slate's own canvas.
+
 ### Client portal page (`portal.html`, `src/portal/`)
 - One page for both ways in, reading one endpoint (`GET /api/client/view`):
   `/portal/<token>` (a project's link: that project, read-only) and `/portal`

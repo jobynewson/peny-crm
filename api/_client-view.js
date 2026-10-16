@@ -21,6 +21,7 @@
 import { londonDate } from './_dates.js'
 import { clientStatus, clientFace, isDelivered, canAnswerDelivered, dueDisplay, isFrameIoUrl, requestLabel, RESPONSE_LABELS, WORKSTREAM_LABELS } from './_retainer-rules.js'
 import { isScope } from './_worklist.js'
+import { listSharedBoards } from './_client-boards.js'
 
 // → the view, or null if the scope's company or project no longer exists.
 // (An Approve link's scope has its own reader, readLinkView, below: it is not
@@ -94,7 +95,7 @@ async function linkView(sql, scope) {
 // ── Signed in: the company's whole visible worklist ──────────────────────────
 
 async function companyView(sql, scope) {
-  const [companies, studios, workstreams, deliverables, rounds, requests, projects] = await Promise.all([
+  const [companies, studios, workstreams, deliverables, rounds, requests, projects, boards] = await Promise.all([
     sql`
       SELECT c.name FROM companies c
       WHERE c.id = ${scope.companyId} AND c.user_id = ${scope.ws}
@@ -152,6 +153,8 @@ async function companyView(sql, scope) {
       WHERE p.user_id = ${scope.ws} AND p.company_id = ${scope.companyId} AND p.status <> 'Delivered'
       ORDER BY p.is_retainer DESC, lower(p.name)
     `,
+    // Planning boards and canvases Peny has shared with the company (_client-boards.js).
+    listSharedBoards(sql, scope),
   ])
   if (!companies[0]) return null
   const today = londonDate()
@@ -163,6 +166,7 @@ async function companyView(sql, scope) {
     workstreams: worklistJson({ workstreams, deliverables, rounds, today, canRespond: scope.canRespond, showReplies: true }),
     requests: requestsJson(requests, today),
     projects: projects.map(p => ({ id: p.id, name: p.name })),
+    boards: boards.map(b => ({ kind: b.kind, id: b.id, name: b.name })),
   }
 }
 
