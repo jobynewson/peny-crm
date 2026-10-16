@@ -14,6 +14,7 @@ import {
 import { joinRoom } from '../realtime/realtime.js'
 import { mountStatusSwitch } from './board-status.js'
 import { segTabs, bindSegTabs } from './toolbar.js'
+import { openShareModal } from './share-board-modal.js'
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
 const fmtDate = d => d ? new Date(String(d).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''
@@ -221,6 +222,7 @@ export class BoardsView {
             ${this.app.projects.map(p => `<option value="${p.id}"${this.board.project_id === p.id ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}
           </select>
           <button class="btn-cancel" id="bd-recurring" style="font-size:12px">↻ Recurring</button>
+          <button class="btn-cancel" id="bd-share" style="font-size:12px" title="Let a client company see this board in their portal (view only)">Share</button>
           <button class="btn-cancel" id="bd-delete-board" style="font-size:12px;color:var(--danger)">Delete</button>
         ` : (proj ? `<span style="font-size:11px;color:var(--text-tertiary)">Linked to ${esc(proj.name)}</span>` : '')}
       </div>
@@ -244,6 +246,7 @@ export class BoardsView {
       } catch (err) { console.error(err); this.app.toast('Error linking board') }
     })
     mc.querySelector('#bd-recurring')?.addEventListener('click', () => this.openRecurrencesModal())
+    mc.querySelector('#bd-share')?.addEventListener('click', () => openShareModal(this.app, { kind: 'board', id: this.board.id, name: this.board.name }))
     mc.querySelector('#bd-delete-board')?.addEventListener('click', async () => {
       const ok = await this.app.confirm({ title: 'Delete this board?', message: 'All columns, cards and recurring schedules on it will be deleted.', confirmLabel: 'Delete board' })
       if (!ok) return

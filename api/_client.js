@@ -44,6 +44,7 @@ import { hashToken } from './_delivery-mail.js'
 import { alertNewRequest, alertChangesRequested, alertClientReply, alertCommentsIn, alertApproved } from './_alerts.js'
 import { emailRequestUpdate } from './_request-mail.js'
 import { readClientView, readLinkView } from './_client-view.js'
+import { readSharedBoard, readSharedImage } from './_client-boards.js'
 
 // `kinds` is which scopes a route serves (checked before its handler runs):
 // the worklist routes serve a signed-in company or a project link; the two
@@ -61,6 +62,9 @@ export const ROUTES = [
   { method: 'POST', pattern: new RegExp(`^client/deliverables/(?<id>${UUID})/reply$`), handler: reply },
   { method: 'POST', pattern: new RegExp(`^client/deliverables/(?<id>${UUID})/response$`), handler: respondDelivered },
   { method: 'POST', pattern: /^client\/requests$/,                                   handler: raiseRequest },
+  // Boards and canvases Peny has shared with the company (view only; company scope only).
+  { method: 'GET',  pattern: new RegExp(`^client/boards/(?<kind>board|canvas)/(?<id>${UUID})$`), handler: getBoard, kinds: ['company'] },
+  { method: 'GET',  pattern: new RegExp(`^client/boards/canvas/(?<id>${UUID})/items/(?<item>${UUID})/image$`), handler: getBoardImage, kinds: ['company'] },
 ]
 
 const TOKEN = /^[A-Za-z0-9_-]{8,128}$/
@@ -152,6 +156,31 @@ async function getView(req, res, { sql, scope }) {
   const view = await readClientView(sql, scope)
   if (!view) return fail(res, 404, 'not_found', 'This portal is no longer available')
   return res.status(200).json(view)
+}
+
+// ── GET /api/client/boards/:kind/:id ─────────────────────────────────────────
+// A board or canvas Peny shared with this company, for looking at. Anything
+// else reads as not found.
+async function getBoard(req, res, { sql, scope, params }) {
+  const board = await readSharedBoard(sql, scope, params.kind, params.id)
+  if (!board) return fail(res, 404, 'not_found', 'This board isn’t shared with you')
+  return res.status(200).json({ board })
+}
+
+// ── GET /api/client/boards/canvas/:id/items/:item/image ──────────────────────
+// A picture from the private store, on a card of a shared canvas.
+async function getBoardImage(req, res, { sql, scope, params }) {
+  const image = await readSharedImage(sql, scope, params.id, params.item)
+  const token = process.env.BLOB_READ_WRITE_TOKEN
+  if (!image || !token) return fail(res, 404, 'not_found', 'Picture not found')
+  const upstream = await fetch(image.url, { headers: { Authorization: `Bearer ${token}` } })
+  if (!upstream.ok) return fail(res, 404, 'not_found', 'Picture not found')
+  const buffer = Buffer.from(await upstream.arrayBuffer())
+  const type = upstream.headers.get('content-type') || ''
+  res.setHeader('Content-Type', /^image\//.test(type) ? type : 'application/octet-stream')
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('Cache-Control', 'private, max-age=3600')
+  return res.status(200).send(buffer)
 }
 
 // ── POST /api/client/deliveries/:id/response ─────────────────────────────────

@@ -985,6 +985,20 @@ export const push_log = pgTable('push_log', {
   created_at:    timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+// ── Boards shared with clients (drizzle/0052_add_board_shares.sql) ───────────
+// A kanban board or ROOT canvas shown, view only, in a company's client portal.
+// Exactly one of board_id / canvas_id is set. Written by api/_board-shares.js,
+// read by api/_client-boards.js.
+export const board_shares = pgTable('board_shares', {
+  id:         uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id:    text('user_id').notNull(),
+  company_id: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+  board_id:   uuid('board_id').references(() => boards.id, { onDelete: 'cascade' }),
+  canvas_id:  uuid('canvas_id').references(() => canvases.id, { onDelete: 'cascade' }),
+  created_by: text('created_by'),
+  created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 // ── Personal Tools › Training (drizzle/0046_add_training.sql) ─────────────────
 // One profile per person (their sport, cool-down areas, kit and Build-a-session
 // settings) and one row per completed session. Both are keyed by the owner's

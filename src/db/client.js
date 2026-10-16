@@ -38,7 +38,7 @@ export const db = drizzle(sql, { schema })
 // them only while the database's recorded version is behind this one; the
 // normal boot is a single read. src/db/migrations-version.test.js fails if the
 // statements change and this doesn't.
-export const SCHEMA_VERSION = 9
+export const SCHEMA_VERSION = 10
 
 export async function runMigrations() {
   let current = 0
@@ -935,6 +935,23 @@ async function applyMigrations() {
     )
   `
   await sql`CREATE INDEX IF NOT EXISTS push_log_user_idx ON push_log (clerk_user_id, created_at DESC)`
+
+  // ── Boards and canvases shared with client companies, view only (drizzle/0052) ──
+  await sql`
+    CREATE TABLE IF NOT EXISTS board_shares (
+      id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id     TEXT NOT NULL,
+      company_id  UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      board_id    UUID REFERENCES boards(id) ON DELETE CASCADE,
+      canvas_id   UUID REFERENCES canvases(id) ON DELETE CASCADE,
+      created_by  TEXT,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK ((board_id IS NOT NULL) <> (canvas_id IS NOT NULL))
+    )
+  `
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS board_shares_board_uidx  ON board_shares (board_id, company_id)  WHERE board_id IS NOT NULL`
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS board_shares_canvas_uidx ON board_shares (canvas_id, company_id) WHERE canvas_id IS NOT NULL`
+  await sql`CREATE INDEX IF NOT EXISTS board_shares_company_idx ON board_shares (company_id)`
 
   // ── Who looks after unassigned work (drizzle/0048) ─────────────────────────
   await sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS assignment_lead_id UUID REFERENCES app_users(id) ON DELETE SET NULL`

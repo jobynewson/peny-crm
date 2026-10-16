@@ -16,6 +16,7 @@
 import './portal.css'
 import { renderView, bindView, approveHtml, message, esc } from './render.js'
 import { startLive } from './live.js'
+import { bindBoards } from './boards.js'
 
 const root = document.getElementById('portal')
 const approving = /^\/portal\/approve\/?$/.test(location.pathname)
@@ -30,6 +31,14 @@ async function headers() {
   if (approving) return { 'X-Action-Token': location.hash.slice(1) }
   const jwt = await clerk?.session?.getToken()
   return jwt ? { Authorization: `Bearer ${jwt}` } : {}
+}
+
+// A picture that needs the visitor's sign-in (an <img> tag can't send it):
+// fetched with it, and handed back as an object URL.
+async function imageUrl(path) {
+  const res = await fetch(path, { headers: await headers() })
+  if (!res.ok) throw new Error(`Picture failed (${res.status})`)
+  return URL.createObjectURL(await res.blob())
 }
 
 async function api(path, { method = 'GET', body } = {}) {
@@ -137,6 +146,7 @@ async function show(view = null) {
   live?.seen(view)
   const canSwitch = (clerk?.user?.organizationMemberships?.length ?? 0) > 1
   root.innerHTML = renderView(view, { signedIn: !token, canSwitch })
+  bindBoards(root, { api, image: imageUrl })
   bindView(root, view, {
     respond: async (deliveryId, body) => {
       const result = await api(`/api/client/deliveries/${deliveryId}/response`, { method: 'POST', body })
