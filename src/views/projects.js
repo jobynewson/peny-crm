@@ -1,4 +1,5 @@
 import { createProject, updateProject, deleteProject, getProjectWorklistCounts, renumberProjectKanban, linkBudgetToProject, unlinkBudgetFromProject, logActivity, getActivityLog, getTimeEntries, setTrackToken, deleteTimeEntry, getWorkLog, addWorkLogEntry, deleteWorkLogEntry, updateBudget } from '../db/client.js'
+import { audienceFor, clientChip } from './client-facing.js'
 import { companyFieldHtml, bindCompanyField, setCompanyField, resolveCompanyField, companyById } from './company-field.js'
 import { PostProductionView } from './post-production.js'
 import { Worklist } from './worklist.js'
@@ -796,7 +797,7 @@ export class ProjectsView {
   _renderTabOverview(p, cl, delivs, crew, shots, doneCount, field) {
     return `
       <div class="proj-panel">
-        <div class="proj-panel-head">Brief &amp; overview</div>
+        <div class="proj-panel-head">Brief &amp; overview${this._clientAudience(p) ? ` <span style="margin-left:6px">${clientChip({ to: this._clientAudience(p) })}</span>` : ''}</div>
         <div class="proj-panel-body">
           ${field('Client', cl ? `${esc(cl.first_name)} ${esc(cl.last_name)}${cl.company?' · '+esc(cl.company):''}` : '')}
           ${field('Company', esc(companyById(this.app, p.company_id)?.name || ''))}
@@ -847,7 +848,7 @@ export class ProjectsView {
       </div>` : ''}
 
       <div class="proj-panel">
-        <div class="proj-panel-head">Work log</div>
+        <div class="proj-panel-head">Work log${p.portal_token ? ` <span style="margin-left:6px">${clientChip({ to: 'anyone with the client link' })}</span>` : ''}</div>
         <div id="pv-worklog" style="padding:12px 14px">
           <div style="font-size:11px;color:var(--text-tertiary);padding:10px 0">Loading…</div>
         </div>
@@ -939,6 +940,12 @@ export class ProjectsView {
       </div>`
   }
 
+  // The brief is only read through the project's client link (the signed-in
+  // portal shows worklists, not the project brief).
+  _clientAudience(p) {
+    return audienceFor({ hasLink: !!p.portal_token })
+  }
+
   // Whether signed-in clients see this project's time in their portal.
   _timeClientToggleHtml(p) {
     if (!p.company_id) return `<div style="padding:10px 14px;border-bottom:1px solid var(--border-light);font-size:11px;color:var(--text-tertiary)">Link this project to a client company to show its time in the portal.</div>`
@@ -948,6 +955,7 @@ export class ProjectsView {
         <label style="display:flex;align-items:center;gap:8px;${canEdit ? 'cursor:pointer' : 'opacity:0.7'}">
           <input type="checkbox" id="pv-tt-client" ${p.show_time_to_client ? 'checked' : ''} ${canEdit ? '' : 'disabled'} style="width:14px;height:14px;flex-shrink:0" />
           <span style="font-size:12px;color:var(--text-secondary);font-weight:500">Show time to client in the portal</span>
+          ${p.show_time_to_client ? clientChip({ to: companyById(this.app, p.company_id)?.name }) : ''}
         </label>
         <div style="font-size:11px;color:var(--text-tertiary);margin-top:4px;line-height:1.5;padding-left:22px">
           Signed-in people at the client see hours by role${p.is_retainer ? ' and the retainer\u2019s monthly usage' : ''}. Names and notes are never shown.
@@ -3946,7 +3954,7 @@ export class ProjectsView {
         <div class="proj-main">
 
           <div class="proj-panel">
-            <div class="proj-panel-head">Brief &amp; overview</div>
+            <div class="proj-panel-head">Brief &amp; overview${this._clientAudience(p) ? ` <span style="margin-left:6px">${clientChip({ to: this._clientAudience(p) })}</span>` : ''}</div>
             <div class="proj-panel-body">
               <div>
                 <div class="proj-field-label">Client</div>

@@ -12,6 +12,8 @@ import {
 } from '../db/client.js'
 import { CanvasSurface } from './canvas-surface.js'
 import { openShareModal } from './share-board-modal.js'
+import { clientChip, audienceFor } from './client-facing.js'
+import { getBoardShares } from '../api/board-shares.js'
 
 /** @typedef {import('./canvas-surface.js').CanvasRow & { created_at?: any }} CanvasRow */
 
@@ -230,6 +232,7 @@ export class CanvasView {
             ${(this.app.projects ?? []).map((/** @type {any} */ p) => `<option value="${esc(p.id)}"${canvas.project_id === p.id ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}
           </select>
           <button class="btn-cancel" id="cv-share" style="font-size:12px" title="Let a client company see this canvas in their portal (view only)">Share</button>
+          <span id="cv-cf"></span>
           <button class="btn-cancel" id="cv-delete" style="font-size:12px;color:var(--danger)">Delete</button>
         ` : (proj ? `<span style="font-size:11px;color:var(--text-tertiary)">Linked to ${esc(proj.name)}</span>` : '')}
       </div>
@@ -257,7 +260,17 @@ export class CanvasView {
         this.app.toast(value ? 'Canvas linked to project' : 'Canvas unlinked')
       } catch (err) { console.error(err); this.app.toast('Error linking canvas') }
     })
-    mc.querySelector('#cv-share')?.addEventListener('click', () => openShareModal(this.app, { kind: 'canvas', id: canvas.id, name: canvas.name }))
+    const showShared = async () => {
+      const slot = mc.querySelector('#cv-cf')
+      if (!slot) return
+      try {
+        const shared = await getBoardShares('canvas', canvas.id)
+        const to = audienceFor({ companies: shared.map((/** @type {any} */ c) => c.name) })
+        slot.innerHTML = to ? clientChip({ to }) : ''
+      } catch { slot.innerHTML = '' }
+    }
+    if (this.canEdit) showShared()
+    mc.querySelector('#cv-share')?.addEventListener('click', () => openShareModal(this.app, { kind: 'canvas', id: canvas.id, name: canvas.name }, showShared))
     mc.querySelector('#cv-delete')?.addEventListener('click', async () => {
       const nested = this._descendantCount(canvas.id)
       const ok = await this.app.confirm({

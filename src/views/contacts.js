@@ -1,6 +1,7 @@
 import {
   createContact, updateContact, deleteContact, logActivity, getActivityLog,
 } from '../db/client.js'
+import { clientChip } from './client-facing.js'
 import { companyFieldHtml, bindCompanyField, resolveCompanyField, companyById, rememberCompany } from './company-field.js'
 import { findOrCreateCompany, setCompanyType } from '../api/companies.js'
 import { openPortalPanel, leadLine, openLeadForm, openCompanyEdit, confirmDeleteCompany, openCompanyPicker } from './company-panels.js'
@@ -188,6 +189,7 @@ export class ContactsView {
           ${this.canEdit && !company.type_reviewed ? `<button type="button" class="btn-secondary" data-co-confirm="${company.id}">Looks right</button>` : ''}
           ${this.canEdit ? `<button type="button" class="btn-secondary" data-co-add="${company.id}">+ Person</button>` : ''}
           <a class="btn-secondary" href="/portal?preview=${company.id}" target="_blank" rel="noopener">View as client</a>
+          ${company.clerk_org_id ? clientChip({ to: company.name }) : ''}
           ${this.isSuperadmin ? `<button type="button" class="btn-secondary" data-co-portal="${company.id}">Portal access</button>` : ''}
           ${leadLine(this.app, { ...company, lead_name: company.lead_name ?? (this.app.allUsers || []).find(u => u.id === company.lead_id)?.name }, { canEdit: this.canEdit }).replace('data-co-lead', `data-co-lead="${company.id}"`)}
         </div>

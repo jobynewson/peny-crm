@@ -13,6 +13,7 @@
 //
 // The board owns the list and the refresh; this draws the card and its forms.
 
+import { clientCaption } from './client-facing.js'
 import { openFloating } from './popover.js'
 import * as api from '../api/requests.js'
 
@@ -170,6 +171,7 @@ export function openDeclineForm(app, anchor, r, { onChanged } = {}) {
         <div class="tl-field">
           <label for="rq-note">A note for ${esc(r.company)} <span class="tl-optional">(they will read it)</span></label>
           <textarea id="rq-note" rows="3" maxlength="1000" data-autofocus></textarea>
+          ${clientCaption('Client reads this in the portal')}
         </div>
         <div class="tl-msg" id="rq-decline-msg" role="alert"></div>
         <button type="submit" class="btn-primary tl-submit">Decline</button>

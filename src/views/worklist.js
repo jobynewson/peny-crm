@@ -18,6 +18,7 @@
 // kinds, cadences, due text and day counts all arrive in the payload, worked
 // out by api/_retainer-rules.js — the module the portal uses too.
 
+import { shownTo, clientCaption } from './client-facing.js'
 import * as api from '../api/retainers.js'
 import { openFloating } from './popover.js'
 import { icon } from './icons.js'
@@ -173,7 +174,7 @@ export class Worklist {
     const waiting = d.status === 'waiting_on_client'
       ? `<div class="rt-d-waiting">${d.waiting_note ? `Waiting for: ${esc(d.waiting_note)}` : 'Waiting on the client'}${d.waiting_days != null ? ` · ${d.waiting_days ? `for ${count(d.waiting_days, 'day')}` : 'since today'}` : ''}</div>`
       : ''
-    const eyeLabel = d.client_visible ? 'Shown to the client' : 'Hidden from the client'
+    const eyeLabel = d.client_visible ? shownTo(this.page.company?.name) : 'Hidden from the client'
     const eye = this.canEdit
       ? `<button type="button" class="icon-btn rt-eye${d.client_visible ? ' rt-eye--on' : ''}" data-rt-visible="${d.id}" data-focus-key="eye-${d.id}" aria-pressed="${d.client_visible}" aria-label="${esc(`${eyeLabel}: ${d.title}`)}" title="${eyeLabel}">${icon(d.client_visible ? 'eye' : 'eyeOff', 18)}</button>`
       : `<span class="rt-eye${d.client_visible ? ' rt-eye--on' : ''}" title="${eyeLabel}" aria-label="${eyeLabel}" role="img">${icon(d.client_visible ? 'eye' : 'eyeOff', 18)}</span>`
@@ -358,6 +359,7 @@ export class Worklist {
         <div class="tl-field">
           <label for="rt-send-note">Note <span class="tl-optional">(optional — the client sees it)</span></label>
           <textarea id="rt-send-note" rows="2"></textarea>
+          ${clientCaption('Client reads this')}
         </div>
         ${d.client_visible ? '' : `<label class="rt-check"><input type="checkbox" id="rt-send-show" checked /> Show this deliverable to the client (it's hidden now)</label>`}
         <p class="tl-hint">It goes to the client as round ${next} and the deliverable moves to In review.</p>
@@ -492,7 +494,7 @@ export class Worklist {
         <label class="rt-check"><input type="checkbox" id="rt-f-visible"${d.client_visible ? ' checked' : ''} /> Show to the client</label>
         ${d.status === 'waiting_on_client' ? `
           <div class="tl-field"><label for="rt-f-waiting">What we need from them <span class="tl-optional">(the client sees this)</span></label>
-            <textarea id="rt-f-waiting" rows="2">${esc(d.waiting_note || '')}</textarea></div>` : ''}
+            <textarea id="rt-f-waiting" rows="2">${esc(d.waiting_note || '')}</textarea>${clientCaption('Client reads this')}</div>` : ''}
         <div class="tl-field"><label for="rt-f-notes">Internal notes <span class="tl-optional">(never shown to the client)</span></label>
           <textarea id="rt-f-notes" rows="3">${esc(d.internal_notes || '')}</textarea></div>
         <div class="tl-msg" id="rt-details-msg" role="alert"></div>

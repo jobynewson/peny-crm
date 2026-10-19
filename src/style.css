@@ -1319,7 +1319,7 @@ button.rt-ws-status { cursor: pointer; }
 .rt-d { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: "eye main status send"; align-items: center; gap: 4px 12px; padding: 10px 14px 10px 8px; }
 .rt-d + .rt-d { border-top: 1px solid var(--border-light); }
 .rt-eye { grid-area: eye; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; color: var(--text-subtle); }
-.rt-eye--on { color: var(--accent); }
+.rt-eye--on { color: var(--info-text); }
 .rt-d-main { grid-area: main; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
 .rt-d-title { max-width: 100%; padding: 0; border: none; background: none; color: var(--text); font: 500 14px var(--font); text-align: left; cursor: pointer; }
 .rt-d-title:hover { text-decoration: underline; }
@@ -3461,3 +3461,12 @@ body.is-resizing .tc-chip-overlay { pointer-events: none !important; }
 .fg-band { stroke: var(--accent); stroke-width: 2.5; fill: none; stroke-dasharray: 5 3; }
 .fg-arrow { stroke: var(--text-muted); stroke-width: 3; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .tr-video { display: inline-block; margin: 8px 0 4px; font-size: 14px; font-weight: 600; color: var(--accent-text); }
+
+/* Client-facing cue (src/views/client-facing.js): quiet teal, never loud */
+.cf-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border-radius: 999px; background: var(--info-soft); color: var(--info-text); font: 500 11px var(--font); vertical-align: middle; white-space: nowrap; }
+.cf-chip svg { flex-shrink: 0; }
+.cf-word { display: none; }
+@media (min-width: 640px) { .cf-word { display: inline; } }
+.cf-caption { display: flex; align-items: center; gap: 5px; margin-top: 4px; padding-left: 8px; border-left: 2px solid var(--info-text); font-size: 11px; color: var(--info-text); }
+.cf-caption svg { flex-shrink: 0; }
+.cf-edge { border-left: 2px solid var(--info-text); }
