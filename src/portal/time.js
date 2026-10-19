@@ -32,10 +32,12 @@ function projectTimeHtml(p) {
       ${r ? `
         <details class="pt-time-months">
           <summary>Monthly usage</summary>
+          <div class="pt-time-scroll" tabindex="0" role="group" aria-label="Monthly usage, scrolls sideways">
           <div class="pt-time-month"><h4>Since the start (${r.overall.months} month${r.overall.months === 1 ? '' : 's'})</h4><ul class="pt-time-lines">${r.overall.lines.map(lineHtml).join('')}</ul></div>
           ${r.months.map(m => `
             <div class="pt-time-month"><h4>${esc(m.label)}${m.current ? ' <span class="pt-muted">this month</span>' : ''}</h4>
             <ul class="pt-time-lines">${m.lines.length ? m.lines.map(lineHtml).join('') : '<li class="pt-muted">Nothing logged</li>'}</ul></div>`).join('')}
+          </div>
         </details>` : ''}
     </article>`
 }
@@ -46,6 +48,7 @@ export function timeHtml(view) {
   return `
     <section class="pt-time" aria-labelledby="pt-time-h">
       <h2 class="pt-boards-title" id="pt-time-h">Time <span class="pt-muted">logged by ${esc(view.studio?.name || 'Peny')}</span></h2>
+      <p class="pt-time-note pt-muted">Time tracking may take a couple of days to update.</p>
       <div class="pt-time-grid">${time.map(projectTimeHtml).join('')}</div>
     </section>`
 }

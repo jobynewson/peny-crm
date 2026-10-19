@@ -354,5 +354,7 @@ a { color: var(--accent-text); }
 .pt-time-bar--over > span { background: var(--danger, #c0392b); }
 .pt-time-months { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 8px; }
 .pt-time-months summary { cursor: pointer; font-size: 13px; font-weight: 600; min-height: 32px; display: flex; align-items: center; }
-.pt-time-month { margin-top: 10px; }
+.pt-time-note { margin: -4px 0 10px; font-size: 12px; }
+.pt-time-scroll { display: flex; gap: 10px; margin-top: 10px; padding-bottom: 6px; overflow-x: auto; scroll-snap-type: x proximity; }
+.pt-time-month { flex: 0 0 180px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-sunken); scroll-snap-align: start; }
 .pt-time-month h4 { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
