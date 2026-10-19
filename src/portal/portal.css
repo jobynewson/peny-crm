@@ -335,3 +335,24 @@ a { color: var(--accent-text); }
 .pt-cv-controls { position: absolute; right: max(12px, env(safe-area-inset-right)); bottom: calc(12px + env(safe-area-inset-bottom)); display: flex; gap: 6px; }
 .pt-cv-controls .pt-btn { min-width: 44px; padding: 0 12px; }
 .pt-cv-empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; pointer-events: none; }
+
+/* ── Time logged (time.js) ── */
+.pt-time { margin: 0 0 20px; }
+.pt-time-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.pt-time-card { padding: 14px; }
+.pt-time-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.pt-time-name { margin: 0; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pt-time-total { font-size: 15px; font-weight: 600; white-space: nowrap; }
+.pt-time-total .pt-muted { font-size: 12px; font-weight: 400; }
+.pt-time-lines { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.pt-time-line { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; font-size: 13px; }
+.pt-time-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pt-time-val { font-weight: 600; white-space: nowrap; }
+.pt-time-val .pt-muted { font-weight: 400; }
+.pt-time-bar { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--surface-sunken); overflow: hidden; }
+.pt-time-bar > span { display: block; height: 100%; background: var(--accent, currentColor); }
+.pt-time-bar--over > span { background: var(--danger, #c0392b); }
+.pt-time-months { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 8px; }
+.pt-time-months summary { cursor: pointer; font-size: 13px; font-weight: 600; min-height: 32px; display: flex; align-items: center; }
+.pt-time-month { margin-top: 10px; }
+.pt-time-month h4 { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--text-muted); }

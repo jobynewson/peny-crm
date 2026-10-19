@@ -145,6 +145,9 @@ export const projects = pgTable('projects', {
   // Start of the 12-month window in the retainer's long-term time-tracking
   // view. Defaults to retainer_start when unset; adjustable per project.
   retainer_year_start: date('retainer_year_start'),
+  // Whether signed-in clients see this project's logged time (hours by role, and
+  // a retainer's monthly usage) in the portal. Never names people or shows notes.
+  show_time_to_client: boolean('show_time_to_client').notNull().default(false),
   monthly_deliverables: jsonb('monthly_deliverables').notNull().default([]),
   location_address:  text('location_address'),
   location_map_link: text('location_map_link'),

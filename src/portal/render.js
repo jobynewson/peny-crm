@@ -6,6 +6,7 @@
 import { scheduleHtml, bindSchedule } from './schedule.js'
 import { esc, count, dayMonth, fullDate, linkify } from './util.js'
 import { boardsHtml } from './boards.js'
+import { timeHtml } from './time.js'
 
 export { esc }
 
@@ -299,6 +300,7 @@ function companyHtml(view, { signedIn, canSwitch }) {
     ${headerHtml(view, { sub: 'Client portal', actions })}
     <main class="pt-main pt-main--board">
       ${boardsHtml(view)}
+      ${timeHtml(view)}
       ${boardHtml(view)}
     </main>
     ${footerHtml(view)}`

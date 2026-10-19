@@ -38,7 +38,7 @@ export const db = drizzle(sql, { schema })
 // them only while the database's recorded version is behind this one; the
 // normal boot is a single read. src/db/migrations-version.test.js fails if the
 // statements change and this doesn't.
-export const SCHEMA_VERSION = 10
+export const SCHEMA_VERSION = 11
 
 export async function runMigrations() {
   let current = 0
@@ -952,6 +952,9 @@ async function applyMigrations() {
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS board_shares_board_uidx  ON board_shares (board_id, company_id)  WHERE board_id IS NOT NULL`
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS board_shares_canvas_uidx ON board_shares (canvas_id, company_id) WHERE canvas_id IS NOT NULL`
   await sql`CREATE INDEX IF NOT EXISTS board_shares_company_idx ON board_shares (company_id)`
+
+  // ── Show a project's logged time to its client in the portal (drizzle/0053) ──
+  await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS show_time_to_client BOOLEAN NOT NULL DEFAULT false`
 
   // ── Who looks after unassigned work (drizzle/0048) ─────────────────────────
   await sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS assignment_lead_id UUID REFERENCES app_users(id) ON DELETE SET NULL`

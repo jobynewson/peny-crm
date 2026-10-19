@@ -927,6 +927,7 @@ export class ProjectsView {
       <div class="pv-time">
         <div class="proj-panel pv-time-main">
           <div class="proj-panel-head">Time tracking</div>
+          ${this._timeClientToggleHtml(p)}
           <div id="pv-timetrack" style="padding:12px 14px">
             <div style="font-size:11px;color:var(--text-tertiary);padding:10px 0">Loading…</div>
           </div>
@@ -935,6 +936,22 @@ export class ProjectsView {
           <h3 class="proj-panel-head" id="pv-tl-title">Log time</h3>
           <div class="proj-panel-body">${timeLogFormHtml(this.app, { idPrefix: 'pv-tl', projectId: p.id, fixedProject: true })}</div>
         </section>
+      </div>`
+  }
+
+  // Whether signed-in clients see this project's time in their portal.
+  _timeClientToggleHtml(p) {
+    if (!p.company_id) return `<div style="padding:10px 14px;border-bottom:1px solid var(--border-light);font-size:11px;color:var(--text-tertiary)">Link this project to a client company to show its time in the portal.</div>`
+    const canEdit = !!this.app.permissions?.projects_edit
+    return `
+      <div style="padding:10px 14px;border-bottom:1px solid var(--border-light)">
+        <label style="display:flex;align-items:center;gap:8px;${canEdit ? 'cursor:pointer' : 'opacity:0.7'}">
+          <input type="checkbox" id="pv-tt-client" ${p.show_time_to_client ? 'checked' : ''} ${canEdit ? '' : 'disabled'} style="width:14px;height:14px;flex-shrink:0" />
+          <span style="font-size:12px;color:var(--text-secondary);font-weight:500">Show time to client in the portal</span>
+        </label>
+        <div style="font-size:11px;color:var(--text-tertiary);margin-top:4px;line-height:1.5;padding-left:22px">
+          Signed-in people at the client see hours by role${p.is_retainer ? ' and the retainer\u2019s monthly usage' : ''}. Names and notes are never shown.
+        </div>
       </div>`
   }
 
@@ -1083,6 +1100,20 @@ export class ProjectsView {
     if (tab === 'time') {
       this._loadTimeTracking(mc, p)
       bindTimeLogForm(this.app, mc, { idPrefix: 'pv-tl' })
+      mc.querySelector('#pv-tt-client')?.addEventListener('change', async ev => {
+        const box = ev.target, value = box.checked
+        try {
+          await updateProject(this.app.userId, p.id, { show_time_to_client: value })
+          p.show_time_to_client = value
+          const idx = this.app.projects.findIndex(x => x.id === p.id)
+          if (idx >= 0) this.app.projects[idx].show_time_to_client = value
+          this.app.toast(value ? 'Clients can now see this time' : 'Time hidden from clients')
+        } catch (err) {
+          console.error(err)
+          box.checked = !value
+          this.app.toast('Error saving that setting')
+        }
+      })
     }
     if (tab === 'overview') {
       this._loadProjectActivity(mc, p.id)
