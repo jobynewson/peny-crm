@@ -1699,3 +1699,7 @@ render; give each column element the attribute you pass as `colAttr`
   `npm i -D pg` (the app's Neon HTTP driver cannot reach localhost). Build the
   test database from `drizzle/0025_add_tasks.sql` then
   `0031_keep_tasks_when_user_removed.sql`.
+
+## Time shown to clients
+
+`projects.show_time_to_client` (default off, toggled on the project's Time tab; only offered once the project has a company) puts that project's logged time in the signed-in client portal. `api/_client-time.js` builds `view.time` for the company view: hours by role, and for a retainer the monthly usage against its allocation (reusing `src/utils/retainer-usage.js`). It never selects `crew_name` or `note`; `api/_client-time.test.js` checks that. Shared `/portal/<token>` project links do not get it. Drawn by `src/portal/time.js`.

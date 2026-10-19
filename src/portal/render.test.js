@@ -465,3 +465,27 @@ describe('grouping by project then worklist', () => {
     expect(out).toContain('class="pt-grp-h">P2 <span class="pt-muted">1</span>')
   })
 })
+
+describe('timeHtml', () => {
+  const view = { studio: { name: 'Peny' }, time: [{
+    id: 'a', name: 'Retainer <b>', total: 6.5,
+    roles: [{ label: 'Editing', hours: 6.5 }],
+    retainer: { overall: { months: 1, lines: [{ label: 'Editing', logged: 6.5, allocated: 10 }] },
+      months: [{ label: 'Oct 26', current: true, lines: [{ label: 'Editing', logged: 6.5, allocated: 10 }] }] },
+  }] }
+
+  it('draws nothing when no project is shared', async () => {
+    const { timeHtml } = await import('./time.js')
+    expect(timeHtml({ time: [] })).toBe('')
+    expect(timeHtml({})).toBe('')
+  })
+
+  it('shows totals, roles and months, escaped', async () => {
+    const { timeHtml } = await import('./time.js')
+    const html = timeHtml(view)
+    expect(html).toContain('6.5h')
+    expect(html).toContain('Monthly usage')
+    expect(html).toContain('of 10h')
+    expect(html).toContain('Retainer &lt;b&gt;')
+  })
+})
