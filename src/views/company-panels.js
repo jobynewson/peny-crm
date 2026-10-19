@@ -118,6 +118,7 @@ function paintPortal(app, el, company, { portal, invites_enabled }, onChange) {
     return
   }
 
+  const candidates = portalCandidates(app.contacts, company.id, portal, app.allUsers)
   const person = (main, sub, action) => `
     <li class="rt-person"><span class="rt-person-main"><span class="rt-person-name">${main}</span>${sub ? `<span class="rt-muted">${sub}</span>` : ''}</span>${action}</li>`
   body.innerHTML = `
@@ -131,15 +132,28 @@ function paintPortal(app, el, company, { portal, invites_enabled }, onChange) {
       <h3 class="rt-sheet-label section-label">Invited</h3>
       <ul class="rt-people">${portal.invitations.map(i => person(esc(i.email), i.sent_at ? `Invited ${dayMonth(i.sent_at)}` : '',
         `<button type="button" class="rt-link-btn rt-danger" data-revoke="${esc(i.id)}" data-who="${esc(i.email)}">Revoke</button>`)).join('')}</ul>` : ''}
+    ${candidates.length ? `
+      <h3 class="rt-sheet-label section-label">Contacts at ${esc(company.name)}</h3>
+      <ul class="rt-people" id="rt-candidates">${candidates.map((c, i) => `
+        <li class="rt-person"><label class="rt-person-main rt-pick${c.state === 'ok' ? '' : ' rt-pick--off'}">
+          <span class="rt-person-name"><input type="checkbox" data-pick="${i}"${c.state === 'ok' && invites_enabled ? '' : ' disabled'} /> ${esc(c.name)}</span>
+          <span class="rt-muted">${c.email ? esc(c.email) : ''}${c.state === 'ok' ? '' : `${c.email ? ' · ' : ''}${CANDIDATE_NOTE[c.state]}`}</span>
+        </label></li>`).join('')}</ul>
+      <button type="button" class="btn-secondary" data-review-picks disabled>Review and invite</button>` : ''}
     <form class="tl-form rt-invite" id="rt-invite-form" novalidate>
-      <div class="tl-field"><label for="rt-invite-email">Invite someone from ${esc(company.name)}</label>
+      <div class="tl-field"><label for="rt-invite-email">${candidates.length ? 'Or invite someone not in Contacts' : `Invite someone from ${esc(company.name)}`}</label>
         <input type="email" id="rt-invite-email" autocomplete="off" spellcheck="false" placeholder="name@example.com"${invites_enabled ? '' : ' disabled'} /></div>
       ${invites_enabled ? '' : '<p class="tl-hint rt-warn">Client logins stay switched off until the database access fix is live. Turning them on is a setting: PORTAL_INVITES_ENABLED.</p>'}
       <div class="tl-msg" id="rt-invite-msg" role="alert"></div>
-      <button type="submit" class="btn-primary tl-submit"${invites_enabled ? '' : ' disabled'}>Send invitation</button>
+      <button type="submit" class="btn-primary tl-submit"${invites_enabled ? '' : ' disabled'}>Review and invite</button>
     </form>`
 
   const reload = () => loadPortal(app, el, company, onChange)
+  const review = emails => confirmInvites(app, el, company, emails, () => paintPortal(app, el, company, { portal, invites_enabled }, onChange), reload)
+  const reviewBtn = body.querySelector('[data-review-picks]')
+  const picks = [...body.querySelectorAll('[data-pick]')]
+  picks.forEach(p => p.addEventListener('change', () => { reviewBtn.disabled = !picks.some(x => x.checked) }))
+  reviewBtn?.addEventListener('click', () => review(picks.filter(p => p.checked).map(p => candidates[p.dataset.pick].email)))
   body.querySelectorAll('[data-remove]').forEach(b => b.addEventListener('click', async () => {
     if (!confirm(`Remove ${b.dataset.who} from the portal? They lose access straight away.`)) return
     b.disabled = true
@@ -159,18 +173,53 @@ function paintPortal(app, el, company, { portal, invites_enabled }, onChange) {
     const msg = form.querySelector('#rt-invite-msg')
     const submit = form.querySelector('[type="submit"]')
     if (!input.value.trim()) { msg.dataset.tone = 'error'; msg.textContent = 'Enter their email address'; input.focus(); return }
-    submit.disabled = true
     msg.textContent = ''
-    try {
-      const inv = await inviteToPortal(company.id, input.value)
-      app.toast(`Invitation sent to ${inv.email}`)
-      reload()
-    } catch (err) {
-      submit.disabled = false
-      msg.dataset.tone = 'error'
-      msg.textContent = err.message || 'Could not send it'
-      input.focus()
+    review([input.value.trim()])
+  })
+}
+
+const CANDIDATE_NOTE = { member: 'already in the portal', invited: 'already invited', staff: 'works at Peny', 'no-email': 'no email address' }
+
+// The contacts linked to a company, each marked as invitable ('ok') or why not.
+export function portalCandidates(contacts, companyId, portal, staff) {
+  const staffEmails = new Set((staff || []).map(u => (u.email || '').toLowerCase()))
+  const taken = (list, key) => new Set((list || []).map(x => (x[key] || '').toLowerCase()))
+  const members = taken(portal?.members, 'email')
+  const invited = taken(portal?.invitations, 'email')
+  return (contacts || []).filter(c => c.company_id === companyId).map(c => {
+    const email = (c.email || '').trim()
+    const lower = email.toLowerCase()
+    const state = !email ? 'no-email' : staffEmails.has(lower) ? 'staff' : members.has(lower) ? 'member' : invited.has(lower) ? 'invited' : 'ok'
+    return { name: `${c.first_name || ''} ${c.last_name || ''}`.trim() || email, email, state }
+  }).sort((a, b) => (a.state === 'ok' ? 0 : 1) - (b.state === 'ok' ? 0 : 1) || a.name.localeCompare(b.name))
+}
+
+// The check before anything is sent: who exactly will be emailed.
+function confirmInvites(app, el, company, emails, back, reload) {
+  const body = el.querySelector('[data-portal-body]')
+  body.innerHTML = `
+    <p class="tl-hint">Check these are the right people. Each gets an email and can then sign in to see the deliverables you show to ${esc(company.name)}, and approve rounds.</p>
+    <ul class="rt-people">${emails.map(e => `<li class="rt-person"><span class="rt-person-main"><span class="rt-person-name">${esc(e)}</span></span></li>`).join('')}</ul>
+    <div class="tl-msg" id="rt-confirm-msg" role="alert"></div>
+    <button type="button" class="btn-primary tl-submit" data-confirm>Send ${emails.length === 1 ? 'invitation' : `${emails.length} invitations`}</button>
+    <button type="button" class="btn-secondary" data-back>Back</button>`
+  body.querySelector('[data-back]').addEventListener('click', back)
+  body.querySelector('[data-confirm]').addEventListener('click', async e => {
+    const btn = e.currentTarget
+    const msg = body.querySelector('#rt-confirm-msg')
+    btn.disabled = true
+    const failed = []
+    let sent = 0
+    for (const email of emails) {
+      try { await inviteToPortal(company.id, email); sent++ }
+      catch (err) { failed.push(`${email}: ${err.message || 'could not send'}`) }
     }
+    if (sent) app.toast(`${sent} invitation${sent === 1 ? '' : 's'} sent`)
+    if (!failed.length) return reload()
+    btn.disabled = false
+    msg.dataset.tone = 'error'
+    msg.textContent = `Not sent: ${failed.join('; ')}`
+    if (sent) btn.remove()
   })
 }
 

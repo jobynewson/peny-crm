@@ -1294,6 +1294,8 @@ kbd { font-family: var(--font-mono); }
 .rt-person-main { display: flex; flex: 1; flex-direction: column; min-width: 0; font-size: 12px; }
 .rt-person-name { overflow: hidden; font-size: 13px; font-weight: 500; color: var(--text); text-overflow: ellipsis; }
 .rt-invite { margin-top: 16px; }
+.rt-pick { cursor: pointer; }
+.rt-pick--off { cursor: default; opacity: .55; }
 .rt-warn { color: var(--warning); }
 .rt-title { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; color: var(--text); }
 .rt-summary { margin-top: 4px; font-size: 13px; color: var(--text-muted); }

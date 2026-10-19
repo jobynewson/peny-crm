@@ -5,7 +5,7 @@ vi.mock('../db/client.js', () => ({ createContact: vi.fn(), updateContact: vi.fn
 vi.mock('../api/http.js', () => ({ request: async () => ({}), qs: () => '' }))
 const { ContactsView } = await import('./contacts.js')
 const db = await import('../db/client.js')
-const { deleteSummary } = await import('./company-panels.js')
+const { deleteSummary, portalCandidates } = await import('./company-panels.js')
 
 const co = (id, name, type = 'client', over = {}) => ({ id, name, type, sector: null, type_reviewed: true, lead_id: null, ...over })
 const person = (id, first, last, over = {}) => ({ id, first_name: first, last_name: last, company_id: null, company: null, type: 'brand', status: 'Active', role: null, email: null, ...over })
@@ -203,5 +203,23 @@ describe('editing and deleting a company, and dragging people onto one', () => {
     expect(deleteSummary({ people: 1, projects: 2, has_portal: true })).toEqual([
       '1 person will stay, with no company.', '2 projects will stay, with no company.', 'Its client portal will be deleted and its people lose access.'])
     expect(deleteSummary({ people: 0, projects: 0, has_portal: false })).toEqual([])
+  })
+})
+
+describe('portalCandidates', () => {
+  it('lists a company\'s contacts and says why someone can\'t be invited', () => {
+    const contacts = [
+      person('1', 'Dana', 'Lee', { company_id: 'c1', email: 'Dana@dmm.test' }),
+      person('2', 'Al', 'Ray', { company_id: 'c1', email: 'al@dmm.test' }),
+      person('3', 'Bo', 'Kay', { company_id: 'c1', email: 'bo@dmm.test' }),
+      person('4', 'No', 'Mail', { company_id: 'c1' }),
+      person('5', 'Ana', 'Peny', { company_id: 'c1', email: 'ana@peny.test' }),
+      person('6', 'Other', 'Co', { company_id: 'c2', email: 'x@other.test' }),
+    ]
+    const portal = { members: [{ email: 'AL@dmm.test' }], invitations: [{ email: 'bo@dmm.test' }] }
+    const out = portalCandidates(contacts, 'c1', portal, [{ email: 'Ana@Peny.test' }])
+    expect(out.map(c => [c.name, c.state])).toEqual([
+      ['Dana Lee', 'ok'], ['Al Ray', 'member'], ['Ana Peny', 'staff'], ['Bo Kay', 'invited'], ['No Mail', 'no-email'],
+    ])
   })
 })
