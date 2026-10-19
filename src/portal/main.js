@@ -21,6 +21,8 @@ import { bindBoards } from './boards.js'
 const root = document.getElementById('portal')
 const approving = /^\/portal\/approve\/?$/.test(location.pathname)
 const token = approving ? null : location.pathname.match(/^\/portal\/([A-Za-z0-9_-]+)\/?$/)?.[1] ?? null
+// /portal?preview=<company id>: a Slate user checking what that company's clients see.
+const previewId = !token && !approving ? new URLSearchParams(location.search).get('preview') : null
 let clerk = null
 let live = null   // the auto-refresh (live.js), started once a view is on screen
 
@@ -30,7 +32,8 @@ async function headers() {
   if (token) return { 'X-Portal-Token': token }
   if (approving) return { 'X-Action-Token': location.hash.slice(1) }
   const jwt = await clerk?.session?.getToken()
-  return jwt ? { Authorization: `Bearer ${jwt}` } : {}
+  const auth = jwt ? { Authorization: `Bearer ${jwt}` } : {}
+  return previewId ? { ...auth, 'X-Preview-Company': previewId } : auth
 }
 
 // A picture that needs the visitor's sign-in (an <img> tag can't send it):
@@ -80,6 +83,10 @@ async function signIn() {
     else clerk.mountSignIn(el, stay)
     return false
   }
+
+  // A preview is a Slate user's own session: the company comes from the link,
+  // checked on the server, so there is no organisation to choose.
+  if (previewId) return true
 
   // The session must name which company this is: the portal scopes by the
   // active organisation.
@@ -132,6 +139,9 @@ async function show(view = null) {
       view = await api('/api/client/view')
     } catch (err) {
       if (token) return showMessage('This link isn’t working', 'It may have expired. Ask your contact at Peny for a new one.')
+      if (previewId && (err.status === 403 || err.status === 404)) {
+        return showMessage('Can’t preview this company', 'Open it from Slate while signed in as a member of the team.', { link: { href: '/', label: 'Open Slate' } })
+      }
       if (err.code === 'staff') {
         return showMessage('You’re signed in as Peny', 'The client portal is for clients. Your work is in Slate.', { signOut: true, link: { href: '/', label: 'Open Slate' } })
       }
@@ -145,7 +155,7 @@ async function show(view = null) {
   document.title = `${view.title} — ${view.studio?.name || 'Client portal'}`
   live?.seen(view)
   const canSwitch = (clerk?.user?.organizationMemberships?.length ?? 0) > 1
-  root.innerHTML = renderView(view, { signedIn: !token, canSwitch })
+  root.innerHTML = renderView(view, { signedIn: !token && !previewId, canSwitch })
   bindBoards(root, { api, image: imageUrl })
   bindView(root, view, {
     respond: async (deliveryId, body) => {

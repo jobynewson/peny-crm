@@ -48,6 +48,17 @@ export function companyScope({ ws, companyId, clerkUserId, impersonated = false 
   })
 }
 
+// A member of staff looking at a company's portal to check what its clients
+// see. The same view as a signed-in client, but it can only look: never
+// answer, request or reply. `staffClerkId` is whoever is looking (only so the
+// scope names a person); nothing is ever written under it.
+export function previewScope({ ws, companyId, staffClerkId }) {
+  return made({
+    kind: 'company', ws: need(ws, 'the workspace id'), companyId: need(companyId, 'the company id'),
+    clerkUserId: need(staffClerkId, 'the staff member'), canRespond: false, preview: true,
+  })
+}
+
 // The Approve link in a delivery email: ONE round of one deliverable, and it
 // can answer that round two ways: approve it (which uses the link up), or ask
 // for changes with a comment (which doesn't — the round is answered either

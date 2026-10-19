@@ -37,9 +37,9 @@
 
 import { createClerkClient } from '@clerk/backend'
 import { UUID, fail, invalid, matchRoute, routePathFrom, readBody, workspaceId } from './_api.js'
-import { verifyClerkSession } from './_auth.js'
+import { verifyClerkSession, verifyClerkUser } from './_auth.js'
 import { isRateLimited, getClientIp } from './_ratelimit.js'
-import { companyScope, projectScope, deliveryScope, respondToDelivery, respondToDeliverable, undoCommentsIn, submitRequest, replyToWaiting } from './_worklist.js'
+import { companyScope, previewScope, projectScope, deliveryScope, respondToDelivery, respondToDeliverable, undoCommentsIn, submitRequest, replyToWaiting } from './_worklist.js'
 import { hashToken } from './_delivery-mail.js'
 import { alertNewRequest, alertChangesRequested, alertClientReply, alertCommentsIn, alertApproved } from './_alerts.js'
 import { emailRequestUpdate } from './_request-mail.js'
@@ -84,6 +84,9 @@ export async function resolveScope(req, sql) {
   const action = req.headers?.['x-action-token']
   if (action !== undefined) return resolveLink(sql, action)
 
+  const preview = req.headers?.['x-preview-company']
+  if (preview !== undefined) return resolvePreview(req, sql, preview)
+
   const { claims, error } = await verifyClerkSession(req)
   if (error) return { error }
   // The active organisation, from the signed token: v2 tokens carry it as
@@ -99,6 +102,21 @@ export async function resolveScope(req, sql) {
   if (!company) return refuse(403, 'no_portal', 'There’s no portal for this organisation')
 
   return { scope: companyScope({ ws, companyId: company.id, clerkUserId: claims.sub, impersonated: !!claims.act }) }
+}
+
+// "View portal as client": a Slate user (app_users row, checked every time)
+// asking to see one company's portal. The company comes from the header, but
+// only after the staff check, and only within the workspace. The scope can look
+// and nothing else (previewScope).
+const UUID_RE = new RegExp(`^${UUID}$`)
+async function resolvePreview(req, sql, companyId) {
+  if (typeof companyId !== 'string' || !UUID_RE.test(companyId)) return refuse(404, 'not_found', 'Company not found')
+  const { user, error } = await verifyClerkUser(req, sql)
+  if (error) return { error: error.code === 'not_provisioned' ? { ...error, status: 403 } : error }
+  const ws = await workspaceId(sql)
+  const [company] = await sql`SELECT id FROM companies WHERE id = ${companyId} AND user_id = ${ws} LIMIT 1`
+  if (!company) return refuse(404, 'not_found', 'Company not found')
+  return { scope: previewScope({ ws, companyId: company.id, staffClerkId: user.clerk_id }) }
 }
 
 // An Approve link → its delivery scope, or why not. Unknown reads as not

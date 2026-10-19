@@ -187,6 +187,7 @@ export class ContactsView {
             <input data-co-sector="${company.id}" maxlength="60" value="${esc(company.sector)}" placeholder="e.g. Sport" ${this.canEdit ? '' : 'disabled'} /></label>
           ${this.canEdit && !company.type_reviewed ? `<button type="button" class="btn-secondary" data-co-confirm="${company.id}">Looks right</button>` : ''}
           ${this.canEdit ? `<button type="button" class="btn-secondary" data-co-add="${company.id}">+ Person</button>` : ''}
+          <a class="btn-secondary" href="/portal?preview=${company.id}" target="_blank" rel="noopener">View as client</a>
           ${this.isSuperadmin ? `<button type="button" class="btn-secondary" data-co-portal="${company.id}">Portal access</button>` : ''}
           ${leadLine(this.app, { ...company, lead_name: company.lead_name ?? (this.app.allUsers || []).find(u => u.id === company.lead_id)?.name }, { canEdit: this.canEdit }).replace('data-co-lead', `data-co-lead="${company.id}"`)}
         </div>

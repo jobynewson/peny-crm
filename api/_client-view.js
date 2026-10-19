@@ -162,7 +162,7 @@ async function companyView(sql, scope) {
   if (!companies[0]) return null
   const today = londonDate()
   return {
-    scope: { kind: 'company', can_respond: scope.canRespond, can_request: scope.canRespond },
+    scope: { kind: 'company', can_respond: scope.canRespond, can_request: scope.canRespond, preview: !!scope.preview },
     today,
     title: companies[0].name,
     studio: studioJson(studios[0]),

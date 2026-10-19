@@ -237,7 +237,7 @@ function boardHtml(view) {
        c.needs.filter(d => d.status === 'delivered').length && `${c.needs.filter(d => d.status === 'delivered').length} delivered to approve`].filter(Boolean).join(' · ')
     : 'Nothing needs you right now.'
   return `
-    ${view.scope.kind === 'company' && !view.scope.can_respond ? '<p class="pt-notice">You’re viewing this as the client. Answers can only be given by the client.</p>' : ''}
+    ${view.scope.kind === 'company' && !view.scope.can_respond && !view.scope.preview ? '<p class="pt-notice">You’re viewing this as the client. Answers can only be given by the client.</p>' : ''}
     ${view.scope.kind === 'project' ? '<p class="pt-notice pt-signin-note">This link is view-only. To approve work or ask for changes, sign in to the portal. <a class="pt-btn pt-btn--primary" href="/portal">Sign in</a></p>' : ''}
     <p class="pt-summary">${summary}</p>
     <nav class="pt-jump" aria-label="Jump to">${jump.map(([n, label, id]) => `<a href="#${id}" class="pt-jump-link${label === 'Needs you' && n ? ' pt-jump-link--alert' : ''}">${label}<span>${n}</span></a>`).join('')}</nav>
@@ -299,6 +299,7 @@ function companyHtml(view, { signedIn, canSwitch }) {
   return `
     ${headerHtml(view, { sub: 'Client portal', actions })}
     <main class="pt-main pt-main--board">
+      ${view.scope.preview ? `<p class="pt-notice pt-preview">Previewing ${esc(view.title)} as their client sees it. Read-only: nothing here can be approved, requested or sent. <a class="pt-btn" href="/">Back to Slate</a></p>` : ''}
       ${boardsHtml(view)}
       ${timeHtml(view)}
       ${boardHtml(view)}

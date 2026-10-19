@@ -119,6 +119,7 @@ export class Worklist {
         </div>
         <div class="rt-head-actions">
           ${this.canEdit ? '<button class="btn-secondary" data-rt-link-panel data-focus-key="link">Client link</button>' : ''}
+          ${company ? `<a class="btn-secondary" href="/portal?preview=${esc(company.id)}" target="_blank" rel="noopener">View as client</a>` : ''}
           ${this.isSuperadmin && company ? '<button class="btn-secondary" data-rt-portal data-focus-key="portal">Portal access</button>' : ''}
           ${this.canEdit ? '<button class="btn-primary" data-rt-add-ws data-focus-key="add-ws">+ Workstream</button>' : ''}
         </div>
