@@ -903,6 +903,21 @@ export const deliveries = pgTable('deliveries', {
   responded_by_name: text('responded_by_name'),
   preview_title:     text('preview_title'),
   preview_image:     text('preview_image'),
+  // Taken off the client's board by staff (drizzle/0054); the round stays for staff.
+  hidden_at:         timestamp('hidden_at', { withTimezone: true }),
+  hidden_by:         uuid('hidden_by').references(() => app_users.id, { onDelete: 'set null' }),
+})
+
+// Who did what to a deliverable's client-facing board (drizzle/0054). Staff only.
+export const client_board_log = pgTable('client_board_log', {
+  id:             uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  deliverable_id: uuid('deliverable_id').notNull().references(() => deliverables.id, { onDelete: 'cascade' }),
+  delivery_id:    uuid('delivery_id'),
+  actor_id:       uuid('actor_id').references(() => app_users.id, { onDelete: 'set null' }),
+  actor_name:     text('actor_name'),
+  action:         text('action').notNull(),
+  detail:         text('detail'),
+  created_at:     timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
 // Client requests. Triage accepts (creating a deliverable, deliverable_id —

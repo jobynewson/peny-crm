@@ -5,7 +5,7 @@ import {
   validateWorkstreamInput, validateDeliverableInput, touchesDue,
   requestLabel, validateRequestInput, validateDecline, validateReply, MAX_OPEN_REQUESTS,
   requestSourceLabel, worklistLink, validateSenderName, COMPANY_TYPES, companyTypeLabel, validateCompanyType, normalisePortalEmails,
-  boardColumn, boardChip, isWithClient, statusAfterBoardDrag, DRAG_REFUSALS, BOARD_COLUMNS, validateAccept,
+  boardColumn, boardChip, isWithClient, statusAfterBoardDrag, statusForForcedMove, DRAG_REFUSALS, BOARD_COLUMNS, validateAccept,
   boardShows, boardCard, compareBoardCards, BOARD_HORIZON_DAYS, owedList, clientFace, isDelivered, canAnswerDelivered, boardChip, statusAfterResponse, statusAfterBoardDrag, validateResponse, RESPONSES, statusAfterUnsend,
 } from './_retainer-rules.js'
 
@@ -482,5 +482,25 @@ describe('"comments are in"', () => {
   })
   it('a mistaken round taken back from comments-in history returns to Comments in', () => {
     expect(statusAfterUnsend({ current: 'in_review', previousResponse: 'comments_in' })).toBe('comments_in')
+  })
+})
+
+describe('staff overriding the board', () => {
+  it('lands the card in exactly the column it was dropped in', () => {
+    for (const from of DELIVERABLE_STATUSES) {
+      for (const column of BOARD_COLUMNS) {
+        const m = statusForForcedMove({ from, column })
+        const delivered = m.delivered === null ? (from === 'approved' ? null : true) : m.delivered
+        expect(boardColumn({ status: m.status, delivered_at: delivered ? true : null }), `${from} → ${column}`).toBe(column)
+      }
+    }
+  })
+  it('records approval only for Done, and leaves the delivered tick alone there', () => {
+    expect(statusForForcedMove({ from: 'in_review', column: 'done' })).toEqual({ status: 'approved', delivered: null, approved: true })
+    expect(statusForForcedMove({ from: 'approved', column: 'doing' })).toEqual({ status: 'in_progress', delivered: false, approved: false })
+  })
+  it('keeps waiting on client when it is already Awaiting feedback that way', () => {
+    expect(statusForForcedMove({ from: 'waiting_on_client', column: 'awaiting' }).status).toBe('waiting_on_client')
+    expect(statusForForcedMove({ from: 'planned', column: 'nope' })).toBeNull()
   })
 })

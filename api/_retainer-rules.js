@@ -420,6 +420,21 @@ export function statusAfterBoardDrag({ from, column, delivered = false }) {
   return refuse('changes')
 }
 
+// Staff overriding the board's refusal ("Move it anyway", after a meeting or
+// a call): the card goes to exactly the column it was dropped in.
+//   -> { status, delivered, approved } where `delivered` is whether the
+//   delivered tick should be on afterwards (the tick is what keeps a card in
+//   Awaiting feedback) and `approved` whether approval is recorded.
+export function statusForForcedMove({ from, column }) {
+  switch (column) {
+    case 'todo':     return { status: 'planned', delivered: false, approved: false }
+    case 'doing':    return { status: 'in_progress', delivered: false, approved: false }
+    case 'awaiting': return { status: from === 'waiting_on_client' ? from : 'in_review', delivered: true, approved: false }
+    case 'done':     return { status: 'approved', delivered: null, approved: true }   // null: leave the tick as it is
+    default:         return null
+  }
+}
+
 // Which deliverables have a card, so that nothing is invisible:
 //   - unowned and open: in its column (To do, or Doing once started) marked
 //     Unassigned, whatever its date and whichever workstream it is in (paused

@@ -785,20 +785,20 @@ export class TasksView {
   // A deliverable card dropped in a column. Nothing moves until the server has
   // answered (it owns the mapping), so a refused drag simply doesn't happen —
   // and says why, where it can't be missed.
-  async _moveCard(cardId, column) {
+  async _moveCard(cardId, column, force = false) {
     const card = this.cards.find(c => c.id === cardId)
     if (!card) return
     const el = this._mc?.querySelector(`[data-card-id="${CSS.escape(cardId)}"]`)
     el?.classList.add('tk-card--saving')
     try {
-      const { card: fresh } = await this._write(() => api.moveBoardCard(cardId, column))
+      const { card: fresh } = await this._write(() => api.moveBoardCard(cardId, column, force))
       Object.assign(card, fresh)
       this._refreshBoard()
     } catch (err) {
       el?.classList.remove('tk-card--saving')
       if (err.code === 'board_refused') {
         el?.classList.add('tk-card--refused')
-        this._boardNotice(err.message, card.link)
+        this._boardNotice(err.message, card.link, () => this._moveCard(cardId, column, true))
         return
       }
       this.app.toast(err.message || 'Could not move that')
@@ -808,7 +808,7 @@ export class TasksView {
 
   // The board explaining itself. Not a toast: it stays until dismissed, sits
   // where the thumb is on a phone, and offers the place to go instead.
-  _boardNotice(message, link) {
+  _boardNotice(message, link, onForce) {
     document.getElementById('tk-notice')?.remove()
     const host = document.createElement('div')
     host.id = 'tk-notice'
@@ -821,10 +821,12 @@ export class TasksView {
       <div class="tk-notice-actions">
         <button type="button" class="btn-primary" data-notice-open>Open the worklist</button>
         <button type="button" class="btn-secondary" data-notice-ok>Got it</button>
+        ${onForce ? '<button type="button" class="btn-secondary" data-notice-force>Move it anyway</button>' : ''}
       </div>`
     const close = () => { host.remove(); document.removeEventListener('keydown', onKey); this._refreshBoard() }
     const onKey = e => { if (e.key === 'Escape') close() }
     host.querySelector('[data-notice-ok]').addEventListener('click', close)
+    host.querySelector('[data-notice-force]')?.addEventListener('click', () => { close(); onForce() })
     host.querySelector('[data-notice-open]').addEventListener('click', () => { close(); this.app.openLink(link) })
     document.addEventListener('keydown', onKey)
     document.body.appendChild(host)

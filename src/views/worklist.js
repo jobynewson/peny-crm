@@ -440,7 +440,52 @@ export class Worklist {
       ${rounds.length ? `<ol class="rt-rounds">${rounds.map(r => this._roundHtml(r, r === latest)).join('')}</ol>` : '<p class="tl-hint">Nothing sent yet.</p>'}
       ${this.canEdit && latest?.client_response === 'pending' ? this._answerFormHtml(latest) : ''}
       <h3 class="rt-sheet-label section-label">Details</h3>
-      ${this.canEdit ? this._detailsFormHtml(d) : this._detailsReadHtml(d)}`
+      ${this.canEdit ? this._detailsFormHtml(d) : this._detailsReadHtml(d)}
+      <h3 class="rt-sheet-label section-label">Changes to what the client sees</h3>
+      <ul class="rt-log" data-rt-log><li class="rt-muted">Loading…</li></ul>`
+  }
+
+  // The panel under a round for hiding it (what to do with an answer already
+  // on it, and optionally the deliverable's new status) or editing it.
+  _hidePanelHtml(r, d) {
+    const answered = r.client_response !== 'pending'
+    const statuses = this.page.vocab.statuses
+    return `
+      <form class="tl-form rt-panel-form" data-hide-form="${r.id}" novalidate>
+        <p class="tl-hint">The client stops seeing round ${r.round}. You keep it here, and can show it again. Nobody is emailed. Emails already sent can’t be recalled, but their links will stop working.</p>
+        ${answered ? `
+          <div class="tl-field" role="radiogroup" aria-label="The client’s answer">
+            <label class="rt-check"><input type="radio" name="rt-hide-answer" value="keep" checked /> Keep their answer for us (${esc(r.response_label.toLowerCase())})</label>
+            <label class="rt-check"><input type="radio" name="rt-hide-answer" value="clear" /> Clear their answer, so the round reads as unanswered</label>
+          </div>` : ''}
+        <div class="tl-field"><label for="rt-hide-status-${r.id}">Also set the status <span class="tl-optional">(optional)</span></label>
+          <select id="rt-hide-status-${r.id}" data-hide-status><option value="">Leave as ${esc(d.status_label)}</option>${statuses.filter(s => s.key !== d.status).map(s => `<option value="${s.key}">${esc(s.label)}</option>`).join('')}</select></div>
+        <div class="tl-msg" role="alert" data-panel-msg></div>
+        <button type="submit" class="btn-primary tl-submit">Hide round ${r.round}</button>
+        <button type="button" class="rt-link-btn" data-panel-cancel>Cancel</button>
+      </form>`
+  }
+
+  _editRoundPanelHtml(r) {
+    return `
+      <form class="tl-form rt-panel-form" data-edit-form="${r.id}" novalidate>
+        <div class="tl-field"><label for="rt-er-url-${r.id}">Link</label><input id="rt-er-url-${r.id}" data-er-url value="${esc(r.url)}" /></div>
+        <div class="tl-field"><label for="rt-er-note-${r.id}">Note</label><textarea id="rt-er-note-${r.id}" data-er-note rows="2">${esc(r.note || '')}</textarea>${clientCaption('Client reads this')}</div>
+        <div class="tl-msg" role="alert" data-panel-msg></div>
+        <button type="submit" class="btn-primary tl-submit">Save</button>
+        <button type="button" class="rt-link-btn" data-panel-cancel>Cancel</button>
+      </form>`
+  }
+
+  async _loadSheetLog(el, id) {
+    const list = el.querySelector('[data-rt-log]')
+    if (!list) return
+    try {
+      const log = await api.getBoardLog(id)
+      list.innerHTML = log.length
+        ? log.map(l => `<li><span>${esc(l.label)}${l.detail ? ` · ${esc(l.detail)}` : ''}</span> <span class="rt-muted">${esc(l.actor_name || 'Someone')}, ${dayMonth(l.created_at)}</span></li>`).join('')
+        : '<li class="rt-muted">Nothing yet.</li>'
+    } catch { list.innerHTML = '<li class="rt-muted">Could not load the log.</li>' }
   }
 
   _roundHtml(r, isLatest) {
@@ -448,15 +493,23 @@ export class Worklist {
       ? (isLatest ? 'Awaiting response' : 'Superseded')
       : `${r.response_label} ${r.responded_at ? dayMonth(r.responded_at) : ''}${r.responded_by_name ? ` by ${esc(r.responded_by_name)}` : ''}${r.responded_by_staff ? ' (recorded by Peny)' : ''}`
     return `
-      <li class="rt-round rt-round--${r.client_response}${isLatest ? '' : ' rt-round--old'}">
+      <li class="rt-round rt-round--${r.client_response}${isLatest ? '' : ' rt-round--old'}${r.hidden ? ' rt-round--hidden' : ''}" data-round="${r.id}">
         <div class="rt-round-top">
           <a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer" class="rt-round-link">Round ${r.round}</a>
           <span class="rt-muted">sent ${dayMonth(r.sent_at)}${r.sent_by_name ? ` by ${esc(r.sent_by_name)}` : ''}</span>
+          ${r.hidden ? `<span class="rt-hidden-chip">Hidden from the client${r.hidden_by_name ? ` by ${esc(r.hidden_by_name)}` : ''}</span>` : ''}
         </div>
         ${r.note ? `<div class="rt-round-note">${esc(r.note)}</div>` : ''}
         <div class="rt-round-answer">${answer}</div>
         ${r.client_comment ? `<div class="rt-round-comment">“${esc(r.client_comment)}”</div>` : ''}
-        ${this.canEdit && isLatest && r.client_response === 'pending' ? `<button type="button" class="rt-link-btn rt-danger" data-rt-unsend="${r.id}">Take back round ${r.round}</button>` : ''}
+        ${this.canEdit ? `<div class="rt-round-actions">
+          ${r.hidden
+            ? `<button type="button" class="rt-link-btn" data-rt-show="${r.id}">Show to the client again</button>`
+            : `<button type="button" class="rt-link-btn" data-rt-hide="${r.id}">Hide from the client</button>`}
+          <button type="button" class="rt-link-btn" data-rt-edit-round="${r.id}">Edit link or note</button>
+          ${isLatest && r.client_response === 'pending' ? `<button type="button" class="rt-link-btn rt-danger" data-rt-unsend="${r.id}">Take back round ${r.round}</button>` : ''}
+        </div>` : ''}
+        <div class="rt-round-panel" data-round-panel="${r.id}" hidden></div>
       </li>`
   }
 
@@ -522,6 +575,64 @@ export class Worklist {
       this._bindSheet(el, close, id)
     }
     bindDueFields(el, 'rt-f')
+
+    this._loadSheetLog(el, id)
+
+    // Hide a round from the client, show it again, or edit it.
+    const panel = rid => el.querySelector(`[data-round-panel="${rid}"]`)
+    const openPanel = (rid, html) => {
+      const p = panel(rid)
+      p.innerHTML = html
+      p.hidden = false
+      p.querySelector('[data-panel-cancel]').addEventListener('click', () => { p.hidden = true; p.innerHTML = '' })
+      return p
+    }
+    const panelError = (form, err) => {
+      const msg = form.querySelector('[data-panel-msg]')
+      msg.dataset.tone = 'error'
+      msg.textContent = err.message || 'Could not save'
+      form.querySelector('[type="submit"]').disabled = false
+      if (err.status === 409 || err.status === 404) this._reload().then(refresh)
+    }
+    el.querySelectorAll('[data-rt-hide]').forEach(b => b.addEventListener('click', () => {
+      const r = d().deliveries.find(x => x.id === b.dataset.rtHide)
+      const form = openPanel(r.id, this._hidePanelHtml(r, d())).querySelector('form')
+      form.addEventListener('submit', async e => {
+        e.preventDefault()
+        form.querySelector('[type="submit"]').disabled = true
+        const body = { answer: form.querySelector('input[name="rt-hide-answer"]:checked')?.value || 'keep' }
+        const status = form.querySelector('[data-hide-status]').value
+        if (status) body.status = status
+        try {
+          this._putDeliverable(await api.hideDelivery(r.id, body))
+          this._repaint()
+          this.app.toast(`Round ${r.round} hidden from the client`)
+          refresh()
+        } catch (err) { panelError(form, err) }
+      })
+    }))
+    el.querySelectorAll('[data-rt-show]').forEach(b => b.addEventListener('click', async () => {
+      const r = d().deliveries.find(x => x.id === b.dataset.rtShow)
+      b.disabled = true
+      if (await this._save(() => api.showDelivery(r.id), `Round ${r.round} is back on the client’s board`)) refresh()
+      else b.disabled = false
+    }))
+    el.querySelectorAll('[data-rt-edit-round]').forEach(b => b.addEventListener('click', () => {
+      const r = d().deliveries.find(x => x.id === b.dataset.rtEditRound)
+      const form = openPanel(r.id, this._editRoundPanelHtml(r)).querySelector('form')
+      form.addEventListener('submit', async e => {
+        e.preventDefault()
+        form.querySelector('[type="submit"]').disabled = true
+        try {
+          const { deliverable, url_changed } = await api.editDelivery(r.id, { url: form.querySelector('[data-er-url]').value, note: form.querySelector('[data-er-note]').value })
+          this._putDeliverable(deliverable)
+          if (url_changed) await this._fillPreview(r.id, deliverable.id)
+          this._repaint()
+          this.app.toast(`Round ${r.round} updated`)
+          refresh()
+        } catch (err) { panelError(form, err) }
+      })
+    }))
 
     // Take back the latest round.
     el.querySelector('[data-rt-unsend]')?.addEventListener('click', async e => {

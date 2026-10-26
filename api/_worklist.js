@@ -130,7 +130,7 @@ export async function undoCommentsIn(sql, scope, { deliveryId }) {
     FROM deliveries dv
     JOIN deliverables d ON d.id = dv.deliverable_id
     JOIN workstreams w ON w.id = d.workstream_id
-    WHERE dv.id = ${deliveryId} AND w.user_id = ${scope.ws} AND d.client_visible AND ((${company}::boolean AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${companyId}::uuid))
+    WHERE dv.id = ${deliveryId} AND w.user_id = ${scope.ws} AND d.client_visible AND dv.hidden_at IS NULL AND ((${company}::boolean AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${companyId}::uuid))
            OR (NOT ${company}::boolean AND EXISTS (SELECT 1 FROM action_links l WHERE l.id = ${linkId}::uuid AND l.delivery_id = dv.id AND l.used_at IS NULL AND l.expires_at > NOW())))`
   if (!row) return notFound()
   if (row.client_response !== 'comments_in' || row.round !== row.latest_round || row.status !== 'comments_in') {
@@ -142,7 +142,7 @@ export async function undoCommentsIn(sql, scope, { deliveryId }) {
       FROM deliveries dv
       JOIN deliverables d ON d.id = dv.deliverable_id
       JOIN workstreams w ON w.id = d.workstream_id
-      WHERE dv.id = ${deliveryId} AND w.user_id = ${scope.ws} AND d.client_visible AND ((${company}::boolean AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${companyId}::uuid))
+      WHERE dv.id = ${deliveryId} AND w.user_id = ${scope.ws} AND d.client_visible AND dv.hidden_at IS NULL AND ((${company}::boolean AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${companyId}::uuid))
            OR (NOT ${company}::boolean AND EXISTS (SELECT 1 FROM action_links l WHERE l.id = ${linkId}::uuid AND l.delivery_id = dv.id AND l.used_at IS NULL AND l.expires_at > NOW())))
         AND dv.client_response = 'comments_in' AND d.status = 'comments_in'
         AND dv.round = (SELECT max(x.round) FROM deliveries x WHERE x.deliverable_id = dv.deliverable_id)
@@ -181,7 +181,7 @@ export async function respondToDeliverable(sql, scope, { deliverableId, input, b
 
   const [row] = await sql`
     SELECT d.id, d.status, d.delivered_at,
-           EXISTS (SELECT 1 FROM deliveries x WHERE x.deliverable_id = d.id AND x.client_response = 'pending'
+           EXISTS (SELECT 1 FROM deliveries x WHERE x.deliverable_id = d.id AND x.hidden_at IS NULL AND x.client_response = 'pending'
                      AND x.round = (SELECT max(y.round) FROM deliveries y WHERE y.deliverable_id = d.id)) AS pending_round
     FROM deliverables d
     JOIN workstreams w ON w.id = d.workstream_id
@@ -212,7 +212,7 @@ export async function respondToDeliverable(sql, scope, { deliverableId, input, b
     WHERE d.id = ${deliverableId} AND w.id = d.workstream_id
       AND w.user_id = ${scope.ws} AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${scope.companyId}) AND d.client_visible
       AND d.delivered_at IS NOT NULL AND d.status = ${row.status}::deliverable_status AND d.status <> 'approved'
-      AND NOT EXISTS (SELECT 1 FROM deliveries x WHERE x.deliverable_id = d.id AND x.client_response = 'pending'
+      AND NOT EXISTS (SELECT 1 FROM deliveries x WHERE x.deliverable_id = d.id AND x.hidden_at IS NULL AND x.client_response = 'pending'
                         AND x.round = (SELECT max(y.round) FROM deliveries y WHERE y.deliverable_id = d.id))
     RETURNING d.id`
   if (!done) return conflict()
@@ -430,7 +430,7 @@ async function respondAsClient(sql, scope, { deliveryId, response, comment, by }
     JOIN deliverables d ON d.id = dv.deliverable_id
     JOIN workstreams w ON w.id = d.workstream_id
     WHERE dv.id = ${deliveryId}
-      AND w.user_id = ${scope.ws} AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${scope.companyId}) AND d.client_visible
+      AND w.user_id = ${scope.ws} AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${scope.companyId}) AND d.client_visible AND dv.hidden_at IS NULL
   `
   if (!row) return notFound()
   const refused = refusal(row)
@@ -444,7 +444,7 @@ async function respondAsClient(sql, scope, { deliveryId, response, comment, by }
       JOIN deliverables d ON d.id = dv.deliverable_id
       JOIN workstreams w ON w.id = d.workstream_id
       WHERE dv.id = ${deliveryId}
-        AND w.user_id = ${scope.ws} AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${scope.companyId}) AND d.client_visible
+        AND w.user_id = ${scope.ws} AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${scope.companyId}) AND d.client_visible AND dv.hidden_at IS NULL
         AND dv.client_response = 'pending'
         AND d.status = ${row.status}::deliverable_status
         AND dv.round = (SELECT max(x.round) FROM deliveries x WHERE x.deliverable_id = dv.deliverable_id)
@@ -488,7 +488,7 @@ async function respondViaLink(sql, scope, { response, comment, by }) {
     FROM deliveries dv
     JOIN deliverables d ON d.id = dv.deliverable_id
     JOIN workstreams w ON w.id = d.workstream_id
-    WHERE dv.id = ${scope.deliveryId} AND w.user_id = ${scope.ws}
+    WHERE dv.id = ${scope.deliveryId} AND w.user_id = ${scope.ws} AND dv.hidden_at IS NULL
   `
   if (!row || !row.client_visible) return notFound()
   const refused = refusal(row)
@@ -504,7 +504,7 @@ async function respondViaLink(sql, scope, { response, comment, by }) {
       JOIN deliverables d ON d.id = dv.deliverable_id
       JOIN workstreams w ON w.id = d.workstream_id
       WHERE dv.id = ${scope.deliveryId}
-        AND w.user_id = ${scope.ws} AND d.client_visible
+        AND w.user_id = ${scope.ws} AND d.client_visible AND dv.hidden_at IS NULL
         AND dv.client_response = 'pending'
         AND d.status = ${row.status}::deliverable_status
         AND dv.round = (SELECT max(x.round) FROM deliveries x WHERE x.deliverable_id = dv.deliverable_id)

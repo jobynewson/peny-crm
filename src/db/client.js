@@ -38,7 +38,7 @@ export const db = drizzle(sql, { schema })
 // them only while the database's recorded version is behind this one; the
 // normal boot is a single read. src/db/migrations-version.test.js fails if the
 // statements change and this doesn't.
-export const SCHEMA_VERSION = 11
+export const SCHEMA_VERSION = 12
 
 export async function runMigrations() {
   let current = 0
@@ -952,6 +952,23 @@ async function applyMigrations() {
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS board_shares_board_uidx  ON board_shares (board_id, company_id)  WHERE board_id IS NOT NULL`
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS board_shares_canvas_uidx ON board_shares (canvas_id, company_id) WHERE canvas_id IS NOT NULL`
   await sql`CREATE INDEX IF NOT EXISTS board_shares_company_idx ON board_shares (company_id)`
+
+  // ── Staff control of the client's deliverables board (drizzle/0054) ────────
+  await sql`ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS hidden_at TIMESTAMPTZ`
+  await sql`ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS hidden_by UUID REFERENCES app_users(id) ON DELETE SET NULL`
+  await sql`
+    CREATE TABLE IF NOT EXISTS client_board_log (
+      id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      deliverable_id UUID NOT NULL REFERENCES deliverables(id) ON DELETE CASCADE,
+      delivery_id    UUID,
+      actor_id       UUID REFERENCES app_users(id) ON DELETE SET NULL,
+      actor_name     TEXT,
+      action         TEXT NOT NULL,
+      detail         TEXT,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS client_board_log_deliverable_idx ON client_board_log (deliverable_id, created_at DESC)`
 
   // ── Show a project's logged time to its client in the portal (drizzle/0053) ──
   await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS show_time_to_client BOOLEAN NOT NULL DEFAULT false`

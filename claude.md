@@ -1576,6 +1576,18 @@ is the guard), `requests` decision columns, `deliverables.client_reply`,
   another column also claims it, dropping it where it already is doesn't. No
   acknowledgement, bell notifications or comments for cards.
   Not on the Dashboard task widget (What's due already lists them).
+  **Staff override:** a refused drag's notice has **Move it anyway**, which
+  repeats the move with `force: true` (`statusForForcedMove`): the card lands in
+  that column whatever the client has done (Done records approval "recorded by
+  Peny"; leaving Done clears it) and the change is logged.
+- **Staff control of the client's board** (drizzle/0054): a round can be hidden
+  from the client (`deliveries.hidden_at`; it stays for staff and can be shown
+  again) via `POST retainers/deliveries/:id/hide|show`, and its link or note
+  edited (`PATCH retainers/deliveries/:id`). Every client-facing statement over
+  `deliveries` (portal, Approve links, answering, undo) must keep
+  `dv.hidden_at IS NULL`; `api/_client-board-control.test.js` checks this. Who
+  did what is in `client_board_log` (`api/_client-board-log.js`), shown at the
+  foot of a deliverable's sheet; staff only. No email or alert goes to the client.
 
 ### Kanban boards
 There is no shared kanban component — three independent implementations, each

@@ -1378,6 +1378,11 @@ button.rt-status:hover, button.rt-ws-status:hover { box-shadow: inset 0 0 0 1px 
 .rt-round--approved .rt-round-answer { color: var(--success); }
 .rt-round--changes_requested .rt-round-answer { color: var(--cat-pink); }
 .rt-round-comment { margin-top: 2px; color: var(--text); white-space: pre-line; }
+.rt-round--hidden { border-style: dashed; background: var(--bg-secondary); }
+.rt-hidden-chip { font-size: 11px; font-weight: 500; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); }
+.rt-round-actions { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; }
+.rt-round-panel { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.rt-log { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 .rt-answer { margin-top: 10px; padding: 12px; border-radius: var(--radius-md); background: var(--surface-2); }
 .rt-read { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; font-size: 13px; }
 .rt-read dt { color: var(--text-muted); }

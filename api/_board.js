@@ -4,7 +4,7 @@
 // page. Routes behind /api/retainers (merged into _retainers.js's table), for
 // Slate staff:
 //   GET  retainers/board                               the cards, and the new client requests
-//   POST retainers/deliverables/:id/board-move  { column }
+//   POST retainers/deliverables/:id/board-move  { column, force? }
 //
 // The mapping between the board's three columns and a deliverable's six
 // statuses, which cards appear, and every refusal live in _retainer-rules.js;
@@ -19,9 +19,10 @@
 import { UUID, fail, invalid, readBody, workspaceId } from './_api.js'
 import { londonDate } from './_dates.js'
 import { sendCardAssigned } from './_alerts.js'
+import { logChange } from './_client-board-log.js'
 import { loadOpenRequests } from './_requests.js'
 import {
-  BOARD_COLUMNS, BOARD_DONE_DAYS, isDelivered, BOARD_HORIZON_DAYS, boardShows, parseWindowDays, boardCard, compareBoardCards, statusAfterBoardDrag, statusPatch,
+  BOARD_COLUMNS, BOARD_DONE_DAYS, isDelivered, BOARD_HORIZON_DAYS, boardShows, parseWindowDays, boardCard, compareBoardCards, statusAfterBoardDrag, statusForForcedMove, statusPatch, STATUS_LABELS,
 } from './_retainer-rules.js'
 
 export const BOARD_ROUTES = [
@@ -80,6 +81,7 @@ async function moveCard(req, res, { sql, user, params }) {
   if (!d || !boardShows(d, londonDate(), BOARD_HORIZON_DAYS)) return fail(res, 404, 'not_found', 'That deliverable is not on the board any more')
 
   const move = statusAfterBoardDrag({ from: d.status, column: body.column, delivered: isDelivered(d) })
+  if (move.refused && body.force === true) return forceMove(res, { sql, user, ws, d, column: body.column })
   if (move.refused) return fail(res, 409, 'board_refused', move.refused, { reason: move.code })
 
   const claiming = !d.owner_id && move.status !== d.status
@@ -114,4 +116,37 @@ async function cardAssigned(req, res, { sql, user, params }) {
     console.error('[board] card assigned alert failed:', err?.message)
   }
   return res.status(200).json({ sent: results.filter(r => r.sent).length })
+}
+
+// Staff overriding a refusal: the card lands in the column it was dropped in,
+// whatever the client has or hasn't done, and the change is logged. Approval
+// recorded this way names the person who recorded it. Leaving Done clears it.
+async function forceMove(res, { sql, user, ws, d, column }) {
+  const target = statusForForcedMove({ from: d.status, column })
+  const patch = statusPatch({ from: d.status, to: target.status })
+  const approving = target.approved && d.status !== 'approved'
+  const reopening = !target.approved && d.status === 'approved'
+  const setTick = target.delivered !== null
+  const [row] = await sql`
+    UPDATE deliverables SET
+      status           = ${patch.status}::deliverable_status,
+      waiting_since    = CASE WHEN ${'waiting_since' in patch} THEN ${patch.waiting_since ?? null}::timestamptz ELSE waiting_since END,
+      waiting_note     = CASE WHEN ${'waiting_note' in patch} THEN ${patch.waiting_note ?? null}::text ELSE waiting_note END,
+      client_reply      = CASE WHEN ${'client_reply' in patch} THEN NULL ELSE client_reply END,
+      client_replied_at = CASE WHEN ${'client_reply' in patch} THEN NULL ELSE client_replied_at END,
+      delivered_at     = CASE WHEN NOT ${setTick} THEN delivered_at WHEN ${target.delivered} THEN COALESCE(delivered_at, NOW()) ELSE NULL END,
+      approved_at      = CASE WHEN ${approving} THEN NOW() WHEN ${reopening} THEN NULL ELSE approved_at END,
+      approved_by_name = CASE WHEN ${approving} THEN ${(user.name || user.email || 'Peny') + ' (recorded by Peny)'} WHEN ${reopening} THEN NULL ELSE approved_by_name END,
+      approved_comment = CASE WHEN ${reopening} THEN NULL ELSE approved_comment END,
+      changes_note     = CASE WHEN ${target.delivered === true} THEN NULL ELSE changes_note END,
+      changes_at       = CASE WHEN ${target.delivered === true} THEN NULL ELSE changes_at END,
+      owner_id         = CASE WHEN owner_id IS NULL THEN ${user.id}::uuid ELSE owner_id END,
+      updated_at       = NOW()
+    WHERE id = ${d.id} AND status = ${d.status}::deliverable_status
+      AND workstream_id IN (SELECT id FROM workstreams WHERE user_id = ${ws})
+    RETURNING id`
+  if (!row) return fail(res, 409, 'conflict', 'Someone changed this while you were moving it — the board has been refreshed')
+  await logChange(sql, { deliverableId: d.id, user, action: 'status_set', detail: `Moved on the board: ${STATUS_LABELS[d.status]} → ${STATUS_LABELS[target.status]}` })
+  const [fresh] = await loadRows(sql, ws, { id: d.id })
+  return res.status(200).json({ card: boardCard(fresh, londonDate()) })
 }

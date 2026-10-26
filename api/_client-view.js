@@ -56,7 +56,7 @@ async function linkView(sql, scope) {
       JOIN workstream_company wc ON wc.workstream_id = w.id
       LEFT JOIN companies c ON c.id = wc.company_id
       LEFT JOIN projects p ON p.id = w.project_id
-      WHERE dv.id = ${scope.deliveryId} AND w.user_id = ${scope.ws} AND d.client_visible
+      WHERE dv.id = ${scope.deliveryId} AND w.user_id = ${scope.ws} AND d.client_visible AND dv.hidden_at IS NULL
     `,
     sql`
       SELECT s.company_name, s.website FROM settings s
@@ -129,7 +129,7 @@ async function companyView(sql, scope) {
       FROM deliveries dv
       JOIN deliverables d ON d.id = dv.deliverable_id
       JOIN workstreams w ON w.id = d.workstream_id
-      WHERE w.user_id = ${scope.ws} AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${scope.companyId}) AND d.client_visible
+      WHERE w.user_id = ${scope.ws} AND w.id IN (SELECT workstream_id FROM workstream_company WHERE company_id = ${scope.companyId}) AND d.client_visible AND dv.hidden_at IS NULL
       ORDER BY dv.round
     `,
     // The company's requests, newest first. An accepted one shows the date we
@@ -216,7 +216,7 @@ async function projectView(sql, scope) {
       FROM deliveries dv
       JOIN deliverables d ON d.id = dv.deliverable_id
       JOIN workstreams w ON w.id = d.workstream_id
-      WHERE w.user_id = ${scope.ws} AND w.project_id = ${scope.projectId} AND d.client_visible
+      WHERE w.user_id = ${scope.ws} AND w.project_id = ${scope.projectId} AND d.client_visible AND dv.hidden_at IS NULL
       ORDER BY dv.round
     `,
     sql`

@@ -26,7 +26,7 @@ export const markRead = (payload) => request('/api/notifications/read', { method
 export const listBoard = days => request(`/api/retainers/board${days ? `?days=${days}` : ''}`)
 export const listBoardCards = days => listBoard(days).then(r => r.cards)
 // → { card }, or a 409 with code 'board_refused' whose message is the sentence to show.
-export const moveBoardCard = (id, column) => request(`/api/retainers/deliverables/${id}/board-move`, { method: 'POST', body: { column } })
+export const moveBoardCard = (id, column, force = false) => request(`/api/retainers/deliverables/${id}/board-move`, { method: 'POST', body: force ? { column, force: true } : { column } })
 
 // Tell a planning-board card's new assignee (api/_board.js). The card itself is saved by src/db/client.js.
 export const notifyCardAssigned = id => request(`/api/retainers/board-cards/${id}/assigned`, { method: 'POST' })

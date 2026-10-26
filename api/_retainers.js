@@ -33,6 +33,7 @@ import { REQUEST_ROUTES } from './_requests.js'
 import { BOARD_ROUTES } from './_board.js'
 import { sendOwnerAssigned } from './_alerts.js'
 import { emailDelivery } from './_delivery-mail.js'
+import { logChange, loadLog } from './_client-board-log.js'
 
 const ID = `(?<id>${UUID})`
 export const ROUTES = [
@@ -56,6 +57,10 @@ export const ROUTES = [
   { method: 'POST',   pattern: new RegExp(`^retainers/deliverables/${ID}/deliveries$`),   handler: sendDelivery,      access: 'editor' },
   { method: 'DELETE', pattern: new RegExp(`^retainers/deliveries/${ID}$`),                handler: unsendDelivery,    access: 'editor' },
   { method: 'POST',   pattern: new RegExp(`^retainers/deliveries/${ID}/preview$`),        handler: fillPreview,       access: 'editor' },
+  { method: 'PATCH',  pattern: new RegExp(`^retainers/deliveries/${ID}$`),                handler: editDelivery,      access: 'editor' },
+  { method: 'POST',   pattern: new RegExp(`^retainers/deliveries/${ID}/hide$`),           handler: hideDelivery,      access: 'editor' },
+  { method: 'POST',   pattern: new RegExp(`^retainers/deliveries/${ID}/show$`),           handler: showDelivery,      access: 'editor' },
+  { method: 'GET',    pattern: new RegExp(`^retainers/deliverables/${ID}/log$`),          handler: getLog },
   { method: 'POST',   pattern: new RegExp(`^retainers/deliveries/${ID}/response$`),       handler: recordResponse,    access: 'editor' },
   // Client requests: triage (_requests.js).
   ...REQUEST_ROUTES,
@@ -110,6 +115,9 @@ function deliveryJson(dv, latestRound) {
     responded_by_staff: !!dv.responded_by_staff,   // recorded by Peny, not answered in the portal
     preview_title: dv.preview_title,
     preview_image: dv.preview_image,
+    hidden: !!dv.hidden_at,
+    hidden_at: dv.hidden_at,
+    hidden_by_name: dv.hidden_by_name || null,
     latest: dv.round === latestRound,
   }
 }
@@ -175,9 +183,11 @@ async function loadDeliverables(sql, ws, { workstreamIds = [], ids = [] }) {
     SELECT dv.id, dv.deliverable_id, dv.url, dv.note, dv.round, dv.sent_by,
            su.name AS sent_by_name, su.email AS sent_by_email, dv.sent_at,
            dv.client_response, dv.client_comment, dv.responded_at, dv.responded_by_name,
-           (ru.id IS NOT NULL) AS responded_by_staff, dv.preview_title, dv.preview_image
+           (ru.id IS NOT NULL) AS responded_by_staff, dv.preview_title, dv.preview_image,
+           dv.hidden_at, COALESCE(hu.name, hu.email) AS hidden_by_name
     FROM deliveries dv
     LEFT JOIN app_users su ON su.id = dv.sent_by
+    LEFT JOIN app_users hu ON hu.id = dv.hidden_by
     LEFT JOIN app_users ru ON ru.clerk_id = dv.responded_by
     WHERE dv.deliverable_id = ANY(${rows.map(r => r.id)}::uuid[])
     ORDER BY dv.round
@@ -627,6 +637,9 @@ async function updateDeliverable(req, res, { sql, user, params }) {
   `
   if (!row) return fail(res, 409, 'conflict', 'Someone changed this while you were editing — refresh and try again')
   if (has(body, 'owner_id') && body.owner_id && body.owner_id !== current.owner_id) await tellOwner(sql, current.id, user)
+  if (nextStatus !== current.status) {
+    await logChange(sql, { deliverableId: current.id, user, action: 'status_set', detail: `${STATUS_LABELS[current.status]} → ${STATUS_LABELS[nextStatus]}` })
+  }
   return res.status(200).json({ deliverable: await loadDeliverable(sql, ws, current.id) })
 }
 
@@ -922,4 +935,131 @@ async function recordResponse(req, res, { sql, user, params }) {
     return fail(res, status, code, message, field ? { field } : {})
   }
   return res.status(200).json({ deliverable: await loadDeliverable(sql, ws, result.delivery.deliverable_id) })
+}
+
+
+// ── Staff control of the client's board ──────────────────────────────────────
+// Hide a round from the client (it stays here, and can be shown again), edit
+// what a round shows them, and read the log. Nobody is emailed about any of
+// it. Every statement is scoped to the workspace.
+
+async function loadRound(sql, ws, id) {
+  const [dv] = await sql`
+    SELECT dv.id, dv.round, dv.url, dv.note, dv.client_response, dv.hidden_at, d.id AS deliverable_id, d.status
+    FROM deliveries dv
+    JOIN deliverables d ON d.id = dv.deliverable_id
+    JOIN workstreams w ON w.id = d.workstream_id
+    WHERE dv.id = ${id} AND w.user_id = ${ws}`
+  return dv ?? null
+}
+
+// ── POST /api/retainers/deliveries/:id/hide ──────────────────────────────────
+// { answer?: 'keep' | 'clear', status? } → { deliverable }. `answer` says what
+// to do with an approval or feedback already on the round: keep it for staff
+// (default) or clear it so the round reads as unanswered. `status` also sets
+// the deliverable's status, because hiding does not guess one.
+async function hideDelivery(req, res, { sql, user, params }) {
+  const body = readBody(req)
+  if (!body) return invalid(res, 'body', 'Request body is not valid JSON')
+  const answer = body.answer ?? 'keep'
+  if (!['keep', 'clear'].includes(answer)) return invalid(res, 'answer', 'Choose keep or clear')
+  if (body.status != null && !DELIVERABLE_STATUSES.includes(body.status)) return invalid(res, 'status', 'Unknown status')
+
+  const ws = await workspaceId(sql)
+  const dv = await loadRound(sql, ws, params.id)
+  if (!dv) return fail(res, 404, 'not_found', 'Round not found')
+
+  const clearing = answer === 'clear' && dv.client_response !== 'pending'
+  const [done] = await sql`
+    UPDATE deliveries SET
+      hidden_at = COALESCE(hidden_at, NOW()),
+      hidden_by = COALESCE(hidden_by, ${user.id}::uuid),
+      client_response   = CASE WHEN ${clearing} THEN 'pending'::delivery_response ELSE client_response END,
+      client_comment    = CASE WHEN ${clearing} THEN NULL ELSE client_comment END,
+      responded_at      = CASE WHEN ${clearing} THEN NULL ELSE responded_at END,
+      responded_by      = CASE WHEN ${clearing} THEN NULL ELSE responded_by END,
+      responded_by_name = CASE WHEN ${clearing} THEN NULL ELSE responded_by_name END
+    WHERE id = ${dv.id}
+    RETURNING id`
+  if (!done) return fail(res, 404, 'not_found', 'Round not found')
+
+  let detail = `Round ${dv.round}`
+  if (clearing) detail += ` (cleared the client’s answer: ${RESPONSE_LABELS[dv.client_response]})`
+  else if (dv.client_response !== 'pending') detail += ` (kept the client’s answer: ${RESPONSE_LABELS[dv.client_response]})`
+  await setStatusByHand(sql, ws, user, dv.deliverable_id, body.status)
+  await logChange(sql, { deliverableId: dv.deliverable_id, deliveryId: dv.id, user, action: 'round_hidden', detail })
+  return res.status(200).json({ deliverable: await loadDeliverable(sql, ws, dv.deliverable_id) })
+}
+
+// Sets a deliverable's status for staff, without the client's say. Quiet
+// no-op when status is unset or already current.
+async function setStatusByHand(sql, ws, user, deliverableId, status) {
+  if (!status) return
+  const [cur] = await sql`
+    SELECT d.status FROM deliverables d JOIN workstreams w ON w.id = d.workstream_id
+    WHERE d.id = ${deliverableId} AND w.user_id = ${ws}`
+  if (!cur || cur.status === status) return
+  const patch = statusPatch({ from: cur.status, to: status })
+  await sql`
+    UPDATE deliverables SET
+      status        = ${patch.status}::deliverable_status,
+      waiting_since = CASE WHEN ${'waiting_since' in patch} THEN ${patch.waiting_since ?? null}::timestamptz ELSE waiting_since END,
+      waiting_note  = CASE WHEN ${'waiting_note' in patch} THEN ${patch.waiting_note ?? null}::text ELSE waiting_note END,
+      client_reply      = CASE WHEN ${'client_reply' in patch} THEN NULL ELSE client_reply END,
+      client_replied_at = CASE WHEN ${'client_reply' in patch} THEN NULL ELSE client_replied_at END,
+      updated_at    = NOW()
+    WHERE id = ${deliverableId}`
+  await logChange(sql, { deliverableId, user, action: 'status_set', detail: `${STATUS_LABELS[cur.status]} → ${STATUS_LABELS[status]}` })
+}
+
+// ── POST /api/retainers/deliveries/:id/show ──────────────────────────────────
+async function showDelivery(req, res, { sql, user, params }) {
+  const ws = await workspaceId(sql)
+  const dv = await loadRound(sql, ws, params.id)
+  if (!dv) return fail(res, 404, 'not_found', 'Round not found')
+  if (dv.hidden_at) {
+    await sql`UPDATE deliveries SET hidden_at = NULL, hidden_by = NULL WHERE id = ${dv.id}`
+    await logChange(sql, { deliverableId: dv.deliverable_id, deliveryId: dv.id, user, action: 'round_shown', detail: `Round ${dv.round}` })
+  }
+  return res.status(200).json({ deliverable: await loadDeliverable(sql, ws, dv.deliverable_id) })
+}
+
+// ── PATCH /api/retainers/deliveries/:id ──────────────────────────────────────
+// { url?, note? }: change what the client sees for this round, answered or
+// not. A new link drops the old preview; the page fetches the new one.
+async function editDelivery(req, res, { sql, user, params }) {
+  const body = readBody(req)
+  if (!body) return invalid(res, 'body', 'Request body is not valid JSON')
+  const setUrl = has(body, 'url'), setNote = has(body, 'note')
+  if (!setUrl && !setNote) return invalid(res, 'url', 'Nothing to change')
+  let url = null
+  if (setUrl) {
+    const n = normaliseDeliveryUrl(body.url)
+    if (n.error) return invalid(res, n.error.field, n.error.message)
+    url = n.url
+  }
+  const note = setNote ? cleanText(body.note) : null
+  if (note && note.length > TEXT_MAX) return invalid(res, 'note', `Keep it under ${TEXT_MAX} characters`)
+
+  const ws = await workspaceId(sql)
+  const dv = await loadRound(sql, ws, params.id)
+  if (!dv) return fail(res, 404, 'not_found', 'Round not found')
+  const urlChanged = setUrl && url !== dv.url
+  await sql`
+    UPDATE deliveries SET
+      url   = CASE WHEN ${setUrl} THEN ${url} ELSE url END,
+      note  = CASE WHEN ${setNote} THEN ${note} ELSE note END,
+      preview_title = CASE WHEN ${urlChanged} THEN NULL ELSE preview_title END,
+      preview_image = CASE WHEN ${urlChanged} THEN NULL ELSE preview_image END
+    WHERE id = ${dv.id}`
+  const what = [urlChanged && 'link', setNote && (note ?? null) !== (dv.note ?? null) && 'note'].filter(Boolean)
+  if (what.length) await logChange(sql, { deliverableId: dv.deliverable_id, deliveryId: dv.id, user, action: 'round_edited', detail: `Round ${dv.round}: changed the ${what.join(' and ')}` })
+  return res.status(200).json({ deliverable: await loadDeliverable(sql, ws, dv.deliverable_id), url_changed: urlChanged })
+}
+
+// ── GET /api/retainers/deliverables/:id/log ──────────────────────────────────
+async function getLog(req, res, { sql, params }) {
+  const ws = await workspaceId(sql)
+  if (!(await loadDeliverable(sql, ws, params.id))) return fail(res, 404, 'not_found', 'Deliverable not found')
+  return res.status(200).json({ log: await loadLog(sql, params.id) })
 }

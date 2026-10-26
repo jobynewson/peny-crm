@@ -44,6 +44,13 @@ export const sendDelivery = (deliverableId, body) => post(`deliverables/${delive
 export const unsendDelivery = id => del(`deliveries/${id}`).then(r => r.deliverable)
 // → { preview: { title, image } | null, reason? }
 export const fillPreview = id => post(`deliveries/${id}/preview`)
+// Staff control of what the client sees (api/_retainers.js): hide a round from the client's
+// board — { answer: 'keep' | 'clear', status? } — show it again, change its link or note, and the
+// log of who did what. → the updated deliverable; editDelivery adds url_changed.
+export const hideDelivery = (id, body) => post(`deliveries/${id}/hide`, body).then(r => r.deliverable)
+export const showDelivery = id => post(`deliveries/${id}/show`, {}).then(r => r.deliverable)
+export const editDelivery = (id, body) => patch(`deliveries/${id}`, body)
+export const getBoardLog = deliverableId => request(`${base}/deliverables/${deliverableId}/log`).then(r => r.log)
 export const recordResponse = (id, body) => post(`deliveries/${id}/response`, body).then(r => r.deliverable)
 
 // The Overview's "Owed" list (api/_retainers.js getOwed): the first few open
