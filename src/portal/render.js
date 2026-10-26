@@ -309,8 +309,8 @@ function companyHtml(view, { signedIn, canSwitch }) {
     <main class="pt-main pt-main--board">
       ${view.scope.preview ? `<p class="pt-notice pt-preview">Previewing ${esc(view.title)} as their client sees it. Read-only: nothing here can be approved, requested or sent. <a class="pt-btn" href="/">Back to Slate</a></p>` : ''}
       ${boardsHtml(view)}
-      ${timeHtml(view)}
       ${boardHtml(view)}
+      ${timeHtml(view)}
     </main>
     ${footerHtml(view)}`
 }

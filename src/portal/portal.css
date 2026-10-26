@@ -340,7 +340,7 @@ a { color: var(--accent-text); }
 .pt-cv-empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; pointer-events: none; }
 
 /* ── Time logged (time.js) ── */
-.pt-time { margin: 0 0 20px; }
+.pt-time { margin: 20px 0 0; }
 .pt-time-note { margin: -4px 0 10px; font-size: 12px; }
 .pt-time-panel { margin-bottom: 14px; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
 .pt-time-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
