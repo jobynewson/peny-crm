@@ -17,6 +17,7 @@ import { segTabs, bindSegTabs } from './toolbar.js'
 import { openShareModal } from './share-board-modal.js'
 import { clientChip, audienceFor } from './client-facing.js'
 import { getBoardShares } from '../api/board-shares.js'
+import { notifyCardAssigned } from '../api/tasks.js'
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
 const fmtDate = d => d ? new Date(String(d).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''
@@ -721,6 +722,9 @@ export class BoardsView {
       }
       try {
         const updated = await updateBoardCard(card.id, data)
+        if (data.assignee_id && data.assignee_id !== card.assignee_id) {
+          notifyCardAssigned(card.id).catch(e => console.error('[board] assign alert failed:', e))
+        }
         const idx = this.cards.findIndex(c => c.id === card.id)
         if (idx !== -1) this.cards[idx] = updated
         this._committed()

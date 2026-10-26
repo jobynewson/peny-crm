@@ -33,6 +33,7 @@ import { workspaceId } from './_api.js'
 import { leadsShown } from './_leads.js'
 import { worklistLink } from './_retainer-rules.js'
 import { TIME_ZONE, londonDate, addDays, formatDay, workingDaysBetween } from './_dates.js'
+import { isFinishedColumn } from './_due-feed.js'
 
 // ── Who, and when ────────────────────────────────────────────────────────────
 
@@ -221,6 +222,22 @@ export function dueSoonEmail({ d, now = today() }) {
   }
 }
 
+// A planning-board card is not a deliverable: no company or worklist, and its
+// link opens the board it sits on.
+const boardLink = c => `${appBaseUrl()}/#planning/${c.board_id}`
+
+export function cardDueSoonEmail({ c, now = today() }) {
+  return {
+    subject: `Due ${formatDay(c.due_date, now)}: ${c.title}`,
+    title: 'Due within 48 hours',
+    subtitle: `Board · ${c.board_name}`,
+    sentence: `This card is due ${escapeHtml(formatDay(c.due_date, now))}.`,
+    body: card(c.title, [`Column: ${c.column_name}`]),
+    href: boardLink(c),
+    linkLabel: 'Open the board',
+  }
+}
+
 export function inputOverdueEmail({ d, days }) {
   return {
     subject: `${d.company} still owes us input: ${d.title}`,
@@ -369,6 +386,37 @@ export async function sendOwnerAssigned(sql, { deliverableId, assignedBy }) {
   return [r]
 }
 
+// A planning-board card given to someone, with the same "Tasks assigned to
+// you" switch as a task. Nothing is sent to the person who did the assigning,
+// or when the card has no assignee. Call it only when the assignee changed.
+export async function sendCardAssigned(sql, { cardId, assignedBy }) {
+  const ws = await workspaceId(sql)
+  const [c] = await sql`
+    SELECT bc.id, bc.title, bc.assignee_id, bc.due_date::text AS due_date, b.id AS board_id, b.name AS board_name
+    FROM board_cards bc JOIN boards b ON b.id = bc.board_id
+    WHERE bc.id = ${cardId} AND b.user_id = ${ws}`
+  if (!c?.assignee_id || c.assignee_id === assignedBy?.id) return []
+  const [owner] = await sql`SELECT id, clerk_id, name, email FROM app_users WHERE id = ${c.assignee_id}`
+  if (!owner?.email) return []
+  const who = assignedBy?.name || assignedBy?.email || 'Someone'
+  const email = {
+    subject: `New card: ${c.title}`,
+    title: 'A board card for you',
+    subtitle: `Board · ${c.board_name}`,
+    sentence: `${escapeHtml(who)} has given you a card.`,
+    body: card(c.title, [c.due_date && `Due ${formatDay(c.due_date, today())}`]),
+    href: boardLink(c),
+    linkLabel: 'Open the board',
+  }
+  const [r] = await notify(sql, {
+    kind: 'task_assigned', to: { email: owner.email, clerk_id: owner.clerk_id, name: owner.name },
+    push: pushFor(email),
+    subject: email.subject,
+    html: wrap({ title: email.title, subtitle: email.subtitle, greeting: `${hello(owner)}${email.sentence}`, bodyHtml: email.body, href: email.href, linkLabel: email.linkLabel }),
+  })
+  return [r]
+}
+
 // ── Unassigned work ──────────────────────────────────────────────────────────
 // A task or deliverable with no owner sits in To do on the board. Once it has
 // waited this many working days (weekdays that aren't a public holiday) the
@@ -499,6 +547,27 @@ export async function runTimedAlerts(sql, { now = new Date(), env = process.env 
     const r = await alertOnce(sql, {
       kind: 'alert_due_soon', id: d.id, cycle: d.due_date, ownerId: d.owner_id, companyId: d.company_id,
       email: dueSoonEmail({ d: { ...d, status_label: STATUS_LABEL[d.status] ?? d.status }, now: day }),
+    })
+    summary.due_soon += r.sent
+  }
+
+  // Board cards due in the same window, to their assignee. A card with no
+  // assignee, or one in a finished column, is left alone.
+  const cards = await sql`
+    SELECT bc.id, bc.title, bc.assignee_id, bc.due_date::text AS due_date,
+           b.id AS board_id, b.name AS board_name, col.name AS column_name
+    FROM board_cards bc
+    JOIN boards b ON b.id = bc.board_id
+    JOIN board_columns col ON col.id = bc.column_id
+    JOIN app_users u ON u.id = bc.assignee_id AND u.email IS NOT NULL
+    WHERE b.user_id = ${ws}
+      AND bc.due_date BETWEEN ${day}::date AND ${addDays(day, 2)}::date
+      AND NOT EXISTS (SELECT 1 FROM alert_log a WHERE a.kind = 'alert_due_soon' AND a.subject_id = bc.id AND a.cycle = bc.due_date::text)
+    ORDER BY bc.due_date`
+  for (const c of cards.filter(c => !isFinishedColumn(c.column_name))) {
+    const r = await alertOnce(sql, {
+      kind: 'alert_due_soon', id: c.id, cycle: c.due_date, ownerId: c.assignee_id, companyId: null,
+      email: cardDueSoonEmail({ c, now: day }),
     })
     summary.due_soon += r.sent
   }

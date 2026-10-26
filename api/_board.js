@@ -18,12 +18,14 @@
 
 import { UUID, fail, invalid, readBody, workspaceId } from './_api.js'
 import { londonDate } from './_dates.js'
+import { sendCardAssigned } from './_alerts.js'
 import { loadOpenRequests } from './_requests.js'
 import {
   BOARD_COLUMNS, BOARD_DONE_DAYS, isDelivered, BOARD_HORIZON_DAYS, boardShows, parseWindowDays, boardCard, compareBoardCards, statusAfterBoardDrag, statusPatch,
 } from './_retainer-rules.js'
 
 export const BOARD_ROUTES = [
+  { method: 'POST', pattern: new RegExp(`^retainers/board-cards/(?<id>${UUID})/assigned$`),               handler: cardAssigned, access: 'editor' },
   { method: 'GET',  pattern: /^retainers\/board$/,                                                       handler: getBoard },
   { method: 'POST', pattern: new RegExp(`^retainers/deliverables/(?<id>${UUID})/board-move$`),            handler: moveCard, access: 'editor' },
 ]
@@ -97,4 +99,19 @@ async function moveCard(req, res, { sql, user, params }) {
 
   const [fresh] = await loadRows(sql, ws, { id: d.id })
   return res.status(200).json({ card: boardCard(fresh, londonDate()) })
+}
+
+// ── POST retainers/board-cards/:id/assigned ──────────────────────────────────
+// The planning board writes cards straight to the database, so the browser
+// calls this after it gives a card a new assignee: the assignee is told (the
+// "Tasks assigned to you" switch). Who it goes to is read from the card, never
+// from the request. → { sent }. A failed send never fails the call.
+async function cardAssigned(req, res, { sql, user, params }) {
+  let results = []
+  try {
+    results = await sendCardAssigned(sql, { cardId: params.id, assignedBy: user })
+  } catch (err) {
+    console.error('[board] card assigned alert failed:', err?.message)
+  }
+  return res.status(200).json({ sent: results.filter(r => r.sent).length })
 }

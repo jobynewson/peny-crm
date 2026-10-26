@@ -4,7 +4,7 @@ vi.mock('./_notify.js', async orig => ({ ...(await orig()), notify: vi.fn() }))
 
 const {
   resolveRecipients, inAlertWindow, inputAlertDays, claimStands, DEFAULT_INPUT_DAYS,
-  newRequestEmail, changesRequestedEmail, clientReplyEmail, dueSoonEmail, inputOverdueEmail,
+  newRequestEmail, changesRequestedEmail, clientReplyEmail, dueSoonEmail, cardDueSoonEmail, inputOverdueEmail,
   staleUnassigned, unassignedEmail, UNASSIGNED_WORKING_DAYS,
 } = await import('./_alerts.js')
 const { KINDS, switchableKinds, wantsEmail } = await import('./_notify.js')
@@ -162,6 +162,20 @@ describe('the wording', () => {
     const o = inputOverdueEmail({ d, days: 7 })
     expect(o.subject).toBe('DMM still owes us input: October reel')
     expect(o.sentence).toContain('7 days')
+  })
+})
+
+describe('board cards', () => {
+  const c = { id: 'k1', title: 'Cut the teaser', board_id: 'b1', board_name: 'Launch', column_name: 'Doing', due_date: '2026-10-01' }
+  it('the due alert names the card and opens its board', () => {
+    const e = cardDueSoonEmail({ c, now: '2026-09-29' })
+    expect(e.subject).toContain('Cut the teaser')
+    expect(e.subtitle).toContain('Launch')
+    expect(e.href).toMatch(/#planning\/b1$/)
+  })
+  it('uses the existing switches', () => {
+    expect(KINDS.task_assigned.push).toBe(true)
+    expect(KINDS.alert_due_soon.push).toBe(true)
   })
 })
 

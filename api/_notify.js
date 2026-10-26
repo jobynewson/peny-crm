@@ -29,7 +29,7 @@ export const KINDS = {
   },
   task_assigned: {
     label: 'Tasks assigned to you',
-    description: 'An email as soon as someone gives you a task.',
+    description: 'An email as soon as someone gives you a task, deliverable or board card.',
     switchable: true, default: true, push: true, testable: true,
   },
   task_mentioned: {
@@ -78,7 +78,7 @@ export const KINDS = {
   },
   alert_due_soon: {
     label: 'Due within 48 hours',
-    description: 'An email, once, when a deliverable is due within 48 hours and is not in review yet.',
+    description: 'An email, once, when a deliverable is due within 48 hours and is not in review yet, or a board card of yours is.',
     switchable: true, default: true, push: true, testable: true,
   },
   alert_input_overdue: {
