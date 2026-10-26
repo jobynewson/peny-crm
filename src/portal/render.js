@@ -207,16 +207,24 @@ export function groupingFor(view) {
 }
 
 // `ctx` is groupingFor(view). `worklists: false` for things that have no worklist (requests).
-function groupedHtml(items, itemHtml, ctx, { worklists = true, quiet = false } = {}) {
+// What a heading's number counts, so "2" reads as "2 items outstanding".
+const OUTSTANDING = n => `${count(n, 'item')} outstanding`
+const NEEDS_YOU = n => `${n} ${n === 1 ? 'needs' : 'need'} you`
+const REQUESTS = n => count(n, 'request')
+const COMING_UP = n => `${n} coming up`
+const ANSWERED = n => `${n} answered`
+const APPROVED = n => `${n} approved`
+
+function groupedHtml(items, itemHtml, ctx, { worklists = true, quiet = false, label = OUTSTANDING } = {}) {
   const cls = `pt-list${quiet ? ' pt-list--quiet' : ''}`
   const showWs = worklists && ctx.worklists
   if (!ctx.projects && !showWs) return `<ul class="${cls}">${items.map(itemHtml).join('')}</ul>`
   return projectGroups(items, worklists ? undefined : () => '').map(g => {
     const inner = g.worklists.map(w => `
-        ${showWs ? `<h5 class="pt-grp-ws">${esc(w.name)} <span class="pt-muted">${w.items.length}</span></h5>` : ''}
+        ${showWs ? `<h5 class="pt-grp-ws">${esc(w.name)} <span class="pt-muted">${label(w.items.length)}</span></h5>` : ''}
         <ul class="${cls}">${w.items.map(itemHtml).join('')}</ul>`).join('')
     return ctx.projects
-      ? `<section class="pt-grp"><h4 class="pt-grp-h">${esc(g.name)} <span class="pt-muted">${g.count}</span></h4>${inner}</section>`
+      ? `<section class="pt-grp"><h4 class="pt-grp-h">${esc(g.name)} <span class="pt-muted">${label(g.count)}</span></h4>${inner}</section>`
       : inner
   }).join('')
 }
@@ -248,7 +256,7 @@ function boardHtml(view) {
         ${c.needs.length ? `
           <div class="pt-needs">
             <h3 class="pt-needs-h">Needs you · ${c.needs.length}</h3>
-            ${groupedHtml(c.needs, d => deliverableHtml(d, { needs: CLIENTS_MOVE[d.status], hideWs: ctx.worklists }), ctx)}
+            ${groupedHtml(c.needs, d => deliverableHtml(d, { needs: CLIENTS_MOVE[d.status], hideWs: ctx.worklists }), ctx, { label: NEEDS_YOU })}
           </div>` : ''}
         ${c.progress.length ? groupedHtml(c.progress, d => deliverableHtml(d, { hideWs: ctx.worklists }), ctx) : ''}
         ${!c.needs.length && !c.progress.length ? '<p class="pt-muted">Nothing in progress right now.</p>' : ''}
@@ -265,12 +273,12 @@ function approvedByProject(approved, ctx) {
   if (!approved.length) return '<p class="pt-muted">Approved work will collect here.</p>'
   const groups = projectGroups(approved)
   const inner = g => g.worklists.map(w => `
-      ${ctx.worklists ? `<h5 class="pt-grp-ws">${esc(w.name)} <span class="pt-muted">${w.items.length}</span></h5>` : ''}
+      ${ctx.worklists ? `<h5 class="pt-grp-ws">${esc(w.name)} <span class="pt-muted">${APPROVED(w.items.length)}</span></h5>` : ''}
       <ul class="pt-list pt-list--quiet">${w.items.map(d => approvedHtml(d, ctx)).join('')}</ul>`).join('')
   if (!ctx.projects) return groups.map(inner).join('')
   return groups.map(g => `
     <details class="pt-proj" open>
-      <summary class="pt-proj-head"><span class="pt-proj-name">${esc(g.name)}</span> <span class="pt-muted">${g.count}</span></summary>
+      <summary class="pt-proj-head"><span class="pt-proj-name">${esc(g.name)}</span> <span class="pt-muted">${APPROVED(g.count)}</span></summary>
       ${inner(g)}
     </details>`).join('')
 }
@@ -337,13 +345,13 @@ function requestsColumnHtml(view, c, canSend, ctx) {
             <button type="button" class="pt-btn" data-cancel-request>Cancel</button>
           </div>
         </form>` : ''}
-      ${c.asked.length ? groupedHtml(c.asked, r => requestHtml(r, ctx), ctx, { worklists: false }) : ''}
+      ${c.asked.length ? groupedHtml(c.asked, r => requestHtml(r, ctx), ctx, { worklists: false, label: REQUESTS }) : ''}
       ${c.planned.length ? `
         <h3 class="pt-sub-h">Up next</h3>
-        ${groupedHtml(c.planned, d => deliverableHtml(d, { hideWs: ctx.worklists }), ctx)}` : ''}
+        ${groupedHtml(c.planned, d => deliverableHtml(d, { hideWs: ctx.worklists }), ctx, { label: COMING_UP })}` : ''}
       ${c.answered.length ? `
         <h3 class="pt-sub-h">Answered</h3>
-        ${groupedHtml(c.answered, r => requestHtml(r, ctx), ctx, { worklists: false })}` : ''}
+        ${groupedHtml(c.answered, r => requestHtml(r, ctx), ctx, { worklists: false, label: ANSWERED })}` : ''}
       ${nothing ? `<p class="pt-muted pt-requests-empty">${canSend ? 'Need something from us? Ask here instead of emailing — you’ll see where it stands.' : (view.scope.kind === 'project' ? 'This project has been delivered, so it isn’t taking new requests here.' : 'No requests yet.')}</p>` : ''}
     </section>`
 }

@@ -461,8 +461,8 @@ describe('grouping by project then worklist', () => {
   })
   it('draws a project heading with a count and worklist headings in the In progress column', () => {
     const out = renderView(view({ workstreams: [ws('Edits', 'P1', ['a', 'b']), ws('Stills', 'P2', ['c'])] }), {})
-    expect(out).toContain('class="pt-grp-h">P1 <span class="pt-muted">2</span>')
-    expect(out).toContain('class="pt-grp-h">P2 <span class="pt-muted">1</span>')
+    expect(out).toContain('class="pt-grp-h">P1 <span class="pt-muted">2 items outstanding</span>')
+    expect(out).toContain('class="pt-grp-h">P2 <span class="pt-muted">1 item outstanding</span>')
   })
 })
 
