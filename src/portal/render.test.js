@@ -467,11 +467,17 @@ describe('grouping by project then worklist', () => {
 })
 
 describe('timeHtml', () => {
+  const lines = [{ label: 'Editing', logged: 6.5, allocated: 10, level: 'ok' }]
   const view = { studio: { name: 'Peny' }, time: [{
     id: 'a', name: 'Retainer <b>', total: 6.5,
     roles: [{ label: 'Editing', hours: 6.5 }],
-    retainer: { overall: { months: 1, lines: [{ label: 'Editing', logged: 6.5, allocated: 10 }] },
-      months: [{ label: 'Oct 26', current: true, lines: [{ label: 'Editing', logged: 6.5, allocated: 10 }] }] },
+    retainer: {
+      contract: [{ label: 'Editing', hours: 10, period: 'month' }],
+      overall: { months: 1, since: '2026-10-01', lines },
+      window: { start: '2026-10-01', end: '2027-09-30', month: 1, complete: false, lines },
+      months: [{ label: 'Oct 26', current: true, lines }],
+      notes: ['A note'],
+    },
   }] }
 
   it('draws nothing when no project is shared', async () => {
@@ -484,8 +490,12 @@ describe('timeHtml', () => {
     const { timeHtml } = await import('./time.js')
     const html = timeHtml(view)
     expect(html).toContain('6.5h')
-    expect(html).toContain('Monthly usage')
-    expect(html).toContain('of 10h')
+    expect(html).toContain('Retainer usage')
+    expect(html).toContain('Contracted')
+    expect(html).toContain('12-month total')
+    expect(html).toContain('month 1 of 12')
+    expect(html).toContain('/ 10h')
+    expect(html).toContain('data-time-months')
     expect(html).toContain('Retainer &lt;b&gt;')
   })
 })

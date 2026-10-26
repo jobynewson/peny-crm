@@ -43,14 +43,16 @@ describe('timeJson', () => {
     expect(p.retainer).toBeNull()
   })
 
-  it('gives a retainer its months, newest first, against the allocation', () => {
+  it('gives a retainer its months, oldest first, against the allocation, with contract and window', () => {
     const retainer = { id: 'a', name: 'Retainer', is_retainer: true, retainer_start: '2026-09-01', retainer_hours: null,
       retainer_items: [{ label: 'Editing', unit: 'hours', qty: 10, period: 'month' }] }
     const [p] = timeJson([retainer], entries, new Date('2026-10-15'))
-    expect(p.retainer.months.map(m => m.label)).toEqual(['Oct 26', 'Sep 26'])
-    expect(p.retainer.months[0].current).toBe(true)
-    expect(p.retainer.months[0].lines[0]).toEqual({ label: 'Editing', logged: 4.5, allocated: 10 })
+    expect(p.retainer.months.map(m => m.label)).toEqual(['Sep 26', 'Oct 26'])
+    expect(p.retainer.months[1].current).toBe(true)
+    expect(p.retainer.months[1].lines[0]).toEqual({ label: 'Editing', logged: 4.5, allocated: 10, level: 'ok' })
     expect(p.retainer.overall.months).toBe(2)
+    expect(p.retainer.contract).toEqual([{ label: 'Editing', hours: 10, period: 'month' }])
+    expect(p.retainer.window).toMatchObject({ start: '2026-09-01', end: '2027-08-31', month: 2, complete: false })
   })
 
   it('carries nothing but totals', () => {

@@ -17,6 +17,7 @@ import './portal.css'
 import { renderView, bindView, approveHtml, message, esc } from './render.js'
 import { startLive } from './live.js'
 import { bindBoards } from './boards.js'
+import { bindTime } from './time.js'
 
 const root = document.getElementById('portal')
 const approving = /^\/portal\/approve\/?$/.test(location.pathname)
@@ -157,6 +158,7 @@ async function show(view = null) {
   const canSwitch = (clerk?.user?.organizationMemberships?.length ?? 0) > 1
   root.innerHTML = renderView(view, { signedIn: !token && !previewId, canSwitch })
   bindBoards(root, { api, image: imageUrl })
+  bindTime(root)
   bindView(root, view, {
     respond: async (deliveryId, body) => {
       const result = await api(`/api/client/deliveries/${deliveryId}/response`, { method: 'POST', body })
